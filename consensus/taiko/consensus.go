@@ -127,7 +127,7 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	}
 
 	// Timestamp should later than or equal to parent (when many L2 blocks included in one L1 block)
-	if header.Time < parent.Time {
+	if header.Time <= parent.Time {
 		return ErrOlderBlockTime
 	}
 

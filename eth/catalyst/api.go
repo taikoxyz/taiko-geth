@@ -425,18 +425,9 @@ func (api *ConsensusAPI) NewPayloadV1(params beacon.ExecutableDataV1) (beacon.Pa
 		log.Error("Ignoring pre-merge parent block", "number", params.Number, "hash", params.BlockHash, "td", ptd, "ttd", ttd)
 		return beacon.INVALID_TERMINAL_BLOCK, nil
 	}
-	// CHANGE(taiko): a block that has the same timestamp as its parents is
-	// allowed in Taiko protocol.
-	if api.eth.BlockChain().Config().Taiko {
-		if block.Time() < parent.Time() {
-			log.Warn("Invalid timestamp", "parent", block.Time(), "block", block.Time())
-			return api.invalid(errors.New("invalid timestamp"), parent.Header()), nil
-		}
-	} else {
-		if block.Time() <= parent.Time() {
-			log.Warn("Invalid timestamp", "parent", block.Time(), "block", block.Time())
-			return api.invalid(errors.New("invalid timestamp"), parent.Header()), nil
-		}
+	if block.Time() <= parent.Time() {
+		log.Warn("Invalid timestamp", "parent", block.Time(), "block", block.Time())
+		return api.invalid(errors.New("invalid timestamp"), parent.Header()), nil
 	}
 	// Another cornercase: if the node is in snap sync mode, but the CL client
 	// tries to make it import a block. That should be denied as pushing something
