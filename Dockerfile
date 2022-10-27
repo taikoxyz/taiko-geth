@@ -21,6 +21,8 @@ FROM alpine:latest
 
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /go-ethereum/build/bin/geth /usr/local/bin/
+# CHANGE(taiko): copy L2 genesis JSON into the final image.
+COPY --from=builder /go-ethereum/core/taiko_genesis/genesis_alloc.json /deployments/genesis_alloc.json
 
 EXPOSE 8545 8546 30303 30303/udp
 ENTRYPOINT ["geth"]
