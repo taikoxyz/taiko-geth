@@ -290,7 +290,10 @@ var NetworkNames = map[string]string{
 	RinkebyChainConfig.ChainID.String(): "rinkeby",
 	GoerliChainConfig.ChainID.String():  "goerli",
 	SepoliaChainConfig.ChainID.String(): "sepolia",
-	TaikoChainConfig.ChainID.String():   "taiko", // CHANGE(taiko): add Taiko network name.
+	// CHANGE(taiko): add Taiko network name.
+	TaikoMainnetNetworkID.String(): "taiko",
+	TaikoAlpha1NetworkID.String():  "taiko alpha 1",
+	TaikoAlpha2NetworkID.String():  "taiko alpha 2",
 }
 
 // TrustedCheckpoint represents a set of post-processed trie roots (CHT and

@@ -6,8 +6,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+// Network IDs
+var (
+	TaikoMainnetNetworkID = big.NewInt(167)
+	TaikoAlpha1NetworkID  = big.NewInt(167001)
+	TaikoAlpha2NetworkID  = big.NewInt(167002)
+)
+
 var TaikoChainConfig = &ChainConfig{
-	ChainID:                       big.NewInt(167), // Use mainnet network ID by default.
+	ChainID:                       TaikoMainnetNetworkID, // Use mainnet network ID by default.
 	HomesteadBlock:                common.Big0,
 	EIP150Block:                   common.Big0,
 	EIP155Block:                   common.Big0,
