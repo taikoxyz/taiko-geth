@@ -1864,7 +1864,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	switch {
 	// CHANGE(taiko): when --taiko flag is set, use the Taiko genesis.
 	case ctx.IsSet(TaikoFlag.Name):
-		cfg.Genesis = core.TaikoGenesisBlock()
+		cfg.Genesis = core.TaikoGenesisBlock(cfg.NetworkId)
 	case ctx.Bool(MainnetFlag.Name):
 		if !ctx.IsSet(NetworkIdFlag.Name) {
 			cfg.NetworkId = 1
