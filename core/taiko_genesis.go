@@ -7,17 +7,32 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// CHANGE(taiko): TaikoGenesisBlock returns the Taiko network genesis block configs.
-func TaikoGenesisBlock() *Genesis {
+// TaikoGenesisBlock returns the Taiko network genesis block configs.
+func TaikoGenesisBlock(networkID uint64) *Genesis {
+	chainConfig := params.TaikoChainConfig
+
+	var allocJSON []byte
+	switch networkID {
+	case params.TaikoAlpha1NetworkID.Uint64():
+		chainConfig.ChainID = params.TaikoAlpha1NetworkID
+		allocJSON = taikoGenesis.Alpha1GenesisAllocJSON
+	case params.TaikoAlpha2NetworkID.Uint64():
+		chainConfig.ChainID = params.TaikoAlpha2NetworkID
+		allocJSON = taikoGenesis.Alpha2GenesisAllocJSON
+	default:
+		chainConfig.ChainID = params.TaikoMainnetNetworkID
+		allocJSON = taikoGenesis.MainnetGenesisAllocJSON
+	}
+
 	var alloc GenesisAlloc
-	if err := alloc.UnmarshalJSON(taikoGenesis.GenesisAllocJSON); err != nil {
+	if err := alloc.UnmarshalJSON(allocJSON); err != nil {
 		log.Crit("unmarshal alloc json error", "error", err)
 	}
 
 	return &Genesis{
-		Config:     params.TaikoChainConfig,
+		Config:     chainConfig,
 		ExtraData:  []byte{},
-		GasLimit:   uint64(8000000),
+		GasLimit:   uint64(5000000),
 		Difficulty: common.Big0,
 		Alloc:      alloc,
 	}
