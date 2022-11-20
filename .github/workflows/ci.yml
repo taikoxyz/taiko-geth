@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          repository: taikochain/taiko-geth
+          repository: taikoxyz/taiko-geth
 
       - name: Set up Go
         uses: actions/setup-go@v3
