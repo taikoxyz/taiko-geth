@@ -85,9 +85,8 @@ type ExecutableDataV1 struct {
 	ExtraData     []byte         `json:"extraData"     gencodec:"required"`
 	BaseFeePerGas *big.Int       `json:"-"             gencodec:"required"` // CHANGE(taiko): disable EIP-1559 temporarily
 	BlockHash     common.Hash    `json:"blockHash"     gencodec:"required"`
-	// CHANGE(taiko): allow passing txHash directly instead of transactions list
-	Transactions [][]byte    `json:"transactions" gencodec:"required"`
-	TxHash       common.Hash `json:"txHash"`
+	Transactions  [][]byte       `json:"transactions" gencodec:"required"`
+	TxHash        common.Hash    `json:"txHash"` // CHANGE(taiko): allow passing txHash directly instead of transactions list
 }
 
 // JSON type overrides for executableData.
