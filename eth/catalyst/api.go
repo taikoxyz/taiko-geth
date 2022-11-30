@@ -311,7 +311,6 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV1(update beacon.ForkchoiceStateV1, pa
 			rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
 			// Write the head L1Origin.
 			rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
-			api.eth.Downloader().SetSyncProgress(l1Origin.BlockID.Uint64(), payloadAttributes.BlockMetadata.HighestBlockID.Uint64())
 
 			return valid(&id), nil
 		}
@@ -379,10 +378,35 @@ func (api *ConsensusAPI) GetPayloadV1(payloadID beacon.PayloadID) (*beacon.Execu
 // NewPayloadV1 creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
 func (api *ConsensusAPI) NewPayloadV1(params beacon.ExecutableDataV1) (beacon.PayloadStatusV1, error) {
 	log.Trace("Engine API request received", "method", "ExecutePayload", "number", params.Number, "hash", params.BlockHash)
-	block, err := beacon.ExecutableDataToBlock(params)
-	if err != nil {
-		log.Debug("Invalid NewPayload params", "params", params, "error", err)
-		return beacon.PayloadStatusV1{Status: beacon.INVALIDBLOCKHASH}, nil
+	// CHANGE(taiko): allow passing the executable data with txHash instead of all transactions.
+	var (
+		block *types.Block
+		err   error
+	)
+	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil {
+		block = types.NewBlockWithHeader(&types.Header{
+			ParentHash:  params.ParentHash,
+			UncleHash:   types.EmptyUncleHash,
+			Coinbase:    params.FeeRecipient,
+			Root:        params.StateRoot,
+			TxHash:      params.TxHash,
+			ReceiptHash: params.ReceiptsRoot,
+			Bloom:       types.BytesToBloom(params.LogsBloom),
+			Difficulty:  common.Big0,
+			Number:      new(big.Int).SetUint64(params.Number),
+			GasLimit:    params.GasLimit,
+			GasUsed:     params.GasUsed,
+			Time:        params.Timestamp,
+			BaseFee:     params.BaseFeePerGas,
+			Extra:       params.ExtraData,
+			MixDigest:   params.Random,
+		})
+	} else {
+		block, err = beacon.ExecutableDataToBlock(params)
+		if err != nil {
+			log.Debug("Invalid NewPayload params", "params", params, "error", err)
+			return beacon.PayloadStatusV1{Status: beacon.INVALIDBLOCKHASH}, nil
+		}
 	}
 	// Stash away the last update to warn the user if the beacon client goes offline
 	api.lastNewPayloadLock.Lock()
