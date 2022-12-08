@@ -45,11 +45,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethstats"
-	"github.com/ethereum/go-ethereum/les"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -84,9 +84,12 @@ var (
 	twitterTokenFlag   = flag.String("twitter.token", "", "Bearer token to authenticate with the v2 Twitter API")
 	twitterTokenV1Flag = flag.String("twitter.token.v1", "", "Bearer token to authenticate with the v1.1 Twitter API")
 
-	goerliFlag  = flag.Bool("goerli", false, "Initializes the faucet with Görli network config")
-	rinkebyFlag = flag.Bool("rinkeby", false, "Initializes the faucet with Rinkeby network config")
-	sepoliaFlag = flag.Bool("sepolia", false, "Initializes the faucet with Sepolia network config")
+	goerliFlag     = flag.Bool("goerli", false, "Initializes the faucet with Görli network config")
+	rinkebyFlag    = flag.Bool("rinkeby", false, "Initializes the faucet with Rinkeby network config")
+	sepoliaFlag    = flag.Bool("sepolia", false, "Initializes the faucet with Sepolia network config")
+	alpha1Flag     = flag.Bool("alpha-1", false, "Initializes the faucet with Taiko alpha 1 network config")
+	alpha2Flag     = flag.Bool("alpha-2", false, "Initializes the faucet with Taiko alpha 2 network config")
+	p2pNodeRPCFlag = flag.String("p2pNodeRPCEndpoint", "", "The p2p node rpc endpoint url")
 )
 
 var (
@@ -144,7 +147,7 @@ func main() {
 		log.Crit("Failed to render the faucet template", "err", err)
 	}
 	// Load and parse the genesis block requested by the user
-	genesis, err := getGenesis(*genesisFlag, *goerliFlag, *rinkebyFlag, *sepoliaFlag)
+	genesis, err := getGenesis(*genesisFlag, *goerliFlag, *rinkebyFlag, *sepoliaFlag, *alpha1Flag, *alpha2Flag)
 	if err != nil {
 		log.Crit("Failed to parse genesis config", "err", err)
 	}
@@ -197,10 +200,11 @@ type request struct {
 
 // faucet represents a crypto faucet backed by an Ethereum light client.
 type faucet struct {
-	config *params.ChainConfig // Chain configurations for signing
-	stack  *node.Node          // Ethereum protocol stack
-	client *ethclient.Client   // Client connection to the Ethereum chain
-	index  []byte              // Index page to serve up on the web
+	config  *params.ChainConfig // Chain configurations for signing
+	stack   *node.Node          // Ethereum protocol stack
+	backend *eth.Ethereum
+	client  *ethclient.Client // Client connection to the Ethereum chain
+	index   []byte            // Index page to serve up on the web
 
 	keystore *keystore.KeyStore // Keystore containing the single signer
 	account  accounts.Account   // Account funding user faucet requests
@@ -245,19 +249,20 @@ func newFaucet(genesis *core.Genesis, port int, enodes []*enode.Node, network ui
 
 	// Assemble the Ethereum light client protocol
 	cfg := ethconfig.Defaults
-	cfg.SyncMode = downloader.LightSync
+	cfg.SyncMode = downloader.SnapSync
 	cfg.NetworkId = network
 	cfg.Genesis = genesis
 	utils.SetDNSDiscoveryDefaults(&cfg, genesis.ToBlock().Hash())
 
-	lesBackend, err := les.New(stack, &cfg)
+	backend, err := eth.New(stack, &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to register the Ethereum service: %w", err)
 	}
+	utils.RegisterFilterAPI(stack, backend.APIBackend, &cfg)
 
 	// Assemble the ethstats monitoring and reporting service'
 	if stats != "" {
-		if err := ethstats.New(stack, lesBackend.ApiBackend, lesBackend.Engine(), stats); err != nil {
+		if err := ethstats.New(stack, backend.APIBackend, backend.Engine(), stats); err != nil {
 			return nil, err
 		}
 	}
@@ -279,8 +284,9 @@ func newFaucet(genesis *core.Genesis, port int, enodes []*enode.Node, network ui
 	}
 	client := ethclient.NewClient(api)
 
-	return &faucet{
+	f := &faucet{
 		config:   genesis.Config,
+		backend:  backend,
 		stack:    stack,
 		client:   client,
 		index:    index,
@@ -288,12 +294,53 @@ func newFaucet(genesis *core.Genesis, port int, enodes []*enode.Node, network ui
 		account:  ks.Accounts()[0],
 		timeouts: make(map[string]time.Time),
 		update:   make(chan struct{}, 1),
-	}, nil
+	}
+
+	go f.beaconSyncLoop(*alpha1Flag, *alpha2Flag)
+
+	return f, nil
 }
 
 // close terminates the Ethereum connection and tears down the faucet.
 func (f *faucet) close() error {
 	return f.stack.Close()
+}
+
+func (f *faucet) beaconSyncLoop(alpha1Flag bool, alpha2Flag bool) {
+	var (
+		c   *ethclient.Client
+		err error
+	)
+
+	if alpha1Flag || alpha2Flag {
+		if c, err = ethclient.Dial(*p2pNodeRPCFlag); err != nil {
+			log.Error("Dial ethclient error", "error", err)
+		}
+	} else {
+		return
+	}
+
+	heads := make(chan *types.Header, 2048)
+
+	head, err := c.HeaderByNumber(context.Background(), nil)
+	if err != nil {
+		log.Error("Get latest beacon head error", "error", err)
+	} else {
+		heads <- head
+	}
+
+	sub, err := c.SubscribeNewHead(context.Background(), heads)
+	if err != nil {
+		log.Crit("Failed to subscribe to head events", "err", err)
+	}
+	defer sub.Unsubscribe()
+
+	for head := range heads {
+		log.Info("new beacon head", "head", head)
+		if err := f.backend.Downloader().BeaconSync(f.backend.SyncMode(), head); err != nil {
+			log.Error("Beacon sync error", "error", err)
+		}
+	}
 }
 
 // listenAndServe registers the HTTP handlers for the faucet and boots it up
@@ -561,7 +608,7 @@ func (f *faucet) refresh(head *types.Header) error {
 		nonce   uint64
 		price   *big.Int
 	)
-	if balance, err = f.client.BalanceAt(ctx, f.account.Address, head.Number); err != nil {
+	if balance, err = f.client.BalanceAtBigInt(ctx, f.account.Address, head.Number); err != nil {
 		return err
 	}
 	if nonce, err = f.client.NonceAt(ctx, f.account.Address, head.Number); err != nil {
@@ -883,7 +930,7 @@ func authNoAuth(url string) (string, string, common.Address, error) {
 }
 
 // getGenesis returns a genesis based on input args
-func getGenesis(genesisFlag string, goerliFlag bool, rinkebyFlag bool, sepoliaFlag bool) (*core.Genesis, error) {
+func getGenesis(genesisFlag string, goerliFlag bool, rinkebyFlag bool, sepoliaFlag bool, alpha1Flag bool, alpha2Flag bool) (*core.Genesis, error) {
 	switch {
 	case genesisFlag != "":
 		var genesis core.Genesis
@@ -895,6 +942,10 @@ func getGenesis(genesisFlag string, goerliFlag bool, rinkebyFlag bool, sepoliaFl
 		return core.DefaultRinkebyGenesisBlock(), nil
 	case sepoliaFlag:
 		return core.DefaultSepoliaGenesisBlock(), nil
+	case alpha1Flag:
+		return core.TaikoGenesisBlock(167001), nil
+	case alpha2Flag:
+		return core.TaikoGenesisBlock(167002), nil
 	default:
 		return nil, fmt.Errorf("no genesis flag provided")
 	}

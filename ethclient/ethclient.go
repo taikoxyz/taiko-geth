@@ -341,6 +341,12 @@ func (ec *Client) BalanceAt(ctx context.Context, account common.Address, blockNu
 	return (*big.Int)(&result), err
 }
 
+func (ec *Client) BalanceAtBigInt(ctx context.Context, account common.Address, blockNumber *big.Int) (*big.Int, error) {
+	var result *big.Int
+	err := ec.c.CallContext(ctx, &result, "eth_getBalanceBigInt", account, toBlockNumArg(blockNumber))
+	return result, err
+}
+
 // StorageAt returns the value of key in the contract storage of the given account.
 // The block number can be nil, in which case the value is taken from the latest known block.
 func (ec *Client) StorageAt(ctx context.Context, account common.Address, key common.Hash, blockNumber *big.Int) ([]byte, error) {
