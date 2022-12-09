@@ -84,12 +84,13 @@ var (
 	twitterTokenFlag   = flag.String("twitter.token", "", "Bearer token to authenticate with the v2 Twitter API")
 	twitterTokenV1Flag = flag.String("twitter.token.v1", "", "Bearer token to authenticate with the v1.1 Twitter API")
 
-	goerliFlag     = flag.Bool("goerli", false, "Initializes the faucet with Görli network config")
-	rinkebyFlag    = flag.Bool("rinkeby", false, "Initializes the faucet with Rinkeby network config")
-	sepoliaFlag    = flag.Bool("sepolia", false, "Initializes the faucet with Sepolia network config")
-	alpha1Flag     = flag.Bool("alpha-1", false, "Initializes the faucet with Taiko alpha 1 network config")
-	alpha2Flag     = flag.Bool("alpha-2", false, "Initializes the faucet with Taiko alpha 2 network config")
-	p2pNodeRPCFlag = flag.String("p2pNodeRPCEndpoint", "", "The p2p node rpc endpoint url")
+	goerliFlag        = flag.Bool("goerli", false, "Initializes the faucet with Görli network config")
+	rinkebyFlag       = flag.Bool("rinkeby", false, "Initializes the faucet with Rinkeby network config")
+	sepoliaFlag       = flag.Bool("sepolia", false, "Initializes the faucet with Sepolia network config")
+	alpha1Flag        = flag.Bool("alpha-1", false, "Initializes the faucet with Taiko alpha 1 network config")
+	alpha2Flag        = flag.Bool("alpha-2", false, "Initializes the faucet with Taiko alpha 2 network config")
+	p2pNodeRPCFlag    = flag.String("p2pNodeRPCEndpoint", "", "The p2p node rpc endpoint url")
+	tweetKeywordsFlag = flag.String("tweetKeywordsStrings", "", "Comma spllitted Tweet keywords")
 )
 
 var (
@@ -825,6 +826,9 @@ func authTwitterWithTokenV1(tweetID string, token string) (string, string, strin
 		//lint:ignore ST1005 This error is to be displayed in the browser
 		return "", "", "", common.Address{}, errors.New("No Ethereum address found to fund")
 	}
+	if err := checkTweetKeywords(result.Text); err != nil {
+		return "", "", "", common.Address{}, err
+	}
 	return result.User.ID + "@twitter", result.User.Username, result.User.Avatar, address, nil
 }
 
@@ -868,6 +872,9 @@ func authTwitterWithTokenV2(tweetID string, token string) (string, string, strin
 	if address == (common.Address{}) {
 		//lint:ignore ST1005 This error is to be displayed in the browser
 		return "", "", "", common.Address{}, errors.New("No Ethereum address found to fund")
+	}
+	if err := checkTweetKeywords(result.Data.Text); err != nil {
+		return "", "", "", common.Address{}, err
 	}
 	return result.Data.AuthorID + "@twitter", result.Includes.Users[0].Username, result.Includes.Users[0].Avatar, address, nil
 }
@@ -949,4 +956,20 @@ func getGenesis(genesisFlag string, goerliFlag bool, rinkebyFlag bool, sepoliaFl
 	default:
 		return nil, fmt.Errorf("no genesis flag provided")
 	}
+}
+
+func checkTweetKeywords(text string) error {
+	if *tweetKeywordsFlag == "" {
+		return nil
+	}
+
+	keyworkds := strings.Split(*tweetKeywordsFlag, ",")
+
+	for _, keyword := range keyworkds {
+		if !strings.Contains(text, strings.Trim(keyword, " ")) {
+			return fmt.Errorf("Tweet does not contain keyword: %s", keyword)
+		}
+	}
+
+	return nil
 }
