@@ -12,3 +12,6 @@ var Alpha1GenesisAllocJSON []byte
 
 //go:embed alpha-2.json
 var Alpha2GenesisAllocJSON []byte
+
+//go:embed alpha-3.json
+var Alpha3GenesisAllocJSON []byte
