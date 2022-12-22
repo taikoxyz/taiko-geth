@@ -8,9 +8,10 @@ import (
 
 // Network IDs
 var (
-	TaikoMainnetNetworkID = big.NewInt(167)
-	TaikoAlpha1NetworkID  = big.NewInt(167001)
-	TaikoAlpha2NetworkID  = big.NewInt(167002)
+	TaikoMainnetNetworkID   = big.NewInt(167)
+	TaikoAlpha1NetworkID    = big.NewInt(167001)
+	TaikoAlpha2NetworkID    = big.NewInt(167002)
+	SnæfellsjökullNetworkID = big.NewInt(167003)
 )
 
 var TaikoChainConfig = &ChainConfig{
