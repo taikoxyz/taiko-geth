@@ -5,8 +5,11 @@
   "0x9D716db5fF59f8dd903D44a56C41BcbE99bA666c": {
     "balance": "0xfffffffffffffacbbb7ca13a7fffffff"
   },
+  "0x11f080128e565c07caD6fF7ADbb50Be1f62B84DB": {
+    "balance": "0xfffffffffffffacbbb7ca13a7fffffff"
+  },
   "0x617138FAdFEeE2E57f87cCba7dd6D6902aB0427d": {
-    "balance": "0x3782dace9d90000000"
+    "balance": "0xfffffffffffffacbbb7ca13a7fffffff"
   },
   "0xC5d653E17c24928B788a17838F11d2AcF0c922A3": {
     "contractName": "LibTrieProof",
