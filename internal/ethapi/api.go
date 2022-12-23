@@ -636,6 +636,14 @@ func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, 
 	return (*hexutil.Big)(state.GetBalance(address)), state.Error()
 }
 
+func (s *BlockChainAPI) GetBalanceBigInt(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*big.Int, error) {
+	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	if state == nil || err != nil {
+		return nil, err
+	}
+	return state.GetBalance(address), state.Error()
+}
+
 // Result structs for GetProof
 type AccountResult struct {
 	Address      common.Address  `json:"address"`
