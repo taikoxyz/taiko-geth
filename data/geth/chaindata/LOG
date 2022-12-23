@@ -1,0 +1,30 @@
+=============== Dec 23, 2022 (CST) ===============
+13:26:25.258224 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+13:26:25.281276 db@open opening
+13:26:25.283110 version@stat F·[] S·0B[] Sc·[]
+13:26:25.287316 db@janitor F·2 G·0
+13:26:25.287351 db@open done T·6.048167ms
+13:26:28.593022 db@close closing
+13:26:28.593084 db@close done T·61.583µs
+=============== Dec 23, 2022 (CST) ===============
+15:33:46.369045 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+15:33:46.370278 version@stat F·[] S·0B[] Sc·[]
+15:33:46.370294 db@open opening
+15:33:46.370331 journal@recovery F·1
+15:33:46.371255 journal@recovery recovering @1
+15:33:46.390488 memdb@flush created L0@2 N·136 S·112KiB "\x00\xb9\xdf..\xf5\xcf\x14,v65":"\xf8\x80\r..I9y,v45"
+15:33:46.391386 version@stat F·[1] S·112KiB[112KiB] Sc·[0.25]
+15:33:46.424189 db@janitor F·3 G·0
+15:33:46.424357 db@open done T·54.052333ms
+15:33:53.016331 db@close closing
+15:33:53.016397 db@close done T·65.125µs
+=============== Dec 23, 2022 (CST) ===============
+15:33:59.953188 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
+15:33:59.953316 version@stat F·[1] S·112KiB[112KiB] Sc·[0.25]
+15:33:59.953329 db@open opening
+15:33:59.953366 journal@recovery F·1
+15:33:59.954253 journal@recovery recovering @3
+15:33:59.960089 memdb@flush created L0@5 N·5 S·562B "Sna..tor,v140":"unc..own,v139"
+15:33:59.961110 version@stat F·[2] S·113KiB[113KiB] Sc·[0.50]
+15:33:59.981981 db@janitor F·4 G·0
+15:33:59.982198 db@open done T·28.858041ms
