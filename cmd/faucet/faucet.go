@@ -50,6 +50,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethstats"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -251,7 +252,7 @@ func newFaucet(genesis *core.Genesis, port int, enodes []*enode.Node, network ui
 
 	// Assemble the Ethereum light client protocol
 	cfg := ethconfig.Defaults
-	cfg.SyncMode = downloader.SnapSync
+	cfg.SyncMode = downloader.FullSync
 	cfg.NetworkId = network
 	cfg.Genesis = genesis
 	utils.SetDNSDiscoveryDefaults(&cfg, genesis.ToBlock().Hash())
@@ -331,10 +332,13 @@ func (f *faucet) beaconSyncLoop(alpha1Flag bool, alpha2Flag bool, snæfellsjöku
 		heads <- head
 	}
 
-	sub, err := c.SubscribeNewHead(context.Background(), heads)
-	if err != nil {
-		log.Crit("Failed to subscribe to head events", "err", err)
-	}
+	sub := event.ResubscribeErr(30*time.Second, func(ctx context.Context, err error) (event.Subscription, error) {
+		if err != nil {
+			log.Warn("Failed to subscribe L2 head, try resubscribing", "error", err)
+		}
+
+		return c.SubscribeNewHead(context.Background(), heads)
+	})
 	defer sub.Unsubscribe()
 
 	for head := range heads {
