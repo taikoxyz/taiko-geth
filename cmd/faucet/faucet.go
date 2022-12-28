@@ -756,11 +756,12 @@ func authTwitter(url string, tokenV1, tokenV2 string) (string, string, string, c
 	// If Twitter bearer token is provided, use the API, selecting the version
 	// the user would prefer (currently there's a limit of 1 v2 app / developer
 	// but unlimited v1.1 apps).
+	apiBaseUrl := "https://api.twitter.com"
 	switch {
 	case tokenV1 != "":
-		return authTwitterWithTokenV1(tweetID, tokenV1)
+		return authTwitterWithTokenV1(apiBaseUrl, tweetID, tokenV1)
 	case tokenV2 != "":
-		return authTwitterWithTokenV2(tweetID, tokenV2)
+		return authTwitterWithTokenV2(apiBaseUrl, tweetID, tokenV2)
 	}
 	// Twitter API token isn't provided so we just load the public posts
 	// and scrape it for the Ethereum address and profile URL. We need to load
@@ -800,9 +801,9 @@ func authTwitter(url string, tokenV1, tokenV2 string) (string, string, string, c
 // authTwitterWithTokenV1 tries to authenticate a faucet request using Twitter's v1
 // API, returning the user id, username, avatar URL and Ethereum address to fund on
 // success.
-func authTwitterWithTokenV1(tweetID string, token string) (string, string, string, common.Address, error) {
+func authTwitterWithTokenV1(apiBaseUrl string, tweetID string, token string) (string, string, string, common.Address, error) {
 	// Query the tweet details from Twitter
-	url := fmt.Sprintf("https://api.twitter.com/1.1/statuses/show.json?id=%s", tweetID)
+	url := fmt.Sprintf("%s/1.1/statuses/show.json?id=%s", apiBaseUrl, tweetID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", "", "", common.Address{}, err
@@ -813,6 +814,11 @@ func authTwitterWithTokenV1(tweetID string, token string) (string, string, strin
 		return "", "", "", common.Address{}, err
 	}
 	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusTooManyRequests {
+		//lint:ignore ST1005 This error is to be displayed in the browser
+		return "", "", "", common.Address{}, errors.New("Too many requests, try again later")
+	}
 
 	var result struct {
 		Text string `json:"text"`
@@ -840,9 +846,9 @@ func authTwitterWithTokenV1(tweetID string, token string) (string, string, strin
 // authTwitterWithTokenV2 tries to authenticate a faucet request using Twitter's v2
 // API, returning the user id, username, avatar URL and Ethereum address to fund on
 // success.
-func authTwitterWithTokenV2(tweetID string, token string) (string, string, string, common.Address, error) {
+func authTwitterWithTokenV2(apiBaseUrl string, tweetID string, token string) (string, string, string, common.Address, error) {
 	// Query the tweet details from Twitter
-	url := fmt.Sprintf("https://api.twitter.com/2/tweets/%s?expansions=author_id&user.fields=profile_image_url", tweetID)
+	url := fmt.Sprintf("%s/2/tweets/%s?expansions=author_id&user.fields=profile_image_url", apiBaseUrl, tweetID)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", "", "", common.Address{}, err
@@ -853,6 +859,11 @@ func authTwitterWithTokenV2(tweetID string, token string) (string, string, strin
 		return "", "", "", common.Address{}, err
 	}
 	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusTooManyRequests {
+		//lint:ignore ST1005 This error is to be displayed in the browser
+		return "", "", "", common.Address{}, errors.New("Too many requests, try again later")
+	}
 
 	var result struct {
 		Data struct {
