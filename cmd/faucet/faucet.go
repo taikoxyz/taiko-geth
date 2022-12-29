@@ -341,11 +341,17 @@ func (f *faucet) beaconSyncLoop(alpha1Flag bool, alpha2Flag bool, snæfellsjöku
 	})
 	defer sub.Unsubscribe()
 
+	lastSyncedAt := time.Now()
 	for head := range heads {
 		log.Info("new beacon head", "head", head)
+		if !time.Now().After(lastSyncedAt.Add(5 * time.Second)) {
+			continue
+		}
 		if err := f.backend.Downloader().BeaconSync(f.backend.SyncMode(), head); err != nil {
+			lastSyncedAt = time.Now()
 			log.Error("Beacon sync error", "error", err)
 		}
+		lastSyncedAt = time.Now()
 	}
 }
 
