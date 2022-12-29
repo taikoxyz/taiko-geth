@@ -344,7 +344,7 @@ func (f *faucet) beaconSyncLoop(alpha1Flag bool, alpha2Flag bool, snæfellsjöku
 	lastSyncedAt := time.Now()
 	for head := range heads {
 		log.Info("new beacon head", "head", head)
-		if !time.Now().After(lastSyncedAt.Add(5 * time.Second)) {
+		if !time.Now().After(lastSyncedAt.Add(3 * time.Second)) {
 			continue
 		}
 		if err := f.backend.Downloader().BeaconSync(f.backend.SyncMode(), head); err != nil {
@@ -820,6 +820,11 @@ func authTwitterWithTokenV1(tweetID string, token string) (string, string, strin
 	}
 	defer res.Body.Close()
 
+	if res.StatusCode == http.StatusTooManyRequests {
+		//lint:ignore ST1005 This error is to be displayed in the browser
+		return "", "", "", common.Address{}, errors.New("Twitter API rate limit exceeded, please try again later")
+	}
+
 	var result struct {
 		Text string `json:"text"`
 		User struct {
@@ -859,6 +864,11 @@ func authTwitterWithTokenV2(tweetID string, token string) (string, string, strin
 		return "", "", "", common.Address{}, err
 	}
 	defer res.Body.Close()
+
+	if res.StatusCode == http.StatusTooManyRequests {
+		//lint:ignore ST1005 This error is to be displayed in the browser
+		return "", "", "", common.Address{}, errors.New("Twitter API rate limit exceeded, please try again later")
+	}
 
 	var result struct {
 		Data struct {
