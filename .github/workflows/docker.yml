@@ -2,9 +2,9 @@ name: "Push docker image to GCR"
 
 on:
   push:
-    branches: [taiko]
-    tags:
-      - "v*"
+    branches: [read_limit]
+    # tags:
+    #   - "v*"
 
 jobs:
   push-docker-image:
