@@ -93,10 +93,10 @@ This command will:
  * Start `geth` in snap sync mode (default, can be changed with the `--syncmode` flag),
    causing it to download more data in exchange for avoiding processing the entire history
    of the Ethereum network, which is very CPU intensive.
- * Start up `geth`'s built-in interactive [JavaScript console](https://geth.ethereum.org/docs/interface/javascript-console),
+ * Start up `geth`'s built-in interactive [JavaScript console](https://geth.ethereum.org/docs/interacting-with-geth/javascript-console#main-content),
    (via the trailing `console` subcommand) through which you can interact using [`web3` methods](https://github.com/ChainSafe/web3.js/blob/0.20.7/DOCUMENTATION.md)
    (note: the `web3` version bundled within `geth` is very old, and not up to date with official docs),
-   as well as `geth`'s own [management APIs](https://geth.ethereum.org/docs/rpc/server).
+   as well as `geth`'s own [management APIs](https://geth.ethereum.org/docs/interacting-with-geth/rpc#main-content).
    This tool is optional and if you leave it out you can always attach to an already running
    `geth` instance with `geth attach`.
 
@@ -199,7 +199,7 @@ accessible from the outside.
 As a developer, sooner rather than later you'll want to start interacting with `geth` and the
 Ethereum network via your own programs and not manually through the console. To aid
 this, `geth` has built-in support for a JSON-RPC based APIs ([standard APIs](https://ethereum.github.io/execution-apis/api-documentation/)
-and [`geth` specific APIs](https://geth.ethereum.org/docs/rpc/server)).
+and [`geth` specific APIs](https://geth.ethereum.org/docs/interacting-with-geth/rpc#main-content)).
 These can be exposed via HTTP, WebSockets and IPC (UNIX sockets on UNIX based
 platforms, and named pipes on Windows).
 
@@ -366,15 +366,15 @@ and merge procedures quick and simple.
 
 Please make sure your contributions adhere to our coding guidelines:
 
- * Code must adhere to the official Go [formatting](https://golang.org/doc/effective_go.html#formatting)
-   guidelines (i.e. uses [gofmt](https://golang.org/cmd/gofmt/)).
- * Code must be documented adhering to the official Go [commentary](https://golang.org/doc/effective_go.html#commentary)
+ * Code must adhere to the official Go [formatting](https://go.dev/doc/effective_go#formatting)
+   guidelines (i.e. uses [gofmt](https://pkg.go.dev/cmd/gofmt)).
+ * Code must be documented adhering to the official Go [commentary](https://go.dev/doc/effective_go#commentary)
    guidelines.
  * Pull requests need to be based on and opened against the `master` branch.
  * Commit messages should be prefixed with the package(s) they modify.
    * E.g. "eth, rpc: make trace configs optional"
 
-Please see the [Developers' Guide](https://geth.ethereum.org/docs/developers/devguide)
+Please see the [Developers' Guide](https://geth.ethereum.org/docs/developers)
 for more details on configuring your environment, managing project dependencies, and
 testing procedures.
 
