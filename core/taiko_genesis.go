@@ -13,8 +13,8 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 
 	var allocJSON []byte
 	switch networkID {
-	case params.TaikoInternalNetworkID.Uint64():
-		chainConfig.ChainID = params.TaikoInternalNetworkID
+	case params.TaikoInternal1NetworkID.Uint64():
+		chainConfig.ChainID = params.TaikoInternal1NetworkID
 		allocJSON = taikoGenesis.Internal1GenesisAllocJSON
 	case params.TaikoInternal2NetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoInternal2NetworkID

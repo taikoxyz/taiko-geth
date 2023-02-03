@@ -9,7 +9,7 @@ import (
 // Network IDs
 var (
 	TaikoMainnetNetworkID   = big.NewInt(167)
-	TaikoInternalNetworkID  = big.NewInt(167001)
+	TaikoInternal1NetworkID = big.NewInt(167001)
 	TaikoInternal2NetworkID = big.NewInt(167002)
 	SnæfellsjökullNetworkID = big.NewInt(167003)
 )
