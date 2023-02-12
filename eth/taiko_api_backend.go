@@ -1,13 +1,16 @@
 package eth
 
 import (
+	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // TaikoAPIBackend handles l2 node related RPC calls.
@@ -68,4 +71,45 @@ func (s *TaikoAPIBackend) GetThrowawayTransactionReceipts(hash common.Hash) (typ
 	}
 
 	return receipts, nil
+}
+
+func (s *TaikoAPIBackend) TxPoolContent(
+	maxTransactionsPerBlock uint64,
+	blockMaxGasLimit uint64,
+	maxBytesPerTxList uint64,
+	minTxGasLimit uint64,
+	locals string,
+) (types.Transactions, error) {
+	var (
+		localsAddresses      []common.Address
+		localsAddressStrings = strings.Split(locals, ",")
+	)
+	for _, account := range localsAddressStrings {
+		if trimmed := strings.TrimSpace(account); !common.IsHexAddress(trimmed) {
+			return nil, fmt.Errorf("Invalid account: %s", trimmed)
+		} else {
+			localsAddresses = append(localsAddresses, common.HexToAddress(account))
+		}
+	}
+
+	pending := s.eth.TxPool().Pending(false)
+
+	log.Debug("Fetching L2 pending transactions finished", "length", PoolContent(pending).Len())
+
+	contentSplitter := poolContentSplitter{
+		chainID:                 s.eth.BlockChain().Config().ChainID,
+		maxTransactionsPerBlock: maxTransactionsPerBlock,
+		blockMaxGasLimit:        blockMaxGasLimit,
+		maxBytesPerTxList:       maxBytesPerTxList,
+		minTxGasLimit:           minTxGasLimit,
+		locals:                  localsAddresses,
+	}
+
+	txLists := contentSplitter.Split(pending)
+
+	if len(txLists) == 0 {
+		return types.Transactions{}, nil
+	}
+
+	return txLists[0], nil
 }
