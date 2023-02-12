@@ -7,7 +7,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/les/utils"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 )
@@ -159,32 +158,6 @@ func (p *PoolContentSplitter) isTxBufferFull(t *types.Transaction, txs []*types.
 	}
 
 	return false
-}
-
-// weightedShuffle does a weighted shuffle for the given transactions, each transaction's
-// gas price will be used as the weight.
-func (p *PoolContentSplitter) weightedShuffle(txLists []types.Transactions) []types.Transactions {
-	shuffled := make([]types.Transactions, 0)
-
-	selector := utils.NewWeightedRandomSelect(func(i interface{}) uint64 {
-		var weight uint64 = 1
-		for _, tx := range txLists[i.(int)] {
-			weight += tx.GasPrice().Uint64()
-		}
-		return weight
-	})
-
-	for i := range txLists {
-		selector.Update(i)
-	}
-
-	for range txLists {
-		idx := selector.Choose().(int)
-		shuffled = append(shuffled, txLists[idx])
-		selector.Remove(idx)
-	}
-
-	return shuffled
 }
 
 // splitTxs the internal implementation Split, splits the given transactions into small transactions lists
