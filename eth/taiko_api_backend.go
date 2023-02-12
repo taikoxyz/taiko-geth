@@ -1,13 +1,12 @@
 package eth
 
 import (
-	"fmt"
 	"math/big"
-	"strings"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -80,29 +79,20 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	minTxGasLimit uint64,
 	locals string,
 ) (types.Transactions, error) {
-	var (
-		localsAddresses      []common.Address
-		localsAddressStrings = strings.Split(locals, ",")
-	)
-	for _, account := range localsAddressStrings {
-		if trimmed := strings.TrimSpace(account); !common.IsHexAddress(trimmed) {
-			return nil, fmt.Errorf("Invalid account: %s", trimmed)
-		} else {
-			localsAddresses = append(localsAddresses, common.HexToAddress(account))
-		}
-	}
-
 	pending := s.eth.TxPool().Pending(false)
 
-	log.Debug("Fetching L2 pending transactions finished", "length", PoolContent(pending).Len())
+	log.Debug("Fetching L2 pending transactions finished", "length", core.PoolContent(pending).Len())
 
-	contentSplitter := poolContentSplitter{
-		chainID:                 s.eth.BlockChain().Config().ChainID,
-		maxTransactionsPerBlock: maxTransactionsPerBlock,
-		blockMaxGasLimit:        blockMaxGasLimit,
-		maxBytesPerTxList:       maxBytesPerTxList,
-		minTxGasLimit:           minTxGasLimit,
-		locals:                  localsAddresses,
+	contentSplitter, err := core.NewPoolContentSplitter(
+		s.eth.BlockChain().Config().ChainID,
+		maxTransactionsPerBlock,
+		blockMaxGasLimit,
+		maxBytesPerTxList,
+		minTxGasLimit,
+		locals,
+	)
+	if err != nil {
+		return nil, err
 	}
 
 	txLists := contentSplitter.Split(pending)

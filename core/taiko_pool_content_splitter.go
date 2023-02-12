@@ -1,8 +1,9 @@
-package eth
+package core
 
 import (
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -54,10 +55,10 @@ func (pc PoolContent) ToTxsByPriceAndNonce(
 		types.NewTransactionsByPriceAndNonce(types.LatestSignerForChainID(chainID), remoteTxs, nil)
 }
 
-// poolContentSplitter is responsible for splitting the pool content
+// PoolContentSplitter is responsible for splitting the pool content
 // which fetched from a `txpool_content` RPC call response into several smaller transactions lists
 // and make sure each splitted list satisfies the limits defined in Taiko protocol.
-type poolContentSplitter struct {
+type PoolContentSplitter struct {
 	chainID                 *big.Int
 	maxTransactionsPerBlock uint64
 	blockMaxGasLimit        uint64
@@ -66,9 +67,40 @@ type poolContentSplitter struct {
 	locals                  []common.Address
 }
 
+// NewPoolContentSplitter creates a new PoolContentSplitter instance.
+func NewPoolContentSplitter(
+	chainID *big.Int,
+	maxTransactionsPerBlock uint64,
+	blockMaxGasLimit uint64,
+	maxBytesPerTxList uint64,
+	minTxGasLimit uint64,
+	locals string,
+) (*PoolContentSplitter, error) {
+	var (
+		localsAddresses      []common.Address
+		localsAddressStrings = strings.Split(locals, ",")
+	)
+	for _, account := range localsAddressStrings {
+		if trimmed := strings.TrimSpace(account); !common.IsHexAddress(trimmed) {
+			return nil, fmt.Errorf("Invalid account: %s", trimmed)
+		} else {
+			localsAddresses = append(localsAddresses, common.HexToAddress(account))
+		}
+	}
+
+	return &PoolContentSplitter{
+		chainID:                 chainID,
+		maxTransactionsPerBlock: maxTransactionsPerBlock,
+		blockMaxGasLimit:        blockMaxGasLimit,
+		maxBytesPerTxList:       maxBytesPerTxList,
+		minTxGasLimit:           minTxGasLimit,
+		locals:                  localsAddresses,
+	}, nil
+}
+
 // Split splits the given transaction pool content to make each splitted
 // transactions list satisfies the rules defined in Taiko protocol.
-func (p *poolContentSplitter) Split(poolContent PoolContent) []types.Transactions {
+func (p *PoolContentSplitter) Split(poolContent PoolContent) []types.Transactions {
 	var (
 		localTxs, remoteTxs   = poolContent.ToTxsByPriceAndNonce(p.chainID, p.locals)
 		splittedLocalTxLists  = p.splitTxs(localTxs)
@@ -82,7 +114,7 @@ func (p *poolContentSplitter) Split(poolContent PoolContent) []types.Transaction
 
 // validateTx checks whether the given transaction is valid according
 // to the rules in Taiko protocol.
-func (p *poolContentSplitter) validateTx(tx *types.Transaction) error {
+func (p *PoolContentSplitter) validateTx(tx *types.Transaction) error {
 	if tx.Gas() < p.minTxGasLimit || tx.Gas() > p.blockMaxGasLimit {
 		return fmt.Errorf(
 			"transaction %s gas limit reaches the limits, got=%v, lowerBound=%v, upperBound=%v",
@@ -111,7 +143,7 @@ func (p *poolContentSplitter) validateTx(tx *types.Transaction) error {
 // current transaction list
 // NOTE: this function *MUST* be called after using `validateTx` to check every
 // inside transaction is valid.
-func (p *poolContentSplitter) isTxBufferFull(t *types.Transaction, txs []*types.Transaction, gas uint64) bool {
+func (p *PoolContentSplitter) isTxBufferFull(t *types.Transaction, txs []*types.Transaction, gas uint64) bool {
 	if len(txs) >= int(p.maxTransactionsPerBlock) {
 		return true
 	}
@@ -131,7 +163,7 @@ func (p *poolContentSplitter) isTxBufferFull(t *types.Transaction, txs []*types.
 
 // weightedShuffle does a weighted shuffle for the given transactions, each transaction's
 // gas price will be used as the weight.
-func (p *poolContentSplitter) weightedShuffle(txLists []types.Transactions) []types.Transactions {
+func (p *PoolContentSplitter) weightedShuffle(txLists []types.Transactions) []types.Transactions {
 	shuffled := make([]types.Transactions, 0)
 
 	selector := utils.NewWeightedRandomSelect(func(i interface{}) uint64 {
@@ -157,7 +189,7 @@ func (p *poolContentSplitter) weightedShuffle(txLists []types.Transactions) []ty
 
 // splitTxs the internal implementation Split, splits the given transactions into small transactions lists
 // which satisfy the protocol constraints.
-func (p *poolContentSplitter) splitTxs(txs *types.TransactionsByPriceAndNonce) []types.Transactions {
+func (p *PoolContentSplitter) splitTxs(txs *types.TransactionsByPriceAndNonce) []types.Transactions {
 	var (
 		splittedTxLists        = make([]types.Transactions, 0)
 		txBuffer               = make([]*types.Transaction, 0, p.maxTransactionsPerBlock)
