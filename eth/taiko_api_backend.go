@@ -78,10 +78,18 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	blockMaxGasLimit uint64,
 	maxBytesPerTxList uint64,
 	minTxGasLimit uint64,
-	locals string,
+	locals []string,
 ) (types.Transactions, error) {
 	pending := s.eth.TxPool().Pending(false)
 
+	log.Info(
+		"TxPoolContent",
+		"maxTransactionsPerBlock", maxTransactionsPerBlock,
+		"blockMaxGasLimit", blockMaxGasLimit,
+		"maxBytesPerTxList", maxBytesPerTxList,
+		"minTxGasLimit", minTxGasLimit,
+		"locals", locals,
+	)
 	log.Debug("Fetching L2 pending transactions finished", "length", core.PoolContent(pending).Len())
 
 	contentSplitter, err := core.NewPoolContentSplitter(

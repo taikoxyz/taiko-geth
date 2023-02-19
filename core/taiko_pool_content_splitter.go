@@ -73,15 +73,12 @@ func NewPoolContentSplitter(
 	blockMaxGasLimit uint64,
 	maxBytesPerTxList uint64,
 	minTxGasLimit uint64,
-	locals string,
+	locals []string,
 ) (*PoolContentSplitter, error) {
-	var (
-		localsAddresses      []common.Address
-		localsAddressStrings = strings.Split(locals, ",")
-	)
-	for _, account := range localsAddressStrings {
+	var localsAddresses []common.Address
+	for _, account := range locals {
 		if trimmed := strings.TrimSpace(account); !common.IsHexAddress(trimmed) {
-			return nil, fmt.Errorf("Invalid account: %s", trimmed)
+			return nil, fmt.Errorf("invalid account: %s", trimmed)
 		} else {
 			localsAddresses = append(localsAddresses, common.HexToAddress(account))
 		}
