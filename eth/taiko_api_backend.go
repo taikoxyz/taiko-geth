@@ -72,6 +72,7 @@ func (s *TaikoAPIBackend) GetThrowawayTransactionReceipts(hash common.Hash) (typ
 	return receipts, nil
 }
 
+// TxPoolContent retrieves the transaction pool content with the given upper limits.
 func (s *TaikoAPIBackend) TxPoolContent(
 	maxTransactionsPerBlock uint64,
 	blockMaxGasLimit uint64,
