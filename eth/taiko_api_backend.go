@@ -79,7 +79,6 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	maxBytesPerTxList uint64,
 	minTxGasLimit uint64,
 	locals []string,
-	totalTxsCount uint64,
 ) ([]types.Transactions, error) {
 	pending := s.eth.TxPool().Pending(false)
 
@@ -91,7 +90,6 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		"maxBytesPerTxList", maxBytesPerTxList,
 		"minTxGasLimit", minTxGasLimit,
 		"locals", locals,
-		"totalTxsCount", totalTxsCount,
 	)
 
 	contentSplitter, err := core.NewPoolContentSplitter(
@@ -111,13 +109,13 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		txLists  []types.Transactions
 	)
 	for _, splittedTxs := range contentSplitter.Split(pending) {
-		if txsCount+splittedTxs.Len() < int(totalTxsCount) {
+		if txsCount+splittedTxs.Len() < int(maxTransactionsPerBlock) {
 			txLists = append(txLists, splittedTxs)
 			txsCount += splittedTxs.Len()
 			continue
 		}
 
-		txLists = append(txLists, splittedTxs[0:(int(totalTxsCount)-txsCount)])
+		txLists = append(txLists, splittedTxs[0:(int(maxTransactionsPerBlock)-txsCount)])
 		break
 	}
 
