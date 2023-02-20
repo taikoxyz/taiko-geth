@@ -79,18 +79,20 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	maxBytesPerTxList uint64,
 	minTxGasLimit uint64,
 	locals []string,
-) (types.Transactions, error) {
+	totalTxsCount uint64,
+) ([]types.Transactions, error) {
 	pending := s.eth.TxPool().Pending(false)
 
-	log.Info(
-		"TxPoolContent",
+	log.Debug(
+		"Fetching L2 pending transactions finished",
+		"length", core.PoolContent(pending).Len(),
 		"maxTransactionsPerBlock", maxTransactionsPerBlock,
 		"blockMaxGasLimit", blockMaxGasLimit,
 		"maxBytesPerTxList", maxBytesPerTxList,
 		"minTxGasLimit", minTxGasLimit,
 		"locals", locals,
+		"totalTxsCount", totalTxsCount,
 	)
-	log.Debug("Fetching L2 pending transactions finished", "length", core.PoolContent(pending).Len())
 
 	contentSplitter, err := core.NewPoolContentSplitter(
 		s.eth.BlockChain().Config().ChainID,
@@ -104,11 +106,20 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		return nil, err
 	}
 
-	txLists := contentSplitter.Split(pending)
+	var (
+		txsCount = 0
+		txLists  []types.Transactions
+	)
+	for _, splittedTxs := range contentSplitter.Split(pending) {
+		if txsCount+splittedTxs.Len() < int(totalTxsCount) {
+			txLists = append(txLists, splittedTxs)
+			txsCount += splittedTxs.Len()
+			continue
+		}
 
-	if len(txLists) == 0 {
-		return types.Transactions{}, nil
+		txLists = append(txLists, splittedTxs[0:(int(totalTxsCount)-txsCount)])
+		break
 	}
 
-	return txLists[0], nil
+	return txLists, nil
 }
