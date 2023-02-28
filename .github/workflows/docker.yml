@@ -2,7 +2,7 @@ name: "Push docker image to GCR"
 
 on:
   push:
-    branches: [taiko, TxPoolContent-rpc-api]
+    branches: [taiko]
     tags:
       - "v*"
 
