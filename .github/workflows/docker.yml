@@ -2,7 +2,7 @@ name: "Push docker image to GCR"
 
 on:
   push:
-    branches: [taiko]
+    branches: [taiko,scaling-ethereum-hackathon]
     tags:
       - "v*"
 
