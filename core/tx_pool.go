@@ -1293,9 +1293,9 @@ func (pool *TxPool) reset(oldHead, newHead *types.Header) {
 	pool.currentState = statedb
 	pool.pendingNonces = newTxNoncer(statedb)
 	// CHANGE(taiko): current gas limit for transaction caps is always
-	// LibConstants.TAIKO_BLOCK_MAX_GAS_LIMIT defined in protocol.
+	// LibSharedConfig.blockMaxGasLimit defined in protocol.
 	if pool.chainconfig.Taiko {
-		pool.currentMaxGas = 5000000 // LibConstants.TAIKO_BLOCK_MAX_GAS_LIMIT
+		pool.currentMaxGas = 6000000 // LibSharedConfig.blockMaxGasLimit
 	} else {
 		pool.currentMaxGas = newHead.GasLimit
 	}
