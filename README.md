@@ -6,7 +6,7 @@ The codebase is based on [go-ethereum v1.10.26](https://github.com/ethereum/go-e
 
 ## Tracing changes
 
-All source code changes by [taiko](https://taiko.xyz) team are commented with `"CHANGE(taiko): ...."`, and the filenames of all additional files have the prefix `"taiko_"` (`taiko_*.go`).
+All source code changes by the [taiko](https://taiko.xyz) team are commented with `"CHANGE(taiko): ...."`, and the filenames of all additional files have the prefix `"taiko_"` (`taiko_*.go`).
 
 ## Go Ethereum
 
@@ -46,10 +46,10 @@ directory.
 
 |    Command    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | :-----------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|  **`geth`**   | Our main Ethereum CLI client. It is the entry point into the Ethereum network (main-, test- or private net), capable of running as a full node (default), archive node (retaining all historical state) or a light node (retrieving data live). It can be used by other processes as a gateway into the Ethereum network via JSON RPC endpoints exposed on top of HTTP, WebSocket and/or IPC transports. `geth --help` and the [CLI page](https://geth.ethereum.org/docs/interface/command-line-options) for command line options.          |
+|  **`geth`**   | Our main Ethereum CLI client. It is the entry point into the Ethereum network (main-, test- or private net), capable of running as a full node (default), archive node (retaining all historical state), or a light node (retrieving data live). It can be used by other processes as a gateway into the Ethereum network via JSON RPC endpoints exposed on top of HTTP, WebSocket, and/or IPC transports. `geth --help` and the [CLI page](https://geth.ethereum.org/docs/interface/command-line-options) for command line options.          |
 |   `clef`    | Stand-alone signing tool, which can be used as a backend signer for `geth`.  |
 |   `devp2p`    | Utilities to interact with nodes on the networking layer, without running a full blockchain. |
-|   `abigen`    | Source code generator to convert Ethereum contract definitions into easy to use, compile-time type-safe Go packages. It operates on plain [Ethereum contract ABIs](https://docs.soliditylang.org/en/develop/abi-spec.html) with expanded functionality if the contract bytecode is also available. However, it also accepts Solidity source files, making development much more streamlined. Please see our [Native DApps](https://geth.ethereum.org/docs/dapp/native-bindings) page for details. |
+|   `abigen`    | Source code generator to convert Ethereum contract definitions into easy-to-use, compile-time type-safe Go packages. It operates on plain [Ethereum contract ABIs](https://docs.soliditylang.org/en/develop/abi-spec.html) with expanded functionality if the contract bytecode is also available. However, it also accepts Solidity source files, making development much more streamlined. Please see our [Native DApps](https://geth.ethereum.org/docs/dapp/native-bindings) page for details. |
 |  `bootnode`   | Stripped down version of our Ethereum client implementation that only takes part in the network node discovery protocol, but does not run any of the higher level application protocols. It can be used as a lightweight bootstrap node to aid in finding peers in private networks.                                                                                                                                                                                                                                                                 |
 |     `evm`     | Developer utility version of the EVM (Ethereum Virtual Machine) that is capable of running bytecode snippets within a configurable environment and execution mode. Its purpose is to allow isolated, fine-grained debugging of EVM opcodes (e.g. `evm --code 60ff60ff --debug run`).                                                                                                                                                                                                                                                                     |
 |   `rlpdump`   | Developer utility tool to convert binary RLP ([Recursive Length Prefix](https://ethereum.org/en/developers/docs/data-structures-and-encoding/rlp)) dumps (data encoding used by the Ethereum protocol both network as well as consensus wise) to user-friendlier hierarchical representation (e.g. `rlpdump --hex CE0183FFFFFFC4C304050583616263`).                                                                                                                                                                                                                                 |
@@ -75,14 +75,14 @@ Recommended:
 
 * Fast CPU with 4+ cores
 * 16GB+ RAM
-* High Performance SSD with at least 1TB free space
+* High-Performance SSD with at least 1TB of free space
 * 25+ MBit/sec download Internet service
 
 ### Full node on the main Ethereum network
 
 By far the most common scenario is people wanting to simply interact with the Ethereum
 network: create accounts; transfer funds; deploy and interact with contracts. For this
-particular use-case the user doesn't care about years-old historical data, so we can
+particular use case, the user doesn't care about years-old historical data, so we can
 sync quickly to the current state of the network. To do so:
 
 ```shell
@@ -117,8 +117,8 @@ useful on the testnet too. Please, see above for their explanations if you've sk
 
 Specifying the `--goerli` flag, however, will reconfigure your `geth` instance a bit:
 
- * Instead of connecting the main Ethereum network, the client will connect to the Görli
-   test network, which uses different P2P bootnodes, different network IDs and genesis
+ * Instead of connecting to the main Ethereum network, the client will connect to the Görli
+   test network, which uses different P2P bootnodes, different network IDs, and genesis
    states.
  * Instead of using the default data directory (`~/.ethereum` on Linux for example), `geth`
    will nest itself one level deeper into a `goerli` subfolder (`~/.ethereum/goerli` on
@@ -129,7 +129,7 @@ Specifying the `--goerli` flag, however, will reconfigure your `geth` instance a
    this.
 
 *Note: Although there are some internal protective measures to prevent transactions from
-crossing over between the main network and test network, you should make sure to always
+crossing over between the main network and the test network, you should make sure to always
 use separate accounts for play-money and real-money. Unless you manually move
 accounts, `geth` will by default correctly separate the two networks and will not make any
 accounts available between them.*
@@ -147,7 +147,7 @@ $ geth --rinkeby console
 
 In addition to Görli and Rinkeby, Geth also supports the ancient Ropsten testnet. The
 Ropsten test network is based on the Ethash proof-of-work consensus algorithm. As such,
-it has certain extra overhead and is more susceptible to reorganization attacks due to the
+it has a certain extra overhead and is more susceptible to reorganization attacks due to the
 network's low difficulty/security.
 
 ```shell
@@ -165,7 +165,7 @@ configuration file via:
 $ geth --config /path/to/your_config.toml
 ```
 
-To get an idea how the file should look like you can use the `dumpconfig` subcommand to
+To get an idea of how the file should look like you can use the `dumpconfig` subcommand to
 export your existing configuration:
 
 ```shell
@@ -200,7 +200,7 @@ As a developer, sooner rather than later you'll want to start interacting with `
 Ethereum network via your own programs and not manually through the console. To aid
 this, `geth` has built-in support for a JSON-RPC based APIs ([standard APIs](https://ethereum.github.io/execution-apis/api-documentation/)
 and [`geth` specific APIs](https://geth.ethereum.org/docs/rpc/server)).
-These can be exposed via HTTP, WebSockets and IPC (UNIX sockets on UNIX based
+These can be exposed via HTTP, WebSockets, and IPC (UNIX sockets on UNIX based
 platforms, and named pipes on Windows).
 
 The IPC interface is enabled by default and exposes all the APIs supported by `geth`,
@@ -225,7 +225,7 @@ HTTP based JSON-RPC API options:
   * `--ipcpath` Filename for IPC socket/pipe within the datadir (explicit paths escape it)
 
 You'll need to use your own programming environments' capabilities (libraries, tools, etc) to
-connect via HTTP, WS or IPC to a `geth` node configured with the above flags and you'll
+connect via HTTP, WS, or IPC to a `geth` node configured with the above flags and you'll
 need to speak [JSON-RPC](https://www.jsonrpc.org/specification) on all transports. You
 can reuse the same connection for multiple requests!
 
@@ -333,11 +333,11 @@ also need to configure a miner to process transactions and create new blocks for
 #### Running a private miner
 
 Mining on the public Ethereum network is a complex task as it's only feasible using GPUs,
-requiring an OpenCL or CUDA enabled `ethminer` instance. For information on such a
+requiring an OpenCL or CUDA-enabled `ethminer` instance. For information on such a
 setup, please consult the [EtherMining subreddit](https://www.reddit.com/r/EtherMining/)
 and the [ethminer](https://github.com/ethereum-mining/ethminer) repository.
 
-In a private network setting, however a single CPU miner instance is more than enough for
+In a private network setting, however, a single CPU miner instance is more than enough for
 practical purposes as it can produce a stable stream of blocks at the correct intervals
 without needing heavy resources (consider running on a single thread, no need for multiple
 ones either). To start a `geth` instance for mining, run it with all your usual flags, extended
@@ -357,7 +357,7 @@ transactions are accepted at (`--miner.gasprice`).
 Thank you for considering to help out with the source code! We welcome contributions
 from anyone on the internet, and are grateful for even the smallest of fixes!
 
-If you'd like to contribute to go-ethereum, please fork, fix, commit and send a pull request
+If you'd like to contribute to go-ethereum, please fork, fix, commit, and send a pull request
 for the maintainers to review and merge into the main code base. If you wish to submit
 more complex changes though, please check up with the core devs first on [our Discord Server](https://discord.gg/invite/nthXNEv)
 to ensure those changes are in line with the general philosophy of the project and/or get
@@ -384,6 +384,6 @@ The go-ethereum library (i.e. all code outside of the `cmd` directory) is licens
 [GNU Lesser General Public License v3.0](https://www.gnu.org/licenses/lgpl-3.0.en.html),
 also included in our repository in the `COPYING.LESSER` file.
 
-The go-ethereum binaries (i.e. all code inside of the `cmd` directory) is licensed under the
+The go-ethereum binaries (i.e. all code inside of the `cmd` directory) are licensed under the
 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.en.html), also
 included in our repository in the `COPYING` file.
