@@ -348,7 +348,7 @@ $ geth <usual-flags> --mine --miner.threads=1 --miner.etherbase=0x00000000000000
 ```
 
 Which will start mining blocks and transactions on a single CPU thread, crediting all
-proceedings to the account specified by `--miner.etherbase`. You can further tune the mining
+proceeds to the account specified by `--miner.etherbase`. You can further tune the mining
 by changing the default gas limit blocks converge to (`--miner.targetgaslimit`) and the price
 transactions are accepted at (`--miner.gasprice`).
 
