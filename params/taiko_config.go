@@ -12,6 +12,7 @@ var (
 	TaikoInternal1NetworkID = big.NewInt(167001)
 	TaikoInternal2NetworkID = big.NewInt(167002)
 	SnæfellsjökullNetworkID = big.NewInt(167003)
+	AskjaNetworkID          = big.NewInt(167004)
 )
 
 var TaikoChainConfig = &ChainConfig{
