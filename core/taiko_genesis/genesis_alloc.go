@@ -15,3 +15,6 @@ var Internal2GenesisAllocJSON []byte
 
 //go:embed snæfellsjökull.json
 var SnæfellsjökullGenesisAllocJSON []byte
+
+//go:embed askja.json
+var AskjaGenesisAllocJSON []byte

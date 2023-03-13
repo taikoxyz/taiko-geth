@@ -22,6 +22,9 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	case params.SnæfellsjökullNetworkID.Uint64():
 		chainConfig.ChainID = params.SnæfellsjökullNetworkID
 		allocJSON = taikoGenesis.SnæfellsjökullGenesisAllocJSON
+	case params.AskjaNetworkID.Uint64():
+		chainConfig.ChainID = params.AskjaNetworkID
+		allocJSON = taikoGenesis.AskjaGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoMainnetNetworkID
 		allocJSON = taikoGenesis.MainnetGenesisAllocJSON
