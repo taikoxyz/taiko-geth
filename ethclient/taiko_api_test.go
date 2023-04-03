@@ -108,15 +108,6 @@ func TestL1OriginByID(t *testing.T) {
 	require.Equal(t, testL1Origin, l1OriginFound)
 }
 
-func TestGetThrowawayTransactionReceipts(t *testing.T) {
-	ec, blocks, _ := newTaikoAPITestClient(t)
-	headerHash := blocks[len(blocks)-1].Hash()
-
-	receipts, err := ec.GetThrowawayTransactionReceipts(context.Background(), headerHash)
-	require.Nil(t, err)
-	require.Equal(t, 2, len(receipts))
-}
-
 // randomHash generates a random blob of data and returns it as a hash.
 func randomHash() common.Hash {
 	var hash common.Hash

@@ -33,7 +33,6 @@ type L1Origin struct {
 	L2BlockHash   common.Hash `json:"l2BlockHash"`
 	L1BlockHeight *big.Int    `json:"l1BlockHeight" gencodec:"required"`
 	L1BlockHash   common.Hash `json:"l1BlockHash" gencodec:"required"`
-	Throwaway     bool        `json:"throwaway" gencodec:"required"`
 }
 
 type l1OriginMarshaling struct {

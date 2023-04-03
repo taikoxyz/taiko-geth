@@ -20,14 +20,12 @@ func (l L1Origin) MarshalJSON() ([]byte, error) {
 		L2BlockHash   common.Hash           `json:"l2BlockHash"`
 		L1BlockHeight *math.HexOrDecimal256 `json:"l1BlockHeight" gencodec:"required"`
 		L1BlockHash   common.Hash           `json:"l1BlockHash" gencodec:"required"`
-		Throwaway     bool                  `json:"throwaway" gencodec:"required"`
 	}
 	var enc L1Origin
 	enc.BlockID = (*math.HexOrDecimal256)(l.BlockID)
 	enc.L2BlockHash = l.L2BlockHash
 	enc.L1BlockHeight = (*math.HexOrDecimal256)(l.L1BlockHeight)
 	enc.L1BlockHash = l.L1BlockHash
-	enc.Throwaway = l.Throwaway
 	return json.Marshal(&enc)
 }
 
@@ -38,7 +36,6 @@ func (l *L1Origin) UnmarshalJSON(input []byte) error {
 		L2BlockHash   *common.Hash          `json:"l2BlockHash"`
 		L1BlockHeight *math.HexOrDecimal256 `json:"l1BlockHeight" gencodec:"required"`
 		L1BlockHash   *common.Hash          `json:"l1BlockHash" gencodec:"required"`
-		Throwaway     *bool                 `json:"throwaway" gencodec:"required"`
 	}
 	var dec L1Origin
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -59,9 +56,5 @@ func (l *L1Origin) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'l1BlockHash' for L1Origin")
 	}
 	l.L1BlockHash = *dec.L1BlockHash
-	if dec.Throwaway == nil {
-		return errors.New("missing required field 'throwaway' for L1Origin")
-	}
-	l.Throwaway = *dec.Throwaway
 	return nil
 }

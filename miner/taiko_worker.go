@@ -31,12 +31,13 @@ func (w *worker) sealBlockWith(
 	}
 
 	params := &generateParams{
-		timestamp:  timestamp,
-		forceTime:  true,
-		parentHash: parent,
-		coinbase:   blkMeta.Beneficiary,
-		random:     blkMeta.MixHash,
-		noUncle:    true,
+		timestamp:   timestamp,
+		forceTime:   true,
+		parentHash:  parent,
+		coinbase:    blkMeta.Beneficiary,
+		random:      blkMeta.MixHash,
+		withdrawals: nil,
+		noUncle:     true,
 	}
 
 	env, err := w.prepareWork(params)
@@ -82,11 +83,15 @@ func (w *worker) sealBlockWith(
 		return nil, err
 	}
 
+	log.Info("Block sealed 1", "block", block, "hash", block.Hash())
+
 	results := make(chan *types.Block, 1)
 	if err := w.engine.Seal(w.chain, block, results, nil); err != nil {
 		return nil, err
 	}
 	block = <-results
+
+	log.Info("Block sealed 2", "block", block, "hash", block.Hash())
 
 	return block, nil
 }

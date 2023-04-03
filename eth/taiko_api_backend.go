@@ -4,7 +4,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -59,17 +58,6 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	}
 
 	return l1Origin, nil
-}
-
-// GetThrowawayTransactionReceipts returns the throwaway block's receipts
-// without checking whether the block is in the canonical chain.
-func (s *TaikoAPIBackend) GetThrowawayTransactionReceipts(hash common.Hash) (types.Receipts, error) {
-	receipts := s.eth.blockchain.GetReceiptsByHash(hash)
-	if receipts == nil {
-		return nil, ethereum.NotFound
-	}
-
-	return receipts, nil
 }
 
 // TxPoolContent retrieves the transaction pool content with the given upper limits.

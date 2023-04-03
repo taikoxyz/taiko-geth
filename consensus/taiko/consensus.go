@@ -212,6 +212,7 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	header.Root = state.IntermediateRoot(true)
 	header.UncleHash = types.CalcUncleHash(nil)
 	header.Difficulty = common.Big0
+	header.WithdrawalsHash = nil
 }
 
 // FinalizeAndAssemble runs any post-transaction state modifications (e.g. block
