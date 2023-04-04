@@ -371,6 +371,8 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				return valid(nil), engine.InvalidPayloadAttributes.With(err)
 			}
 
+			payload.SetFullBlock(block, common.Big0)
+
 			api.localBlocks.put(id, payload)
 
 			// L1Origin **MUST NOT** be nil, it's a required field in PayloadAttributesV1.
