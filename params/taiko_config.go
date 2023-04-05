@@ -26,7 +26,7 @@ var TaikoChainConfig = &ChainConfig{
 	PetersburgBlock:               common.Big0,
 	IstanbulBlock:                 common.Big0,
 	BerlinBlock:                   common.Big0,
-	LondonBlock:                   nil,
+	LondonBlock:                   common.Big0,
 	MergeNetsplitBlock:            nil,
 	TerminalTotalDifficulty:       common.Big0,
 	TerminalTotalDifficultyPassed: true,
