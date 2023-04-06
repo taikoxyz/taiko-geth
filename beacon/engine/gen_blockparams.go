@@ -5,6 +5,7 @@ package engine
 import (
 	"encoding/json"
 	"errors"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -21,6 +22,7 @@ func (p PayloadAttributes) MarshalJSON() ([]byte, error) {
 		Random                common.Hash         `json:"prevRandao"            gencodec:"required"`
 		SuggestedFeeRecipient common.Address      `json:"suggestedFeeRecipient" gencodec:"required"`
 		Withdrawals           []*types.Withdrawal `json:"withdrawals"`
+		BaseFeePerGas         *big.Int            `json:"baseFeePerGas" gencodec:"required"`
 		BlockMetadata         *BlockMetadata      `json:"blockMetadata" gencodec:"required"`
 		L1Origin              *rawdb.L1Origin     `json:"l1Origin" gencodec:"required"`
 	}
@@ -29,6 +31,7 @@ func (p PayloadAttributes) MarshalJSON() ([]byte, error) {
 	enc.Random = p.Random
 	enc.SuggestedFeeRecipient = p.SuggestedFeeRecipient
 	enc.Withdrawals = p.Withdrawals
+	enc.BaseFeePerGas = p.BaseFeePerGas
 	enc.BlockMetadata = p.BlockMetadata
 	enc.L1Origin = p.L1Origin
 	return json.Marshal(&enc)
@@ -41,6 +44,7 @@ func (p *PayloadAttributes) UnmarshalJSON(input []byte) error {
 		Random                *common.Hash        `json:"prevRandao"            gencodec:"required"`
 		SuggestedFeeRecipient *common.Address     `json:"suggestedFeeRecipient" gencodec:"required"`
 		Withdrawals           []*types.Withdrawal `json:"withdrawals"`
+		BaseFeePerGas         *big.Int            `json:"baseFeePerGas" gencodec:"required"`
 		BlockMetadata         *BlockMetadata      `json:"blockMetadata" gencodec:"required"`
 		L1Origin              *rawdb.L1Origin     `json:"l1Origin" gencodec:"required"`
 	}
@@ -63,6 +67,10 @@ func (p *PayloadAttributes) UnmarshalJSON(input []byte) error {
 	if dec.Withdrawals != nil {
 		p.Withdrawals = dec.Withdrawals
 	}
+	if dec.BaseFeePerGas == nil {
+		return errors.New("missing required field 'baseFeePerGas' for PayloadAttributes")
+	}
+	p.BaseFeePerGas = dec.BaseFeePerGas
 	if dec.BlockMetadata == nil {
 		return errors.New("missing required field 'blockMetadata' for PayloadAttributes")
 	}

@@ -350,7 +350,12 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		if isTaiko {
 			// No need to check payloadAttribute here, because all its fields are
 			// marked as required.
-			block, err := api.eth.Miner().SealBlockWith(update.HeadBlockHash, payloadAttributes.Timestamp, payloadAttributes.BlockMetadata)
+			block, err := api.eth.Miner().SealBlockWith(
+				update.HeadBlockHash,
+				payloadAttributes.Timestamp,
+				payloadAttributes.BlockMetadata,
+				payloadAttributes.BaseFeePerGas,
+			)
 			if err != nil {
 				log.Error("Failed to create sealing block", "err", err)
 				return valid(nil), engine.InvalidPayloadAttributes.With(err)

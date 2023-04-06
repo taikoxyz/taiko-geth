@@ -37,6 +37,7 @@ type PayloadAttributes struct {
 	SuggestedFeeRecipient common.Address      `json:"suggestedFeeRecipient" gencodec:"required"`
 	Withdrawals           []*types.Withdrawal `json:"withdrawals"`
 	// CHANGE(taiko): extra fields.
+	BaseFeePerGas *big.Int        `json:"baseFeePerGas" gencodec:"required"`
 	BlockMetadata *BlockMetadata  `json:"blockMetadata" gencodec:"required"`
 	L1Origin      *rawdb.L1Origin `json:"l1Origin" gencodec:"required"`
 }
@@ -85,7 +86,7 @@ type ExecutableData struct {
 	GasUsed       uint64              `json:"gasUsed"       gencodec:"required"`
 	Timestamp     uint64              `json:"timestamp"     gencodec:"required"`
 	ExtraData     []byte              `json:"extraData"     gencodec:"required"`
-	BaseFeePerGas *big.Int            `json:"-" gencodec:"required"` // CHANGE(taiko): disable EIP-1559 temporarily
+	BaseFeePerGas *big.Int            `json:"baseFeePerGas" gencodec:"required"`
 	BlockHash     common.Hash         `json:"blockHash"     gencodec:"required"`
 	Transactions  [][]byte            `json:"transactions"  gencodec:"required"`
 	Withdrawals   []*types.Withdrawal `json:"withdrawals"`

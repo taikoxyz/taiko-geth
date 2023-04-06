@@ -2,6 +2,7 @@ package miner
 
 import (
 	"fmt"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
@@ -17,6 +18,7 @@ func (w *worker) sealBlockWith(
 	parent common.Hash,
 	timestamp uint64,
 	blkMeta *engine.BlockMetadata,
+	baseFeePerGas *big.Int,
 ) (*types.Block, error) {
 	// Decode transactions bytes.
 	var txs types.Transactions
