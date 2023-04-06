@@ -33,14 +33,15 @@ func (w *worker) sealBlockWith(
 	}
 
 	params := &generateParams{
-		timestamp:   timestamp,
-		forceTime:   true,
-		parentHash:  parent,
-		coinbase:    blkMeta.Beneficiary,
-		random:      blkMeta.MixHash,
-		withdrawals: nil,
-		noUncle:     true,
-		noTxs:       false,
+		timestamp:     timestamp,
+		forceTime:     true,
+		parentHash:    parent,
+		coinbase:      blkMeta.Beneficiary,
+		random:        blkMeta.MixHash,
+		withdrawals:   nil,
+		noUncle:       true,
+		noTxs:         false,
+		baseFeePerGas: baseFeePerGas,
 	}
 
 	env, err := w.prepareWork(params)
