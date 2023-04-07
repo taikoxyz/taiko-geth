@@ -38,8 +38,9 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	return &Genesis{
 		Config:     chainConfig,
 		ExtraData:  []byte{},
-		GasLimit:   uint64(5000000),
+		GasLimit:   uint64(6000000),
 		Difficulty: common.Big0,
 		Alloc:      alloc,
+		GasUsed:    uint64(6000000),
 	}
 }
