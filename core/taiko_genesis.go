@@ -1,6 +1,8 @@
 package core
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	taikoGenesis "github.com/ethereum/go-ethereum/core/taiko_genesis"
 	"github.com/ethereum/go-ethereum/log"
@@ -42,5 +44,6 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		Difficulty: common.Big0,
 		Alloc:      alloc,
 		GasUsed:    uint64(6000000),
+		BaseFee:    new(big.Int).SetUint64(10000000),
 	}
 }
