@@ -293,7 +293,7 @@ var NetworkNames = map[string]string{
 	// CHANGE(taiko): add Taiko network name.
 	TaikoMainnetNetworkID.String():   "Taiko",
 	TaikoInternal1NetworkID.String(): "Taiko Internal 1",
-	TaikoInternal2NetworkID.String(): "Taiko Internal 2",
+	TaikoInternal2NetworkID.String(): "Taiko ETH Tokyo Hackathon",
 	SnæfellsjökullNetworkID.String(): "Taiko Alpha-1 (Snæfellsjökull)",
 	AskjaNetworkID.String():          "Taiko Alpha-2 (Askja)",
 }
