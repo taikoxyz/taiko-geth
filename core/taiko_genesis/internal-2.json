@@ -29,6 +29,9 @@
   "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720": {
     "balance": "0x3782dace9d90000000"
   },
+  "0x0000777735367b36bC9B61C50022d9D0700dB4Ec": {
+    "balance": "0xfffffffffffffacbbb7ca13a7fffffff"
+  },
   "0x4F6d0287F08bD8b05DB0272c493A2e9DA9675301": {
     "contractName": "LibTrieProof",
     "storage": {},
