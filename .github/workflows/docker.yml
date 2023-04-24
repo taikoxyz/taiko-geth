@@ -2,7 +2,7 @@ name: "Push docker image to GCR"
 
 on:
   push:
-    branches: [taiko]
+    branches: [taiko,more-major-upgrade-3]
     tags:
       - "v*"
 
