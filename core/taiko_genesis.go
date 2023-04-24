@@ -43,7 +43,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		GasLimit:   uint64(6000000),
 		Difficulty: common.Big0,
 		Alloc:      alloc,
-		GasUsed:    uint64(6000000),
+		GasUsed:    0,
 		BaseFee:    new(big.Int).SetUint64(10000000),
 	}
 }
