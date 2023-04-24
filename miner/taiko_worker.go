@@ -64,7 +64,7 @@ func (w *worker) sealBlockWith(
 
 	env.gasPool = new(core.GasPool).AddGas(gasLimit)
 
-	for _, tx := range txs {
+	for i, tx := range txs {
 		sender, err := types.LatestSignerForChainID(tx.ChainId()).Sender(tx)
 		if err != nil {
 			log.Info("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
@@ -74,7 +74,7 @@ func (w *worker) sealBlockWith(
 
 		env.state.Prepare(rules, sender, blkMeta.Beneficiary, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
 		env.state.SetTxContext(tx.Hash(), env.tcount)
-		if _, err := w.commitTransaction(env, tx); err != nil {
+		if _, err := w.commitTransaction(env, tx, i == 0); err != nil {
 			log.Info("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			commitErrs = append(commitErrs, err)
 			continue
