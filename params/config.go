@@ -458,7 +458,8 @@ type ChainConfig struct {
 	Clique *CliqueConfig `json:"clique,omitempty"`
 
 	// CHANGE(taiko): Taiko network flag.
-	Taiko bool `json:"taiko"`
+	Taiko    bool           `json:"taiko"`
+	Treasure common.Address `json:"treasure"`
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
