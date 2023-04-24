@@ -206,7 +206,13 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	header.Root = state.IntermediateRoot(true)
 	header.UncleHash = types.CalcUncleHash(nil)
 	header.Difficulty = common.Big0
-	header.WithdrawalsHash = nil
+	// Withdrawals processing.
+	for _, w := range withdrawals {
+		// Convert amount from gwei to wei.
+		amount := new(big.Int).SetUint64(w.Amount)
+		amount = amount.Mul(amount, big.NewInt(params.GWei))
+		state.AddBalance(w.Address, amount)
+	}
 }
 
 // FinalizeAndAssemble runs any post-transaction state modifications (e.g. block
@@ -215,9 +221,15 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 // Note: The block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
 func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
+	if withdrawals == nil {
+		withdrawals = make([]*types.Withdrawal, 0)
+	}
+
 	// Finalize block
-	t.Finalize(chain, header, state, txs, uncles, nil)
-	return types.NewBlock(header, txs, nil /* ignore uncles */, receipts, trie.NewStackTrie(nil)), nil
+	t.Finalize(chain, header, state, txs, uncles, withdrawals)
+	return types.NewBlockWithWithdrawals(
+		header, txs, nil /* ignore uncles */, receipts, withdrawals, trie.NewStackTrie(nil),
+	), nil
 }
 
 // Seal generates a new sealing request for the given input block and pushes

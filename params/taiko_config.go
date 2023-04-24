@@ -6,6 +6,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+func u64(val uint64) *uint64 { return &val }
+
 // Network IDs
 var (
 	TaikoMainnetNetworkID   = big.NewInt(167)
@@ -27,6 +29,7 @@ var TaikoChainConfig = &ChainConfig{
 	IstanbulBlock:                 common.Big0,
 	BerlinBlock:                   common.Big0,
 	LondonBlock:                   common.Big0,
+	ShanghaiTime:                  u64(0),
 	MergeNetsplitBlock:            nil,
 	TerminalTotalDifficulty:       common.Big0,
 	TerminalTotalDifficultyPassed: true,
