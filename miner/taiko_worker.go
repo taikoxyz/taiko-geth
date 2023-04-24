@@ -19,6 +19,7 @@ func (w *worker) sealBlockWith(
 	timestamp uint64,
 	blkMeta *engine.BlockMetadata,
 	baseFeePerGas *big.Int,
+	withdraws types.Withdrawals,
 ) (*types.Block, error) {
 	// Decode transactions bytes.
 	var txs types.Transactions
@@ -38,7 +39,7 @@ func (w *worker) sealBlockWith(
 		parentHash:    parent,
 		coinbase:      blkMeta.Beneficiary,
 		random:        blkMeta.MixHash,
-		withdrawals:   nil,
+		withdrawals:   withdraws,
 		noUncle:       true,
 		noTxs:         false,
 		baseFeePerGas: baseFeePerGas,
