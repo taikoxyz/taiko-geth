@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -220,8 +221,8 @@ func (c *testChain) State() (*state.StateDB, error) {
 	if *c.trigger {
 		c.statedb, _ = state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
 		// simulate that the new head block included tx0 and tx1
-		c.statedb.SetNonce(c.address, 2)
-		c.statedb.SetBalance(c.address, new(big.Int).SetUint64(params.Ether))
+		c.statedb.SetNonce(c.address, 2, firehose.NoOpContext)
+		c.statedb.SetBalance(c.address, new(big.Int).SetUint64(params.Ether), firehose.NoOpContext, "test")
 		*c.trigger = false
 	}
 	return stdb, nil
@@ -241,7 +242,7 @@ func TestStateChangeDuringReset(t *testing.T) {
 	)
 
 	// setup pool with 2 transaction in it
-	statedb.SetBalance(address, new(big.Int).SetUint64(params.Ether))
+	statedb.SetBalance(address, new(big.Int).SetUint64(params.Ether), firehose.NoOpContext, "test")
 	blockchain := &testChain{newTestBlockChain(1000000000, statedb, new(event.Feed)), address, &trigger}
 
 	tx0 := transaction(0, 100000, key)
@@ -274,13 +275,13 @@ func TestStateChangeDuringReset(t *testing.T) {
 
 func testAddBalance(pool *TxPool, addr common.Address, amount *big.Int) {
 	pool.mu.Lock()
-	pool.currentState.AddBalance(addr, amount)
+	pool.currentState.AddBalance(addr, amount, false, firehose.NoOpContext, "test")
 	pool.mu.Unlock()
 }
 
 func testSetNonce(pool *TxPool, addr common.Address, nonce uint64) {
 	pool.mu.Lock()
-	pool.currentState.SetNonce(addr, nonce)
+	pool.currentState.SetNonce(addr, nonce, firehose.NoOpContext)
 	pool.mu.Unlock()
 }
 
@@ -434,7 +435,7 @@ func TestChainFork(t *testing.T) {
 	addr := crypto.PubkeyToAddress(key.PublicKey)
 	resetState := func() {
 		statedb, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
-		statedb.AddBalance(addr, big.NewInt(100000000000000))
+		statedb.AddBalance(addr, big.NewInt(100000000000000), false, firehose.NoOpContext, "test")
 
 		pool.chain = newTestBlockChain(1000000, statedb, new(event.Feed))
 		<-pool.requestReset(nil, nil)
@@ -442,14 +443,14 @@ func TestChainFork(t *testing.T) {
 	resetState()
 
 	tx := transaction(0, 100000, key)
-	if _, err := pool.add(tx, false); err != nil {
+	if _, err := pool.add(tx, false, firehose.NoOpContext); err != nil {
 		t.Error("didn't expect error", err)
 	}
 	pool.removeTx(tx.Hash(), true)
 
 	// reset the pool's internal state
 	resetState()
-	if _, err := pool.add(tx, false); err != nil {
+	if _, err := pool.add(tx, false, firehose.NoOpContext); err != nil {
 		t.Error("didn't expect error", err)
 	}
 }
@@ -463,7 +464,7 @@ func TestDoubleNonce(t *testing.T) {
 	addr := crypto.PubkeyToAddress(key.PublicKey)
 	resetState := func() {
 		statedb, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
-		statedb.AddBalance(addr, big.NewInt(100000000000000))
+		statedb.AddBalance(addr, big.NewInt(100000000000000), false, firehose.NoOpContext, "test")
 
 		pool.chain = newTestBlockChain(1000000, statedb, new(event.Feed))
 		<-pool.requestReset(nil, nil)
@@ -476,10 +477,10 @@ func TestDoubleNonce(t *testing.T) {
 	tx3, _ := types.SignTx(types.NewTransaction(0, common.Address{}, big.NewInt(100), 1000000, big.NewInt(1), nil), signer, key)
 
 	// Add the first two transaction, ensure higher priced stays only
-	if replace, err := pool.add(tx1, false); err != nil || replace {
+	if replace, err := pool.add(tx1, false, firehose.NoOpContext); err != nil || replace {
 		t.Errorf("first transaction insert failed (%v) or reported replacement (%v)", err, replace)
 	}
-	if replace, err := pool.add(tx2, false); err != nil || !replace {
+	if replace, err := pool.add(tx2, false, firehose.NoOpContext); err != nil || !replace {
 		t.Errorf("second transaction insert failed (%v) or not reported replacement (%v)", err, replace)
 	}
 	<-pool.requestPromoteExecutables(newAccountSet(signer, addr))
@@ -491,7 +492,7 @@ func TestDoubleNonce(t *testing.T) {
 	}
 
 	// Add the third transaction and ensure it's not saved (smaller price)
-	pool.add(tx3, false)
+	pool.add(tx3, false, firehose.NoOpContext)
 	<-pool.requestPromoteExecutables(newAccountSet(signer, addr))
 	if pool.pending[addr].Len() != 1 {
 		t.Error("expected 1 pending transactions, got", pool.pending[addr].Len())
@@ -514,7 +515,7 @@ func TestMissingNonce(t *testing.T) {
 	addr := crypto.PubkeyToAddress(key.PublicKey)
 	testAddBalance(pool, addr, big.NewInt(100000000000000))
 	tx := transaction(1, 100000, key)
-	if _, err := pool.add(tx, false); err != nil {
+	if _, err := pool.add(tx, false, firehose.NoOpContext); err != nil {
 		t.Error("didn't expect error", err)
 	}
 	if len(pool.pending) != 0 {
@@ -1037,8 +1038,8 @@ func testQueueTimeLimiting(t *testing.T, nolocals bool) {
 	}
 
 	// remove current transactions and increase nonce to prepare for a reset and cleanup
-	statedb.SetNonce(crypto.PubkeyToAddress(remote.PublicKey), 2)
-	statedb.SetNonce(crypto.PubkeyToAddress(local.PublicKey), 2)
+	statedb.SetNonce(crypto.PubkeyToAddress(remote.PublicKey), 2, firehose.NoOpContext)
+	statedb.SetNonce(crypto.PubkeyToAddress(local.PublicKey), 2, firehose.NoOpContext)
 	<-pool.requestReset(nil, nil)
 
 	// make sure queue, pending are cleared
@@ -2315,7 +2316,7 @@ func testJournaling(t *testing.T, nolocals bool) {
 	}
 	// Terminate the old pool, bump the local nonce, create a new pool and ensure relevant transaction survive
 	pool.Stop()
-	statedb.SetNonce(crypto.PubkeyToAddress(local.PublicKey), 1)
+	statedb.SetNonce(crypto.PubkeyToAddress(local.PublicKey), 1, firehose.NoOpContext)
 	blockchain = newTestBlockChain(1000000, statedb, new(event.Feed))
 
 	pool = NewTxPool(config, params.TestChainConfig, blockchain)
@@ -2337,12 +2338,12 @@ func testJournaling(t *testing.T, nolocals bool) {
 		t.Fatalf("pool internal state corrupted: %v", err)
 	}
 	// Bump the nonce temporarily and ensure the newly invalidated transaction is removed
-	statedb.SetNonce(crypto.PubkeyToAddress(local.PublicKey), 2)
+	statedb.SetNonce(crypto.PubkeyToAddress(local.PublicKey), 2, firehose.NoOpContext)
 	<-pool.requestReset(nil, nil)
 	time.Sleep(2 * config.Rejournal)
 	pool.Stop()
 
-	statedb.SetNonce(crypto.PubkeyToAddress(local.PublicKey), 1)
+	statedb.SetNonce(crypto.PubkeyToAddress(local.PublicKey), 1, firehose.NoOpContext)
 	blockchain = newTestBlockChain(1000000, statedb, new(event.Feed))
 	pool = NewTxPool(config, params.TestChainConfig, blockchain)
 
@@ -2569,7 +2570,7 @@ func BenchmarkMultiAccountBatchInsert(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		key, _ := crypto.GenerateKey()
 		account := crypto.PubkeyToAddress(key.PublicKey)
-		pool.currentState.AddBalance(account, big.NewInt(1000000))
+		pool.currentState.AddBalance(account, big.NewInt(1000000), false, firehose.NoOpContext, "test")
 		tx := transaction(uint64(0), 100000, key)
 		batches[i] = tx
 	}

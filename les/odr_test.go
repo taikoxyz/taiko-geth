@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/light"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -127,8 +128,8 @@ func odrContractCall(ctx context.Context, db ethdb.Database, config *params.Chai
 			statedb, err := state.New(header.Root, bc.StateCache(), nil)
 
 			if err == nil {
-				from := statedb.GetOrNewStateObject(bankAddr)
-				from.SetBalance(math.MaxBig256)
+				from := statedb.GetOrNewStateObject(bankAddr, false, firehose.NoOpContext)
+				from.SetBalance(math.MaxBig256, firehose.NoOpContext, "test")
 
 				msg := &core.Message{
 					From:              from.Address(),
@@ -144,7 +145,7 @@ func odrContractCall(ctx context.Context, db ethdb.Database, config *params.Chai
 
 				context := core.NewEVMBlockContext(header, bc, nil)
 				txContext := core.NewEVMTxContext(msg)
-				vmenv := vm.NewEVM(context, txContext, statedb, config, vm.Config{NoBaseFee: true})
+				vmenv := vm.NewEVM(context, txContext, statedb, config, vm.Config{NoBaseFee: true}, firehose.NoOpContext)
 
 				//vmenv := core.NewEnv(statedb, config, bc, msg, header, vm.Config{})
 				gp := new(core.GasPool).AddGas(math.MaxUint64)
@@ -154,7 +155,7 @@ func odrContractCall(ctx context.Context, db ethdb.Database, config *params.Chai
 		} else {
 			header := lc.GetHeaderByHash(bhash)
 			state := light.NewState(ctx, header, lc.Odr())
-			state.SetBalance(bankAddr, math.MaxBig256)
+			state.SetBalance(bankAddr, math.MaxBig256, firehose.NoOpContext, "test")
 			msg := &core.Message{
 				From:              bankAddr,
 				To:                &testContractAddr,
@@ -168,7 +169,7 @@ func odrContractCall(ctx context.Context, db ethdb.Database, config *params.Chai
 			}
 			context := core.NewEVMBlockContext(header, lc, nil)
 			txContext := core.NewEVMTxContext(msg)
-			vmenv := vm.NewEVM(context, txContext, state, config, vm.Config{NoBaseFee: true})
+			vmenv := vm.NewEVM(context, txContext, state, config, vm.Config{NoBaseFee: true}, firehose.NoOpContext)
 			gp := new(core.GasPool).AddGas(math.MaxUint64)
 			result, _ := core.ApplyMessage(vmenv, msg, gp)
 			if state.Error() == nil {

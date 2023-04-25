@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/core/vm/runtime"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/internal/flags"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -148,7 +149,7 @@ func runCmd(ctx *cli.Context) error {
 	if ctx.String(SenderFlag.Name) != "" {
 		sender = common.HexToAddress(ctx.String(SenderFlag.Name))
 	}
-	statedb.CreateAccount(sender)
+	statedb.CreateAccount(sender, firehose.NoOpContext)
 
 	if ctx.String(ReceiverFlag.Name) != "" {
 		receiver = common.HexToAddress(ctx.String(ReceiverFlag.Name))
@@ -263,7 +264,7 @@ func runCmd(ctx *cli.Context) error {
 		}
 	} else {
 		if len(code) > 0 {
-			statedb.SetCode(receiver, code)
+			statedb.SetCode(receiver, code, firehose.NoOpContext)
 		}
 		execFunc = func() ([]byte, uint64, error) {
 			return runtime.Call(receiver, input, &runtimeConfig)

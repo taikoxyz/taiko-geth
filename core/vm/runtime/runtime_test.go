@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 
 	// force-load js tracers to trigger registration
@@ -112,7 +113,7 @@ func TestCall(t *testing.T) {
 		byte(vm.PUSH1), 32,
 		byte(vm.PUSH1), 0,
 		byte(vm.RETURN),
-	})
+	}, firehose.NoOpContext)
 
 	ret, _, err := Call(address, nil, &Config{State: state})
 	if err != nil {
@@ -164,8 +165,8 @@ func benchmarkEVM_Create(bench *testing.B, code string) {
 		receiver   = common.BytesToAddress([]byte("receiver"))
 	)
 
-	statedb.CreateAccount(sender)
-	statedb.SetCode(receiver, common.FromHex(code))
+	statedb.CreateAccount(sender, firehose.NoOpContext)
+	statedb.SetCode(receiver, common.FromHex(code), firehose.NoOpContext)
 	runtimeConfig := Config{
 		Origin:      sender,
 		State:       statedb,
@@ -344,25 +345,25 @@ func benchmarkNonModifyingCode(gas uint64, code []byte, name string, tracerCode 
 		vmenv       = NewEnv(cfg)
 		sender      = vm.AccountRef(cfg.Origin)
 	)
-	cfg.State.CreateAccount(destination)
+	cfg.State.CreateAccount(destination, firehose.NoOpContext)
 	eoa := common.HexToAddress("E0")
 	{
-		cfg.State.CreateAccount(eoa)
-		cfg.State.SetNonce(eoa, 100)
+		cfg.State.CreateAccount(eoa, firehose.NoOpContext)
+		cfg.State.SetNonce(eoa, 100, firehose.NoOpContext)
 	}
 	reverting := common.HexToAddress("EE")
 	{
-		cfg.State.CreateAccount(reverting)
+		cfg.State.CreateAccount(reverting, firehose.NoOpContext)
 		cfg.State.SetCode(reverting, []byte{
 			byte(vm.PUSH1), 0x00,
 			byte(vm.PUSH1), 0x00,
 			byte(vm.REVERT),
-		})
+		}, firehose.NoOpContext)
 	}
 
 	//cfg.State.CreateAccount(cfg.Origin)
 	// set the receiver's (the executing contract) code for execution.
-	cfg.State.SetCode(destination, code)
+	cfg.State.SetCode(destination, code, firehose.NoOpContext)
 	vmenv.Call(sender, destination, nil, gas, cfg.Value)
 
 	b.Run(name, func(b *testing.B) {
@@ -682,30 +683,30 @@ func TestColdAccountAccessCost(t *testing.T) {
 func TestRuntimeJSTracer(t *testing.T) {
 	jsTracers := []string{
 		`{enters: 0, exits: 0, enterGas: 0, gasUsed: 0, steps:0,
-	step: function() { this.steps++}, 
-	fault: function() {}, 
-	result: function() { 
-		return [this.enters, this.exits,this.enterGas,this.gasUsed, this.steps].join(",") 
-	}, 
-	enter: function(frame) { 
-		this.enters++; 
+	step: function() { this.steps++},
+	fault: function() {},
+	result: function() {
+		return [this.enters, this.exits,this.enterGas,this.gasUsed, this.steps].join(",")
+	},
+	enter: function(frame) {
+		this.enters++;
 		this.enterGas = frame.getGas();
-	}, 
-	exit: function(res) { 
-		this.exits++; 
+	},
+	exit: function(res) {
+		this.exits++;
 		this.gasUsed = res.getGasUsed();
 	}}`,
 		`{enters: 0, exits: 0, enterGas: 0, gasUsed: 0, steps:0,
-	fault: function() {}, 
-	result: function() { 
-		return [this.enters, this.exits,this.enterGas,this.gasUsed, this.steps].join(",") 
-	}, 
-	enter: function(frame) { 
-		this.enters++; 
+	fault: function() {},
+	result: function() {
+		return [this.enters, this.exits,this.enterGas,this.gasUsed, this.steps].join(",")
+	},
+	enter: function(frame) {
+		this.enters++;
 		this.enterGas = frame.getGas();
-	}, 
-	exit: function(res) { 
-		this.exits++; 
+	},
+	exit: function(res) {
+		this.exits++;
 		this.gasUsed = res.getGasUsed();
 	}}`}
 	tests := []struct {
@@ -822,12 +823,12 @@ func TestRuntimeJSTracer(t *testing.T) {
 	for i, jsTracer := range jsTracers {
 		for j, tc := range tests {
 			statedb, _ := state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
-			statedb.SetCode(main, tc.code)
-			statedb.SetCode(common.HexToAddress("0xbb"), calleeCode)
-			statedb.SetCode(common.HexToAddress("0xcc"), calleeCode)
-			statedb.SetCode(common.HexToAddress("0xdd"), calleeCode)
-			statedb.SetCode(common.HexToAddress("0xee"), calleeCode)
-			statedb.SetCode(common.HexToAddress("0xff"), depressedCode)
+			statedb.SetCode(main, tc.code, firehose.NoOpContext)
+			statedb.SetCode(common.HexToAddress("0xbb"), calleeCode, firehose.NoOpContext)
+			statedb.SetCode(common.HexToAddress("0xcc"), calleeCode, firehose.NoOpContext)
+			statedb.SetCode(common.HexToAddress("0xdd"), calleeCode, firehose.NoOpContext)
+			statedb.SetCode(common.HexToAddress("0xee"), calleeCode, firehose.NoOpContext)
+			statedb.SetCode(common.HexToAddress("0xff"), depressedCode, firehose.NoOpContext)
 
 			tracer, err := tracers.DefaultDirectory.New(jsTracer, new(tracers.Context), nil)
 			if err != nil {

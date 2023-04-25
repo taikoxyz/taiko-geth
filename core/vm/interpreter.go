@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -183,7 +184,8 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		} else if sLen > operation.maxStack {
 			return nil, &ErrStackOverflow{stackLen: sLen, limit: operation.maxStack}
 		}
-		if !contract.UseGas(cost) {
+
+		if !contract.UseGas(cost, firehose.IgnoredGasChangeReason) {
 			return nil, ErrOutOfGas
 		}
 		if operation.dynamicGas != nil {
@@ -208,8 +210,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			// cost is explicitly set so that the capture state defer method can get the proper cost
 			var dynamicCost uint64
 			dynamicCost, err = operation.dynamicGas(in.evm, contract, stack, mem, memorySize)
+			// Firehose we ignore dynamic cost because later below, we perform a single GAS_CHANGE for both constant + dynamic to aggregate the 2 gas change events
 			cost += dynamicCost // for tracing
-			if err != nil || !contract.UseGas(dynamicCost) {
+			if err != nil || !contract.UseGas(dynamicCost, firehose.IgnoredGasChangeReason) {
 				return nil, ErrOutOfGas
 			}
 			// Do tracing before memory expansion
@@ -224,6 +227,23 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			in.evm.Config.Tracer.CaptureState(pc, op, gasCopy, cost, callContext, in.returnData, in.evm.depth, err)
 			logged = true
 		}
+
+		if in.evm.firehoseContext.Enabled() {
+			if cost != 0 {
+				gasChangeReason := OpCodeToGasChangeReason(op)
+				if gasChangeReason != firehose.IgnoredGasChangeReason {
+					// When execution reach this point, `contract.UseGas` has been called once
+					// (for only a static) or twice (for both static + dynamic cost). Since it
+					// has been called, it's mean the `c.Gas` has already been adjusted down
+					// to remaining after cost.
+					//
+					// Hence to retrieve the `gasOld` value, we need to come back at state when
+					// gas was not consumed, which means doing `contract.Gas + cost`.
+					in.evm.firehoseContext.RecordGasConsume(contract.Gas+cost, cost, gasChangeReason)
+				}
+			}
+		}
+
 		// execute the operation
 		res, err = operation.execute(&pc, in, callContext)
 		if err != nil {

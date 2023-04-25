@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -119,9 +120,9 @@ func Execute(code, input []byte, cfg *Config) ([]byte, *state.StateDB, error) {
 	// - prepare accessList(post-berlin)
 	// - reset transient storage(eip 1153)
 	cfg.State.Prepare(rules, cfg.Origin, cfg.Coinbase, &address, vm.ActivePrecompiles(rules), nil)
-	cfg.State.CreateAccount(address)
+	cfg.State.CreateAccount(address, firehose.NoOpContext)
 	// set the receiver's (the executing contract) code for execution.
-	cfg.State.SetCode(address, code)
+	cfg.State.SetCode(address, code, firehose.NoOpContext)
 	// Call the code with the given configuration.
 	ret, _, err := vmenv.Call(
 		sender,
@@ -172,7 +173,7 @@ func Call(address common.Address, input []byte, cfg *Config) ([]byte, uint64, er
 
 	var (
 		vmenv   = NewEnv(cfg)
-		sender  = cfg.State.GetOrNewStateObject(cfg.Origin)
+		sender  = cfg.State.GetOrNewStateObject(cfg.Origin, false, firehose.NoOpContext)
 		statedb = cfg.State
 		rules   = cfg.ChainConfig.Rules(vmenv.Context.BlockNumber, vmenv.Context.Random != nil, vmenv.Context.Time)
 	)

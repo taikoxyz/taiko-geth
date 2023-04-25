@@ -18,6 +18,7 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -39,8 +40,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/internal/syncx"
 	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/log"
@@ -404,6 +407,61 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 			AsyncBuild: !bc.cacheConfig.SnapshotWait,
 		}
 		bc.snaps, _ = snapshot.New(snapconfig, bc.db, bc.triedb, head.Root)
+	}
+
+	if firehose.Enabled && bc.CurrentBlock().Number.Uint64() == 0 {
+		if bc.genesisBlock == nil {
+			panic(fmt.Errorf("expected to have genesis block here"))
+		}
+
+		if firehose.GenesisConfig == nil {
+			panic(fmt.Errorf("genesis config is not set, there is something weird as all code path should generate the correct genesis config"))
+		}
+
+		genesis := firehose.GenesisConfig.(*Genesis)
+		if genesis == nil {
+			panic(fmt.Errorf("genesis config is not set, there is something weird as all code path should generate the correct genesis config"))
+		}
+
+		// As far as I can tell, the block's hash comes from the keccak hash of the rlp encoding
+		// of the block's header which includes all fields. So we can check the hash to ensure
+		// the genesis config computed matched Geth saved genesis block.
+		recomputedGenesisBlock := genesis.ToBlock()
+		if bc.genesisBlock.Hash() != recomputedGenesisBlock.Hash() {
+			panic(fmt.Errorf("invalid Firehose genesis block and actual chain's stored genesis block, the actual genesis block's hash field extracted from Geth's database does not fit with hash of genesis block generated from Firehose determined genesis config, you might need to provide the correct 'genesis.json' file via --firehose-genesis-file"))
+		}
+
+		firehose.MaybeSyncContext().RecordGenesisBlock(bc.genesisBlock, func(ctx *firehose.Context) {
+			sortedAddrs := make([]common.Address, len(genesis.Alloc))
+			i := 0
+			for addr := range genesis.Alloc {
+				sortedAddrs[i] = addr
+				i++
+			}
+
+			sort.Slice(sortedAddrs, func(i, j int) bool {
+				return bytes.Compare(sortedAddrs[i][:], sortedAddrs[j][:]) <= -1
+			})
+
+			for _, addr := range sortedAddrs {
+				account := genesis.Alloc[addr]
+
+				ctx.RecordNewAccount(addr)
+
+				ctx.RecordBalanceChange(addr, common.Big0, account.Balance, firehose.BalanceChangeReason("genesis_balance"))
+				if len(account.Code) > 0 {
+					ctx.RecordCodeChange(addr, nil, nil, crypto.Keccak256Hash(account.Code), account.Code)
+				}
+
+				if account.Nonce > 0 {
+					ctx.RecordNonceChange(addr, 0, account.Nonce)
+				}
+
+				for key, value := range account.Storage {
+					ctx.RecordStorageChange(addr, key, common.Hash{}, value)
+				}
+			}
+		})
 	}
 
 	// Start future block processor.
@@ -1710,6 +1768,18 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 			if err := bc.writeKnownBlock(block); err != nil {
 				return it.index, err
 			}
+
+			// Firehose, some blocks with 0 transactions are only processed here, this was causing
+			// holes as some empty blocks "already" prcoessed (not sure where) were actually skipped.
+			// This enforces that blocks are correctly emitted even though empty.
+			if firehoseContext := firehose.MaybeSyncContext(); firehoseContext.Enabled() {
+				firehoseContext.StartBlock(block)
+				firehoseContext.FinalizeBlock(block)
+				ptd := bc.GetTd(block.ParentHash(), block.NumberU64()-1)
+				td := new(big.Int).Add(block.Difficulty(), ptd)
+				firehoseContext.EndBlock(block, bc.CurrentFinalBlock(), td)
+			}
+
 			stats.processed++
 
 			// We can assume that logs are empty here, since the only way for consecutive
@@ -1757,6 +1827,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		if err != nil {
 			bc.reportBlock(block, receipts, err)
 			atomic.StoreUint32(&followupInterrupt, 1)
+			if firehoseContext := firehose.MaybeSyncContext(); firehoseContext.Enabled() {
+				firehoseContext.CancelBlock(block, err)
+			}
 			return it.index, err
 		}
 		ptime := time.Since(pstart)
@@ -1765,8 +1838,35 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		if err := bc.validator.ValidateState(block, statedb, receipts, usedGas); err != nil {
 			bc.reportBlock(block, receipts, err)
 			atomic.StoreUint32(&followupInterrupt, 1)
+			if firehoseContext := firehose.MaybeSyncContext(); firehoseContext.Enabled() {
+				firehoseContext.CancelBlock(block, err)
+			}
 			return it.index, err
 		}
+
+		if firehoseContext := firehose.MaybeSyncContext(); firehoseContext.Enabled() {
+			// Calculate the total difficulty of the block
+			ptd := bc.GetTd(block.ParentHash(), block.NumberU64()-1)
+			difficulty := block.Difficulty()
+			if difficulty == nil {
+				difficulty = common.Big0
+			}
+
+			td := ptd
+			if ptd != nil {
+				td = new(big.Int).Add(difficulty, ptd)
+			}
+
+			finalBlockHeader := bc.CurrentFinalBlock()
+			if finalBlockHeader != nil && firehose.SyncingBehindFinalized() {
+				// If beaconFinalizedBlockNum is in the future, the 'finalizedBlock' will not progress until we reach it.
+				// we don't want to advertise a super old finalizedBlock when reprocessing.
+				finalBlockHeader = nil
+			}
+
+			firehoseContext.EndBlock(block, finalBlockHeader, td)
+		}
+
 		vtime := time.Since(vstart)
 		proctime := time.Since(start) // processing + validation
 

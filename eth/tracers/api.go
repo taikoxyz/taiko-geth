@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -556,7 +557,7 @@ func (api *API) IntermediateRoots(ctx context.Context, hash common.Hash, config 
 		var (
 			msg, _    = core.TransactionToMessage(tx, signer, block.BaseFee(), i == 0)
 			txContext = core.NewEVMTxContext(msg)
-			vmenv     = vm.NewEVM(vmctx, txContext, statedb, chainConfig, vm.Config{})
+			vmenv     = vm.NewEVM(vmctx, txContext, statedb, chainConfig, vm.Config{}, firehose.NoOpContext)
 		)
 		statedb.SetTxContext(tx.Hash(), i)
 		if _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit)); err != nil {
@@ -704,7 +705,7 @@ txloop:
 		// Generate the next state snapshot fast without tracing
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee(), i == 0)
 		statedb.SetTxContext(tx.Hash(), i)
-		vmenv := vm.NewEVM(blockCtx, core.NewEVMTxContext(msg), statedb, api.backend.ChainConfig(), vm.Config{})
+		vmenv := vm.NewEVM(blockCtx, core.NewEVMTxContext(msg), statedb, api.backend.ChainConfig(), vm.Config{}, firehose.NoOpContext)
 		if _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit)); err != nil {
 			failed = err
 			break txloop
@@ -811,7 +812,7 @@ func (api *API) standardTraceBlockToFile(ctx context.Context, block *types.Block
 			}
 		}
 		// Execute the transaction and flush any traces to disk
-		vmenv := vm.NewEVM(vmctx, txContext, statedb, chainConfig, vmConf)
+		vmenv := vm.NewEVM(vmctx, txContext, statedb, chainConfig, vmConf, firehose.NoOpContext)
 		statedb.SetTxContext(tx.Hash(), i)
 		_, err = core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(msg.GasLimit))
 		if writer != nil {
@@ -965,7 +966,7 @@ func (api *API) traceTx(ctx context.Context, message *core.Message, txctx *Conte
 			return nil, err
 		}
 	}
-	vmenv := vm.NewEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true})
+	vmenv := vm.NewEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Debug: true, Tracer: tracer, NoBaseFee: true}, firehose.NoOpContext)
 
 	// Define a meaningful timeout of a single transaction trace
 	if config.Timeout != nil {

@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -124,12 +125,16 @@ func (ga *GenesisAlloc) deriveHash() (common.Hash, error) {
 	if err != nil {
 		return common.Hash{}, err
 	}
+
+	// Since everything in there is ephemeral, there is no reason to output any of those
+	firehoseContext := firehose.NoOpContext
+
 	for addr, account := range *ga {
-		statedb.AddBalance(addr, account.Balance)
-		statedb.SetCode(addr, account.Code)
-		statedb.SetNonce(addr, account.Nonce)
+		statedb.AddBalance(addr, account.Balance, false, firehoseContext, firehose.IgnoredBalanceChangeReason)
+		statedb.SetCode(addr, account.Code, firehoseContext)
+		statedb.SetNonce(addr, account.Nonce, firehoseContext)
 		for key, value := range account.Storage {
-			statedb.SetState(addr, key, value)
+			statedb.SetState(addr, key, value, firehoseContext)
 		}
 	}
 	return statedb.Commit(false)
@@ -143,12 +148,17 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 	if err != nil {
 		return err
 	}
+
+	// Don't think this will ever be actually called while syncing a chain, but let's keep it
+	// with a potential real Firehose output
+	firehoseContext := firehose.MaybeSyncContext()
+
 	for addr, account := range *ga {
-		statedb.AddBalance(addr, account.Balance)
-		statedb.SetCode(addr, account.Code)
-		statedb.SetNonce(addr, account.Nonce)
+		statedb.AddBalance(addr, account.Balance, false, firehoseContext, firehose.BalanceChangeReason("genesis_balance"))
+		statedb.SetCode(addr, account.Code, firehoseContext)
+		statedb.SetNonce(addr, account.Nonce, firehoseContext)
 		for key, value := range account.Storage {
-			statedb.SetState(addr, key, value)
+			statedb.SetState(addr, key, value, firehoseContext)
 		}
 	}
 	root, err := statedb.Commit(false)
@@ -608,5 +618,6 @@ func decodePrealloc(data string) GenesisAlloc {
 	for _, account := range p {
 		ga[common.BigToAddress(account.Addr)] = GenesisAccount{Balance: account.Balance}
 	}
+
 	return ga
 }

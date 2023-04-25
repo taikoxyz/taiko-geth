@@ -18,6 +18,8 @@ package vm
 
 import (
 	"fmt"
+
+	"github.com/ethereum/go-ethereum/firehose"
 )
 
 // OpCode is an EVM opcode
@@ -557,4 +559,37 @@ var stringToOp = map[string]OpCode{
 // StringToOp finds the opcode whose name is stored in `str`.
 func StringToOp(str string) OpCode {
 	return stringToOp[str]
+}
+
+// Firehose additions
+
+var opCodeToGasChangeReasonMap = map[OpCode]firehose.GasChangeReason{
+	CREATE:         firehose.GasChangeReason("contract_creation"),
+	CREATE2:        firehose.GasChangeReason("contract_creation2"),
+	CALL:           firehose.GasChangeReason("call"),
+	STATICCALL:     firehose.GasChangeReason("static_call"),
+	CALLCODE:       firehose.GasChangeReason("call_code"),
+	DELEGATECALL:   firehose.GasChangeReason("delegate_call"),
+	RETURN:         firehose.GasChangeReason("return"),
+	REVERT:         firehose.GasChangeReason("revert"),
+	LOG0:           firehose.GasChangeReason("event_log"),
+	LOG1:           firehose.GasChangeReason("event_log"),
+	LOG2:           firehose.GasChangeReason("event_log"),
+	LOG3:           firehose.GasChangeReason("event_log"),
+	LOG4:           firehose.GasChangeReason("event_log"),
+	SELFDESTRUCT:   firehose.GasChangeReason("self_destruct"),
+	CALLDATACOPY:   firehose.GasChangeReason("call_data_copy"),
+	CODECOPY:       firehose.GasChangeReason("code_copy"),
+	EXTCODECOPY:    firehose.GasChangeReason("ext_code_copy"),
+	RETURNDATACOPY: firehose.GasChangeReason("return_data_copy"),
+}
+
+// We only track a few high costs op code that gives a rough idea where gas is spent
+func OpCodeToGasChangeReason(op OpCode) firehose.GasChangeReason {
+	reason, found := opCodeToGasChangeReasonMap[op]
+	if found {
+		return reason
+	}
+
+	return firehose.IgnoredGasChangeReason
 }

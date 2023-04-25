@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
+	"github.com/ethereum/go-ethereum/firehose"
 )
 
 func TestState(t *testing.T) {
@@ -225,11 +226,11 @@ func runBenchmark(b *testing.B, t *StateTest) {
 			context := core.NewEVMBlockContext(block.Header(), nil, &t.json.Env.Coinbase)
 			context.GetHash = vmTestBlockHash
 			context.BaseFee = baseFee
-			evm := vm.NewEVM(context, txContext, statedb, config, vmconfig)
+			evm := vm.NewEVM(context, txContext, statedb, config, vmconfig, firehose.NoOpContext)
 
 			// Create "contract" for sender to cache code analysis.
 			sender := vm.NewContract(vm.AccountRef(msg.From), vm.AccountRef(msg.From),
-				nil, 0)
+				nil, 0, firehose.NoOpContext)
 
 			var (
 				gasUsed uint64

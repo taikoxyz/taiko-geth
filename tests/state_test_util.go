@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"golang.org/x/crypto/sha3"
@@ -257,7 +258,7 @@ func (t *StateTest) RunNoVerify(subtest StateSubtest, vmconfig vm.Config, snapsh
 		context.Random = &rnd
 		context.Difficulty = big.NewInt(0)
 	}
-	evm := vm.NewEVM(context, txContext, statedb, config, vmconfig)
+	evm := vm.NewEVM(context, txContext, statedb, config, vmconfig, firehose.NoOpContext)
 	// Execute the message.
 	snapshot := statedb.Snapshot()
 	gaspool := new(core.GasPool)
@@ -271,7 +272,7 @@ func (t *StateTest) RunNoVerify(subtest StateSubtest, vmconfig vm.Config, snapsh
 	// - the coinbase suicided, or
 	// - there are only 'bad' transactions, which aren't executed. In those cases,
 	//   the coinbase gets no txfee, so isn't created, and thus needs to be touched
-	statedb.AddBalance(block.Coinbase(), new(big.Int))
+	statedb.AddBalance(block.Coinbase(), new(big.Int), false, firehose.NoOpContext, "test")
 	// Commit block
 	statedb.Commit(config.IsEIP158(block.Number()))
 	// And _now_ get the state root
@@ -287,11 +288,11 @@ func MakePreState(db ethdb.Database, accounts core.GenesisAlloc, snapshotter boo
 	sdb := state.NewDatabase(db)
 	statedb, _ := state.New(common.Hash{}, sdb, nil)
 	for addr, a := range accounts {
-		statedb.SetCode(addr, a.Code)
-		statedb.SetNonce(addr, a.Nonce)
-		statedb.SetBalance(addr, a.Balance)
+		statedb.SetCode(addr, a.Code, firehose.NoOpContext)
+		statedb.SetNonce(addr, a.Nonce, firehose.NoOpContext)
+		statedb.SetBalance(addr, a.Balance, firehose.NoOpContext, "test")
 		for k, v := range a.Storage {
-			statedb.SetState(addr, k, v)
+			statedb.SetState(addr, k, v, firehose.NoOpContext)
 		}
 	}
 	// Commit and re-open to start with a clean state.

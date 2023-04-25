@@ -41,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
@@ -885,27 +886,27 @@ func (diff *StateOverride) Apply(state *state.StateDB) error {
 	for addr, account := range *diff {
 		// Override account nonce.
 		if account.Nonce != nil {
-			state.SetNonce(addr, uint64(*account.Nonce))
+			state.SetNonce(addr, uint64(*account.Nonce), firehose.NoOpContext)
 		}
 		// Override account(contract) code.
 		if account.Code != nil {
-			state.SetCode(addr, *account.Code)
+			state.SetCode(addr, *account.Code, firehose.NoOpContext)
 		}
 		// Override account balance.
 		if account.Balance != nil {
-			state.SetBalance(addr, (*big.Int)(*account.Balance))
+			state.SetBalance(addr, (*big.Int)(*account.Balance), firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
 		}
 		if account.State != nil && account.StateDiff != nil {
 			return fmt.Errorf("account %s has both 'state' and 'stateDiff'", addr.Hex())
 		}
 		// Replace entire state if caller requires.
 		if account.State != nil {
-			state.SetStorage(addr, *account.State)
+			state.SetStorage(addr, *account.State, firehose.NoOpContext)
 		}
 		// Apply state diff into specified accounts.
 		if account.StateDiff != nil {
 			for key, value := range *account.StateDiff {
-				state.SetState(addr, key, value)
+				state.SetState(addr, key, value, firehose.NoOpContext)
 			}
 		}
 	}
@@ -915,6 +916,8 @@ func (diff *StateOverride) Apply(state *state.StateDB) error {
 	state.Finalise(false)
 	return nil
 }
+
+var dmUnsetTrxHash = common.Hash{}
 
 // BlockOverrides is a set of header fields to override.
 type BlockOverrides struct {
@@ -955,7 +958,7 @@ func (diff *BlockOverrides) Apply(blockCtx *vm.BlockContext) {
 	}
 }
 
-func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride, timeout time.Duration, globalGasCap uint64) (*core.ExecutionResult, error) {
+func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride, timeout time.Duration, globalGasCap uint64, firehoseContext *firehose.Context) (*core.ExecutionResult, error) {
 	defer func(start time.Time) { log.Debug("Executing EVM call finished", "runtime", time.Since(start)) }(time.Now())
 
 	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
@@ -982,7 +985,7 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 	if err != nil {
 		return nil, err
 	}
-	evm, vmError, err := b.GetEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true})
+	evm, vmError, err := b.GetEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, firehoseContext)
 	if err != nil {
 		return nil, err
 	}
@@ -992,6 +995,24 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 		<-ctx.Done()
 		evm.Cancel()
 	}()
+
+	if firehoseContext.Enabled() {
+		firehoseContext.StartTransactionRaw(
+			dmUnsetTrxHash,
+			msg.To,
+			msg.Value,
+			nil, nil, nil,
+			msg.GasLimit,
+			msg.GasPrice,
+			msg.Nonce,
+			msg.Data,
+			nil,
+			nil,
+			nil,
+			0,
+		)
+		firehoseContext.RecordTrxFrom(msg.From)
+	}
 
 	// Execute the message.
 	gp := new(core.GasPool).AddGas(math.MaxUint64)
@@ -1004,6 +1025,52 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 	if evm.Cancelled() {
 		return nil, fmt.Errorf("execution aborted (timeout = %v)", timeout)
 	}
+
+	if firehoseContext.Enabled() {
+		config := evm.ChainConfig()
+		// Update the state with pending changes
+		var root []byte
+		if config.IsByzantium(header.Number) {
+			state.Finalise(true)
+		} else {
+			root = state.IntermediateRoot(config.IsEIP158(header.Number)).Bytes()
+		}
+
+		var failed bool
+		var gasUsed uint64
+		if result != nil {
+			failed = result.Failed()
+			gasUsed = result.UsedGas
+		}
+
+		// FIXME: The ApplyMessage can in speculative mode error out with some errors that in sync mode would
+		//        not have been possible. Like ErrNonceTooHight or ErrNonceTooLow. Those error will be in
+		//        `err` value but there is no real way to return it right now. You will get a failed transaction
+		//        without any call and that's it.
+
+		// Create a new receipt for the transaction, storing the intermediate root and gas used by the tx
+		// based on the eip phase, we're passing whether the root touch-delete accounts.
+		receipt := types.NewReceipt(root, failed, gasUsed)
+		receipt.TxHash = dmUnsetTrxHash
+		receipt.GasUsed = gasUsed
+		// if the transaction created a contract, store the creation address in the receipt.
+		if msg.To == nil {
+			receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, msg.Nonce)
+		}
+		// Set the receipt logs and create a bloom for filtering
+		receipt.Logs = state.GetLogs(dmUnsetTrxHash, header.Number.Uint64(), header.Hash())
+		receipt.Bloom = types.CreateBloom(types.Receipts{receipt})
+		receipt.BlockHash = header.Hash()
+		receipt.BlockNumber = header.Number
+		receipt.TransactionIndex = 0
+
+		firehoseContext.EndTransaction(receipt)
+	}
+
+	// If in firehose context, we should most probably attach the error here inside the firehose context
+	// somehow so it's attached to the top-leve transaction trace and not return this here. The handler above
+	// us will need to understand that a nil error and nil result means send me everything. For now, it will
+	// simply fail, might even be the "good condition" to do.
 	if err != nil {
 		return result, fmt.Errorf("err: %w (supplied gas %d)", err, msg.GasLimit)
 	}
@@ -1047,7 +1114,7 @@ func (e *revertError) ErrorData() interface{} {
 // Note, this function doesn't make and changes in the state/blockchain and is
 // useful to execute and retrieve values.
 func (s *BlockChainAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride) (hexutil.Bytes, error) {
-	result, err := DoCall(ctx, s.b, args, blockNrOrHash, overrides, s.b.RPCEVMTimeout(), s.b.RPCGasCap())
+	result, err := DoCall(ctx, s.b, args, blockNrOrHash, overrides, s.b.RPCEVMTimeout(), s.b.RPCGasCap(), firehose.NoOpContext)
 	if err != nil {
 		return nil, err
 	}
@@ -1056,6 +1123,24 @@ func (s *BlockChainAPI) Call(ctx context.Context, args TransactionArgs, blockNrO
 		return nil, newRevertError(result)
 	}
 	return result.Return(), result.Err
+}
+
+// Execute the given contract's call using Firehose instrumentation return raw bytes containing the
+// string representation of the Firehose log output
+func (s *BlockChainAPI) Execute(ctx context.Context, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride) (hexutil.Bytes, error) {
+	firehoseContext := firehose.NewSpeculativeExecutionContext()
+	result, err := DoCall(ctx, s.b, args, blockNrOrHash, overrides, 5*time.Second, s.b.RPCGasCap(), firehoseContext)
+
+	// As soon as we have an execution result, we should have a complete Firehose log, so let's return it
+	if result != nil {
+		return firehoseContext.FirehoseLog(), nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, errors.New("no error and no result, invalid state")
 }
 
 func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, gasCap uint64) (hexutil.Uint64, error) {
@@ -1132,7 +1217,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNr
 	executable := func(gas uint64) (bool, *core.ExecutionResult, error) {
 		args.Gas = (*hexutil.Uint64)(&gas)
 
-		result, err := DoCall(ctx, b, args, blockNrOrHash, nil, 0, gasCap)
+		result, err := DoCall(ctx, b, args, blockNrOrHash, nil, 0, gasCap, firehose.NoOpContext)
 		if err != nil {
 			if errors.Is(err, core.ErrIntrinsicGas) {
 				return true, nil, nil // Special case, raise gas limit
@@ -1474,7 +1559,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 		// Apply the transaction with the access list tracer
 		tracer := logger.NewAccessListTracer(accessList, args.from(), to, precompiles)
 		config := vm.Config{Tracer: tracer, Debug: true, NoBaseFee: true}
-		vmenv, _, err := b.GetEVM(ctx, msg, statedb, header, &config)
+		vmenv, _, err := b.GetEVM(ctx, msg, statedb, header, &config, firehose.NoOpContext)
 		if err != nil {
 			return nil, 0, nil, err
 		}

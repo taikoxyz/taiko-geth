@@ -32,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/firehose"
 )
 
 // Tests that updating a state trie does not leak any database writes prior to
@@ -44,13 +45,13 @@ func TestUpdateLeaks(t *testing.T) {
 	// Update it with some accounts
 	for i := byte(0); i < 255; i++ {
 		addr := common.BytesToAddress([]byte{i})
-		state.AddBalance(addr, big.NewInt(int64(11*i)))
-		state.SetNonce(addr, uint64(42*i))
+		state.AddBalance(addr, big.NewInt(int64(11*i)), false, firehose.NoOpContext, "test")
+		state.SetNonce(addr, uint64(42*i), firehose.NoOpContext)
 		if i%2 == 0 {
-			state.SetState(addr, common.BytesToHash([]byte{i, i, i}), common.BytesToHash([]byte{i, i, i, i}))
+			state.SetState(addr, common.BytesToHash([]byte{i, i, i}), common.BytesToHash([]byte{i, i, i, i}), firehose.NoOpContext)
 		}
 		if i%3 == 0 {
-			state.SetCode(addr, []byte{i, i, i, i, i})
+			state.SetCode(addr, []byte{i, i, i, i, i}, firehose.NoOpContext)
 		}
 	}
 
@@ -77,14 +78,14 @@ func TestIntermediateLeaks(t *testing.T) {
 	finalState, _ := New(common.Hash{}, NewDatabase(finalDb), nil)
 
 	modify := func(state *StateDB, addr common.Address, i, tweak byte) {
-		state.SetBalance(addr, big.NewInt(int64(11*i)+int64(tweak)))
-		state.SetNonce(addr, uint64(42*i+tweak))
+		state.SetBalance(addr, big.NewInt(int64(11*i)+int64(tweak)), firehose.NoOpContext, "test")
+		state.SetNonce(addr, uint64(42*i+tweak), firehose.NoOpContext)
 		if i%2 == 0 {
-			state.SetState(addr, common.Hash{i, i, i, 0}, common.Hash{})
-			state.SetState(addr, common.Hash{i, i, i, tweak}, common.Hash{i, i, i, i, tweak})
+			state.SetState(addr, common.Hash{i, i, i, 0}, common.Hash{}, firehose.NoOpContext)
+			state.SetState(addr, common.Hash{i, i, i, tweak}, common.Hash{i, i, i, i, tweak}, firehose.NoOpContext)
 		}
 		if i%3 == 0 {
-			state.SetCode(addr, []byte{i, i, i, i, i, tweak})
+			state.SetCode(addr, []byte{i, i, i, i, i, tweak}, firehose.NoOpContext)
 		}
 	}
 
@@ -152,8 +153,8 @@ func TestCopy(t *testing.T) {
 	orig, _ := New(common.Hash{}, NewDatabase(rawdb.NewMemoryDatabase()), nil)
 
 	for i := byte(0); i < 255; i++ {
-		obj := orig.GetOrNewStateObject(common.BytesToAddress([]byte{i}))
-		obj.AddBalance(big.NewInt(int64(i)))
+		obj := orig.GetOrNewStateObject(common.BytesToAddress([]byte{i}), false, firehose.NoOpContext)
+		obj.AddBalance(big.NewInt(int64(i)), firehose.NoOpContext, "test")
 		orig.updateStateObject(obj)
 	}
 	orig.Finalise(false)
@@ -166,13 +167,13 @@ func TestCopy(t *testing.T) {
 
 	// modify all in memory
 	for i := byte(0); i < 255; i++ {
-		origObj := orig.GetOrNewStateObject(common.BytesToAddress([]byte{i}))
-		copyObj := copy.GetOrNewStateObject(common.BytesToAddress([]byte{i}))
-		ccopyObj := ccopy.GetOrNewStateObject(common.BytesToAddress([]byte{i}))
+		origObj := orig.GetOrNewStateObject(common.BytesToAddress([]byte{i}), false, firehose.NoOpContext)
+		copyObj := copy.GetOrNewStateObject(common.BytesToAddress([]byte{i}), false, firehose.NoOpContext)
+		ccopyObj := ccopy.GetOrNewStateObject(common.BytesToAddress([]byte{i}), false, firehose.NoOpContext)
 
-		origObj.AddBalance(big.NewInt(2 * int64(i)))
-		copyObj.AddBalance(big.NewInt(3 * int64(i)))
-		ccopyObj.AddBalance(big.NewInt(4 * int64(i)))
+		origObj.AddBalance(big.NewInt(2*int64(i)), firehose.NoOpContext, "test")
+		copyObj.AddBalance(big.NewInt(3*int64(i)), firehose.NoOpContext, "test")
+		ccopyObj.AddBalance(big.NewInt(4*int64(i)), firehose.NoOpContext, "test")
 
 		orig.updateStateObject(origObj)
 		copy.updateStateObject(copyObj)
@@ -194,9 +195,9 @@ func TestCopy(t *testing.T) {
 
 	// Verify that the three states have been updated independently
 	for i := byte(0); i < 255; i++ {
-		origObj := orig.GetOrNewStateObject(common.BytesToAddress([]byte{i}))
-		copyObj := copy.GetOrNewStateObject(common.BytesToAddress([]byte{i}))
-		ccopyObj := ccopy.GetOrNewStateObject(common.BytesToAddress([]byte{i}))
+		origObj := orig.GetOrNewStateObject(common.BytesToAddress([]byte{i}), false, firehose.NoOpContext)
+		copyObj := copy.GetOrNewStateObject(common.BytesToAddress([]byte{i}), false, firehose.NoOpContext)
+		ccopyObj := ccopy.GetOrNewStateObject(common.BytesToAddress([]byte{i}), false, firehose.NoOpContext)
 
 		if want := big.NewInt(3 * int64(i)); origObj.Balance().Cmp(want) != 0 {
 			t.Errorf("orig obj %d: balance mismatch: have %v, want %v", i, origObj.Balance(), want)
@@ -252,21 +253,21 @@ func newTestAction(addr common.Address, r *rand.Rand) testAction {
 		{
 			name: "SetBalance",
 			fn: func(a testAction, s *StateDB) {
-				s.SetBalance(addr, big.NewInt(a.args[0]))
+				s.SetBalance(addr, big.NewInt(a.args[0]), firehose.NoOpContext, "test")
 			},
 			args: make([]int64, 1),
 		},
 		{
 			name: "AddBalance",
 			fn: func(a testAction, s *StateDB) {
-				s.AddBalance(addr, big.NewInt(a.args[0]))
+				s.AddBalance(addr, big.NewInt(a.args[0]), false, firehose.NoOpContext, "test")
 			},
 			args: make([]int64, 1),
 		},
 		{
 			name: "SetNonce",
 			fn: func(a testAction, s *StateDB) {
-				s.SetNonce(addr, uint64(a.args[0]))
+				s.SetNonce(addr, uint64(a.args[0]), firehose.NoOpContext)
 			},
 			args: make([]int64, 1),
 		},
@@ -276,7 +277,7 @@ func newTestAction(addr common.Address, r *rand.Rand) testAction {
 				var key, val common.Hash
 				binary.BigEndian.PutUint16(key[:], uint16(a.args[0]))
 				binary.BigEndian.PutUint16(val[:], uint16(a.args[1]))
-				s.SetState(addr, key, val)
+				s.SetState(addr, key, val, firehose.NoOpContext)
 			},
 			args: make([]int64, 2),
 		},
@@ -286,20 +287,20 @@ func newTestAction(addr common.Address, r *rand.Rand) testAction {
 				code := make([]byte, 16)
 				binary.BigEndian.PutUint64(code, uint64(a.args[0]))
 				binary.BigEndian.PutUint64(code[8:], uint64(a.args[1]))
-				s.SetCode(addr, code)
+				s.SetCode(addr, code, firehose.NoOpContext)
 			},
 			args: make([]int64, 2),
 		},
 		{
 			name: "CreateAccount",
 			fn: func(a testAction, s *StateDB) {
-				s.CreateAccount(addr)
+				s.CreateAccount(addr, firehose.NoOpContext)
 			},
 		},
 		{
 			name: "Suicide",
 			fn: func(a testAction, s *StateDB) {
-				s.Suicide(addr)
+				s.Suicide(addr, firehose.NoOpContext)
 			},
 		},
 		{
@@ -315,7 +316,7 @@ func newTestAction(addr common.Address, r *rand.Rand) testAction {
 			fn: func(a testAction, s *StateDB) {
 				data := make([]byte, 2)
 				binary.BigEndian.PutUint16(data, uint16(a.args[0]))
-				s.AddLog(&types.Log{Address: addr, Data: data})
+				s.AddLog(&types.Log{Address: addr, Data: data}, firehose.NoOpContext)
 			},
 			args: make([]int64, 1),
 		},
@@ -482,12 +483,12 @@ func (test *snapshotTest) checkEqual(state, checkstate *StateDB) error {
 
 func TestTouchDelete(t *testing.T) {
 	s := newStateTest()
-	s.state.GetOrNewStateObject(common.Address{})
+	s.state.GetOrNewStateObject(common.Address{}, false, firehose.NoOpContext)
 	root, _ := s.state.Commit(false)
 	s.state, _ = New(root, s.state.db, s.state.snaps)
 
 	snapshot := s.state.Snapshot()
-	s.state.AddBalance(common.Address{}, new(big.Int))
+	s.state.AddBalance(common.Address{}, new(big.Int), false, firehose.NoOpContext, "test")
 
 	if len(s.state.journal.dirties) != 1 {
 		t.Fatal("expected one dirty state object")
@@ -503,7 +504,7 @@ func TestTouchDelete(t *testing.T) {
 func TestCopyOfCopy(t *testing.T) {
 	state, _ := New(common.Hash{}, NewDatabase(rawdb.NewMemoryDatabase()), nil)
 	addr := common.HexToAddress("aaaa")
-	state.SetBalance(addr, big.NewInt(42))
+	state.SetBalance(addr, big.NewInt(42), firehose.NoOpContext, "test")
 
 	if got := state.Copy().GetBalance(addr).Uint64(); got != 42 {
 		t.Fatalf("1st copy fail, expected 42, got %v", got)
@@ -525,9 +526,9 @@ func TestCopyCommitCopy(t *testing.T) {
 	skey := common.HexToHash("aaa")
 	sval := common.HexToHash("bbb")
 
-	state.SetBalance(addr, big.NewInt(42)) // Change the account trie
-	state.SetCode(addr, []byte("hello"))   // Change an external metadata
-	state.SetState(addr, skey, sval)       // Change the storage trie
+	state.SetBalance(addr, big.NewInt(42), firehose.NoOpContext, "test") // Change the account trie
+	state.SetCode(addr, []byte("hello"), firehose.NoOpContext)           // Change an external metadata
+	state.SetState(addr, skey, sval, firehose.NoOpContext)               // Change the storage trie
 
 	if balance := state.GetBalance(addr); balance.Cmp(big.NewInt(42)) != 0 {
 		t.Fatalf("initial balance mismatch: have %v, want %v", balance, 42)
@@ -597,9 +598,9 @@ func TestCopyCopyCommitCopy(t *testing.T) {
 	skey := common.HexToHash("aaa")
 	sval := common.HexToHash("bbb")
 
-	state.SetBalance(addr, big.NewInt(42)) // Change the account trie
-	state.SetCode(addr, []byte("hello"))   // Change an external metadata
-	state.SetState(addr, skey, sval)       // Change the storage trie
+	state.SetBalance(addr, big.NewInt(42), firehose.NoOpContext, "test") // Change the account trie
+	state.SetCode(addr, []byte("hello"), firehose.NoOpContext)           // Change an external metadata
+	state.SetState(addr, skey, sval, firehose.NoOpContext)               // Change the storage trie
 
 	if balance := state.GetBalance(addr); balance.Cmp(big.NewInt(42)) != 0 {
 		t.Fatalf("initial balance mismatch: have %v, want %v", balance, 42)
@@ -683,17 +684,17 @@ func TestDeleteCreateRevert(t *testing.T) {
 	state, _ := New(common.Hash{}, NewDatabase(rawdb.NewMemoryDatabase()), nil)
 
 	addr := common.BytesToAddress([]byte("so"))
-	state.SetBalance(addr, big.NewInt(1))
+	state.SetBalance(addr, big.NewInt(1), firehose.NoOpContext, "test")
 
 	root, _ := state.Commit(false)
 	state, _ = New(root, state.db, state.snaps)
 
 	// Simulate self-destructing in one transaction, then create-reverting in another
-	state.Suicide(addr)
+	state.Suicide(addr, firehose.NoOpContext)
 	state.Finalise(true)
 
 	id := state.Snapshot()
-	state.SetBalance(addr, big.NewInt(2))
+	state.SetBalance(addr, big.NewInt(2), firehose.NoOpContext, "test")
 	state.RevertToSnapshot(id)
 
 	// Commit the entire state and make sure we don't crash and have the correct state
@@ -716,11 +717,11 @@ func TestMissingTrieNodes(t *testing.T) {
 	state, _ := New(common.Hash{}, db, nil)
 	addr := common.BytesToAddress([]byte("so"))
 	{
-		state.SetBalance(addr, big.NewInt(1))
-		state.SetCode(addr, []byte{1, 2, 3})
+		state.SetBalance(addr, big.NewInt(1), firehose.NoOpContext, "test")
+		state.SetCode(addr, []byte{1, 2, 3}, firehose.NoOpContext)
 		a2 := common.BytesToAddress([]byte("another"))
-		state.SetBalance(a2, big.NewInt(100))
-		state.SetCode(a2, []byte{1, 2, 4})
+		state.SetBalance(a2, big.NewInt(100), firehose.NoOpContext, "test")
+		state.SetCode(a2, []byte{1, 2, 4}, firehose.NoOpContext)
 		root, _ = state.Commit(false)
 		t.Logf("root: %x", root)
 		// force-flush
@@ -744,7 +745,7 @@ func TestMissingTrieNodes(t *testing.T) {
 		t.Errorf("expected %d, got %d", exp, got)
 	}
 	// Modify the state
-	state.SetBalance(addr, big.NewInt(2))
+	state.SetBalance(addr, big.NewInt(2), firehose.NoOpContext, "test")
 	root, err := state.Commit(false)
 	if err == nil {
 		t.Fatalf("expected error, got root :%x", root)
@@ -935,9 +936,9 @@ func TestFlushOrderDataLoss(t *testing.T) {
 		state, _ = New(common.Hash{}, statedb, nil)
 	)
 	for a := byte(0); a < 10; a++ {
-		state.CreateAccount(common.Address{a})
+		state.CreateAccount(common.Address{a}, firehose.NoOpContext)
 		for s := byte(0); s < 10; s++ {
-			state.SetState(common.Address{a}, common.Hash{a, s}, common.Hash{a, s})
+			state.SetState(common.Address{a}, common.Hash{a, s}, common.Hash{a, s}, firehose.NoOpContext)
 		}
 	}
 	root, err := state.Commit(false)

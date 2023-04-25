@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 )
@@ -305,7 +306,7 @@ func (b *backendMock) GetLogs(ctx context.Context, blockHash common.Hash, number
 	return nil, nil
 }
 func (b *backendMock) GetTd(ctx context.Context, hash common.Hash) *big.Int { return nil }
-func (b *backendMock) GetEVM(ctx context.Context, msg *core.Message, state *state.StateDB, header *types.Header, vmConfig *vm.Config) (*vm.EVM, func() error, error) {
+func (b *backendMock) GetEVM(ctx context.Context, msg *core.Message, state *state.StateDB, header *types.Header, vmConfig *vm.Config, firehoseContext *firehose.Context) (*vm.EVM, func() error, error) {
 	return nil, nil, nil
 }
 func (b *backendMock) SubscribeChainEvent(ch chan<- core.ChainEvent) event.Subscription { return nil }

@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
@@ -327,9 +328,9 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
-func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal, firehoseContext *firehose.Context) {
 	if !beacon.IsPoSHeader(header) {
-		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
+		beacon.ethone.Finalize(chain, header, state, txs, uncles, withdrawals, firehoseContext)
 		return
 	}
 	// Withdrawals processing.
@@ -337,16 +338,16 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		// Convert amount from gwei to wei.
 		amount := new(big.Int).SetUint64(w.Amount)
 		amount = amount.Mul(amount, big.NewInt(params.GWei))
-		state.AddBalance(w.Address, amount)
+		state.AddBalance(w.Address, amount, false, firehoseContext, firehose.BalanceChangeReason("withdrawal"))
 	}
 	// No block reward which is issued by consensus layer instead.
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
 // assembling the block.
-func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
+func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal, firehoseContext *firehose.Context) (*types.Block, error) {
 	if !beacon.IsPoSHeader(header) {
-		return beacon.ethone.FinalizeAndAssemble(chain, header, state, txs, uncles, receipts, nil)
+		return beacon.ethone.FinalizeAndAssemble(chain, header, state, txs, uncles, receipts, nil, firehoseContext)
 	}
 	shanghai := chain.Config().IsShanghai(header.Time)
 	if shanghai {
@@ -360,7 +361,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		}
 	}
 	// Finalize and assemble the block.
-	beacon.Finalize(chain, header, state, txs, uncles, withdrawals)
+	beacon.Finalize(chain, header, state, txs, uncles, withdrawals, firehoseContext)
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)

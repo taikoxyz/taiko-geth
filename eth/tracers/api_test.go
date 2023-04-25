@@ -42,6 +42,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -177,7 +178,7 @@ func (b *testBackend) StateAtTransaction(ctx context.Context, block *types.Block
 		if idx == txIndex {
 			return msg, context, statedb, release, nil
 		}
-		vmenv := vm.NewEVM(context, txContext, statedb, b.chainConfig, vm.Config{})
+		vmenv := vm.NewEVM(context, txContext, statedb, b.chainConfig, vm.Config{}, firehose.NoOpContext)
 		if _, err := core.ApplyMessage(vmenv, msg, new(core.GasPool).AddGas(tx.Gas())); err != nil {
 			return nil, vm.BlockContext{}, nil, nil, fmt.Errorf("transaction %#x failed: %v", tx.Hash(), err)
 		}

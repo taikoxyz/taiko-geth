@@ -45,3 +45,73 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+# fh geth version yml
+# name: Build docker image
+
+# on:
+#   push:
+#     tags:
+#       - "[a-z0-9]+-v*"
+
+# env:
+#   REGISTRY: ghcr.io
+#   IMAGE_NAME: ${{ github.repository }}
+
+# jobs:
+#   build-and-push-image:
+#     runs-on: ubuntu-20.04
+#     permissions:
+#       contents: read
+#       packages: write
+
+#     steps:
+#       - name: Checkout repository
+#         uses: actions/checkout@v3
+
+#       - name: Install Go
+#         uses: actions/setup-go@v3
+#         with:
+#           go-version: 1.20.x
+
+#       - uses: actions/cache@v3
+#         with:
+#           path: |
+#             ~/go/pkg/mod
+#             ~/.cache/go-build
+#           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+#           restore-keys: |
+#             ${{ runner.os }}-go-
+
+#       - name: Build Binary
+#         run: make geth
+
+#       - name: Log in to the Container registry
+#         uses: docker/login-action@v2
+#         with:
+#           registry: ${{ env.REGISTRY }}
+#           username: ${{ github.actor }}
+#           password: ${{ secrets.GITHUB_TOKEN }}
+
+#       - name: Generate docker tags/labels from github build context
+#         id: meta
+#         uses: docker/metadata-action@v4
+#         with:
+#           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+#           # We tag latest only release of the form <variant>-v<major>.<minor>.<patch>-fh2.1 so "rc/beta" version are not flagged as latest
+#           # - 2 docker tags: `{geth|bsc|...}-latest` and `{git-tag}`
+#           tags: |
+#             type=ref,event=tag,priority=1000
+#             type=match,pattern=^(.*)-v\d+.\d+.\d+-fh,group=1,suffix=-latest-fh2
+#           flavor: |
+#             latest=false
+
+#       - name: Build and push Docker image
+#         uses: docker/build-push-action@v4
+#         with:
+#           context: ./build/bin
+#           file: ./Dockerfile.fh
+#           push: true
+#           tags: ${{ steps.meta.outputs.tags }}
+#           # org.opencontainers.image.version will match the tag name
+#           labels: ${{ steps.meta.outputs.labels }}

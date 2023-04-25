@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -419,7 +420,7 @@ func (api *DebugAPI) StorageRangeAt(ctx context.Context, blockHash common.Hash, 
 	if block == nil {
 		return StorageRangeResult{}, fmt.Errorf("block %#x not found", blockHash)
 	}
-	_, _, statedb, release, err := api.eth.stateAtTransaction(ctx, block, txIndex, 0)
+	_, _, statedb, release, err := api.eth.stateAtTransaction(ctx, block, txIndex, 0, firehose.NoOpContext)
 	if err != nil {
 		return StorageRangeResult{}, err
 	}

@@ -597,3 +597,42 @@ func copyAddressPtr(a *common.Address) *common.Address {
 	cpy := *a
 	return &cpy
 }
+
+const txDataUpdatedMessage = "firehose patch broken"
+
+// If you arrive here because of a compilation error, there is a high chance that it's because the
+// TxData interface change.
+//
+// If it's the case, you most attentively check the changes it brings, is it an EIP for example.
+// If this changes is adding new field, you must determine if those should be added to the Firehose
+// block model.
+//
+// This compile time is here to "help" with that. It's not bullet proof, the interface could be the
+// same but the semantic changes based on the transaction types.
+var _ TxData = (*firehoseTxData)(nil)
+
+type firehoseTxData struct {
+}
+
+func (*firehoseTxData) accessList() AccessList { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) chainID() *big.Int      { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) copy() TxData           { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) data() []byte           { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) gas() uint64            { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) gasPrice() *big.Int     { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
+	panic(txDataUpdatedMessage)
+}
+func (*firehoseTxData) nonce() uint64 { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) rawSignatureValues() (v *big.Int, r *big.Int, s *big.Int) {
+	panic(txDataUpdatedMessage)
+}
+func (*firehoseTxData) setSignatureValues(chainID *big.Int, v *big.Int, r *big.Int, s *big.Int) {
+	panic(txDataUpdatedMessage)
+}
+func (*firehoseTxData) to() *common.Address { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) txType() byte        { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) value() *big.Int     { panic(txDataUpdatedMessage) }
+
+func (*firehoseTxData) gasTipCap() *big.Int { panic(txDataUpdatedMessage) }
+func (*firehoseTxData) gasFeeCap() *big.Int { panic(txDataUpdatedMessage) }

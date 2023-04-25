@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -194,12 +195,17 @@ func (s *StateDB) Error() error {
 	return s.dbErr
 }
 
-func (s *StateDB) AddLog(log *types.Log) {
+func (s *StateDB) AddLog(log *types.Log, firehoseContext *firehose.Context) {
 	s.journal.append(addLogChange{txhash: s.thash})
 
 	log.TxHash = s.thash
 	log.TxIndex = uint(s.txIndex)
 	log.Index = s.logSize
+
+	if firehoseContext.Enabled() {
+		firehoseContext.RecordLog(log)
+	}
+
 	s.logs[s.thash] = append(s.logs[s.thash], log)
 	s.logSize++
 }
@@ -251,6 +257,7 @@ func (s *StateDB) SubRefund(gas uint64) {
 	if gas > s.refund {
 		panic(fmt.Sprintf("Refund counter below zero (gas: %d > refund: %d)", gas, s.refund))
 	}
+
 	s.refund -= gas
 }
 
@@ -394,61 +401,61 @@ func (s *StateDB) HasSuicided(addr common.Address) bool {
  */
 
 // AddBalance adds amount to the account associated with addr.
-func (s *StateDB) AddBalance(addr common.Address, amount *big.Int) {
-	stateObject := s.GetOrNewStateObject(addr)
+func (s *StateDB) AddBalance(addr common.Address, amount *big.Int, isPrecompiledAddr bool, firehoseContext *firehose.Context, reason firehose.BalanceChangeReason) {
+	stateObject := s.GetOrNewStateObject(addr, isPrecompiledAddr, firehoseContext)
 	if stateObject != nil {
-		stateObject.AddBalance(amount)
+		stateObject.AddBalance(amount, firehoseContext, reason)
 	}
 }
 
 // SubBalance subtracts amount from the account associated with addr.
-func (s *StateDB) SubBalance(addr common.Address, amount *big.Int) {
-	stateObject := s.GetOrNewStateObject(addr)
+func (s *StateDB) SubBalance(addr common.Address, amount *big.Int, firehoseContext *firehose.Context, reason firehose.BalanceChangeReason) {
+	stateObject := s.GetOrNewStateObject(addr, false, firehoseContext)
 	if stateObject != nil {
-		stateObject.SubBalance(amount)
+		stateObject.SubBalance(amount, firehoseContext, reason)
 	}
 }
 
-func (s *StateDB) SetBalance(addr common.Address, amount *big.Int) {
-	stateObject := s.GetOrNewStateObject(addr)
+func (s *StateDB) SetBalance(addr common.Address, amount *big.Int, firehoseContext *firehose.Context, reason firehose.BalanceChangeReason) {
+	stateObject := s.GetOrNewStateObject(addr, false, firehoseContext)
 	if stateObject != nil {
-		stateObject.SetBalance(amount)
+		stateObject.SetBalance(amount, firehoseContext, reason)
 	}
 }
 
-func (s *StateDB) SetNonce(addr common.Address, nonce uint64) {
-	stateObject := s.GetOrNewStateObject(addr)
+func (s *StateDB) SetNonce(addr common.Address, nonce uint64, firehoseContext *firehose.Context) {
+	stateObject := s.GetOrNewStateObject(addr, false, firehoseContext)
 	if stateObject != nil {
-		stateObject.SetNonce(nonce)
+		stateObject.SetNonce(nonce, firehoseContext)
 	}
 }
 
-func (s *StateDB) SetCode(addr common.Address, code []byte) {
-	stateObject := s.GetOrNewStateObject(addr)
+func (s *StateDB) SetCode(addr common.Address, code []byte, firehoseContext *firehose.Context) {
+	stateObject := s.GetOrNewStateObject(addr, false, firehoseContext)
 	if stateObject != nil {
-		stateObject.SetCode(crypto.Keccak256Hash(code), code)
+		stateObject.SetCode(crypto.Keccak256Hash(code), code, firehoseContext)
 	}
 }
 
-func (s *StateDB) SetState(addr common.Address, key, value common.Hash) {
-	stateObject := s.GetOrNewStateObject(addr)
+func (s *StateDB) SetState(addr common.Address, key, value common.Hash, firehoseContext *firehose.Context) {
+	stateObject := s.GetOrNewStateObject(addr, false, firehoseContext)
 	if stateObject != nil {
-		stateObject.SetState(s.db, key, value)
+		stateObject.SetState(s.db, key, value, firehoseContext)
 	}
 }
 
 // SetStorage replaces the entire storage for the specified account with given
 // storage. This function should only be used for debugging.
-func (s *StateDB) SetStorage(addr common.Address, storage map[common.Hash]common.Hash) {
+func (s *StateDB) SetStorage(addr common.Address, storage map[common.Hash]common.Hash, firehoseContext *firehose.Context) {
 	// SetStorage needs to wipe existing storage. We achieve this by pretending
 	// that the account self-destructed earlier in this block, by flagging
 	// it in stateObjectsDestruct. The effect of doing so is that storage lookups
 	// will not hit disk, since it is assumed that the disk-data is belonging
 	// to a previous incarnation of the object.
 	s.stateObjectsDestruct[addr] = struct{}{}
-	stateObject := s.GetOrNewStateObject(addr)
+	stateObject := s.GetOrNewStateObject(addr, false, firehoseContext)
 	for k, v := range storage {
-		stateObject.SetState(s.db, k, v)
+		stateObject.SetState(s.db, k, v, firehoseContext)
 	}
 }
 
@@ -457,7 +464,7 @@ func (s *StateDB) SetStorage(addr common.Address, storage map[common.Hash]common
 //
 // The account's state object is still available until the state is committed,
 // getStateObject will return a non-nil account after Suicide.
-func (s *StateDB) Suicide(addr common.Address) bool {
+func (s *StateDB) Suicide(addr common.Address, firehoseContext *firehose.Context) bool {
 	stateObject := s.getStateObject(addr)
 	if stateObject == nil {
 		return false
@@ -467,6 +474,11 @@ func (s *StateDB) Suicide(addr common.Address) bool {
 		prev:        stateObject.suicided,
 		prevbalance: new(big.Int).Set(stateObject.Balance()),
 	})
+
+	if firehoseContext.Enabled() {
+		firehoseContext.RecordSuicide(stateObject.address, stateObject.suicided, stateObject.Balance())
+	}
+
 	stateObject.markSuicided()
 	stateObject.data.Balance = new(big.Int)
 
@@ -610,17 +622,17 @@ func (s *StateDB) setStateObject(object *stateObject) {
 }
 
 // GetOrNewStateObject retrieves a state object or create a new state object if nil.
-func (s *StateDB) GetOrNewStateObject(addr common.Address) *stateObject {
+func (s *StateDB) GetOrNewStateObject(addr common.Address, isPrecompiledAddr bool, firehoseContext *firehose.Context) *stateObject {
 	stateObject := s.getStateObject(addr)
 	if stateObject == nil {
-		stateObject, _ = s.createObject(addr)
+		stateObject, _ = s.createObject(addr, isPrecompiledAddr, firehoseContext)
 	}
 	return stateObject
 }
 
 // createObject creates a new state object. If there is an existing account with
 // the given address, it is overwritten and returned as the second return value.
-func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) {
+func (s *StateDB) createObject(addr common.Address, isPrecompiledAddr bool, firehoseContext *firehose.Context) (newobj, prev *stateObject) {
 	prev = s.getDeletedStateObject(addr) // Note, prev might have been deleted, we need that!
 
 	var prevdestruct bool
@@ -636,6 +648,11 @@ func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) 
 	} else {
 		s.journal.append(resetObjectChange{prev: prev, prevdestruct: prevdestruct})
 	}
+
+	if firehoseContext.Enabled() && !isPrecompiledAddr {
+		firehoseContext.RecordNewAccount(addr)
+	}
+
 	s.setStateObject(newobj)
 	if prev != nil && !prev.deleted {
 		return newobj, prev
@@ -653,8 +670,8 @@ func (s *StateDB) createObject(addr common.Address) (newobj, prev *stateObject) 
 //  2. tx_create(sha(account ++ nonce)) (note that this gets the address of 1)
 //
 // Carrying over the balance ensures that Ether doesn't disappear.
-func (s *StateDB) CreateAccount(addr common.Address) {
-	newObj, prev := s.createObject(addr)
+func (s *StateDB) CreateAccount(addr common.Address, firehoseContext *firehose.Context) {
+	newObj, prev := s.createObject(addr, false, firehoseContext)
 	if prev != nil {
 		newObj.setBalance(prev.data.Balance)
 	}

@@ -40,6 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -478,7 +479,7 @@ func (b *SimulatedBackend) PendingNonceAt(ctx context.Context, account common.Ad
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	return b.pendingState.GetOrNewStateObject(account).Nonce(), nil
+	return b.pendingState.GetOrNewStateObject(account, false, firehose.NoOpContext).Nonce(), nil
 }
 
 // SuggestGasPrice implements ContractTransactor.SuggestGasPrice. Since the simulated
@@ -646,8 +647,8 @@ func (b *SimulatedBackend) callContract(ctx context.Context, call ethereum.CallM
 	}
 
 	// Set infinite balance to the fake caller account.
-	from := stateDB.GetOrNewStateObject(call.From)
-	from.SetBalance(math.MaxBig256)
+	from := stateDB.GetOrNewStateObject(call.From, false, firehose.NoOpContext)
+	from.SetBalance(math.MaxBig256, firehose.NoOpContext, firehose.IgnoredBalanceChangeReason)
 
 	// Execute the call.
 	msg := &core.Message{
@@ -667,7 +668,7 @@ func (b *SimulatedBackend) callContract(ctx context.Context, call ethereum.CallM
 	// about the transaction and calling mechanisms.
 	txContext := core.NewEVMTxContext(msg)
 	evmContext := core.NewEVMBlockContext(header, b.blockchain, nil)
-	vmEnv := vm.NewEVM(evmContext, txContext, stateDB, b.config, vm.Config{NoBaseFee: true})
+	vmEnv := vm.NewEVM(evmContext, txContext, stateDB, b.config, vm.Config{NoBaseFee: true}, firehose.NoOpContext)
 	gasPool := new(core.GasPool).AddGas(math.MaxUint64)
 
 	return core.ApplyMessage(vmEnv, msg, gasPool)

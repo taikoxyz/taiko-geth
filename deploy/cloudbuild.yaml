@@ -1,0 +1,8 @@
+steps:
+- name: 'gcr.io/cloud-builders/go'
+  args: ['install', '.']
+  env: ['PROJECT_ROOT=github.com/ethereum/go-ethereum']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '--tag=gcr.io/$PROJECT_ID/$_APP:$TAG_NAME', '.']
+images: ['gcr.io/$PROJECT_ID/$_APP:$TAG_NAME']
+

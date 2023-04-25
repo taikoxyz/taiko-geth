@@ -27,6 +27,7 @@ require (
 	github.com/gballet/go-verkle v0.0.0-20220902153445-097bd83b7732
 	github.com/go-stack/stack v1.8.1
 	github.com/gofrs/flock v0.8.1
+	github.com/golang-collections/collections v0.0.0-20130729185459-604e922904d3
 	github.com/golang-jwt/jwt/v4 v4.3.0
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
@@ -58,6 +59,7 @@ require (
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 	github.com/tyler-smith/go-bip39 v1.1.0
 	github.com/urfave/cli/v2 v2.17.2-0.20221006022127-8f469abc00aa
+	go.uber.org/atomic v1.7.0
 	golang.org/x/crypto v0.1.0
 	golang.org/x/exp v0.0.0-20230206171751-46f607a40771
 	golang.org/x/sync v0.1.0

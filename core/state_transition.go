@@ -25,6 +25,7 @@ import (
 	cmath "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -209,6 +210,8 @@ type StateTransition struct {
 	initialGas   uint64
 	state        vm.StateDB
 	evm          *vm.EVM
+
+	firehoseContext *firehose.Context
 }
 
 // NewStateTransition initialises and returns a new state transition object.
@@ -218,6 +221,8 @@ func NewStateTransition(evm *vm.EVM, msg *Message, gp *GasPool) *StateTransition
 		evm:   evm,
 		msg:   msg,
 		state: evm.StateDB,
+
+		firehoseContext: evm.FirehoseContext(),
 	}
 }
 
@@ -252,7 +257,7 @@ func (st *StateTransition) buyGas() error {
 	st.gasRemaining += st.msg.GasLimit
 
 	st.initialGas = st.msg.GasLimit
-	st.state.SubBalance(st.msg.From, mgval)
+	st.state.SubBalance(st.msg.From, mgval, st.firehoseContext, firehose.BalanceChangeReason("gas_buy"))
 	return nil
 }
 
@@ -355,6 +360,10 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	if st.gasRemaining < gas {
 		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining, gas)
 	}
+	if st.firehoseContext.Enabled() {
+		st.firehoseContext.RecordGasConsume(st.gasRemaining, gas, firehose.GasChangeReason("intrinsic_gas"))
+	}
+
 	st.gasRemaining -= gas
 
 	// Check clause 6
@@ -380,7 +389,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		ret, _, st.gasRemaining, vmerr = st.evm.Create(sender, msg.Data, st.gasRemaining, msg.Value)
 	} else {
 		// Increment the nonce for the next transaction
-		st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1)
+		st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1, st.firehoseContext)
 		ret, st.gasRemaining, vmerr = st.evm.Call(sender, st.to(), msg.Data, st.gasRemaining, msg.Value)
 	}
 
@@ -403,12 +412,12 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	} else {
 		fee := new(big.Int).SetUint64(st.gasUsed())
 		fee.Mul(fee, effectiveTip)
-		st.state.AddBalance(st.evm.Context.Coinbase, fee)
+		st.state.AddBalance(st.evm.Context.Coinbase, fee, false, st.firehoseContext, firehose.BalanceChangeReason("reward_transaction_fee"))
 		// CHANGE(taiko): basefee is not burnt, but sent to a treasure instead.
 		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil {
 			st.state.AddBalance(
 				st.evm.ChainConfig().Treasure,
-				new(big.Int).Mul(st.evm.Context.BaseFee, new(big.Int).SetUint64(st.gasUsed())),
+				new(big.Int).Mul(st.evm.Context.BaseFee, new(big.Int).SetUint64(st.gasUsed())), false, st.firehoseContext, firehose.BalanceChangeReason("base_fee_trasure"),
 			)
 		}
 	}
@@ -430,7 +439,7 @@ func (st *StateTransition) refundGas(refundQuotient uint64) {
 
 	// Return ETH for remaining gas, exchanged at the original rate.
 	remaining := new(big.Int).Mul(new(big.Int).SetUint64(st.gasRemaining), st.msg.GasPrice)
-	st.state.AddBalance(st.msg.From, remaining)
+	st.state.AddBalance(st.msg.From, remaining, false, st.firehoseContext, firehose.BalanceChangeReason("gas_refund"))
 
 	// Also return remaining gas to the block gas counter so it is
 	// available for the next transaction.

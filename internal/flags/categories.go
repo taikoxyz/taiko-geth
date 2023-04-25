@@ -35,6 +35,7 @@ const (
 	MetricsCategory    = "METRICS AND STATS"
 	MiscCategory       = "MISC"
 	DeprecatedCategory = "ALIASED (deprecated)"
+	FirehoseCategory   = "FIREHOSE DEEP MIND"
 )
 
 func init() {

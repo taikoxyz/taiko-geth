@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/firehose"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -102,7 +103,7 @@ func init() {
 
 func testTwoOperandOp(t *testing.T, tests []TwoOperandTestcase, opFn executionFunc, name string) {
 	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{}, firehose.NoOpContext)
 		stack          = newstack()
 		pc             = uint64(0)
 		evmInterpreter = env.interpreter
@@ -201,7 +202,7 @@ func TestSAR(t *testing.T) {
 
 func TestAddMod(t *testing.T) {
 	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{}, firehose.NoOpContext)
 		stack          = newstack()
 		evmInterpreter = NewEVMInterpreter(env)
 		pc             = uint64(0)
@@ -245,7 +246,7 @@ func TestWriteExpectedValues(t *testing.T) {
 	// getResult is a convenience function to generate the expected values
 	getResult := func(args []*twoOperandParams, opFn executionFunc) []TwoOperandTestcase {
 		var (
-			env         = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+			env         = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{}, firehose.NoOpContext)
 			stack       = newstack()
 			pc          = uint64(0)
 			interpreter = env.interpreter
@@ -290,7 +291,7 @@ func TestJsonTestcases(t *testing.T) {
 
 func opBenchmark(bench *testing.B, op executionFunc, args ...string) {
 	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{}, firehose.NoOpContext)
 		stack          = newstack()
 		scope          = &ScopeContext{nil, stack, nil}
 		evmInterpreter = NewEVMInterpreter(env)
@@ -531,7 +532,7 @@ func BenchmarkOpIsZero(b *testing.B) {
 
 func TestOpMstore(t *testing.T) {
 	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{}, firehose.NoOpContext)
 		stack          = newstack()
 		mem            = NewMemory()
 		evmInterpreter = NewEVMInterpreter(env)
@@ -557,7 +558,7 @@ func TestOpMstore(t *testing.T) {
 
 func BenchmarkOpMstore(bench *testing.B) {
 	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{}, firehose.NoOpContext)
 		stack          = newstack()
 		mem            = NewMemory()
 		evmInterpreter = NewEVMInterpreter(env)
@@ -580,21 +581,21 @@ func BenchmarkOpMstore(bench *testing.B) {
 func TestOpTstore(t *testing.T) {
 	var (
 		statedb, _     = state.New(common.Hash{}, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
-		env            = NewEVM(BlockContext{}, TxContext{}, statedb, params.TestChainConfig, Config{})
+		env            = NewEVM(BlockContext{}, TxContext{}, statedb, params.TestChainConfig, Config{}, firehose.NoOpContext)
 		stack          = newstack()
 		mem            = NewMemory()
 		evmInterpreter = NewEVMInterpreter(env)
 		caller         = common.Address{}
 		to             = common.Address{1}
 		contractRef    = contractRef{caller}
-		contract       = NewContract(contractRef, AccountRef(to), new(big.Int), 0)
+		contract       = NewContract(contractRef, AccountRef(to), new(big.Int), 0, firehose.NoOpContext)
 		scopeContext   = ScopeContext{mem, stack, contract}
 		value          = common.Hex2Bytes("abcdef00000000000000abba000000000deaf000000c0de00100000000133700")
 	)
 
 	// Add a stateObject for the caller and the contract being called
-	statedb.CreateAccount(caller)
-	statedb.CreateAccount(to)
+	statedb.CreateAccount(caller, firehose.NoOpContext)
+	statedb.CreateAccount(to, firehose.NoOpContext)
 
 	env.interpreter = evmInterpreter
 	pc := uint64(0)
@@ -622,7 +623,7 @@ func TestOpTstore(t *testing.T) {
 
 func BenchmarkOpKeccak256(bench *testing.B) {
 	var (
-		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{})
+		env            = NewEVM(BlockContext{}, TxContext{}, nil, params.TestChainConfig, Config{}, firehose.NoOpContext)
 		stack          = newstack()
 		mem            = NewMemory()
 		evmInterpreter = NewEVMInterpreter(env)
@@ -726,7 +727,7 @@ func TestRandom(t *testing.T) {
 		{name: "hash(0x010203)", random: crypto.Keccak256Hash([]byte{0x01, 0x02, 0x03})},
 	} {
 		var (
-			env            = NewEVM(BlockContext{Random: &tt.random}, TxContext{}, nil, params.TestChainConfig, Config{})
+			env            = NewEVM(BlockContext{Random: &tt.random}, TxContext{}, nil, params.TestChainConfig, Config{}, firehose.NoOpContext)
 			stack          = newstack()
 			pc             = uint64(0)
 			evmInterpreter = env.interpreter
