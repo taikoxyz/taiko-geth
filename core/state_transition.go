@@ -141,12 +141,12 @@ type Message struct {
 	// This field will be set to true for operations like RPC eth_call.
 	SkipAccountChecks bool
 
-	// CHANGE(taiko): Whteher the current transaction is TaikoL2.anchor.
-	IsAnchor bool
+	// CHANGE(taiko): Whteher the current transaction is the first transaction in a block.
+	IsFirstTx bool
 }
 
 // TransactionToMessage converts a transaction into a Message.
-func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.Int) (*Message, error) {
+func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.Int, isFirstTx bool) (*Message, error) {
 	msg := &Message{
 		Nonce:             tx.Nonce(),
 		GasLimit:          tx.Gas(),
@@ -158,6 +158,7 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 		Data:              tx.Data(),
 		AccessList:        tx.AccessList(),
 		SkipAccountChecks: false,
+		IsFirstTx:         isFirstTx,
 	}
 	// If baseFee provided, set gasPrice to effectiveGasPrice.
 	if baseFee != nil {
@@ -238,7 +239,7 @@ func (st *StateTransition) buyGas() error {
 		balanceCheck.Add(balanceCheck, st.msg.Value)
 	}
 	// CHANGE(taiko): skip balance check for TaikoL2.anchor transaction.
-	if st.msg.IsAnchor {
+	if st.isAnchor() {
 		balanceCheck = common.Big0
 		mgval = common.Big0
 	}
@@ -282,7 +283,7 @@ func (st *StateTransition) preCheck() error {
 	// Make sure that transaction gasFeeCap is greater than the baseFee (post london)
 	if st.evm.ChainConfig().IsLondon(st.evm.Context.BlockNumber) {
 		// Skip the checks if gas fields are zero and baseFee was explicitly disabled (eth_call)
-		if (!st.evm.Config.NoBaseFee || msg.GasFeeCap.BitLen() > 0 || msg.GasTipCap.BitLen() > 0) && !msg.IsAnchor {
+		if (!st.evm.Config.NoBaseFee || msg.GasFeeCap.BitLen() > 0 || msg.GasTipCap.BitLen() > 0) && !st.isAnchor() {
 			if l := msg.GasFeeCap.BitLen(); l > 256 {
 				return fmt.Errorf("%w: address %v, maxFeePerGas bit length: %d", ErrFeeCapVeryHigh,
 					msg.From.Hex(), l)
@@ -439,4 +440,10 @@ func (st *StateTransition) refundGas(refundQuotient uint64) {
 // gasUsed returns the amount of gas used up by the state transition.
 func (st *StateTransition) gasUsed() uint64 {
 	return st.initialGas - st.gasRemaining
+}
+
+func (st *StateTransition) isAnchor() bool {
+	return st.evm.ChainConfig().Taiko &&
+		st.msg.IsFirstTx &&
+		st.msg.From == common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
 }
