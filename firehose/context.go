@@ -117,7 +117,7 @@ func (ctx *Context) RecordGenesisBlock(block *types.Block, recordGenesisAlloc fu
 		return
 	}
 
-	if ctx.inBlock.Load() == true {
+	if ctx.inBlock.Load() {
 		panic("trying to record genesis block while in block context")
 	}
 
