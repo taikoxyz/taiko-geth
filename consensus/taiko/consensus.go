@@ -20,6 +20,7 @@ import (
 var (
 	ErrOlderBlockTime = errors.New("timestamp older than parent")
 	ErrUnclesNotEmpty = errors.New("uncles not empty")
+	ErrEmptyBasefee   = errors.New("empty base fee")
 )
 
 // Taiko is a consensus engine used by L2 rollup.
@@ -155,7 +156,10 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return ErrUnclesNotEmpty
 	}
 
-	// TODO: check baseFee when EIP-1559 is enabled.
+	// BaseFee should not be empty
+	if header.BaseFee == nil {
+		return ErrEmptyBasefee
+	}
 
 	return nil
 }

@@ -13,6 +13,8 @@ func (payload *Payload) SetFullBlock(block *types.Block, fees *big.Int) {
 	payload.lock.Lock()
 	defer payload.lock.Unlock()
 
+	payload.stop <- struct{}{}
+
 	payload.full = block
 	payload.fullFees = fees
 
@@ -21,6 +23,5 @@ func (payload *Payload) SetFullBlock(block *types.Block, fees *big.Int) {
 		"txs", len(block.Transactions()), "gas", block.GasUsed(), "fees", feesInEther,
 		"root", block.Root())
 
-	go func() { payload.stop <- struct{}{} }()
 	payload.cond.Broadcast() // fire signal for notifying full block
 }
