@@ -257,21 +257,17 @@ func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
 		return types.EmptyWithdrawalsHash
 	}
 
-	// Calculate total length of flattened array
-	totalLen := 32 // 32 bytes to store array length
-	for range withdrawals {
-		totalLen += 32 // 20 bytes for address, 12 bytes for uint96
-	}
-
 	// sort the array of withdrawals by index to guarantee same order
 	sort.Slice(withdrawals, func(i, j int) bool {
 		return withdrawals[i].Index < withdrawals[j].Index
 	})
 
+	// Calculate total length of flattened array
+	totalLen := len(withdrawals) * 32
+
 	// Create flattened byte array
 	depositsProcessed := make([]byte, totalLen)
-	binary.BigEndian.PutUint32(depositsProcessed, uint32(len(withdrawals)))
-	offset := 32
+	offset := 0
 	for _, withdrawal := range withdrawals {
 		copy(depositsProcessed[offset:], withdrawal.Address.Bytes()[:])
 		offset += 20
