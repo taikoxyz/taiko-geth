@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math/big"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -261,6 +262,11 @@ func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
 	for range withdrawals {
 		totalLen += 32 // 20 bytes for address, 12 bytes for uint96
 	}
+
+	// sort the array of withdrawals by index to guarantee same order
+	sort.Slice(withdrawals, func(i, j int) bool {
+		return withdrawals[i].Index < withdrawals[j].Index
+	})
 
 	// Create flattened byte array
 	depositsProcessed := make([]byte, totalLen)
