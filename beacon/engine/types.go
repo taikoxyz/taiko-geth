@@ -17,6 +17,7 @@
 package engine
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math/big"
 
@@ -248,16 +249,24 @@ func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
 		return types.EmptyWithdrawalsHash
 	}
 
-	j := len(withdrawals)
-	depositsProcessedBytes := make([]byte, j*20+j*12)
-	for i, deposit := range withdrawals {
-		offset := i * 32
-		copy(depositsProcessedBytes[offset:], deposit.Address.Bytes()[:])
-		offset += 20
-		copy(depositsProcessedBytes[offset:], new(big.Int).SetUint64(deposit.Amount).Bytes())
+	var (
+		depositsProcessed []byte
+		totalLen          int
+	)
+	for _, w := range withdrawals {
+		depositsProcessed = append(depositsProcessed, w.Address.Bytes()...)
+		amountBytes := make([]byte, 8)
+		binary.BigEndian.PutUint64(amountBytes, uint64(w.Amount))
+		depositsProcessed = append(depositsProcessed, amountBytes...)
+		totalLen += 12
 	}
-	depositsRoot := crypto.Keccak256Hash(depositsProcessedBytes)
-	return depositsRoot
+
+	buf := make([]byte, 4)
+	binary.BigEndian.PutUint32(buf, uint32(len(withdrawals)))
+	depositsProcessed = append(buf, depositsProcessed...)
+	totalLen += 4
+
+	return crypto.Keccak256Hash(depositsProcessed[:totalLen])
 }
 
 func abiEncodeEthDeposits(deposits []*types.Withdrawal) []byte {
