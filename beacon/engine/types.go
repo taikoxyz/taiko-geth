@@ -17,7 +17,6 @@
 package engine
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"math/big"
 
@@ -26,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
 )
 
@@ -256,9 +256,7 @@ func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
 		offset += 20
 		copy(depositsProcessedBytes[offset:], new(big.Int).SetUint64(deposit.Amount).Bytes())
 	}
-	depositsRootBytes := sha256.Sum256(depositsProcessedBytes)
-	depositsRoot := [32]byte{}
-	copy(depositsRoot[:], depositsRootBytes[:])
+	depositsRoot := crypto.Keccak256Hash(depositsProcessedBytes)
 	return depositsRoot
 }
 
