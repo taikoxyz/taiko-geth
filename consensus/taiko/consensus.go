@@ -18,8 +18,9 @@ import (
 )
 
 var (
-	ErrOlderBlockTime = errors.New("timestamp older than parent")
-	ErrUnclesNotEmpty = errors.New("uncles not empty")
+	ErrOlderBlockTime         = errors.New("timestamp older than parent")
+	ErrUnclesNotEmpty         = errors.New("uncles not empty")
+	ErrWithdrawalsHashMissing = errors.New("withdrawals hash missing")
 )
 
 // Taiko is a consensus engine used by L2 rollup.
@@ -155,7 +156,10 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return ErrUnclesNotEmpty
 	}
 
-	// TODO: check baseFee when EIP-1559 is enabled.
+	// WithdrawalsHash should not be empty
+	if header.WithdrawalsHash == nil {
+		return ErrWithdrawalsHashMissing
+	}
 
 	return nil
 }
@@ -170,6 +174,7 @@ func (t *Taiko) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
 	}
+
 	return t.verifyHeader(chain, headers[index], parent, seals[index], unixNow)
 }
 

@@ -17,11 +17,13 @@
 package engine
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
@@ -209,9 +211,12 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 	// Withdrawals as the json null value.
 	var withdrawalsRoot *common.Hash
 	if params.Withdrawals != nil {
-		h := types.DeriveSha(types.Withdrawals(params.Withdrawals), trie.NewStackTrie(nil))
+		// CHANGE(taiko): dont use stack trie for withdrawals,
+		// we should just hash the deposits instead.
+		h := calcWithdrawalsRootTaiko(params.Withdrawals)
 		withdrawalsRoot = &h
 	}
+
 	header := &types.Header{
 		ParentHash:      params.ParentHash,
 		UncleHash:       types.EmptyUncleHash,
@@ -235,6 +240,37 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 		return nil, fmt.Errorf("blockhash mismatch, want %x, got %x", params.BlockHash, block.Hash())
 	}
 	return block, nil
+}
+
+// CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
+func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
+	if withdrawals == nil || len(withdrawals) == 0 {
+		return types.EmptyWithdrawalsHash
+	}
+
+	j := len(withdrawals)
+	depositsProcessedBytes := make([]byte, j*20+j*12)
+	for i, deposit := range withdrawals {
+		offset := i * 32
+		copy(depositsProcessedBytes[offset:], deposit.Address.Bytes()[:])
+		offset += 20
+		copy(depositsProcessedBytes[offset:], new(big.Int).SetUint64(deposit.Amount).Bytes())
+	}
+	depositsRootBytes := sha256.Sum256(depositsProcessedBytes)
+	depositsRoot := [32]byte{}
+	copy(depositsRoot[:], depositsRootBytes[:])
+	return depositsRoot
+}
+
+func abiEncodeEthDeposits(deposits []*types.Withdrawal) []byte {
+	var data []byte
+
+	for _, deposit := range deposits {
+		data = append(data, deposit.Address.Bytes()[:]...)
+		data = append(data, math.PaddedBigBytes(new(big.Int).SetUint64(deposit.Amount), 32)...)
+	}
+
+	return data
 }
 
 // BlockToExecutableData constructs the ExecutableData structure by filling the
