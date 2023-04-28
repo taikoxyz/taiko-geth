@@ -243,7 +243,7 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 
 // CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
 func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
-	if withdrawals == nil || len(withdrawals) == 0 {
+	if len(withdrawals) == 0 {
 		return types.EmptyWithdrawalsHash
 	}
 	var result []byte
