@@ -20,15 +20,12 @@ import (
 	"fmt"
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/pkg/errors"
 )
 
 //go:generate go run github.com/fjl/gencodec -type PayloadAttributes -field-override payloadAttributesMarshaling -out gen_blockparams.go
@@ -215,10 +212,7 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 	if params.Withdrawals != nil {
 		// CHANGE(taiko): dont use stack trie for withdrawals,
 		// we should just hash the deposits instead.
-		h, err := calcWithdrawalsRootTaiko(params.Withdrawals)
-		if err != nil {
-			return nil, err
-		}
+		h := calcWithdrawalsRootTaiko(params.Withdrawals)
 		withdrawalsRoot = &h
 	}
 
@@ -248,57 +242,21 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 }
 
 // CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
-func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) (common.Hash, error) {
+func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
 	if withdrawals == nil || len(withdrawals) == 0 {
-		return types.EmptyWithdrawalsHash, nil
+		return types.EmptyWithdrawalsHash
 	}
-
-	type ethDeposit struct {
-		Recipient common.Address `abi:"recipient"`
-		Amount    *big.Int       `abi:"amount"`
-	}
-
-	var deposits []ethDeposit
-
+	var result []byte
 	for _, withdrawal := range withdrawals {
-		deposits = append(deposits, ethDeposit{
-			Recipient: withdrawal.Address,
-			Amount:    new(big.Int).SetUint64(withdrawal.Amount),
-		})
+		amountBytes := new(big.Int).SetUint64(withdrawal.Amount).Bytes()
+		paddedAmountBytes := make([]byte, 12)
+		copy(paddedAmountBytes[12-len(amountBytes):], amountBytes)
+
+		result = append(result, withdrawal.Address.Bytes()...)
+		result = append(result, paddedAmountBytes...)
 	}
 
-	// Define the ABI type for the Withdrawal struct
-	withdrawalType, err := abi.NewType("tuple[]", "EthDeposit", []abi.ArgumentMarshaling{
-		{Type: "address", Name: "recipient"},
-		{Type: "uint96", Name: "amount"},
-	})
-	if err != nil {
-		return common.Hash{}, err
-	}
-
-	args := abi.Arguments{
-		{
-			Type: withdrawalType,
-		},
-	}
-
-	encoded, err := args.Pack(deposits)
-	if err != nil {
-		return common.Hash{}, errors.Wrap(err, "args.Pack")
-	}
-
-	return crypto.Keccak256Hash(encoded), nil
-}
-
-func abiEncodeEthDeposits(deposits []*types.Withdrawal) []byte {
-	var data []byte
-
-	for _, deposit := range deposits {
-		data = append(data, deposit.Address.Bytes()[:]...)
-		data = append(data, math.PaddedBigBytes(new(big.Int).SetUint64(deposit.Amount), 32)...)
-	}
-
-	return data
+	return crypto.Keccak256Hash(result)
 }
 
 // BlockToExecutableData constructs the ExecutableData structure by filling the

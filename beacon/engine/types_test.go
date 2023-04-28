@@ -32,14 +32,13 @@ func Test_calcWithdrawalsRootTaiko(t *testing.T) {
 				},
 			},
 			// TODO: this is not the correct hash to be getting i dont believe
-			common.HexToHash("0xba0fecdc368edfa83ce965a3c92e57418bbd710dfa5e55ac14404a58952729ad"),
+			common.HexToHash("0xc3f16b87d5d286399c3d4daa4e7e3ae75840d66d0560863a2bdb4eb1bfaff229"),
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := calcWithdrawalsRootTaiko(tt.withdrawals)
-			assert.Nil(t, err)
+			got := calcWithdrawalsRootTaiko(tt.withdrawals)
 			assert.Equal(t, tt.want, got)
 		})
 	}
