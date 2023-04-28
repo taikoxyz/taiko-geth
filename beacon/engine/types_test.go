@@ -23,8 +23,8 @@ func Test_calcWithdrawalsRootTaiko(t *testing.T) {
 			"withWithdrawals",
 			[]*types.Withdrawal{
 				{
-					Address: common.HexToAddress("0xDAFEA492D9c6733ae3d56b7Ed1ADB60692c98Bc5"),
-					Amount:  1000000000,
+					Address: common.HexToAddress("0x388C818CA8B9251b393131C08a736A67ccB19297"),
+					Amount:  100000000,
 				},
 				{
 					Address: common.HexToAddress("0xeEE27662c2B8EBa3CD936A23F039F3189633e4C8"),
