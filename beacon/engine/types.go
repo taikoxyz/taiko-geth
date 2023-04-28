@@ -17,11 +17,10 @@
 package engine
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math/big"
-	"sort"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -29,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/pkg/errors"
 )
 
 //go:generate go run github.com/fjl/gencodec -type PayloadAttributes -field-override payloadAttributesMarshaling -out gen_blockparams.go
@@ -215,7 +215,10 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 	if params.Withdrawals != nil {
 		// CHANGE(taiko): dont use stack trie for withdrawals,
 		// we should just hash the deposits instead.
-		h := calcWithdrawalsRootTaiko(params.Withdrawals)
+		h, err := calcWithdrawalsRootTaiko(params.Withdrawals)
+		if err != nil {
+			return nil, err
+		}
 		withdrawalsRoot = &h
 	}
 
@@ -244,38 +247,47 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 	return block, nil
 }
 
-// CHANGE(taiko): putUint96 puts a uint64 into a 12-byte slice to match solidity uint96 type
-func putUint96(buf []byte, x uint64) {
-	binary.BigEndian.PutUint64(buf[4:], x)
-	// Pad with zeros to make it a 12-byte value
-	copy(buf[:4], []byte{0, 0, 0})
-}
-
 // CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
-func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
+func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) (common.Hash, error) {
 	if withdrawals == nil || len(withdrawals) == 0 {
-		return types.EmptyWithdrawalsHash
+		return types.EmptyWithdrawalsHash, nil
 	}
 
-	// sort the array of withdrawals by index to guarantee same order
-	sort.Slice(withdrawals, func(i, j int) bool {
-		return withdrawals[i].Index < withdrawals[j].Index
-	})
+	type ethDeposit struct {
+		Recipient common.Address `abi:"recipient"`
+		Amount    *big.Int       `abi:"amount"`
+	}
 
-	// Calculate total length of flattened array
-	totalLen := len(withdrawals) * 32
+	var deposits []ethDeposit
 
-	// Create flattened byte array
-	depositsProcessed := make([]byte, totalLen)
-	offset := 0
 	for _, withdrawal := range withdrawals {
-		copy(depositsProcessed[offset:], withdrawal.Address.Bytes()[:])
-		offset += 20
-		binary.BigEndian.PutUint64(depositsProcessed[offset:], uint64(withdrawal.Amount))
-		offset += 8
+		deposits = append(deposits, ethDeposit{
+			Recipient: withdrawal.Address,
+			Amount:    new(big.Int).SetUint64(withdrawal.Amount),
+		})
 	}
 
-	return crypto.Keccak256Hash(depositsProcessed)
+	// Define the ABI type for the Withdrawal struct
+	withdrawalType, err := abi.NewType("tuple[]", "EthDeposit", []abi.ArgumentMarshaling{
+		{Type: "address", Name: "recipient"},
+		{Type: "uint96", Name: "amount"},
+	})
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	args := abi.Arguments{
+		{
+			Type: withdrawalType,
+		},
+	}
+
+	encoded, err := args.Pack(deposits)
+	if err != nil {
+		return common.Hash{}, errors.Wrap(err, "args.Pack")
+	}
+
+	return crypto.Keccak256Hash(encoded), nil
 }
 
 func abiEncodeEthDeposits(deposits []*types.Withdrawal) []byte {

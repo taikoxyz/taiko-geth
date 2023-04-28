@@ -38,7 +38,8 @@ func Test_calcWithdrawalsRootTaiko(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := calcWithdrawalsRootTaiko(tt.withdrawals)
+			got, err := calcWithdrawalsRootTaiko(tt.withdrawals)
+			assert.Nil(t, err)
 			assert.Equal(t, tt.want, got)
 		})
 	}
