@@ -243,6 +243,13 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 	return block, nil
 }
 
+// CHANGE(taiko): putUint96 puts a uint64 into a 12-byte slice to match solidity uint96 type
+func putUint96(buf []byte, x uint64) {
+	binary.BigEndian.PutUint64(buf[4:], x)
+	// Pad with zeros to make it a 12-byte value
+	copy(buf[:4], []byte{0, 0, 0})
+}
+
 // CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
 func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
 	if withdrawals == nil || len(withdrawals) == 0 {
@@ -253,12 +260,13 @@ func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
 		depositsProcessed []byte
 		totalLen          int
 	)
+
 	for _, w := range withdrawals {
 		depositsProcessed = append(depositsProcessed, w.Address.Bytes()...)
-		amountBytes := make([]byte, 8)
-		binary.BigEndian.PutUint64(amountBytes, uint64(w.Amount))
+		amountBytes := make([]byte, 12)
+		putUint96(amountBytes, w.Amount)
 		depositsProcessed = append(depositsProcessed, amountBytes...)
-		totalLen += 12
+		totalLen += 24 // account for 20 bytes of address and 12 bytes of uint96
 	}
 
 	buf := make([]byte, 4)
