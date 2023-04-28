@@ -31,7 +31,6 @@ func Test_calcWithdrawalsRootTaiko(t *testing.T) {
 					Amount:  184938493,
 				},
 			},
-			// TODO: this is not the correct hash to be getting i dont believe
 			common.HexToHash("0xc3f16b87d5d286399c3d4daa4e7e3ae75840d66d0560863a2bdb4eb1bfaff229"),
 		},
 	}
