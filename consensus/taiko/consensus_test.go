@@ -32,7 +32,6 @@ var (
 
 func init() {
 	config := params.TestChainConfig
-	config.LondonBlock = nil
 	config.GrayGlacierBlock = nil
 	config.ArrowGlacierBlock = nil
 	config.Ethash = nil
@@ -45,6 +44,7 @@ func init() {
 		ExtraData:  []byte("test genesis"),
 		Timestamp:  9000,
 		Difficulty: common.Big0,
+		BaseFee:    big.NewInt(params.InitialBaseFee),
 	}
 
 	txs = []*types.Transaction{
@@ -139,8 +139,9 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	err := testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
-		Number: common.Big1,
-		Time:   uint64(time.Now().Unix()),
+		Number:  common.Big1,
+		Time:    uint64(time.Now().Unix()),
+		BaseFee: big.NewInt(params.InitialBaseFee),
 	}, true)
 	assert.ErrorIs(t, err, consensus.ErrUnknownAncestor, "VerifyHeader should thorw ErrUnknownAncestor when parentHash is unknown")
 
@@ -148,6 +149,7 @@ func TestVerifyHeader(t *testing.T) {
 		ParentHash: blocks[len(blocks)-1].Hash(),
 		Number:     common.Big0,
 		Time:       uint64(time.Now().Unix()),
+		BaseFee:    big.NewInt(params.InitialBaseFee),
 	}, true)
 	assert.ErrorIs(t, err, consensus.ErrInvalidNumber, "VerifyHeader should thorw ErrInvalidNumber when the block number is wrong")
 
@@ -156,6 +158,7 @@ func TestVerifyHeader(t *testing.T) {
 		Number:     new(big.Int).SetInt64(int64(len(blocks))),
 		Time:       uint64(time.Now().Unix()),
 		Extra:      bytes.Repeat([]byte{1}, int(params.MaximumExtraDataSize+1)),
+		BaseFee:    big.NewInt(params.InitialBaseFee),
 	}, true)
 	assert.ErrorContains(t, err, "extra-data too long", "VerifyHeader should thorw ErrExtraDataTooLong when the block has too much extra data")
 
@@ -164,6 +167,7 @@ func TestVerifyHeader(t *testing.T) {
 		Number:     new(big.Int).SetInt64(int64(len(blocks))),
 		Time:       uint64(time.Now().Unix()),
 		Difficulty: common.Big1,
+		BaseFee:    big.NewInt(params.InitialBaseFee),
 	}, true)
 	assert.ErrorContains(t, err, "invalid difficulty", "VerifyHeader should thorw ErrInvalidDifficulty when difficulty is not 0")
 
@@ -172,6 +176,7 @@ func TestVerifyHeader(t *testing.T) {
 		Number:     new(big.Int).SetInt64(int64(len(blocks))),
 		Time:       uint64(time.Now().Unix()),
 		GasLimit:   params.MaxGasLimit + 1,
+		BaseFee:    big.NewInt(params.InitialBaseFee),
 	}, true)
 	assert.ErrorContains(t, err, "invalid gasLimi", "VerifyHeader should thorw ErrInvalidGasLimit when gasLimit is higher than the limit")
 }
