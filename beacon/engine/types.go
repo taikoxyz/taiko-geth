@@ -256,25 +256,24 @@ func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
 		return types.EmptyWithdrawalsHash
 	}
 
-	var (
-		depositsProcessed []byte
-		totalLen          int
-	)
-
-	for _, w := range withdrawals {
-		depositsProcessed = append(depositsProcessed, w.Address.Bytes()...)
-		amountBytes := make([]byte, 12)
-		putUint96(amountBytes, w.Amount)
-		depositsProcessed = append(depositsProcessed, amountBytes...)
-		totalLen += 24 // account for 20 bytes of address and 12 bytes of uint96
+	// Calculate total length of flattened array
+	totalLen := 32 // 32 bytes to store array length
+	for range withdrawals {
+		totalLen += 32 // 20 bytes for address, 12 bytes for uint96
 	}
 
-	buf := make([]byte, 4)
-	binary.BigEndian.PutUint32(buf, uint32(len(withdrawals)))
-	depositsProcessed = append(buf, depositsProcessed...)
-	totalLen += 4
+	// Create flattened byte array
+	depositsProcessed := make([]byte, totalLen)
+	binary.BigEndian.PutUint32(depositsProcessed, uint32(len(withdrawals)))
+	offset := 32
+	for _, withdrawal := range withdrawals {
+		copy(depositsProcessed[offset:], withdrawal.Address.Bytes()[:])
+		offset += 20
+		binary.BigEndian.PutUint64(depositsProcessed[offset:], uint64(withdrawal.Amount))
+		offset += 8
+	}
 
-	return crypto.Keccak256Hash(depositsProcessed[:totalLen])
+	return crypto.Keccak256Hash(depositsProcessed)
 }
 
 func abiEncodeEthDeposits(deposits []*types.Withdrawal) []byte {

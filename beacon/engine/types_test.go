@@ -32,7 +32,7 @@ func Test_calcWithdrawalsRootTaiko(t *testing.T) {
 				},
 			},
 			// TODO: this is not the correct hash to be getting i dont believe
-			common.HexToHash("0x725fc75831c1a5f07cd11e9b3b1b36ccd42d18ed66228e04a71496f90f39decb"),
+			common.HexToHash("0x7d68bf4e9c12ccd729d1491fcf2fbf1e7bead5bf6d90aba787bbe8c05a612666"),
 		},
 	}
 
