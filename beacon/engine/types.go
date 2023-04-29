@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie"
 )
 
@@ -210,9 +209,7 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 	// Withdrawals as the json null value.
 	var withdrawalsRoot *common.Hash
 	if params.Withdrawals != nil {
-		// CHANGE(taiko): dont use stack trie for withdrawals,
-		// we should just hash the deposits instead.
-		h := calcWithdrawalsRootTaiko(params.Withdrawals)
+		h := types.DeriveSha(types.Withdrawals(params.Withdrawals), trie.NewStackTrie(nil))
 		withdrawalsRoot = &h
 	}
 
@@ -239,24 +236,6 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 		return nil, fmt.Errorf("blockhash mismatch, want %x, got %x", params.BlockHash, block.Hash())
 	}
 	return block, nil
-}
-
-// CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
-func calcWithdrawalsRootTaiko(withdrawals []*types.Withdrawal) common.Hash {
-	if len(withdrawals) == 0 {
-		return types.EmptyWithdrawalsHash
-	}
-	var result []byte
-	for _, withdrawal := range withdrawals {
-		amountBytes := new(big.Int).SetUint64(withdrawal.Amount).Bytes()
-		paddedAmountBytes := make([]byte, 12)
-		copy(paddedAmountBytes[12-len(amountBytes):], amountBytes)
-
-		result = append(result, withdrawal.Address.Bytes()...)
-		result = append(result, paddedAmountBytes...)
-	}
-
-	return crypto.Keccak256Hash(result)
 }
 
 // BlockToExecutableData constructs the ExecutableData structure by filling the
