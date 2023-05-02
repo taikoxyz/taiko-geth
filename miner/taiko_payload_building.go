@@ -13,7 +13,12 @@ func (payload *Payload) SetFullBlock(block *types.Block, fees *big.Int) {
 	payload.lock.Lock()
 	defer payload.lock.Unlock()
 
-	go func() { payload.stop <- struct{}{} }()
+	go func() {
+		select {
+		case payload.stop <- struct{}{}:
+		default:
+		}
+	}()
 
 	payload.full = block
 	payload.fullFees = fees
