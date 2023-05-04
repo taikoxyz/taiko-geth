@@ -259,12 +259,8 @@ func NewBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Heade
 func NewTaikoBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Header, receipts []*Receipt, withdrawals []*Withdrawal, hasher TrieHasher) *Block {
 	b := NewBlock(header, txs, uncles, receipts, hasher)
 
-	if withdrawals == nil {
-		b.header.WithdrawalsHash = nil
-	} else {
-		h := CalcWithdrawalsRootTaiko(withdrawals)
-		b.header.WithdrawalsHash = &h
-	}
+	h := CalcWithdrawalsRootTaiko(withdrawals)
+	b.header.WithdrawalsHash = &h
 
 	return b.WithWithdrawals(withdrawals)
 }
