@@ -87,7 +87,7 @@ func (w *worker) sealBlockWith(
 	// TODO: save the commit transactions errors for generating witness.
 	_ = commitErrs
 
-	block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, nil, env.receipts, nil)
+	block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, nil, env.receipts, withdrawals)
 	if err != nil {
 		return nil, err
 	}

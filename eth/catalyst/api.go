@@ -358,7 +358,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				payloadAttributes.BlockMetadata,
 				payloadAttributes.BaseFeePerGas,
 				payloadAttributes.Withdrawals,
-				calcWithdrawalsRootTaiko(payloadAttributes.Withdrawals),
+				types.CalcWithdrawalsRootTaiko(payloadAttributes.Withdrawals),
 			)
 			if err != nil {
 				log.Error("Failed to create sealing block", "err", err)
@@ -519,7 +519,7 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData) (engine.Payloa
 		err   error
 	)
 	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil {
-		h := calcWithdrawalsRootTaiko(params.Withdrawals)
+		h := types.CalcWithdrawalsRootTaiko(params.Withdrawals)
 		block = types.NewBlockWithHeader(&types.Header{
 			ParentHash:      params.ParentHash,
 			UncleHash:       types.EmptyUncleHash,

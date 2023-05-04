@@ -238,7 +238,7 @@ func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 
 	// Finalize block
 	t.Finalize(chain, header, state, txs, uncles, withdrawals)
-	return types.NewBlockWithWithdrawals(
+	return types.NewTaikoBlockWithWithdrawals(
 		header, txs, nil /* ignore uncles */, receipts, withdrawals, trie.NewStackTrie(nil),
 	), nil
 }
