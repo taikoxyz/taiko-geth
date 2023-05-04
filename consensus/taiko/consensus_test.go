@@ -139,44 +139,74 @@ func TestVerifyHeader(t *testing.T) {
 	}
 
 	err := testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
-		Number:  common.Big1,
-		Time:    uint64(time.Now().Unix()),
-		BaseFee: big.NewInt(params.InitialBaseFee),
+		Number:          common.Big1,
+		Time:            uint64(time.Now().Unix()),
+		BaseFee:         big.NewInt(params.InitialBaseFee),
+		WithdrawalsHash: &types.EmptyWithdrawalsHash,
+		UncleHash:       types.EmptyUncleHash,
 	}, true)
-	assert.ErrorIs(t, err, consensus.ErrUnknownAncestor, "VerifyHeader should thorw ErrUnknownAncestor when parentHash is unknown")
+	assert.ErrorIs(t, err, consensus.ErrUnknownAncestor, "VerifyHeader should throw ErrUnknownAncestor when parentHash is unknown")
 
 	err = testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
-		ParentHash: blocks[len(blocks)-1].Hash(),
-		Number:     common.Big0,
-		Time:       uint64(time.Now().Unix()),
-		BaseFee:    big.NewInt(params.InitialBaseFee),
+		ParentHash:      blocks[len(blocks)-1].Hash(),
+		Number:          common.Big0,
+		Time:            uint64(time.Now().Unix()),
+		BaseFee:         big.NewInt(params.InitialBaseFee),
+		WithdrawalsHash: &types.EmptyWithdrawalsHash,
+		UncleHash:       types.EmptyUncleHash,
 	}, true)
-	assert.ErrorIs(t, err, consensus.ErrInvalidNumber, "VerifyHeader should thorw ErrInvalidNumber when the block number is wrong")
+	assert.ErrorIs(t, err, consensus.ErrInvalidNumber, "VerifyHeader should throw ErrInvalidNumber when the block number is wrong")
+
+	err = testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
+		ParentHash:      blocks[len(blocks)-1].Hash(),
+		Number:          new(big.Int).SetInt64(int64(len(blocks))),
+		Time:            uint64(time.Now().Unix()),
+		Extra:           bytes.Repeat([]byte{1}, int(params.MaximumExtraDataSize+1)),
+		BaseFee:         big.NewInt(params.InitialBaseFee),
+		WithdrawalsHash: &types.EmptyWithdrawalsHash,
+		UncleHash:       types.EmptyUncleHash,
+	}, true)
+	assert.ErrorContains(t, err, "extra-data too long", "VerifyHeader should throw ErrExtraDataTooLong when the block has too much extra data")
+
+	err = testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
+		ParentHash:      blocks[len(blocks)-1].Hash(),
+		Number:          new(big.Int).SetInt64(int64(len(blocks))),
+		Time:            uint64(time.Now().Unix()),
+		Difficulty:      common.Big1,
+		BaseFee:         big.NewInt(params.InitialBaseFee),
+		WithdrawalsHash: &types.EmptyWithdrawalsHash,
+		UncleHash:       types.EmptyUncleHash,
+	}, true)
+	assert.ErrorContains(t, err, "invalid difficulty", "VerifyHeader should throw ErrInvalidDifficulty when difficulty is not 0")
+
+	err = testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
+		ParentHash:      blocks[len(blocks)-1].Hash(),
+		Number:          new(big.Int).SetInt64(int64(len(blocks))),
+		Time:            uint64(time.Now().Unix()),
+		GasLimit:        params.MaxGasLimit + 1,
+		BaseFee:         big.NewInt(params.InitialBaseFee),
+		WithdrawalsHash: &types.EmptyWithdrawalsHash,
+		UncleHash:       types.EmptyUncleHash,
+	}, true)
+	assert.ErrorContains(t, err, "invalid gasLimit", "VerifyHeader should throw ErrInvalidGasLimit when gasLimit is higher than the limit")
 
 	err = testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
 		ParentHash: blocks[len(blocks)-1].Hash(),
 		Number:     new(big.Int).SetInt64(int64(len(blocks))),
 		Time:       uint64(time.Now().Unix()),
-		Extra:      bytes.Repeat([]byte{1}, int(params.MaximumExtraDataSize+1)),
+		GasLimit:   params.MaxGasLimit,
 		BaseFee:    big.NewInt(params.InitialBaseFee),
+		UncleHash:  types.EmptyUncleHash,
 	}, true)
-	assert.ErrorContains(t, err, "extra-data too long", "VerifyHeader should thorw ErrExtraDataTooLong when the block has too much extra data")
+	assert.ErrorContains(t, err, "withdrawals hash missing", "VerifyHeader should throw ErrWithdrawalsHashMissing withdrawalshash is nil")
 
 	err = testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
-		ParentHash: blocks[len(blocks)-1].Hash(),
-		Number:     new(big.Int).SetInt64(int64(len(blocks))),
-		Time:       uint64(time.Now().Unix()),
-		Difficulty: common.Big1,
-		BaseFee:    big.NewInt(params.InitialBaseFee),
+		ParentHash:      blocks[len(blocks)-1].Hash(),
+		Number:          new(big.Int).SetInt64(int64(len(blocks))),
+		Time:            uint64(time.Now().Unix()),
+		GasLimit:        params.MaxGasLimit,
+		BaseFee:         big.NewInt(params.InitialBaseFee),
+		WithdrawalsHash: &types.EmptyWithdrawalsHash,
 	}, true)
-	assert.ErrorContains(t, err, "invalid difficulty", "VerifyHeader should thorw ErrInvalidDifficulty when difficulty is not 0")
-
-	err = testEngine.VerifyHeader(ethService.BlockChain(), &types.Header{
-		ParentHash: blocks[len(blocks)-1].Hash(),
-		Number:     new(big.Int).SetInt64(int64(len(blocks))),
-		Time:       uint64(time.Now().Unix()),
-		GasLimit:   params.MaxGasLimit + 1,
-		BaseFee:    big.NewInt(params.InitialBaseFee),
-	}, true)
-	assert.ErrorContains(t, err, "invalid gasLimi", "VerifyHeader should thorw ErrInvalidGasLimit when gasLimit is higher than the limit")
+	assert.ErrorContains(t, err, "uncles not empty", "VerifyHeader should throw ErrUnclesNotEmpty if uncles is not the empty hash")
 }

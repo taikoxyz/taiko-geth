@@ -14,7 +14,8 @@ func (miner *Miner) SealBlockWith(
 	timestamp uint64,
 	blkMeta *engine.BlockMetadata,
 	baseFeePerGas *big.Int,
-	withdraws types.Withdrawals,
+	withdrawals types.Withdrawals,
+	withdrawalsHash common.Hash,
 ) (*types.Block, error) {
-	return miner.worker.sealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdraws)
+	return miner.worker.sealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdrawals, withdrawalsHash)
 }

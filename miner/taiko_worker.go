@@ -19,7 +19,8 @@ func (w *worker) sealBlockWith(
 	timestamp uint64,
 	blkMeta *engine.BlockMetadata,
 	baseFeePerGas *big.Int,
-	withdraws types.Withdrawals,
+	withdrawals types.Withdrawals,
+	withdrawalsHash common.Hash,
 ) (*types.Block, error) {
 	// Decode transactions bytes.
 	var txs types.Transactions
@@ -39,7 +40,7 @@ func (w *worker) sealBlockWith(
 		parentHash:    parent,
 		coinbase:      blkMeta.Beneficiary,
 		random:        blkMeta.MixHash,
-		withdrawals:   withdraws,
+		withdrawals:   withdrawals,
 		noUncle:       true,
 		noTxs:         false,
 		baseFeePerGas: baseFeePerGas,
@@ -54,8 +55,10 @@ func (w *worker) sealBlockWith(
 	// Set the block fields using the given block metadata:
 	// 1. gas limit
 	// 2. extra data
+	// 3. withdrawals hash
 	env.header.GasLimit = blkMeta.GasLimit
 	env.header.Extra = blkMeta.ExtraData
+	env.header.WithdrawalsHash = &withdrawalsHash
 
 	// Commit transactions.
 	commitErrs := make([]error, 0, len(txs))
@@ -84,7 +87,7 @@ func (w *worker) sealBlockWith(
 	// TODO: save the commit transactions errors for generating witness.
 	_ = commitErrs
 
-	block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, nil, env.receipts, nil)
+	block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, nil, env.receipts, withdrawals)
 	if err != nil {
 		return nil, err
 	}

@@ -212,6 +212,7 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 		h := types.DeriveSha(types.Withdrawals(params.Withdrawals), trie.NewStackTrie(nil))
 		withdrawalsRoot = &h
 	}
+
 	header := &types.Header{
 		ParentHash:      params.ParentHash,
 		UncleHash:       types.EmptyUncleHash,

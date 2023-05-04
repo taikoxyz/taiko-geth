@@ -18,9 +18,10 @@ import (
 )
 
 var (
-	ErrOlderBlockTime = errors.New("timestamp older than parent")
-	ErrUnclesNotEmpty = errors.New("uncles not empty")
-	ErrEmptyBasefee   = errors.New("empty base fee")
+	ErrOlderBlockTime       = errors.New("timestamp older than parent")
+	ErrUnclesNotEmpty       = errors.New("uncles not empty")
+	ErrEmptyBasefee         = errors.New("empty base fee")
+	ErrEmptyWithdrawalsHash = errors.New("withdrawals hash missing")
 )
 
 // Taiko is a consensus engine used by L2 rollup.
@@ -161,6 +162,11 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return ErrEmptyBasefee
 	}
 
+	// WithdrawalsHash should not be empty
+	if header.WithdrawalsHash == nil {
+		return ErrEmptyWithdrawalsHash
+	}
+
 	return nil
 }
 
@@ -174,6 +180,7 @@ func (t *Taiko) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
 	}
+
 	return t.verifyHeader(chain, headers[index], parent, seals[index], unixNow)
 }
 
@@ -231,7 +238,7 @@ func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 
 	// Finalize block
 	t.Finalize(chain, header, state, txs, uncles, withdrawals)
-	return types.NewBlockWithWithdrawals(
+	return types.NewTaikoBlockWithWithdrawals(
 		header, txs, nil /* ignore uncles */, receipts, withdrawals, trie.NewStackTrie(nil),
 	), nil
 }
