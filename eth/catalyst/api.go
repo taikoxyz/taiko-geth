@@ -214,6 +214,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		log.Warn("Forkchoice requested update to zero hash")
 		return engine.STATUS_INVALID, nil // TODO(karalabe): Why does someone send us this?
 	}
+
 	// Stash away the last update to warn the user if the beacon client goes offline
 	api.lastForkchoiceLock.Lock()
 	api.lastForkchoiceUpdate = time.Now()
@@ -350,12 +351,14 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		if isTaiko {
 			// No need to check payloadAttribute here, because all its fields are
 			// marked as required.
+
 			block, err := api.eth.Miner().SealBlockWith(
 				update.HeadBlockHash,
 				payloadAttributes.Timestamp,
 				payloadAttributes.BlockMetadata,
 				payloadAttributes.BaseFeePerGas,
 				payloadAttributes.Withdrawals,
+				calcWithdrawalsRootTaiko(payloadAttributes.Withdrawals),
 			)
 			if err != nil {
 				log.Error("Failed to create sealing block", "err", err)
