@@ -255,7 +255,7 @@ func NewBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Heade
 	return b.WithWithdrawals(withdrawals)
 }
 
-// change(TAIKO): use custom withdrawals hasher
+// CHANGE(taiko): use custom withdrawals hasher
 func NewTaikoBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Header, receipts []*Receipt, withdrawals []*Withdrawal, hasher TrieHasher) *Block {
 	b := NewBlock(header, txs, uncles, receipts, hasher)
 
