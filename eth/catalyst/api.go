@@ -214,6 +214,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		log.Warn("Forkchoice requested update to zero hash")
 		return engine.STATUS_INVALID, nil // TODO(karalabe): Why does someone send us this?
 	}
+
 	// Stash away the last update to warn the user if the beacon client goes offline
 	api.lastForkchoiceLock.Lock()
 	api.lastForkchoiceUpdate = time.Now()
@@ -350,12 +351,14 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		if isTaiko {
 			// No need to check payloadAttribute here, because all its fields are
 			// marked as required.
+
 			block, err := api.eth.Miner().SealBlockWith(
 				update.HeadBlockHash,
 				payloadAttributes.Timestamp,
 				payloadAttributes.BlockMetadata,
 				payloadAttributes.BaseFeePerGas,
 				payloadAttributes.Withdrawals,
+				types.CalcWithdrawalsRootTaiko(payloadAttributes.Withdrawals),
 			)
 			if err != nil {
 				log.Error("Failed to create sealing block", "err", err)
@@ -516,22 +519,24 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData) (engine.Payloa
 		err   error
 	)
 	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil {
+		h := types.CalcWithdrawalsRootTaiko(params.Withdrawals)
 		block = types.NewBlockWithHeader(&types.Header{
-			ParentHash:  params.ParentHash,
-			UncleHash:   types.EmptyUncleHash,
-			Coinbase:    params.FeeRecipient,
-			Root:        params.StateRoot,
-			TxHash:      params.TxHash,
-			ReceiptHash: params.ReceiptsRoot,
-			Bloom:       types.BytesToBloom(params.LogsBloom),
-			Difficulty:  common.Big0,
-			Number:      new(big.Int).SetUint64(params.Number),
-			GasLimit:    params.GasLimit,
-			GasUsed:     params.GasUsed,
-			Time:        params.Timestamp,
-			BaseFee:     params.BaseFeePerGas,
-			Extra:       params.ExtraData,
-			MixDigest:   params.Random,
+			ParentHash:      params.ParentHash,
+			UncleHash:       types.EmptyUncleHash,
+			Coinbase:        params.FeeRecipient,
+			Root:            params.StateRoot,
+			TxHash:          params.TxHash,
+			ReceiptHash:     params.ReceiptsRoot,
+			Bloom:           types.BytesToBloom(params.LogsBloom),
+			Difficulty:      common.Big0,
+			Number:          new(big.Int).SetUint64(params.Number),
+			GasLimit:        params.GasLimit,
+			GasUsed:         params.GasUsed,
+			Time:            params.Timestamp,
+			BaseFee:         params.BaseFeePerGas,
+			Extra:           params.ExtraData,
+			MixDigest:       params.Random,
+			WithdrawalsHash: &h,
 		})
 	} else {
 		block, err = engine.ExecutableDataToBlock(params)

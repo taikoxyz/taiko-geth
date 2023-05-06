@@ -28,6 +28,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -254,6 +255,16 @@ func NewBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Heade
 	return b.WithWithdrawals(withdrawals)
 }
 
+// CHANGE(taiko): use custom withdrawals hasher
+func NewTaikoBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Header, receipts []*Receipt, withdrawals []*Withdrawal, hasher TrieHasher) *Block {
+	b := NewBlock(header, txs, uncles, receipts, hasher)
+
+	h := CalcWithdrawalsRootTaiko(withdrawals)
+	b.header.WithdrawalsHash = &h
+
+	return b.WithWithdrawals(withdrawals)
+}
+
 // NewBlockWithHeader creates a block with the given header data. The
 // header data is copied, changes to header and to the field values
 // will not affect the block.
@@ -452,4 +463,22 @@ func HeaderParentHashFromRLP(header []byte) common.Hash {
 		return common.Hash{}
 	}
 	return common.BytesToHash(parentHash)
+}
+
+// CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
+func CalcWithdrawalsRootTaiko(withdrawals []*Withdrawal) common.Hash {
+	if len(withdrawals) == 0 {
+		return EmptyWithdrawalsHash
+	}
+	var result []byte
+	for _, withdrawal := range withdrawals {
+		amountBytes := new(big.Int).SetUint64(withdrawal.Amount).Bytes()
+		paddedAmountBytes := make([]byte, 12)
+		copy(paddedAmountBytes[12-len(amountBytes):], amountBytes)
+
+		result = append(result, withdrawal.Address.Bytes()...)
+		result = append(result, paddedAmountBytes...)
+	}
+
+	return crypto.Keccak256Hash(result)
 }
