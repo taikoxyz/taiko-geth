@@ -518,6 +518,7 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData) (engine.Payloa
 		block *types.Block
 		err   error
 	)
+	params.TaikoBlock = api.eth.BlockChain().Config().Taiko
 	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil {
 		h := types.CalcWithdrawalsRootTaiko(params.Withdrawals)
 		block = types.NewBlockWithHeader(&types.Header{

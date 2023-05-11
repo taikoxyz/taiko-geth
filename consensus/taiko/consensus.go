@@ -214,7 +214,6 @@ func (t *Taiko) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 // consensus rules that happen at finalization (e.g. block rewards).
 func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
 	// no block rewards in l2
-	header.Root = state.IntermediateRoot(true)
 	header.UncleHash = types.CalcUncleHash(nil)
 	header.Difficulty = common.Big0
 	// Withdrawals processing.
@@ -224,6 +223,7 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 		amount = amount.Mul(amount, big.NewInt(params.GWei))
 		state.AddBalance(w.Address, amount)
 	}
+	header.Root = state.IntermediateRoot(true)
 }
 
 // FinalizeAndAssemble runs any post-transaction state modifications (e.g. block

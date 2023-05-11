@@ -19,6 +19,7 @@ package core
 import (
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -73,7 +74,14 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 		if block.Withdrawals() == nil {
 			return fmt.Errorf("missing withdrawals in block body")
 		}
-		if hash := types.DeriveSha(block.Withdrawals(), trie.NewStackTrie(nil)); hash != *header.WithdrawalsHash {
+
+		var hash common.Hash
+		if v.config.Taiko {
+			hash = types.CalcWithdrawalsRootTaiko(block.Withdrawals())
+		} else {
+			hash = types.DeriveSha(block.Withdrawals(), trie.NewStackTrie(nil))
+		}
+		if hash != *header.WithdrawalsHash {
 			return fmt.Errorf("withdrawals root hash mismatch (header value %x, calculated %x)", *header.WithdrawalsHash, hash)
 		}
 	} else if block.Withdrawals() != nil {

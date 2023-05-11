@@ -91,6 +91,7 @@ type ExecutableData struct {
 	Transactions  [][]byte            `json:"transactions"  gencodec:"required"`
 	Withdrawals   []*types.Withdrawal `json:"withdrawals"`
 	TxHash        common.Hash         `json:"txHash"` // CHANGE(taiko): allow passing txHash directly instead of transactions list
+	TaikoBlock    bool                // CHANGE(taiko): whether this is a Taiko L2 block, only used by ExecutableDataToBlock
 }
 
 // JSON type overrides for executableData.
