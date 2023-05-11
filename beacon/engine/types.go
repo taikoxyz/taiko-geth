@@ -210,7 +210,12 @@ func ExecutableDataToBlock(params ExecutableData) (*types.Block, error) {
 	// Withdrawals as the json null value.
 	var withdrawalsRoot *common.Hash
 	if params.Withdrawals != nil {
-		h := types.DeriveSha(types.Withdrawals(params.Withdrawals), trie.NewStackTrie(nil))
+		var h common.Hash
+		if params.TaikoBlock {
+			h = types.CalcWithdrawalsRootTaiko(params.Withdrawals)
+		} else {
+			h = types.DeriveSha(types.Withdrawals(params.Withdrawals), trie.NewStackTrie(nil))
+		}
 		withdrawalsRoot = &h
 	}
 
