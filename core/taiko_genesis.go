@@ -17,11 +17,9 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	switch networkID {
 	case params.TaikoInternal1NetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoInternal1NetworkID
-		chainConfig.Treasure = common.HexToAddress("0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f")
 		allocJSON = taikoGenesis.Internal1GenesisAllocJSON
 	case params.TaikoInternal2NetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoInternal2NetworkID
-		chainConfig.Treasure = common.HexToAddress("0x23618e81E3f5cdF7f54C3d65f7FBc0aBf5B21E8f")
 		allocJSON = taikoGenesis.Internal2GenesisAllocJSON
 	case params.SnæfellsjökullNetworkID.Uint64():
 		chainConfig.ChainID = params.SnæfellsjökullNetworkID

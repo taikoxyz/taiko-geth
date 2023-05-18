@@ -34,4 +34,5 @@ var TaikoChainConfig = &ChainConfig{
 	TerminalTotalDifficulty:       common.Big0,
 	TerminalTotalDifficultyPassed: true,
 	Taiko:                         true,
+	Treasury:                      common.HexToAddress("0x1000777700000000000000000000000000000001"), // TODO: update this value
 }
