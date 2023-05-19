@@ -468,7 +468,7 @@ func HeaderParentHashFromRLP(header []byte) common.Hash {
 // CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
 func CalcWithdrawalsRootTaiko(withdrawals []*Withdrawal) common.Hash {
 	if len(withdrawals) == 0 {
-		return EmptyWithdrawalsHash
+		return EmptyCodeHash // a known keccak256 hash of the empty payload bytes.
 	}
 	var result []byte
 	for _, withdrawal := range withdrawals {

@@ -354,7 +354,7 @@ func Test_CalcWithdrawalsRootTaiko(t *testing.T) {
 		{
 			"empty",
 			nil,
-			EmptyWithdrawalsHash,
+			EmptyCodeHash,
 		},
 		{
 			"withWithdrawals",
