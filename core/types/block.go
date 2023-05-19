@@ -18,6 +18,7 @@
 package types
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -465,20 +466,34 @@ func HeaderParentHashFromRLP(header []byte) common.Hash {
 	return common.BytesToHash(parentHash)
 }
 
-// CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256
+// CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256.
+// Golang equivalent to this solidity function:
+// function hashDeposits(TaikoData.EthDeposit[] memory deposits) internal pure returns (bytes32) {
+// bytes memory buffer;
+//
+//	 for (uint256 i = 0; i < deposits.length; i++) {
+//		  buffer = abi.encodePacked(buffer, deposits[i].recipient, deposits[i].amount);
+//	 }
+//
+//	 return keccak256(buffer);
+//	 }
 func CalcWithdrawalsRootTaiko(withdrawals []*Withdrawal) common.Hash {
+	// only process withdrawals/deposits of 8 minimum
 	if len(withdrawals) == 0 {
 		return EmptyCodeHash // a known keccak256 hash of the empty payload bytes.
 	}
-	var result []byte
-	for _, withdrawal := range withdrawals {
-		amountBytes := new(big.Int).SetUint64(withdrawal.Amount).Bytes()
-		paddedAmountBytes := make([]byte, 12)
-		copy(paddedAmountBytes[12-len(amountBytes):], amountBytes)
 
-		result = append(result, withdrawal.Address.Bytes()...)
-		result = append(result, paddedAmountBytes...)
+	var b []byte
+
+	for _, withdrawal := range withdrawals {
+		// uint96 solidity type needs us to make 12 length byte slice and put
+		// the uint64 into the last 8 bytes. solidity is also bigendian by
+		// default so we need to be specific.
+		amountBytes := make([]byte, 12)
+		binary.BigEndian.PutUint64(amountBytes[4:], withdrawal.Amount)
+
+		b = bytes.Join([][]byte{b, withdrawal.Address.Bytes(), amountBytes}, nil)
 	}
 
-	return crypto.Keccak256Hash(result)
+	return crypto.Keccak256Hash(b)
 }

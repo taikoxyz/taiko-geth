@@ -344,7 +344,7 @@ func TestRlpDecodeParentHash(t *testing.T) {
 	}
 }
 
-// c hange(TAIKO): test
+// change(TAIKO): test
 func Test_CalcWithdrawalsRootTaiko(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -360,15 +360,39 @@ func Test_CalcWithdrawalsRootTaiko(t *testing.T) {
 			"withWithdrawals",
 			[]*Withdrawal{
 				{
-					Address: common.HexToAddress("0x388C818CA8B9251b393131C08a736A67ccB19297"),
-					Amount:  100000000,
+					Address: common.HexToAddress("0xa9bcF99f5eb19277f48b71F9b14f5960AEA58a89"),
+					Amount:  1000000000000000000,
 				},
 				{
-					Address: common.HexToAddress("0xeEE27662c2B8EBa3CD936A23F039F3189633e4C8"),
-					Amount:  184938493,
+					Address: common.HexToAddress("0x200708D76eB1B69761c23821809d53F65049939e"),
+					Amount:  2000000000000000000,
+				},
+				{
+					Address: common.HexToAddress("0x300C9b60E19634e12FC6D68B7FEa7bFB26c2E419"),
+					Amount:  3000000000000000000,
+				},
+				{
+					Address: common.HexToAddress("0x400147C0Eb43D8D71b2B03037bB7B31f8f78EF5F"),
+					Amount:  4000000000000000000,
+				},
+				{
+					Address: common.HexToAddress("0x50081b12838240B1bA02b3177153Bca678a86078"),
+					Amount:  5000000000000000000,
+				},
+				{
+					Address: common.HexToAddress("0x430c9b60e19634e12FC6d68B7fEa7bFB26c2e419"),
+					Amount:  6000000000000000000,
+				},
+				{
+					Address: common.HexToAddress("0x520147C0eB43d8D71b2b03037bB7b31f8F78EF5f"),
+					Amount:  7000000000000000000,
+				},
+				{
+					Address: common.HexToAddress("0x61081B12838240B1Ba02b3177153BcA678a86078"),
+					Amount:  8000000000000000000,
 				},
 			},
-			common.HexToHash("0xc3f16b87d5d286399c3d4daa4e7e3ae75840d66d0560863a2bdb4eb1bfaff229"),
+			common.HexToHash("0x8117066d69ff650d78f0d7383a10cc802c2b8c0eedd932d70994252e2438c636"),
 		},
 	}
 
