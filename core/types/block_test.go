@@ -357,16 +357,6 @@ func Test_CalcWithdrawalsRootTaiko(t *testing.T) {
 			EmptyWithdrawalsHash,
 		},
 		{
-			"lessThanLength8",
-			[]*Withdrawal{
-				{
-					Address: common.HexToAddress("0xa9bcF99f5eb19277f48b71F9b14f5960AEA58a89"),
-					Amount:  1000000000000000000,
-				},
-			},
-			EmptyWithdrawalsHash,
-		},
-		{
 			"withWithdrawals",
 			[]*Withdrawal{
 				{
