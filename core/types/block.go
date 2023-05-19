@@ -467,7 +467,7 @@ func HeaderParentHashFromRLP(header []byte) common.Hash {
 }
 
 // CHANGE(taiko): calc withdrawals root by hashing deposits with keccak256.
-// Golang equivilant to this solidity function:
+// Golang equivalent to this solidity function:
 // function hashDeposits(TaikoData.EthDeposit[] memory deposits) internal pure returns (bytes32) {
 // bytes memory buffer;
 //
