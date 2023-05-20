@@ -218,10 +218,7 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	header.Difficulty = common.Big0
 	// Withdrawals processing.
 	for _, w := range withdrawals {
-		// Convert amount from gwei to wei.
-		amount := new(big.Int).SetUint64(w.Amount)
-		amount = amount.Mul(amount, big.NewInt(params.GWei))
-		state.AddBalance(w.Address, amount)
+		state.AddBalance(w.Address, new(big.Int).SetUint64(w.Amount))
 	}
 	header.Root = state.IntermediateRoot(true)
 }
