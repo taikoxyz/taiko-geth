@@ -405,7 +405,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		fee.Mul(fee, effectiveTip)
 		st.state.AddBalance(st.evm.Context.Coinbase, fee)
 		// CHANGE(taiko): basefee is not burnt, but sent to a treasury instead.
-		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil {
+		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.isAnchor() {
 			st.state.AddBalance(
 				st.evm.ChainConfig().Treasury,
 				new(big.Int).Mul(st.evm.Context.BaseFee, new(big.Int).SetUint64(st.gasUsed())),
