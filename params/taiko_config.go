@@ -15,6 +15,7 @@ var (
 	TaikoInternal2NetworkID = big.NewInt(167002)
 	SnæfellsjökullNetworkID = big.NewInt(167003)
 	AskjaNetworkID          = big.NewInt(167004)
+	GrimsvotnNetworkID      = big.NewInt(167005)
 )
 
 var TaikoChainConfig = &ChainConfig{
@@ -34,5 +35,5 @@ var TaikoChainConfig = &ChainConfig{
 	TerminalTotalDifficulty:       common.Big0,
 	TerminalTotalDifficultyPassed: true,
 	Taiko:                         true,
-	Treasury:                      common.HexToAddress("0x1000777700000000000000000000000000000001"), // TODO: update this value
+	Treasury:                      common.HexToAddress("0xdf09A0afD09a63fb04ab3573922437e1e637dE8b"),
 }
