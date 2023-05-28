@@ -30,9 +30,10 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		ExtraData     hexutil.Bytes       `json:"extraData"     gencodec:"required"`
 		BaseFeePerGas *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
 		BlockHash     common.Hash         `json:"blockHash"     gencodec:"required"`
-		Transactions  []hexutil.Bytes     `json:"transactions"  gencodec:"required"`
+		Transactions  []hexutil.Bytes     `json:"transactions"`
 		Withdrawals   []*types.Withdrawal `json:"withdrawals"`
 		TxHash        common.Hash         `json:"txHash"`
+		TaikoBlock    bool
 	}
 	var enc ExecutableData
 	enc.ParentHash = e.ParentHash
@@ -56,6 +57,7 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 	}
 	enc.Withdrawals = e.Withdrawals
 	enc.TxHash = e.TxHash
+	enc.TaikoBlock = e.TaikoBlock
 	return json.Marshal(&enc)
 }
 
@@ -75,9 +77,10 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		ExtraData     *hexutil.Bytes      `json:"extraData"     gencodec:"required"`
 		BaseFeePerGas *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
 		BlockHash     *common.Hash        `json:"blockHash"     gencodec:"required"`
-		Transactions  []hexutil.Bytes     `json:"transactions"  gencodec:"required"`
+		Transactions  []hexutil.Bytes     `json:"transactions"`
 		Withdrawals   []*types.Withdrawal `json:"withdrawals"`
 		TxHash        *common.Hash        `json:"txHash"`
+		TaikoBlock    *bool
 	}
 	var dec ExecutableData
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -135,18 +138,20 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'blockHash' for ExecutableData")
 	}
 	e.BlockHash = *dec.BlockHash
-	if dec.Transactions == nil {
-		return errors.New("missing required field 'transactions' for ExecutableData")
-	}
-	e.Transactions = make([][]byte, len(dec.Transactions))
-	for k, v := range dec.Transactions {
-		e.Transactions[k] = v
+	if dec.Transactions != nil {
+		e.Transactions = make([][]byte, len(dec.Transactions))
+		for k, v := range dec.Transactions {
+			e.Transactions[k] = v
+		}
 	}
 	if dec.Withdrawals != nil {
 		e.Withdrawals = dec.Withdrawals
 	}
 	if dec.TxHash != nil {
 		e.TxHash = *dec.TxHash
+	}
+	if dec.TaikoBlock != nil {
+		e.TaikoBlock = *dec.TaikoBlock
 	}
 	return nil
 }
