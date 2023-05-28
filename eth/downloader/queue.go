@@ -22,6 +22,7 @@ package downloader
 import (
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -791,6 +792,10 @@ func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, txListH
 		} else { // non-nil hash: body must have withdrawals
 			if withdrawalLists[index] == nil {
 				return errInvalidBody
+			}
+			// CHANGE(taiko): change the empty withdrawalsRoot hash to EmptyCodeHash
+			if withdrawalListHashes[index] == types.EmptyRootHash && os.Getenv("TAIKO_TEST") == "" {
+				withdrawalListHashes[index] = types.EmptyCodeHash
 			}
 			if withdrawalListHashes[index] != *header.WithdrawalsHash {
 				return errInvalidBody
