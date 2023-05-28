@@ -75,23 +75,24 @@ type blockMetadataMarshaling struct {
 //
 //go:generate go run github.com/fjl/gencodec -type ExecutableData -field-override executableDataMarshaling -out gen_ed.go
 type ExecutableData struct {
-	ParentHash    common.Hash         `json:"parentHash"    gencodec:"required"`
-	FeeRecipient  common.Address      `json:"feeRecipient"  gencodec:"required"`
-	StateRoot     common.Hash         `json:"stateRoot"     gencodec:"required"`
-	ReceiptsRoot  common.Hash         `json:"receiptsRoot"  gencodec:"required"`
-	LogsBloom     []byte              `json:"logsBloom"     gencodec:"required"`
-	Random        common.Hash         `json:"prevRandao"    gencodec:"required"`
-	Number        uint64              `json:"blockNumber"   gencodec:"required"`
-	GasLimit      uint64              `json:"gasLimit"      gencodec:"required"`
-	GasUsed       uint64              `json:"gasUsed"       gencodec:"required"`
-	Timestamp     uint64              `json:"timestamp"     gencodec:"required"`
-	ExtraData     []byte              `json:"extraData"     gencodec:"required"`
-	BaseFeePerGas *big.Int            `json:"baseFeePerGas" gencodec:"required"`
-	BlockHash     common.Hash         `json:"blockHash"     gencodec:"required"`
-	Transactions  [][]byte            `json:"transactions"`
-	Withdrawals   []*types.Withdrawal `json:"withdrawals"`
-	TxHash        common.Hash         `json:"txHash"` // CHANGE(taiko): allow passing txHash directly instead of transactions list
-	TaikoBlock    bool                // CHANGE(taiko): whether this is a Taiko L2 block, only used by ExecutableDataToBlock
+	ParentHash      common.Hash         `json:"parentHash"    gencodec:"required"`
+	FeeRecipient    common.Address      `json:"feeRecipient"  gencodec:"required"`
+	StateRoot       common.Hash         `json:"stateRoot"     gencodec:"required"`
+	ReceiptsRoot    common.Hash         `json:"receiptsRoot"  gencodec:"required"`
+	LogsBloom       []byte              `json:"logsBloom"     gencodec:"required"`
+	Random          common.Hash         `json:"prevRandao"    gencodec:"required"`
+	Number          uint64              `json:"blockNumber"   gencodec:"required"`
+	GasLimit        uint64              `json:"gasLimit"      gencodec:"required"`
+	GasUsed         uint64              `json:"gasUsed"       gencodec:"required"`
+	Timestamp       uint64              `json:"timestamp"     gencodec:"required"`
+	ExtraData       []byte              `json:"extraData"     gencodec:"required"`
+	BaseFeePerGas   *big.Int            `json:"baseFeePerGas" gencodec:"required"`
+	BlockHash       common.Hash         `json:"blockHash"     gencodec:"required"`
+	Transactions    [][]byte            `json:"transactions"`
+	Withdrawals     []*types.Withdrawal `json:"withdrawals"`
+	TxHash          common.Hash         `json:"txHash"`          // CHANGE(taiko): allow passing txHash directly instead of transactions list
+	WithdrawalsHash common.Hash         `json:"withdrawalsHash"` // CHANGE(taiko): allow passing WithdrawalsHash directly instead of withdrawals
+	TaikoBlock      bool                // CHANGE(taiko): whether this is a Taiko L2 block, only used by ExecutableDataToBlock
 }
 
 // JSON type overrides for executableData.

@@ -17,23 +17,24 @@ var _ = (*executableDataMarshaling)(nil)
 // MarshalJSON marshals as JSON.
 func (e ExecutableData) MarshalJSON() ([]byte, error) {
 	type ExecutableData struct {
-		ParentHash    common.Hash         `json:"parentHash"    gencodec:"required"`
-		FeeRecipient  common.Address      `json:"feeRecipient"  gencodec:"required"`
-		StateRoot     common.Hash         `json:"stateRoot"     gencodec:"required"`
-		ReceiptsRoot  common.Hash         `json:"receiptsRoot"  gencodec:"required"`
-		LogsBloom     hexutil.Bytes       `json:"logsBloom"     gencodec:"required"`
-		Random        common.Hash         `json:"prevRandao"    gencodec:"required"`
-		Number        hexutil.Uint64      `json:"blockNumber"   gencodec:"required"`
-		GasLimit      hexutil.Uint64      `json:"gasLimit"      gencodec:"required"`
-		GasUsed       hexutil.Uint64      `json:"gasUsed"       gencodec:"required"`
-		Timestamp     hexutil.Uint64      `json:"timestamp"     gencodec:"required"`
-		ExtraData     hexutil.Bytes       `json:"extraData"     gencodec:"required"`
-		BaseFeePerGas *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
-		BlockHash     common.Hash         `json:"blockHash"     gencodec:"required"`
-		Transactions  []hexutil.Bytes     `json:"transactions"`
-		Withdrawals   []*types.Withdrawal `json:"withdrawals"`
-		TxHash        common.Hash         `json:"txHash"`
-		TaikoBlock    bool
+		ParentHash      common.Hash         `json:"parentHash"    gencodec:"required"`
+		FeeRecipient    common.Address      `json:"feeRecipient"  gencodec:"required"`
+		StateRoot       common.Hash         `json:"stateRoot"     gencodec:"required"`
+		ReceiptsRoot    common.Hash         `json:"receiptsRoot"  gencodec:"required"`
+		LogsBloom       hexutil.Bytes       `json:"logsBloom"     gencodec:"required"`
+		Random          common.Hash         `json:"prevRandao"    gencodec:"required"`
+		Number          hexutil.Uint64      `json:"blockNumber"   gencodec:"required"`
+		GasLimit        hexutil.Uint64      `json:"gasLimit"      gencodec:"required"`
+		GasUsed         hexutil.Uint64      `json:"gasUsed"       gencodec:"required"`
+		Timestamp       hexutil.Uint64      `json:"timestamp"     gencodec:"required"`
+		ExtraData       hexutil.Bytes       `json:"extraData"     gencodec:"required"`
+		BaseFeePerGas   *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
+		BlockHash       common.Hash         `json:"blockHash"     gencodec:"required"`
+		Transactions    []hexutil.Bytes     `json:"transactions"`
+		Withdrawals     []*types.Withdrawal `json:"withdrawals"`
+		TxHash          common.Hash         `json:"txHash"`
+		WithdrawalsHash common.Hash         `json:"withdrawalsHash"`
+		TaikoBlock      bool
 	}
 	var enc ExecutableData
 	enc.ParentHash = e.ParentHash
@@ -57,6 +58,7 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 	}
 	enc.Withdrawals = e.Withdrawals
 	enc.TxHash = e.TxHash
+	enc.WithdrawalsHash = e.WithdrawalsHash
 	enc.TaikoBlock = e.TaikoBlock
 	return json.Marshal(&enc)
 }
@@ -64,23 +66,24 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON unmarshals from JSON.
 func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 	type ExecutableData struct {
-		ParentHash    *common.Hash        `json:"parentHash"    gencodec:"required"`
-		FeeRecipient  *common.Address     `json:"feeRecipient"  gencodec:"required"`
-		StateRoot     *common.Hash        `json:"stateRoot"     gencodec:"required"`
-		ReceiptsRoot  *common.Hash        `json:"receiptsRoot"  gencodec:"required"`
-		LogsBloom     *hexutil.Bytes      `json:"logsBloom"     gencodec:"required"`
-		Random        *common.Hash        `json:"prevRandao"    gencodec:"required"`
-		Number        *hexutil.Uint64     `json:"blockNumber"   gencodec:"required"`
-		GasLimit      *hexutil.Uint64     `json:"gasLimit"      gencodec:"required"`
-		GasUsed       *hexutil.Uint64     `json:"gasUsed"       gencodec:"required"`
-		Timestamp     *hexutil.Uint64     `json:"timestamp"     gencodec:"required"`
-		ExtraData     *hexutil.Bytes      `json:"extraData"     gencodec:"required"`
-		BaseFeePerGas *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
-		BlockHash     *common.Hash        `json:"blockHash"     gencodec:"required"`
-		Transactions  []hexutil.Bytes     `json:"transactions"`
-		Withdrawals   []*types.Withdrawal `json:"withdrawals"`
-		TxHash        *common.Hash        `json:"txHash"`
-		TaikoBlock    *bool
+		ParentHash      *common.Hash        `json:"parentHash"    gencodec:"required"`
+		FeeRecipient    *common.Address     `json:"feeRecipient"  gencodec:"required"`
+		StateRoot       *common.Hash        `json:"stateRoot"     gencodec:"required"`
+		ReceiptsRoot    *common.Hash        `json:"receiptsRoot"  gencodec:"required"`
+		LogsBloom       *hexutil.Bytes      `json:"logsBloom"     gencodec:"required"`
+		Random          *common.Hash        `json:"prevRandao"    gencodec:"required"`
+		Number          *hexutil.Uint64     `json:"blockNumber"   gencodec:"required"`
+		GasLimit        *hexutil.Uint64     `json:"gasLimit"      gencodec:"required"`
+		GasUsed         *hexutil.Uint64     `json:"gasUsed"       gencodec:"required"`
+		Timestamp       *hexutil.Uint64     `json:"timestamp"     gencodec:"required"`
+		ExtraData       *hexutil.Bytes      `json:"extraData"     gencodec:"required"`
+		BaseFeePerGas   *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
+		BlockHash       *common.Hash        `json:"blockHash"     gencodec:"required"`
+		Transactions    []hexutil.Bytes     `json:"transactions"`
+		Withdrawals     []*types.Withdrawal `json:"withdrawals"`
+		TxHash          *common.Hash        `json:"txHash"`
+		WithdrawalsHash *common.Hash        `json:"withdrawalsHash"`
+		TaikoBlock      *bool
 	}
 	var dec ExecutableData
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -149,6 +152,9 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 	}
 	if dec.TxHash != nil {
 		e.TxHash = *dec.TxHash
+	}
+	if dec.WithdrawalsHash != nil {
+		e.WithdrawalsHash = *dec.WithdrawalsHash
 	}
 	if dec.TaikoBlock != nil {
 		e.TaikoBlock = *dec.TaikoBlock

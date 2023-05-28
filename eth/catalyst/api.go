@@ -523,8 +523,7 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData) (engine.Payloa
 		err   error
 	)
 	params.TaikoBlock = api.eth.BlockChain().Config().Taiko
-	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil {
-		h := types.CalcWithdrawalsRootTaiko(params.Withdrawals)
+	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil && params.Withdrawals == nil {
 		block = types.NewBlockWithHeader(&types.Header{
 			ParentHash:      params.ParentHash,
 			UncleHash:       types.EmptyUncleHash,
@@ -541,7 +540,7 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData) (engine.Payloa
 			BaseFee:         params.BaseFeePerGas,
 			Extra:           params.ExtraData,
 			MixDigest:       params.Random,
-			WithdrawalsHash: &h,
+			WithdrawalsHash: &params.WithdrawalsHash,
 		})
 	} else {
 		block, err = engine.ExecutableDataToBlock(params)
