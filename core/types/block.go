@@ -490,7 +490,7 @@ type ethDeposit struct {
 func CalcWithdrawalsRootTaiko(withdrawals []*Withdrawal) common.Hash {
 	// only process withdrawals/deposits of `TaikoConfig.minEthDepositsPerBlock` minimum.
 	if len(withdrawals) == 0 {
-		return EmptyCodeHash // a known keccak256 hash of the empty payload bytes.
+		return common.HexToHash("0x569e75fc77c1a856f6daaf9e69d8a9566ca34aa47f9133711ce065a571af0cfd") // a known keccak256 hash of zero withdrawal.
 	}
 
 	var deposits []ethDeposit

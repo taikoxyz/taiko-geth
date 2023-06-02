@@ -344,8 +344,8 @@ func TestRlpDecodeParentHash(t *testing.T) {
 	}
 }
 
-// change(TAIKO): test
-func Test_CalcWithdrawalsRootTaiko(t *testing.T) {
+// CHANGE(taiko): test `CalcWithdrawalsRootTaiko`
+func TestCalcWithdrawalsRootTaiko(t *testing.T) {
 	tests := []struct {
 		name        string
 		withdrawals []*Withdrawal
@@ -354,7 +354,7 @@ func Test_CalcWithdrawalsRootTaiko(t *testing.T) {
 		{
 			"empty",
 			nil,
-			EmptyCodeHash,
+			common.HexToHash("0x569e75fc77c1a856f6daaf9e69d8a9566ca34aa47f9133711ce065a571af0cfd"),
 		},
 		{
 			"withWithdrawals",
@@ -392,7 +392,7 @@ func Test_CalcWithdrawalsRootTaiko(t *testing.T) {
 					Amount:  8000000000000000000,
 				},
 			},
-			common.HexToHash("0x8117066d69ff650d78f0d7383a10cc802c2b8c0eedd932d70994252e2438c636"),
+			common.HexToHash("0x9098dca53e2412a11d456add7b3652df403e043b2a20f456d4651b9a73b70a30"),
 		},
 	}
 
