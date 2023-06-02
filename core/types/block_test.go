@@ -362,37 +362,45 @@ func TestCalcWithdrawalsRootTaiko(t *testing.T) {
 				{
 					Address: common.HexToAddress("0xa9bcF99f5eb19277f48b71F9b14f5960AEA58a89"),
 					Amount:  1000000000000000000,
+					Index:   0,
 				},
 				{
 					Address: common.HexToAddress("0x200708D76eB1B69761c23821809d53F65049939e"),
 					Amount:  2000000000000000000,
+					Index:   1,
 				},
 				{
 					Address: common.HexToAddress("0x300C9b60E19634e12FC6D68B7FEa7bFB26c2E419"),
 					Amount:  3000000000000000000,
+					Index:   2,
 				},
 				{
 					Address: common.HexToAddress("0x400147C0Eb43D8D71b2B03037bB7B31f8f78EF5F"),
 					Amount:  4000000000000000000,
+					Index:   3,
 				},
 				{
 					Address: common.HexToAddress("0x50081b12838240B1bA02b3177153Bca678a86078"),
 					Amount:  5000000000000000000,
+					Index:   4,
 				},
 				{
 					Address: common.HexToAddress("0x430c9b60e19634e12FC6d68B7fEa7bFB26c2e419"),
 					Amount:  6000000000000000000,
+					Index:   5,
 				},
 				{
 					Address: common.HexToAddress("0x520147C0eB43d8D71b2b03037bB7b31f8F78EF5f"),
 					Amount:  7000000000000000000,
+					Index:   6,
 				},
 				{
 					Address: common.HexToAddress("0x61081B12838240B1Ba02b3177153BcA678a86078"),
 					Amount:  8000000000000000000,
+					Index:   7,
 				},
 			},
-			common.HexToHash("0x9098dca53e2412a11d456add7b3652df403e043b2a20f456d4651b9a73b70a30"),
+			common.HexToHash("0x60386add6a400d9b23968e1239bd600d22d2eea4709246895c0e5d8f5ae49dc3"),
 		},
 	}
 
