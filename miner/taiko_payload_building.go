@@ -14,6 +14,9 @@ func (payload *Payload) SetFullBlock(block *types.Block, fees *big.Int) {
 	defer payload.lock.Unlock()
 
 	go func() {
+		payload.lock.Lock()
+		defer payload.lock.Unlock()
+
 		select {
 		case payload.stop <- struct{}{}:
 		default:
