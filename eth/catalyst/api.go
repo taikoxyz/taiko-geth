@@ -798,7 +798,7 @@ func (api *ConsensusAPI) heartbeat() {
 			if time.Since(lastTransitionUpdate) > beaconUpdateExchangeTimeout {
 				if time.Since(offlineLogged) > beaconUpdateWarnFrequency {
 					if lastTransitionUpdate.IsZero() {
-						log.Warn("Post-merge network, but no beacon client seen. Please launch one to follow the chain!")
+						// log.Warn("Post-merge network, but no beacon client seen. Please launch one to follow the chain!")
 					} else {
 						log.Warn("Previously seen beacon client is offline. Please ensure it is operational to follow the chain!")
 					}
