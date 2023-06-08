@@ -18,6 +18,8 @@ func (payload *Payload) SetFullBlock(block *types.Block, fees *big.Int) {
 		defer payload.lock.Unlock()
 
 		select {
+		case <-payload.done:
+			log.Info("SetFullBlock payload done received", "id", payload.id)
 		case payload.stop <- struct{}{}:
 		default:
 		}
