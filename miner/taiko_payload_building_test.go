@@ -53,6 +53,63 @@ func Test_SetFullBlock_AvoidPanic(t *testing.T) {
 	payload.SetFullBlock(block, fees)
 }
 
+func Test_AfterSetFullBlock_Panic_DoneChannelNotSent(t *testing.T) {
+	var (
+		db        = rawdb.NewMemoryDatabase()
+		recipient = common.HexToAddress("0xdeadbeef")
+	)
+	w, b := newTestWorker(t, params.TestChainConfig, ethash.NewFaker(), db, 0)
+	defer w.close()
+
+	timestamp := uint64(time.Now().Unix())
+	args := &BuildPayloadArgs{
+		Parent:       b.chain.CurrentBlock().Hash(),
+		Timestamp:    timestamp,
+		Random:       common.Hash{},
+		FeeRecipient: recipient,
+	}
+	payload, err := w.buildPayload(args)
+	if err != nil {
+		t.Fatalf("Failed to build payload %v", err)
+	}
+
+	// dont send on done channel, but close stop channel.
+	// should panic when sent on.
+	close(payload.stop)
+
+	assert.Panics(t, func() {
+		payload.afterSetFullBlock()
+	})
+}
+
+func Test_AfterSetFullBlock_AvoidPanic_DoneChannelSent(t *testing.T) {
+	var (
+		db        = rawdb.NewMemoryDatabase()
+		recipient = common.HexToAddress("0xdeadbeef")
+	)
+	w, b := newTestWorker(t, params.TestChainConfig, ethash.NewFaker(), db, 0)
+	defer w.close()
+
+	timestamp := uint64(time.Now().Unix())
+	args := &BuildPayloadArgs{
+		Parent:       b.chain.CurrentBlock().Hash(),
+		Timestamp:    timestamp,
+		Random:       common.Hash{},
+		FeeRecipient: recipient,
+	}
+	payload, err := w.buildPayload(args)
+	if err != nil {
+		t.Fatalf("Failed to build payload %v", err)
+	}
+
+	payload.done <- struct{}{}
+	close(payload.stop)
+
+	assert.NotPanics(t, func() {
+		payload.afterSetFullBlock()
+	})
+}
+
 func Test_SetFullBlock(t *testing.T) {
 	var (
 		db        = rawdb.NewMemoryDatabase()
