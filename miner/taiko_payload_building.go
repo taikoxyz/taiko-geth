@@ -13,17 +13,7 @@ func (payload *Payload) SetFullBlock(block *types.Block, fees *big.Int) {
 	payload.lock.Lock()
 	defer payload.lock.Unlock()
 
-	go func() {
-		payload.lock.Lock()
-		defer payload.lock.Unlock()
-
-		select {
-		case <-payload.done:
-			log.Info("SetFullBlock payload done received", "id", payload.id)
-		case payload.stop <- struct{}{}:
-		default:
-		}
-	}()
+	go payload.afterSetFullBlock()
 
 	payload.full = block
 	payload.fullFees = fees
@@ -34,4 +24,21 @@ func (payload *Payload) SetFullBlock(block *types.Block, fees *big.Int) {
 		"root", block.Root())
 
 	payload.cond.Broadcast() // fire signal for notifying full block
+}
+
+func (payload *Payload) afterSetFullBlock() {
+	payload.lock.Lock()
+	defer payload.lock.Unlock()
+
+	select {
+	case <-payload.done:
+		log.Info("SetFullBlock payload done received", "id", payload.id)
+		return
+	default:
+	}
+
+	select {
+	case payload.stop <- struct{}{}:
+	default:
+	}
 }
