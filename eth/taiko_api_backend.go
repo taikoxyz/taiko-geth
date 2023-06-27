@@ -68,7 +68,7 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	minTxGasLimit uint64,
 	locals []string,
 ) ([]types.Transactions, error) {
-	pending := s.eth.TxPool().Pending(false)
+	pending := s.eth.TxPool().Pending(true)
 
 	log.Debug(
 		"Fetching L2 pending transactions finished",
