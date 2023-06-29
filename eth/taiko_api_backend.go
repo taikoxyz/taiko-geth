@@ -1,14 +1,18 @@
 package eth
 
 import (
+	"context"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // TaikoAPIBackend handles l2 node related RPC calls.
@@ -80,6 +84,11 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		"locals", locals,
 	)
 
+	filteredPendings, err := filterInexecutableTxs(context.Background(), s.eth.APIBackend, pending)
+	if err != nil {
+		return nil, err
+	}
+
 	contentSplitter, err := core.NewPoolContentSplitter(
 		s.eth.BlockChain().Config().ChainID,
 		maxTransactionsPerBlock,
@@ -96,7 +105,7 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		txsCount = 0
 		txLists  []types.Transactions
 	)
-	for _, splittedTxs := range contentSplitter.Split(pending) {
+	for _, splittedTxs := range contentSplitter.Split(filteredPendings) {
 		if txsCount+splittedTxs.Len() < int(maxTransactionsPerBlock) {
 			txLists = append(txLists, splittedTxs)
 			txsCount += splittedTxs.Len()
@@ -108,4 +117,51 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	}
 
 	return txLists, nil
+}
+
+func filterInexecutableTxs(
+	ctx context.Context,
+	backend ethapi.Backend,
+	pendings map[common.Address]types.Transactions,
+) (map[common.Address]types.Transactions, error) {
+	executableTxs := make(map[common.Address]types.Transactions)
+	currentHead := rpc.BlockNumber(backend.CurrentHeader().Number.Int64())
+	// Resolve block number and use its state to ask for the nonce
+	state, _, err := backend.StateAndHeaderByNumberOrHash(ctx, rpc.BlockNumberOrHash{
+		BlockNumber: &currentHead,
+	})
+	if state == nil || err != nil {
+		return nil, err
+	}
+
+	for addr, txs := range pendings {
+		pendingTxs := make(types.Transactions, 0)
+		for i, tx := range txs {
+			// Check that account's nonce at first
+			if i == 0 {
+				nonce := state.GetNonce(addr)
+				if tx.Nonce() != nonce {
+					log.Debug(
+						"Skip a transaction with an invalid nonce",
+						"address", addr,
+						"nonceInTx", tx.Nonce(),
+						"nonceInState", nonce,
+					)
+					break
+				}
+			}
+			// Check baseFee, should not be zero
+			if tx.GasFeeCap().Uint64() == 0 {
+				break
+			}
+
+			pendingTxs = append(pendingTxs, tx)
+		}
+
+		if len(pendingTxs) > 0 {
+			executableTxs[addr] = pendingTxs
+		}
+	}
+
+	return executableTxs, nil
 }
