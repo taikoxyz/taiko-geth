@@ -123,7 +123,7 @@ func filterTxs(pendings map[common.Address]types.Transactions) map[common.Addres
 			}
 
 			// If this tx is a transfer and with high gas limit, ignore it.
-			if len(tx.Data()) == 0 && tx.Gas() > 500_000 {
+			if len(tx.Data()) == 0 && tx.Gas() > 100_000 {
 				break
 			}
 
