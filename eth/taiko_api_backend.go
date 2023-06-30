@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -96,7 +97,7 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		txsCount = 0
 		txLists  []types.Transactions
 	)
-	for _, splittedTxs := range contentSplitter.Split(pending) {
+	for _, splittedTxs := range contentSplitter.Split(filterTxs(pending)) {
 		if txsCount+splittedTxs.Len() < int(maxTransactionsPerBlock) {
 			txLists = append(txLists, splittedTxs)
 			txsCount += splittedTxs.Len()
@@ -108,4 +109,31 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	}
 
 	return txLists, nil
+}
+
+func filterTxs(pendings map[common.Address]types.Transactions) map[common.Address]types.Transactions {
+	executableTxs := make(map[common.Address]types.Transactions)
+
+	for addr, txs := range pendings {
+		pendingTxs := make(types.Transactions, 0)
+		for _, tx := range txs {
+			// Check baseFee, should not be zero
+			if tx.GasFeeCap().Uint64() == 0 {
+				break
+			}
+
+			// If this tx is a transfer and with high gas limit, ignore it.
+			if len(tx.Data()) == 0 && tx.Gas() > 500_000 {
+				break
+			}
+
+			pendingTxs = append(pendingTxs, tx)
+		}
+
+		if len(pendingTxs) > 0 {
+			executableTxs[addr] = pendingTxs
+		}
+	}
+
+	return executableTxs
 }
