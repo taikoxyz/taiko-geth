@@ -13,7 +13,7 @@ var (
 	TaikoMainnetNetworkID   = big.NewInt(167)
 	TaikoInternal1NetworkID = big.NewInt(167001)
 	TaikoInternal2NetworkID = big.NewInt(167002)
-	SnæfellsjökullNetworkID = big.NewInt(167003)
+	SnaefellsjokullNetworkID = big.NewInt(167003)
 	AskjaNetworkID          = big.NewInt(167004)
 	GrimsvotnNetworkID      = big.NewInt(167005)
 	EldfellNetworkID        = big.NewInt(167006)
