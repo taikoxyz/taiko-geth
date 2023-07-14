@@ -30,6 +30,9 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	case params.GrimsvotnNetworkID.Uint64():
 		chainConfig.ChainID = params.GrimsvotnNetworkID
 		allocJSON = taikoGenesis.GrimsvotnGenesisAllocJSON
+	case params.EldfellNetworkID.Uint64():
+		chainConfig.ChainID = params.EldfellNetworkID
+		allocJSON = taikoGenesis.EldfellGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoMainnetNetworkID
 		allocJSON = taikoGenesis.MainnetGenesisAllocJSON
