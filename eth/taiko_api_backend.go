@@ -4,8 +4,8 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -62,6 +62,8 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 
 // TxPoolContent retrieves the transaction pool content with the given upper limits.
 func (s *TaikoAPIBackend) TxPoolContent(
+	beneficiary common.Address,
+	baseFee uint64,
 	maxTransactionsPerBlock uint64,
 	blockMaxGasLimit uint64,
 	maxBytesPerTxList uint64,
@@ -69,11 +71,10 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	locals []string,
 	maxTransactions uint64,
 ) ([]types.Transactions, error) {
-	pending := s.eth.TxPool().Pending(false)
-
 	log.Debug(
 		"Fetching L2 pending transactions finished",
-		"length", core.PoolContent(pending).Len(),
+		"beneficiary", beneficiary,
+		"baseFee", baseFee,
 		"maxTransactionsPerBlock", maxTransactionsPerBlock,
 		"blockMaxGasLimit", blockMaxGasLimit,
 		"maxBytesPerTxList", maxBytesPerTxList,
@@ -82,32 +83,14 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		"locals", locals,
 	)
 
-	contentSplitter, err := core.NewPoolContentSplitter(
-		s.eth.BlockChain().Config().ChainID,
+	return s.eth.Miner().BuildTransactionsLists(
+		beneficiary,
+		new(big.Int).SetUint64(baseFee),
 		maxTransactionsPerBlock,
 		blockMaxGasLimit,
 		maxBytesPerTxList,
 		minTxGasLimit,
 		locals,
+		maxTransactions,
 	)
-	if err != nil {
-		return nil, err
-	}
-
-	var (
-		txsCount = 0
-		txLists  []types.Transactions
-	)
-	for _, splittedTxs := range contentSplitter.Split(pending) {
-		if txsCount+splittedTxs.Len() < int(maxTransactions) {
-			txLists = append(txLists, splittedTxs)
-			txsCount += splittedTxs.Len()
-			continue
-		}
-
-		txLists = append(txLists, splittedTxs[0:(int(maxTransactions)-txsCount)])
-		break
-	}
-
-	return txLists, nil
 }
