@@ -21,6 +21,7 @@ var (
 	errGasUsedLimitReached = errors.New("gas used limit reached")
 )
 
+// BuildTransactionsLists builds multiple transactions lists which satisfy all the given limits.
 func (w *worker) BuildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
@@ -32,10 +33,10 @@ func (w *worker) BuildTransactionsLists(
 	maxTransactionsLists uint64,
 ) ([]types.Transactions, error) {
 	var (
-		txsLists []types.Transactions
+		txsLists    []types.Transactions
+		currentHead = w.chain.CurrentBlock()
 	)
 
-	currentHead := w.chain.CurrentBlock()
 	if currentHead == nil {
 		return nil, fmt.Errorf("failed to find current head")
 	}
@@ -166,7 +167,6 @@ func (w *worker) sealBlockWith(
 
 	// Commit transactions.
 	var (
-		commitErrs = make([]error, 0, len(txs))
 		gasLimit   = env.header.GasLimit
 		rules      = w.chain.Config().Rules(env.header.Number, true, timestamp)
 		accGasUsed uint64
@@ -178,7 +178,6 @@ func (w *worker) sealBlockWith(
 		sender, err := types.LatestSignerForChainID(tx.ChainId()).Sender(tx)
 		if err != nil {
 			log.Info("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
-			commitErrs = append(commitErrs, err)
 			continue
 		}
 
@@ -186,7 +185,6 @@ func (w *worker) sealBlockWith(
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 		if _, err := w.commitL2Transaction(env, tx, accGasUsed, blkMeta.GasUsedLimit, i == 0); err != nil {
 			log.Info("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
-			commitErrs = append(commitErrs, err)
 			if err == errGasUsedLimitReached {
 				break
 			}
@@ -194,8 +192,6 @@ func (w *worker) sealBlockWith(
 		}
 		env.tcount++
 	}
-	// TODO: save the commit transactions errors for generating witness.
-	_ = commitErrs
 
 	block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, nil, env.receipts, withdrawals)
 	if err != nil {
@@ -211,6 +207,7 @@ func (w *worker) sealBlockWith(
 	return block, nil
 }
 
+// commitL2Transactions tries to commit the transactions into the given state.
 func (w *worker) commitL2Transactions(
 	env *environment,
 	txs *types.TransactionsByPriceAndNonce,
@@ -299,6 +296,7 @@ loop:
 	return allTxsCommitted, isTxListFull, nil
 }
 
+// commitL2Transaction tries to commit the transaction into the given state.
 func (w *worker) commitL2Transaction(
 	env *environment,
 	tx *types.Transaction,

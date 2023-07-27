@@ -20,6 +20,7 @@ func (miner *Miner) SealBlockWith(
 	return miner.worker.sealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdrawals, withdrawalsHash)
 }
 
+// BuildTransactionsLists builds multiple transactions lists which satisfy all the given limits.
 func (miner *Miner) BuildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
