@@ -187,6 +187,9 @@ func (w *worker) sealBlockWith(
 		if _, err := w.commitL2Transaction(env, tx, accGasUsed, blkMeta.GasUsedLimit, i == 0); err != nil {
 			log.Info("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			commitErrs = append(commitErrs, err)
+			if err == errGasUsedLimitReached {
+				break
+			}
 			continue
 		}
 		env.tcount++
