@@ -644,6 +644,28 @@ func (api *API) traceBlock(ctx context.Context, block *types.Block, config *Trac
 		// Only delete empty objects if EIP158/161 (a.k.a Spurious Dragon) is in effect
 		statedb.Finalise(is158)
 	}
+
+	// CHANGE(taiko): if there is a throwaway transaction for this block, add its trace log as well.
+	throwawayTx, err := rawdb.ReadThrowawayTx(api.backend.ChainDb(), blockCtx.BlockNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	if throwawayTx != nil {
+		msg, _ := core.TransactionToMessage(throwawayTx, signer, block.BaseFee(), false)
+		txctx := &Context{
+			BlockHash:   blockHash,
+			BlockNumber: block.Number(),
+			TxIndex:     len(results),
+			TxHash:      throwawayTx.Hash(),
+		}
+		res, err := api.traceTx(ctx, msg, txctx, blockCtx, statedb, config)
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, &txTraceResult{Result: res})
+	}
+
 	return results, nil
 }
 

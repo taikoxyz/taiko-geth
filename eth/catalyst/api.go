@@ -363,6 +363,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				payloadAttributes.BaseFeePerGas,
 				payloadAttributes.Withdrawals,
 				types.CalcWithdrawalsRootTaiko(payloadAttributes.Withdrawals),
+				api.eth.ChainDb(),
 			)
 			if err != nil {
 				log.Error("Failed to create sealing block", "err", err)

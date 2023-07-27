@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
 )
 
 // SealBlockWith mines and seals a block without changing the canonical chain.
@@ -16,8 +17,17 @@ func (miner *Miner) SealBlockWith(
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
 	withdrawalsHash common.Hash,
+	db ethdb.KeyValueWriter,
 ) (*types.Block, error) {
-	return miner.worker.sealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdrawals, withdrawalsHash)
+	return miner.worker.sealBlockWith(
+		parent,
+		timestamp,
+		blkMeta,
+		baseFeePerGas,
+		withdrawals,
+		withdrawalsHash,
+		db,
+	)
 }
 
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given limits.

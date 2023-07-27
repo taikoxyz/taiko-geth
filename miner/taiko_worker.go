@@ -10,8 +10,10 @@ import (
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -126,6 +128,7 @@ func (w *worker) sealBlockWith(
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
 	withdrawalsHash common.Hash,
+	db ethdb.KeyValueWriter,
 ) (*types.Block, error) {
 	// Decode transactions bytes.
 	var txs types.Transactions
@@ -174,6 +177,7 @@ func (w *worker) sealBlockWith(
 
 	env.gasPool = new(core.GasPool).AddGas(gasLimit)
 
+	var throwawayTx *types.Transaction
 	for i, tx := range txs {
 		sender, err := types.LatestSignerForChainID(tx.ChainId()).Sender(tx)
 		if err != nil {
@@ -186,6 +190,7 @@ func (w *worker) sealBlockWith(
 		if _, err := w.commitL2Transaction(env, tx, accGasUsed, blkMeta.GasUsedLimit, i == 0); err != nil {
 			log.Info("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			if err == errGasUsedLimitReached {
+				throwawayTx = tx
 				break
 			}
 			continue
@@ -203,6 +208,10 @@ func (w *worker) sealBlockWith(
 		return nil, err
 	}
 	block = <-results
+
+	if throwawayTx != nil {
+		rawdb.WriteThrowawayTx(db, env.header.Number, throwawayTx)
+	}
 
 	return block, nil
 }
