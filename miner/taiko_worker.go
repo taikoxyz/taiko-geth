@@ -165,9 +165,12 @@ func (w *worker) sealBlockWith(
 	env.header.WithdrawalsHash = &withdrawalsHash
 
 	// Commit transactions.
-	commitErrs := make([]error, 0, len(txs))
-	gasLimit := env.header.GasLimit
-	rules := w.chain.Config().Rules(env.header.Number, true, timestamp)
+	var (
+		commitErrs = make([]error, 0, len(txs))
+		gasLimit   = env.header.GasLimit
+		rules      = w.chain.Config().Rules(env.header.Number, true, timestamp)
+		accGasUsed uint64
+	)
 
 	env.gasPool = new(core.GasPool).AddGas(gasLimit)
 
@@ -181,7 +184,7 @@ func (w *worker) sealBlockWith(
 
 		env.state.Prepare(rules, sender, blkMeta.Beneficiary, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
 		env.state.SetTxContext(tx.Hash(), env.tcount)
-		if _, err := w.commitTransaction(env, tx, i == 0); err != nil {
+		if _, err := w.commitL2Transaction(env, tx, accGasUsed, blkMeta.GasUsedLimit, i == 0); err != nil {
 			log.Info("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			commitErrs = append(commitErrs, err)
 			continue
@@ -249,7 +252,7 @@ loop:
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 
-		_, err := w.commitL2Transaction(env, tx, accGasUsed, gasUsedLimit)
+		_, err := w.commitL2Transaction(env, tx, accGasUsed, gasUsedLimit, false)
 		switch {
 		case errors.Is(err, errGasUsedLimitReached):
 			log.Trace("GasUsed limit exceeded for current block", "sender", from)
@@ -298,6 +301,7 @@ func (w *worker) commitL2Transaction(
 	tx *types.Transaction,
 	accGasUsed uint64,
 	gasUsedLimit uint64,
+	isAnchor bool,
 ) (*types.Receipt, error) {
 	var (
 		snap = env.state.Snapshot()
@@ -313,7 +317,7 @@ func (w *worker) commitL2Transaction(
 		tx,
 		&env.header.GasUsed,
 		*w.chain.GetVMConfig(),
-		false,
+		isAnchor,
 	)
 	if err != nil {
 		env.state.RevertToSnapshot(snap)
