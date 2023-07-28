@@ -23,6 +23,7 @@ func (b BlockMetadata) MarshalJSON() ([]byte, error) {
 		ExtraData      hexutil.Bytes  `json:"extraData"     gencodec:"required"`
 		TxList         hexutil.Bytes  `json:"txList"     gencodec:"required"`
 		HighestBlockID *big.Int       `json:"highestBlockID"     gencodec:"required"`
+		GasUsedLimit   uint64         `json:"gasUsedLimit"     gencodec:"required"`
 	}
 	var enc BlockMetadata
 	enc.Beneficiary = b.Beneficiary
@@ -32,6 +33,7 @@ func (b BlockMetadata) MarshalJSON() ([]byte, error) {
 	enc.ExtraData = b.ExtraData
 	enc.TxList = b.TxList
 	enc.HighestBlockID = b.HighestBlockID
+	enc.GasUsedLimit = b.GasUsedLimit
 	return json.Marshal(&enc)
 }
 
@@ -45,6 +47,7 @@ func (b *BlockMetadata) UnmarshalJSON(input []byte) error {
 		ExtraData      *hexutil.Bytes  `json:"extraData"     gencodec:"required"`
 		TxList         *hexutil.Bytes  `json:"txList"     gencodec:"required"`
 		HighestBlockID *big.Int        `json:"highestBlockID"     gencodec:"required"`
+		GasUsedLimit   *uint64         `json:"gasUsedLimit"     gencodec:"required"`
 	}
 	var dec BlockMetadata
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -78,5 +81,9 @@ func (b *BlockMetadata) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'highestBlockID' for BlockMetadata")
 	}
 	b.HighestBlockID = dec.HighestBlockID
+	if dec.GasUsedLimit == nil {
+		return errors.New("missing required field 'gasUsedLimit' for BlockMetadata")
+	}
+	b.GasUsedLimit = *dec.GasUsedLimit
 	return nil
 }

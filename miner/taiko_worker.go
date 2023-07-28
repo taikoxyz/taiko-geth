@@ -333,6 +333,12 @@ func (w *worker) commitL2Transaction(
 		env.gasPool.SetGas(gp)
 		return nil, err
 	}
+	log.Info(
+		"commitL2Transaction",
+		"accGasUsed", accGasUsed,
+		"gasUsed", accGasUsed+receipt.GasUsed,
+		"gasUsedLimit", gasUsedLimit,
+	)
 	if accGasUsed+receipt.GasUsed > gasUsedLimit {
 		env.state.RevertToSnapshot(snap)
 		env.gasPool.SetGas(gp)
