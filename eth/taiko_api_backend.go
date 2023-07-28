@@ -65,9 +65,8 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	beneficiary common.Address,
 	baseFee uint64,
 	maxTransactionsPerBlock uint64,
-	blockMaxGasLimit uint64,
+	blockMaxGasUsed uint64,
 	maxBytesPerTxList uint64,
-	minTxGasLimit uint64,
 	locals []string,
 	maxTransactions uint64,
 ) ([]types.Transactions, error) {
@@ -76,9 +75,8 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		"beneficiary", beneficiary,
 		"baseFee", baseFee,
 		"maxTransactionsPerBlock", maxTransactionsPerBlock,
-		"blockMaxGasLimit", blockMaxGasLimit,
+		"blockMaxGasUsed", blockMaxGasUsed,
 		"maxBytesPerTxList", maxBytesPerTxList,
-		"minTxGasLimit", minTxGasLimit,
 		"maxTransactions", maxTransactions,
 		"locals", locals,
 	)
@@ -87,9 +85,8 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		beneficiary,
 		new(big.Int).SetUint64(baseFee),
 		maxTransactionsPerBlock,
-		blockMaxGasLimit,
+		blockMaxGasUsed,
 		maxBytesPerTxList,
-		minTxGasLimit,
 		locals,
 		maxTransactions,
 	)

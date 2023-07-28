@@ -37,7 +37,6 @@ func (miner *Miner) BuildTransactionsLists(
 	maxTransactionsPerBlock uint64,
 	blockMaxGasUsedLimit uint64,
 	maxBytesPerTxList uint64,
-	minTxGasLimit uint64,
 	locals []string,
 	maxTransactionsLists uint64,
 ) ([]types.Transactions, error) {
@@ -47,7 +46,6 @@ func (miner *Miner) BuildTransactionsLists(
 		maxTransactionsPerBlock,
 		blockMaxGasUsedLimit,
 		maxBytesPerTxList,
-		minTxGasLimit,
 		locals,
 		maxTransactionsLists,
 	)
