@@ -6,7 +6,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -71,11 +70,8 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	locals []string,
 	maxTransactionsLists uint64,
 ) ([]types.Transactions, error) {
-	pending := s.eth.TxPool().Pending(false)
-
-	log.Debug(
+	log.Info(
 		"Fetching L2 pending transactions finished",
-		"length", core.PoolContent(pending).Len(),
 		"maxTransactionsPerBlock", maxTransactionsPerBlock,
 		"blockMaxGasLimit", blockMaxGasLimit,
 		"maxBytesPerTxList", maxBytesPerTxList,
