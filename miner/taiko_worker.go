@@ -37,7 +37,7 @@ func (w *worker) BuildTransactionsLists(
 
 	// Split the pending transactions into locals and remotes, then
 	// fill the block with all available pending transactions.
-	pending := w.eth.TxPool().Pending(true)
+	pending := w.eth.TxPool().Pending(false)
 	localTxs, remoteTxs := make(map[common.Address]types.Transactions), pending
 	for _, local := range localAccounts {
 		account := common.HexToAddress(local)
@@ -57,24 +57,26 @@ func (w *worker) BuildTransactionsLists(
 		remotes = types.NewTransactionsByPriceAndNonce(signer, remoteTxs, baseFee)
 	)
 
+	params := &generateParams{
+		timestamp:     uint64(time.Now().Unix()),
+		forceTime:     true,
+		parentHash:    currentHead.Hash(),
+		coinbase:      beneficiary,
+		random:        currentHead.MixDigest,
+		noUncle:       true,
+		noTxs:         false,
+		baseFeePerGas: baseFee,
+	}
+
+	env, err := w.prepareWork(params)
+	if err != nil {
+		return nil, err
+	}
+	defer env.discard()
+
 	commitTxs := func() (types.Transactions, bool, error) {
-		params := &generateParams{
-			timestamp:     uint64(time.Now().Unix()),
-			forceTime:     true,
-			parentHash:    currentHead.Hash(),
-			coinbase:      beneficiary,
-			random:        currentHead.MixDigest,
-			noUncle:       true,
-			noTxs:         false,
-			baseFeePerGas: baseFee,
-		}
-
-		env, err := w.prepareWork(params)
-		if err != nil {
-			return nil, false, err
-		}
-		defer env.discard()
-
+		env.tcount = 0
+		env.txs = []*types.Transaction{}
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
@@ -202,6 +204,7 @@ func (w *worker) commitL2Transactions(
 		accTxListBytes  int
 	)
 
+loop:
 	for {
 		// If we don't have enough gas for any further transactions then we're done.
 		if env.gasPool.Gas() < params.TxGas {
@@ -266,7 +269,7 @@ func (w *worker) commitL2Transactions(
 			// Everything ok, shift in the next transaction from the same account
 			env.tcount++
 			if env.tcount >= int(maxTransactionsPerBlock) {
-				break
+				break loop
 			}
 			accTxListBytes += len(b)
 			txs.Shift()
