@@ -26,10 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -256,16 +254,6 @@ func NewBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Heade
 	return b.WithWithdrawals(withdrawals)
 }
 
-// CHANGE(taiko): use custom withdrawals hasher
-func NewTaikoBlockWithWithdrawals(header *Header, txs []*Transaction, uncles []*Header, receipts []*Receipt, withdrawals []*Withdrawal, hasher TrieHasher) *Block {
-	b := NewBlock(header, txs, uncles, receipts, hasher)
-
-	h := CalcWithdrawalsRootTaiko(withdrawals)
-	b.header.WithdrawalsHash = &h
-
-	return b.WithWithdrawals(withdrawals)
-}
-
 // NewBlockWithHeader creates a block with the given header data. The
 // header data is copied, changes to header and to the field values
 // will not affect the block.
@@ -464,45 +452,4 @@ func HeaderParentHashFromRLP(header []byte) common.Hash {
 		return common.Hash{}
 	}
 	return common.BytesToHash(parentHash)
-}
-
-var (
-	ethDepositsType, _ = abi.NewType("tuple[]", "[]TaikoData.EthDeposit", []abi.ArgumentMarshaling{
-		{Name: "recipient", Type: "address"},
-		{Name: "amount", Type: "uint96"},
-		{Name: "id", Type: "uint64"},
-	})
-	ethDepositsArgs = abi.Arguments{{Name: "EthDeposit", Type: ethDepositsType}}
-)
-
-type ethDeposit struct {
-	Recipient common.Address
-	Amount    *big.Int
-	Id        uint64
-}
-
-// CHANGE(taiko): calc withdrawals root by abi.encode deposits with keccak256.
-// Golang equivalent to this solidity function:
-//
-//	function hashEthDeposits(TaikoData.EthDeposit[] memory deposits) internal pure returns (bytes32) {
-//		return keccak256(abi.encode(deposits));
-//	}
-func CalcWithdrawalsRootTaiko(withdrawals []*Withdrawal) common.Hash {
-	// only process withdrawals/deposits of `TaikoConfig.minEthDepositsPerBlock` minimum.
-	if len(withdrawals) == 0 {
-		return common.HexToHash("0x569e75fc77c1a856f6daaf9e69d8a9566ca34aa47f9133711ce065a571af0cfd") // a known keccak256 hash of zero withdrawal.
-	}
-
-	var deposits []ethDeposit
-	for _, withdrawal := range withdrawals {
-		deposits = append(deposits, ethDeposit{
-			Recipient: withdrawal.Address,
-			Amount:    new(big.Int).SetUint64(withdrawal.Amount),
-			Id:        withdrawal.Index,
-		})
-	}
-
-	b, _ := ethDepositsArgs.Pack(deposits)
-
-	return crypto.Keccak256Hash(b)
 }

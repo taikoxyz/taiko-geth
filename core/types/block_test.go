@@ -28,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/stretchr/testify/assert"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -341,73 +340,5 @@ func TestRlpDecodeParentHash(t *testing.T) {
 				t.Fatalf("invalid %d: have %x, want %x", i, have, want)
 			}
 		}
-	}
-}
-
-// CHANGE(taiko): test `CalcWithdrawalsRootTaiko`
-func TestCalcWithdrawalsRootTaiko(t *testing.T) {
-	tests := []struct {
-		name        string
-		withdrawals []*Withdrawal
-		want        common.Hash
-	}{
-		{
-			"empty",
-			nil,
-			common.HexToHash("0x569e75fc77c1a856f6daaf9e69d8a9566ca34aa47f9133711ce065a571af0cfd"),
-		},
-		{
-			"withWithdrawals",
-			[]*Withdrawal{
-				{
-					Address: common.HexToAddress("0xa9bcF99f5eb19277f48b71F9b14f5960AEA58a89"),
-					Amount:  1000000000000000000,
-					Index:   0,
-				},
-				{
-					Address: common.HexToAddress("0x200708D76eB1B69761c23821809d53F65049939e"),
-					Amount:  2000000000000000000,
-					Index:   1,
-				},
-				{
-					Address: common.HexToAddress("0x300C9b60E19634e12FC6D68B7FEa7bFB26c2E419"),
-					Amount:  3000000000000000000,
-					Index:   2,
-				},
-				{
-					Address: common.HexToAddress("0x400147C0Eb43D8D71b2B03037bB7B31f8f78EF5F"),
-					Amount:  4000000000000000000,
-					Index:   3,
-				},
-				{
-					Address: common.HexToAddress("0x50081b12838240B1bA02b3177153Bca678a86078"),
-					Amount:  5000000000000000000,
-					Index:   4,
-				},
-				{
-					Address: common.HexToAddress("0x430c9b60e19634e12FC6d68B7fEa7bFB26c2e419"),
-					Amount:  6000000000000000000,
-					Index:   5,
-				},
-				{
-					Address: common.HexToAddress("0x520147C0eB43d8D71b2b03037bB7b31f8F78EF5f"),
-					Amount:  7000000000000000000,
-					Index:   6,
-				},
-				{
-					Address: common.HexToAddress("0x61081B12838240B1Ba02b3177153BcA678a86078"),
-					Amount:  8000000000000000000,
-					Index:   7,
-				},
-			},
-			common.HexToHash("0x60386add6a400d9b23968e1239bd600d22d2eea4709246895c0e5d8f5ae49dc3"),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := CalcWithdrawalsRootTaiko(tt.withdrawals)
-			assert.Equal(t, tt.want, got)
-		})
 	}
 }

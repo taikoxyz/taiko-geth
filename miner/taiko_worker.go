@@ -108,7 +108,6 @@ func (w *worker) sealBlockWith(
 	blkMeta *engine.BlockMetadata,
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
-	withdrawalsHash common.Hash,
 ) (*types.Block, error) {
 	// Decode transactions bytes.
 	var txs types.Transactions
@@ -146,7 +145,6 @@ func (w *worker) sealBlockWith(
 	// 3. withdrawals hash
 	env.header.GasLimit = blkMeta.GasLimit
 	env.header.Extra = blkMeta.ExtraData
-	env.header.WithdrawalsHash = &withdrawalsHash
 
 	// Commit transactions.
 	commitErrs := make([]error, 0, len(txs))
