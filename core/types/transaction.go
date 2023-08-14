@@ -85,6 +85,8 @@ type TxData interface {
 	blobGas() uint64
 	blobGasFeeCap() *big.Int
 	blobHashes() []common.Hash
+	isAnchor() bool
+	markAsAnchor() error
 
 	rawSignatureValues() (v, r, s *big.Int)
 	setSignatureValues(chainID, v, r, s *big.Int)
