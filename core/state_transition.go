@@ -31,7 +31,6 @@ import (
 )
 
 var (
-	// TODO(taiko): make this address dynamic
 	treasury = common.HexToAddress("0xdf09A0afD09a63fb04ab3573922437e1e637dE8b")
 )
 

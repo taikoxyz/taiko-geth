@@ -20,7 +20,6 @@ func (b BlockMetadata) MarshalJSON() ([]byte, error) {
 		GasLimit       uint64         `json:"gasLimit"     gencodec:"required"`
 		Timestamp      hexutil.Uint64 `json:"timestamp"     gencodec:"required"`
 		MixHash        common.Hash    `json:"mixHash"     gencodec:"required"`
-		Treasury       common.Address `json:"treasury"     gencodec:"required"`
 		TxList         hexutil.Bytes  `json:"txList"     gencodec:"required"`
 		HighestBlockID *big.Int       `json:"highestBlockID"     gencodec:"required"`
 	}
@@ -29,7 +28,6 @@ func (b BlockMetadata) MarshalJSON() ([]byte, error) {
 	enc.GasLimit = b.GasLimit
 	enc.Timestamp = hexutil.Uint64(b.Timestamp)
 	enc.MixHash = b.MixHash
-	enc.Treasury = b.Treasury
 	enc.TxList = b.TxList
 	enc.HighestBlockID = b.HighestBlockID
 	return json.Marshal(&enc)
@@ -42,7 +40,6 @@ func (b *BlockMetadata) UnmarshalJSON(input []byte) error {
 		GasLimit       *uint64         `json:"gasLimit"     gencodec:"required"`
 		Timestamp      *hexutil.Uint64 `json:"timestamp"     gencodec:"required"`
 		MixHash        *common.Hash    `json:"mixHash"     gencodec:"required"`
-		Treasury       *common.Address `json:"treasury"     gencodec:"required"`
 		TxList         *hexutil.Bytes  `json:"txList"     gencodec:"required"`
 		HighestBlockID *big.Int        `json:"highestBlockID"     gencodec:"required"`
 	}
@@ -66,10 +63,6 @@ func (b *BlockMetadata) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'mixHash' for BlockMetadata")
 	}
 	b.MixHash = *dec.MixHash
-	if dec.Treasury == nil {
-		return errors.New("missing required field 'treasury' for BlockMetadata")
-	}
-	b.Treasury = *dec.Treasury
 	if dec.TxList == nil {
 		return errors.New("missing required field 'txList' for BlockMetadata")
 	}

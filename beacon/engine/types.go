@@ -58,7 +58,6 @@ type BlockMetadata struct {
 	GasLimit    uint64         `json:"gasLimit"     gencodec:"required"`
 	Timestamp   uint64         `json:"timestamp"     gencodec:"required"`
 	MixHash     common.Hash    `json:"mixHash"     gencodec:"required"`
-	Treasury    common.Address `json:"treasury"     gencodec:"required"`
 
 	// Extra fields required in go-taiko.
 	TxList         []byte   `json:"txList"     gencodec:"required"`
