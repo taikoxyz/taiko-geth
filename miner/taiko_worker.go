@@ -138,10 +138,6 @@ func (w *worker) sealBlockWith(
 	}
 	defer env.discard()
 
-	if blkMeta.Treasury == (common.Address{}) {
-		return nil, errors.New("empty treasury address")
-	}
-
 	env.header.GasLimit = blkMeta.GasLimit
 
 	// Commit transactions.
