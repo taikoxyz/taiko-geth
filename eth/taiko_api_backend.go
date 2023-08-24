@@ -64,6 +64,7 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 func (s *TaikoAPIBackend) TxPoolContent(
 	beneficiary common.Address,
 	baseFee *big.Int,
+	maxTransactionsPerBlock uint64,
 	blockMaxGasLimit uint64,
 	maxBytesPerTxList uint64,
 	locals []string,
@@ -71,6 +72,7 @@ func (s *TaikoAPIBackend) TxPoolContent(
 ) ([]types.Transactions, error) {
 	log.Info(
 		"Fetching L2 pending transactions finished",
+		"maxTransactionsPerBlock", maxTransactionsPerBlock,
 		"blockMaxGasLimit", blockMaxGasLimit,
 		"maxBytesPerTxList", maxBytesPerTxList,
 		"maxTransactions", maxTransactionsLists,
@@ -80,6 +82,7 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	return s.eth.Miner().BuildTransactionsLists(
 		beneficiary,
 		baseFee,
+		maxTransactionsPerBlock,
 		blockMaxGasLimit,
 		maxBytesPerTxList,
 		locals,
