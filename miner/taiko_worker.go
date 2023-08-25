@@ -21,6 +21,7 @@ import (
 func (w *worker) BuildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
+	maxTransactionsPerBlock uint64,
 	blockMaxGasLimit uint64,
 	maxBytesPerTxList uint64,
 	localAccounts []string,
@@ -79,7 +80,7 @@ func (w *worker) BuildTransactionsLists(
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
-		allTxsCommitted := w.commitL2Transactions(env, locals, remotes, maxBytesPerTxList)
+		allTxsCommitted := w.commitL2Transactions(env, locals, remotes, maxTransactionsPerBlock, maxBytesPerTxList)
 
 		return env.txs, allTxsCommitted, nil
 	}
@@ -185,6 +186,7 @@ func (w *worker) commitL2Transactions(
 	env *environment,
 	txsLocal *transactionsByPriceAndNonce,
 	txsRemote *transactionsByPriceAndNonce,
+	maxTransactionsPerBlock uint64,
 	maxBytesPerTxList uint64,
 ) bool {
 	var (
@@ -194,6 +196,7 @@ func (w *worker) commitL2Transactions(
 		accTxListBytes  int
 	)
 
+loop:
 	for {
 		// If we don't have enough gas for any further transactions then we're done.
 		if env.gasPool.Gas() < params.TxGas {
@@ -264,6 +267,9 @@ func (w *worker) commitL2Transactions(
 		case errors.Is(err, nil):
 			// Everything ok, shift in the next transaction from the same account
 			env.tcount++
+			if env.tcount >= int(maxTransactionsPerBlock) {
+				break loop
+			}
 			accTxListBytes += len(b)
 			txs.Shift()
 
