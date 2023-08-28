@@ -7,6 +7,9 @@ import (
 //go:embed internal.json
 var InternalGenesisAllocJSON []byte
 
+//go:embed internal_l3.json
+var InternalL3GenesisAllocJSON []byte
+
 //go:embed snaefellsjokull.json
 var SnaefellsjokullGenesisAllocJSON []byte
 
