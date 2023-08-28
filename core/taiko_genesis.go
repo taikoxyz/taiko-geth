@@ -18,6 +18,9 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	case params.TaikoInternalNetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoInternalNetworkID
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
+	case params.TaikoInternalL3NetworkID.Uint64():
+		chainConfig.ChainID = params.TaikoInternalL3NetworkID
+		allocJSON = taikoGenesis.InternalL3GenesisAllocJSON
 	case params.SnaefellsjokullNetworkID.Uint64():
 		chainConfig.ChainID = params.SnaefellsjokullNetworkID
 		allocJSON = taikoGenesis.SnaefellsjokullGenesisAllocJSON
@@ -43,7 +46,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	return &Genesis{
 		Config:     chainConfig,
 		ExtraData:  []byte{},
-		GasLimit:   uint64(6000000),
+		GasLimit:   uint64(8000000),
 		Difficulty: common.Big0,
 		Alloc:      alloc,
 		GasUsed:    0,

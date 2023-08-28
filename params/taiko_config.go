@@ -11,6 +11,7 @@ func u64(val uint64) *uint64 { return &val }
 // Network IDs
 var (
 	TaikoInternalNetworkID   = big.NewInt(167001)
+	TaikoInternalL3NetworkID = big.NewInt(167002)
 	SnaefellsjokullNetworkID = big.NewInt(167003)
 	AskjaNetworkID           = big.NewInt(167004)
 	GrimsvotnNetworkID       = big.NewInt(167005)
