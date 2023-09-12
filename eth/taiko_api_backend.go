@@ -1,6 +1,7 @@
 package eth
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -18,6 +19,7 @@ type TaikoAPIBackend struct {
 
 // NewTaikoAPIBackend creates a new TaikoAPIBackend instance.
 func NewTaikoAPIBackend(eth *Ethereum) *TaikoAPIBackend {
+	fmt.Println(eth.blockchain.GetBlockByNumber(0).Hash())
 	return &TaikoAPIBackend{
 		eth: eth,
 	}
