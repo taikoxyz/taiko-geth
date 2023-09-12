@@ -1,8 +1,6 @@
 package core
 
 import (
-	"encoding/json"
-	"io/ioutil"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -47,18 +45,6 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	if err := alloc.UnmarshalJSON(allocJSON); err != nil {
 		log.Crit("unmarshal alloc json error", "error", err)
 	}
-
-	file, _ := json.MarshalIndent(&Genesis{
-		Config:     chainConfig,
-		ExtraData:  []byte{},
-		GasLimit:   uint64(8000000),
-		Difficulty: common.Big0,
-		Alloc:      alloc,
-		GasUsed:    0,
-		BaseFee:    new(big.Int).SetUint64(10000000),
-	}, "", " ")
-
-	_ = ioutil.WriteFile("test.json", file, 0644)
 
 	return &Genesis{
 		Config:     chainConfig,
