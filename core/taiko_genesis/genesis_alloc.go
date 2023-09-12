@@ -21,3 +21,6 @@ var GrimsvotnGenesisAllocJSON []byte
 
 //go:embed eldfell.json
 var EldfellGenesisAllocJSON []byte
+
+//go:embed jolnir.json
+var JolnirGenesisAllocJSON []byte
