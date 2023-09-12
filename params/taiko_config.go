@@ -16,6 +16,7 @@ var (
 	AskjaNetworkID           = big.NewInt(167004)
 	GrimsvotnNetworkID       = big.NewInt(167005)
 	EldfellNetworkID         = big.NewInt(167006)
+	JolnirNetworkID          = big.NewInt(167007)
 )
 
 var TaikoChainConfig = &ChainConfig{
