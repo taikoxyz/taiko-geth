@@ -30,8 +30,10 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		ExtraData       hexutil.Bytes       `json:"extraData"     gencodec:"required"`
 		BaseFeePerGas   *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
 		BlockHash       common.Hash         `json:"blockHash"     gencodec:"required"`
-		Transactions    []hexutil.Bytes     `json:"transactions"  gencodec:"required"`
+		Transactions    []hexutil.Bytes     `json:"transactions"`
 		Withdrawals     []*types.Withdrawal `json:"withdrawals"`
+		BlobGasUsed     *hexutil.Uint64     `json:"blobGasUsed"`
+		ExcessBlobGas   *hexutil.Uint64     `json:"excessBlobGas"`
 		TxHash          common.Hash         `json:"txHash"`
 		WithdrawalsHash common.Hash         `json:"withdrawalsHash"`
 		TaikoBlock      bool
@@ -57,6 +59,8 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		}
 	}
 	enc.Withdrawals = e.Withdrawals
+	enc.BlobGasUsed = (*hexutil.Uint64)(e.BlobGasUsed)
+	enc.ExcessBlobGas = (*hexutil.Uint64)(e.ExcessBlobGas)
 	enc.TxHash = e.TxHash
 	enc.WithdrawalsHash = e.WithdrawalsHash
 	enc.TaikoBlock = e.TaikoBlock
@@ -79,8 +83,10 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		ExtraData       *hexutil.Bytes      `json:"extraData"     gencodec:"required"`
 		BaseFeePerGas   *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
 		BlockHash       *common.Hash        `json:"blockHash"     gencodec:"required"`
-		Transactions    []hexutil.Bytes     `json:"transactions"  gencodec:"required"`
+		Transactions    []hexutil.Bytes     `json:"transactions"`
 		Withdrawals     []*types.Withdrawal `json:"withdrawals"`
+		BlobGasUsed     *hexutil.Uint64     `json:"blobGasUsed"`
+		ExcessBlobGas   *hexutil.Uint64     `json:"excessBlobGas"`
 		TxHash          *common.Hash        `json:"txHash"`
 		WithdrawalsHash *common.Hash        `json:"withdrawalsHash"`
 		TaikoBlock      *bool
@@ -141,15 +147,20 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'blockHash' for ExecutableData")
 	}
 	e.BlockHash = *dec.BlockHash
-	if dec.Transactions == nil {
-		return errors.New("missing required field 'transactions' for ExecutableData")
-	}
-	e.Transactions = make([][]byte, len(dec.Transactions))
-	for k, v := range dec.Transactions {
-		e.Transactions[k] = v
+	if dec.Transactions != nil {
+		e.Transactions = make([][]byte, len(dec.Transactions))
+		for k, v := range dec.Transactions {
+			e.Transactions[k] = v
+		}
 	}
 	if dec.Withdrawals != nil {
 		e.Withdrawals = dec.Withdrawals
+	}
+	if dec.BlobGasUsed != nil {
+		e.BlobGasUsed = (*uint64)(dec.BlobGasUsed)
+	}
+	if dec.ExcessBlobGas != nil {
+		e.ExcessBlobGas = (*uint64)(dec.ExcessBlobGas)
 	}
 	if dec.TxHash != nil {
 		e.TxHash = *dec.TxHash
