@@ -48,7 +48,7 @@ func (w *worker) BuildTransactionsLists(
 		}
 	}
 
-	if len(pending) == 0 {
+	if len(localTxs) == 0 && len(remoteTxs) == 0 {
 		return txsLists, nil
 	}
 
