@@ -36,27 +36,10 @@ func (w *worker) BuildTransactionsLists(
 		return nil, fmt.Errorf("failed to find current head")
 	}
 
-	// Split the pending transactions into locals and remotes, then
-	// fill the block with all available pending transactions.
-	pending := w.eth.TxPool().Pending(false)
-	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
-	for _, local := range localAccounts {
-		account := common.HexToAddress(local)
-		if txs := remoteTxs[account]; len(txs) > 0 {
-			delete(remoteTxs, account)
-			localTxs[account] = txs
-		}
-	}
-
-	if len(localTxs) == 0 && len(remoteTxs) == 0 {
+	// Check if tx pool is empty at first.
+	if len(w.eth.TxPool().Pending(false)) == 0 {
 		return txsLists, nil
 	}
-
-	var (
-		signer  = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
-		locals  = newTransactionsByPriceAndNonce(signer, localTxs, baseFee)
-		remotes = newTransactionsByPriceAndNonce(signer, remoteTxs, baseFee)
-	)
 
 	params := &generateParams{
 		timestamp:     uint64(time.Now().Unix()),
@@ -74,13 +57,27 @@ func (w *worker) BuildTransactionsLists(
 	}
 	defer env.discard()
 
+	var (
+		signer = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
+	)
+
 	commitTxs := func() (types.Transactions, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
-		w.commitL2Transactions(env, locals, remotes, maxTransactionsPerBlock, maxBytesPerTxList)
+		// Split the pending transactions into locals and remotes, then
+		// fill the block with all available pending transactions.
+		localTxs, remoteTxs := w.getPendingTxs(localAccounts)
+
+		w.commitL2Transactions(
+			env,
+			newTransactionsByPriceAndNonce(signer, localTxs, baseFee),
+			newTransactionsByPriceAndNonce(signer, remoteTxs, baseFee),
+			maxTransactionsPerBlock,
+			maxBytesPerTxList,
+		)
 
 		return env.txs, nil
 	}
@@ -179,6 +176,25 @@ func (w *worker) sealBlockWith(
 	block = <-results
 
 	return block, nil
+}
+
+// getPendingTxs fetches the pending transactions from tx pool.
+func (w *worker) getPendingTxs(localAccounts []string) (
+	map[common.Address][]*txpool.LazyTransaction,
+	map[common.Address][]*txpool.LazyTransaction,
+) {
+	pending := w.eth.TxPool().Pending(false)
+	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
+
+	for _, local := range localAccounts {
+		account := common.HexToAddress(local)
+		if txs := remoteTxs[account]; len(txs) > 0 {
+			delete(remoteTxs, account)
+			localTxs[account] = txs
+		}
+	}
+
+	return localTxs, remoteTxs
 }
 
 // commitL2Transactions tries to commit the transactions into the given state.
