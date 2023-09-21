@@ -259,7 +259,7 @@ var NetworkNames = map[string]string{
 	AskjaNetworkID.String():           "Taiko Alpha-2 (Askja)",
 	GrimsvotnNetworkID.String():       "Taiko Alpha-3 L2 (Grimsvotn)",
 	EldfellNetworkID.String():         "Taiko Alpha-4 L3 (Eldfell)",
-	JolnirNetworkID.String():          "Taiko Alpha-5 L3 (Jolnir)",
+	JolnirNetworkID.String():          "Taiko Alpha-5 L2 (Jolnir)",
 }
 
 // ChainConfig is the core config which determines the blockchain settings.
