@@ -19,6 +19,29 @@ var (
 	JolnirNetworkID          = big.NewInt(167007)
 )
 
+var networkIDToChainConfig = map[*big.Int]*ChainConfig{
+	TaikoInternalNetworkID:     TaikoChainConfig,
+	TaikoInternalL3NetworkID:   TaikoChainConfig,
+	SnaefellsjokullNetworkID:   TaikoChainConfig,
+	AskjaNetworkID:             TaikoChainConfig,
+	GrimsvotnNetworkID:         TaikoChainConfig,
+	EldfellNetworkID:           TaikoChainConfig,
+	JolnirNetworkID:            TaikoChainConfig,
+	MainnetChainConfig.ChainID: MainnetChainConfig,
+	SepoliaChainConfig.ChainID: SepoliaChainConfig,
+	GoerliChainConfig.ChainID:  GoerliChainConfig,
+	TestChainConfig.ChainID:    TestChainConfig,
+	NonActivatedConfig.ChainID: NonActivatedConfig,
+}
+
+func NetworkIDToChainConfigOrDefault(networkID *big.Int) *ChainConfig {
+	if config, ok := networkIDToChainConfig[networkID]; ok {
+		return config
+	}
+
+	return AllEthashProtocolChanges
+}
+
 var TaikoChainConfig = &ChainConfig{
 	ChainID:                       TaikoInternalNetworkID, // Use Internal Devnet network ID by default.
 	HomesteadBlock:                common.Big0,
