@@ -74,28 +74,28 @@ func (w *worker) BuildTransactionsLists(
 	}
 	defer env.discard()
 
-	commitTxs := func() (types.Transactions, bool, error) {
+	commitTxs := func() (types.Transactions, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
-		allTxsCommitted := w.commitL2Transactions(env, locals, remotes, maxTransactionsPerBlock, maxBytesPerTxList)
+		w.commitL2Transactions(env, locals, remotes, maxTransactionsPerBlock, maxBytesPerTxList)
 
-		return env.txs, allTxsCommitted, nil
+		return env.txs, nil
 	}
 
 	for i := 0; i < int(maxTransactionsLists); i++ {
-		txs, allCommitted, err := commitTxs()
+		txs, err := commitTxs()
 		if err != nil {
 			return nil, err
 		}
 
-		txsLists = append(txsLists, txs)
-
-		if allCommitted {
+		if len(txs) == 0 {
 			break
 		}
+
+		txsLists = append(txsLists, txs)
 	}
 
 	return txsLists, nil
@@ -188,12 +188,11 @@ func (w *worker) commitL2Transactions(
 	txsRemote *transactionsByPriceAndNonce,
 	maxTransactionsPerBlock uint64,
 	maxBytesPerTxList uint64,
-) bool {
+) {
 	var (
-		txs             = txsLocal
-		isLocal         = true
-		allTxsCommitted bool
-		accTxListBytes  int
+		txs            = txsLocal
+		isLocal        = true
+		accTxListBytes int
 	)
 
 loop:
@@ -212,7 +211,6 @@ loop:
 				isLocal = false
 				continue
 			}
-			allTxsCommitted = true
 			break
 		}
 		tx := ltx.Resolve()
@@ -267,11 +265,12 @@ loop:
 		case errors.Is(err, nil):
 			// Everything ok, shift in the next transaction from the same account
 			env.tcount++
+			txs.Shift()
+
 			if env.tcount >= int(maxTransactionsPerBlock) {
 				break loop
 			}
 			accTxListBytes += len(b)
-			txs.Shift()
 
 		case errors.Is(err, types.ErrTxTypeNotSupported):
 			// Pop the unsupported transaction without shifting in the next from the account
@@ -285,6 +284,4 @@ loop:
 			txs.Shift()
 		}
 	}
-
-	return allTxsCommitted
 }
