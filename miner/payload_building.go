@@ -158,6 +158,7 @@ func (payload *Payload) ResolveFull() *engine.ExecutionPayloadEnvelope {
 	select {
 	case <-payload.stop:
 	default:
+		payload.done <- struct{}{} // CHANGE(taiko): signal to taiko payload builder to not write to `payload.stop` channel
 		close(payload.stop)
 	}
 	return engine.BlockToExecutableData(payload.full, payload.fullFees, nil, nil, nil)
