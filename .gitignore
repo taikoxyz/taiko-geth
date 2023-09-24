@@ -49,6 +49,5 @@ profile.cov
 **/yarn-error.log
 logs/
 
-# test
-data/
-!data/jwt.hex
+
+
