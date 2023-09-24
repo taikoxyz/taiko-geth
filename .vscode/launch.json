@@ -1,0 +1,62 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    // Launch L2 Execution Layer Node
+    {
+      "name": "L2 EL Node",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "cmd/geth",
+      "args": [
+        "--nodiscover",
+        "--gcmode",
+        "archive",
+        "--syncmode",
+        "full",
+        "--datadir",
+        "data/",
+        "--networkid",
+        "167001",
+        "--metrics",
+        "--metrics.expensive",
+        "--metrics.addr",
+        "0.0.0.0",
+        "--http",
+        "--http.addr",
+        "0.0.0.0",
+        "--http.port",
+        "28545",
+        "--http.vhosts",
+        "*",
+        "--http.corsdomain",
+        "*",
+        "--ws",
+        "--ws.addr",
+        "0.0.0.0",
+        "--ws.port",
+        "28546",
+        "--ws.origins",
+        "*",
+        "--authrpc.addr",
+        "0.0.0.0",
+        "--authrpc.port",
+        "28551",
+        "--authrpc.vhosts",
+        "*",
+        "--authrpc.jwtsecret",
+        "data/jwt.hex",
+        "--allow-insecure-unlock",
+        "--http.api",
+        "admin,debug,eth,net,web3,txpool,miner,taiko",
+        "--ws.api",
+        "admin,debug,eth,net,web3,txpool,miner,taiko",
+        "--taiko"
+      ],
+      "postDebugTask": "Clean Geth Data"
+    }
+  ]
+}

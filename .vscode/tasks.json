@@ -1,0 +1,74 @@
+{
+  // See https://go.microsoft.com/fwlink/?LinkId=733558
+  // for the documentation about the tasks.json format
+  "version": "2.0.0",
+  "tasks": [
+    // Clean Geth Data
+    {
+      "group": "test",
+      "label": "Clean Geth Data",
+      "type": "shell",
+      "command": "git clean -f -d",
+      "presentation": {
+        "close": true
+      }
+    },
+    // taiko-geth tasks
+    {
+      "group": "test",
+      "label": "Send Eth",
+      "type": "shell",
+      "command": "cast",
+      "args": [
+        "send",
+        "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+        "--value=1ether",
+        "--private-key=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+        "--async",
+        "--rpc-url=http://localhost:28545"
+      ],
+      "presentation": {
+        "focus": true
+      }
+    },
+    {
+      "group": "test",
+      "label": "Get Transaction",
+      "type": "shell",
+      "command": "cast",
+      "args": [
+        "tx",
+        "0xf2e70fd44af941bac54dc5928a2c75a74270a1bd1c794dd9932d1a2c922aca2e",
+        "--rpc-url=http://localhost:28545"
+      ],
+      "presentation": {
+        "focus": true
+      }
+    },
+    {
+      "group": "test",
+      "label": "Get Receipt",
+      "type": "shell",
+      "command": "cast",
+      "args": [
+        "receipt",
+        "0xf2e70fd44af941bac54dc5928a2c75a74270a1bd1c794dd9932d1a2c922aca2e",
+        "--async",
+        "--rpc-url=http://localhost:28545"
+      ],
+      "presentation": {
+        "focus": true
+      }
+    },
+    {
+      "group": "test",
+      "label": "Get TxPoolContent",
+      "type": "shell",
+      "command": "cast",
+      "args": ["rpc", "txpool_content", "--rpc-url=http://localhost:28545"],
+      "presentation": {
+        "focus": true
+      }
+    }
+  ]
+}

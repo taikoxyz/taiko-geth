@@ -36,7 +36,7 @@ profile.cov
 .idea
 
 # VS Code
-.vscode
+
 
 # dashboard
 /dashboard/assets/flow-typed
@@ -48,3 +48,7 @@ profile.cov
 
 **/yarn-error.log
 logs/
+
+# test
+data/
+!data/jwt.hex
