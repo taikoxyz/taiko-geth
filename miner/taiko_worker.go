@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"time"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
@@ -77,6 +78,7 @@ func (w *worker) BuildTransactionsLists(
 			newTransactionsByPriceAndNonce(signer, remoteTxs, baseFee),
 			maxTransactionsPerBlock,
 			maxBytesPerTxList,
+			len(localAccounts) == 0,
 		)
 
 		return env.txs, nil
@@ -204,12 +206,20 @@ func (w *worker) commitL2Transactions(
 	txsRemote *transactionsByPriceAndNonce,
 	maxTransactionsPerBlock uint64,
 	maxBytesPerTxList uint64,
+	shuffleRemote bool,
 ) {
 	var (
 		txs            = txsLocal
 		isLocal        = true
 		accTxListBytes int
 	)
+
+	if shuffleRemote && len(txsRemote.txs) > 15 {
+		skip := rand.Intn(len(txsRemote.txs))
+		for i := 0; i < skip; i++ {
+			txs.Pop()
+		}
+	}
 
 loop:
 	for {
