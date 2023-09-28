@@ -217,7 +217,7 @@ func (w *worker) commitL2Transactions(
 	if shuffleRemote && len(txsRemote.txs) > 15 {
 		skip := rand.Intn(len(txsRemote.txs))
 		for i := 0; i < skip; i++ {
-			txs.Pop()
+			txsRemote.Pop()
 		}
 	}
 
