@@ -129,6 +129,9 @@ func (w *worker) sealBlockWith(
 		baseFeePerGas: baseFeePerGas,
 	}
 
+	// Set extraData
+	w.extra = blkMeta.ExtraData
+
 	env, err := w.prepareWork(params)
 	if err != nil {
 		return nil, err
