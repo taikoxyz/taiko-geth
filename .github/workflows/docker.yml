@@ -2,7 +2,7 @@ name: "Push docker image to GCR"
 
 on:
   push:
-    branches: [taiko,internal-devnet-new-genesis]
+    branches: [taiko]
     tags:
       - "v*"
 
