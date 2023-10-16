@@ -25,10 +25,12 @@ jobs:
           go-version: 1.20
 
       - name: Lint
+        env:
+          GOPATH: /home/runner/work/woodpecker/go
         run: make lint
 
       - name: Test
         env:
-          ANDROID_HOME: ""
+          GOPATH: /home/runner/work/woodpecker/go
           TAIKO_TEST: true
         run: make test
