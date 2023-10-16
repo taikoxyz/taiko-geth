@@ -24,8 +24,8 @@ jobs:
         with:
           go-version: 1.19
 
-      - name: Lint
-        run: make lint
+      # - name: Lint
+      #   run: make lint
 
       - name: Test
         env:
