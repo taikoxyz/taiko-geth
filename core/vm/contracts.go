@@ -115,9 +115,9 @@ var PrecompiledContractsCancun = map[common.Address]PrecompiledContract{
 	common.BytesToAddress([]byte{8}):    &bn256PairingIstanbul{},
 	common.BytesToAddress([]byte{9}):    &blake2F{},
 	common.BytesToAddress([]byte{0x0a}): &kzgPointEvaluation{},
-	// CHANGE(taik): l1call and l1delegatecall precompiles
-	common.BytesToAddress([]byte{41}): &l1Call{},
-	common.BytesToAddress([]byte{42}): &l1DelegateCall{},
+	// CHANGE(taiko): l1call and l1delegatecall precompiles
+	common.BytesToAddress([]byte{0x1e}): &l1Call{},
+	common.BytesToAddress([]byte{0x1f}): &l1DelegateCall{},
 }
 
 // PrecompiledContractsBLS contains the set of pre-compiled Ethereum
