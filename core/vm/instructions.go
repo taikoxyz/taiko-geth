@@ -585,7 +585,7 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 		input        = scope.Memory.GetCopy(int64(offset.Uint64()), int64(size.Uint64()))
 		gas          = scope.Contract.Gas
 	)
-	if interpreter.evm.chainRules.IsEIP150 {
+	if !interpreter.evm.Config.IgnoreGas && interpreter.evm.chainRules.IsEIP150 {
 		gas -= gas / 64
 	}
 	// reuse size int for stackvalue
@@ -633,7 +633,9 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		gas          = scope.Contract.Gas
 	)
 	// Apply EIP150
-	gas -= gas / 64
+	if !interpreter.evm.Config.IgnoreGas {
+		gas -= gas / 64
+	}
 	scope.Contract.UseGas(gas)
 	// reuse size int for stackvalue
 	stackvalue := size

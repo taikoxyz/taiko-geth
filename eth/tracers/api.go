@@ -156,13 +156,18 @@ type TraceConfig struct {
 	// Config specific to given tracer. Note struct logger
 	// config are historically embedded in main object.
 	TracerConfig json.RawMessage
+
+	StateOverrides        *ethapi.StateOverride
+	IgnoreGas             *bool
+	IgnoreCodeSizeLimit   *bool
+	CreationCodeOverrides map[common.Address]hexutil.Bytes
+	CreateAddressOverride *common.Address
 }
 
 // TraceCallConfig is the config for traceCall API. It holds one more
 // field to override the state for tracing.
 type TraceCallConfig struct {
 	TraceConfig
-	StateOverrides *ethapi.StateOverride
 	BlockOverrides *ethapi.BlockOverrides
 	TxIndex        *hexutil.Uint
 }
@@ -880,6 +885,12 @@ func (api *API) TraceTransaction(ctx context.Context, hash common.Hash, config *
 		TxIndex:     int(index),
 		TxHash:      hash,
 	}
+
+	if config != nil {
+		if err := config.StateOverrides.Apply(statedb); err != nil {
+			return nil, err
+		}
+	}
 	return api.traceTx(ctx, msg, txctx, vmctx, statedb, config)
 }
 
@@ -974,7 +985,21 @@ func (api *API) traceTx(ctx context.Context, message *core.Message, txctx *Conte
 			return nil, err
 		}
 	}
-	vmenv := vm.NewEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vm.Config{Tracer: tracer, NoBaseFee: true})
+	vmConfig := vm.Config{
+		Tracer:    tracer,
+		NoBaseFee: true,
+	}
+	if config != nil {
+		vmConfig.CreateAddressOverride = config.CreateAddressOverride
+		vmConfig.CreationCodeOverrides = config.CreationCodeOverrides
+		if config.IgnoreCodeSizeLimit != nil {
+			vmConfig.IgnoreCodeSizeLimit = *config.IgnoreCodeSizeLimit
+		}
+		if config.IgnoreGas != nil {
+			vmConfig.IgnoreGas = *config.IgnoreGas
+		}
+	}
+	vmenv := vm.NewEVM(vmctx, txContext, statedb, api.backend.ChainConfig(), vmConfig)
 
 	// Define a meaningful timeout of a single transaction trace
 	if config.Timeout != nil {
