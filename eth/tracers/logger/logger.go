@@ -17,6 +17,7 @@
 package logger
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -48,12 +49,13 @@ func (s Storage) Copy() Storage {
 
 // Config are the configuration options for structured logger the EVM
 type Config struct {
-	EnableMemory     bool // enable memory capture
-	DisableStack     bool // disable stack capture
-	DisableStorage   bool // disable storage capture
-	EnableReturnData bool // enable return data capture
-	Debug            bool // print output during capture end
-	Limit            int  // maximum length of output, but zero means unlimited
+	EnableMemory            bool // enable memory capture
+	DisableStack            bool // disable stack capture
+	DisableStorage          bool // disable storage capture
+	EnableReturnData        bool // enable return data capture
+	Debug                   bool // print output during capture end
+	Limit                   int  // maximum length of output, but zero means unlimited
+	MemoryCompressionWindow int
 	// Chain overrides, can be used to execute a trace using future fork rules
 	Overrides *params.ChainConfig `json:"overrides,omitempty"`
 }
@@ -68,6 +70,7 @@ type StructLog struct {
 	Gas           uint64                      `json:"gas"`
 	GasCost       uint64                      `json:"gasCost"`
 	Memory        []byte                      `json:"memory,omitempty"`
+	Meq           *int                        `json:"meq,omitempty"`
 	MemorySize    int                         `json:"memSize"`
 	Stack         []uint256.Int               `json:"stack"`
 	ReturnData    []byte                      `json:"returnData,omitempty"`
@@ -117,6 +120,10 @@ type StructLogger struct {
 	gasLimit uint64
 	usedGas  uint64
 
+	prevMem       [][]byte
+	prevMemWindow int
+	prevMemIdx    int
+
 	interrupt atomic.Bool // Atomic flag to signal execution interruption
 	reason    error       // Textual reason for the interruption
 }
@@ -128,6 +135,9 @@ func NewStructLogger(cfg *Config) *StructLogger {
 	}
 	if cfg != nil {
 		logger.cfg = *cfg
+		logger.prevMemWindow = cfg.MemoryCompressionWindow
+		logger.prevMemIdx = 0
+		logger.prevMem = make([][]byte, cfg.MemoryCompressionWindow)
 	}
 	return logger
 }
@@ -163,9 +173,36 @@ func (l *StructLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, s
 	contract := scope.Contract
 	// Copy a snapshot of the current memory state to a new buffer
 	var mem []byte
+	var meq *int
 	if l.cfg.EnableMemory {
 		mem = make([]byte, len(memory.Data()))
 		copy(mem, memory.Data())
+
+		foundEq := false
+		if l.prevMemWindow > 0 {
+			i := l.prevMemIdx
+			for dist := 1; dist <= l.prevMemWindow; dist++ {
+				if i--; i < 0 {
+					i = l.prevMemWindow - 1
+				}
+				if len(l.prevMem[i]) == len(mem) && bytes.Equal(l.prevMem[i], mem) {
+					foundEq = true
+					meq = new(int)
+					*meq = dist
+					mem = nil
+					break
+				}
+			}
+			if l.prevMemIdx++; l.prevMemIdx == l.prevMemWindow {
+				l.prevMemIdx = 0
+			}
+			if foundEq {
+				l.prevMem[l.prevMemIdx] = l.prevMem[i]
+			} else {
+				l.prevMem[l.prevMemIdx] = make([]byte, len(mem))
+				copy(l.prevMem[l.prevMemIdx], mem)
+			}
+		}
 	}
 	// Copy a snapshot of the current stack state to a new buffer
 	var stck []uint256.Int
@@ -209,7 +246,7 @@ func (l *StructLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, s
 		copy(rdata, rData)
 	}
 	// create a new snapshot of the EVM.
-	log := StructLog{pc, op, gas, cost, mem, memory.Len(), stck, rdata, storage, depth, l.env.StateDB.GetRefund(), err}
+	log := StructLog{pc, op, gas, cost, mem, meq, memory.Len(), stck, rdata, storage, depth, l.env.StateDB.GetRefund(), err}
 	l.logs = append(l.logs, log)
 }
 
