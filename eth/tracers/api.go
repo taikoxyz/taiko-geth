@@ -1085,3 +1085,99 @@ func overrideConfig(original *params.ChainConfig, override *params.ChainConfig) 
 
 	return copy, canon
 }
+
+type Bundle struct {
+	Transactions  []*ethapi.TransactionArgs `json:"transactions"`
+	BlockOverride ethapi.BlockOverrides     `json:"blockOverride"`
+}
+
+type StateContext struct {
+	BlockNumber      *rpc.BlockNumberOrHash `json:"blockNumber"`
+	TransactionIndex int                    `json:"transactionIndex"`
+}
+
+func (api *API) TraceCallMany(ctx context.Context, bundles []*Bundle, simulateContext *StateContext, config *TraceCallConfig) (interface{}, error) {
+	if len(bundles) == 0 {
+		return nil, errors.New("empty bundles")
+	}
+	var result []interface{}
+	for _, bundle := range bundles {
+		r, err := api.traceBundle(ctx, bundle, simulateContext, config)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, nil
+}
+
+func (api *API) traceBundle(ctx context.Context, bundle *Bundle, simulateContext *StateContext, config *TraceCallConfig) (interface{}, error) {
+	var result []interface{}
+	// Try to retrieve the specified block
+	var (
+		err   error
+		block *types.Block
+	)
+	if hash, ok := simulateContext.BlockNumber.Hash(); ok {
+		block, err = api.blockByHash(ctx, hash)
+	} else if number, ok := simulateContext.BlockNumber.Number(); ok {
+		if number == rpc.PendingBlockNumber {
+			// We don't have access to the miner here. For tracing 'future' transactions,
+			// it can be done with block- and state-overrides instead, which offers
+			// more flexibility and stability than trying to trace on 'pending', since
+			// the contents of 'pending' is unstable and probably not a true representation
+			// of what the next actual block is likely to contain.
+			return nil, errors.New("tracing on top of pending is not supported")
+		}
+		block, err = api.blockByNumber(ctx, number)
+	} else {
+		return nil, errors.New("invalid arguments; neither block nor hash specified")
+	}
+	if err != nil {
+		return nil, err
+	}
+	// try to recompute the state
+	reexec := defaultTraceReexec
+	if config != nil && config.Reexec != nil {
+		reexec = *config.Reexec
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	_, vmctx, statedb, release, err := api.backend.StateAtTransaction(ctx, block, simulateContext.TransactionIndex, reexec)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+
+	// Apply the customization rules if required.
+	if config != nil {
+		if err := config.StateOverrides.Apply(statedb); err != nil {
+			return nil, err
+		}
+		config.BlockOverrides.Apply(&vmctx)
+	}
+	// Execute the trace
+	for idx, args := range bundle.Transactions {
+		if idx > 0 {
+			// TODO currently only support one tx in bundle
+			break
+		}
+		msg, err := args.ToMessage(api.backend.RPCGasCap(), block.BaseFee())
+		if err != nil {
+			return nil, err
+		}
+
+		var traceConfig *TraceConfig
+		if config != nil {
+			traceConfig = &config.TraceConfig
+		}
+		r, err := api.traceTx(ctx, msg, new(Context), vmctx, statedb, traceConfig)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, r)
+	}
+	return result, nil
+}
