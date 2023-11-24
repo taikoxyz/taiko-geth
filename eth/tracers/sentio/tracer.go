@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
+	corestate "github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/log"
@@ -100,9 +101,6 @@ type Trace struct {
 	// Only used by root
 	Traces []Trace `json:"traces,omitempty"`
 
-	// Only set in debug mode
-	TracerConfig *sentioTracerConfig `json:"tracerConfig,omitempty"`
-
 	// Use for internal call stack organization
 	// The jump to go into the function
 	//enterPc uint64
@@ -112,6 +110,14 @@ type Trace struct {
 	function *functionInfo
 }
 
+type Receipt struct {
+	Nonce            uint64       `json:"nonce"`
+	TxHash           *common.Hash `json:"transactionHash,omitempty"`
+	BlockNumber      *hexutil.Big `json:"blockNumber,omitempty"`
+	BlockHash        *common.Hash `json:"blockHash,omitempty"`
+	TransactionIndex uint         `json:"transactionIndex"`
+}
+
 type sentioTracer struct {
 	config            sentioTracerConfig
 	env               *vm.EVM
@@ -119,6 +125,7 @@ type sentioTracer struct {
 
 	functionMap map[string]map[uint64]functionInfo
 	callMap     map[string]map[uint64]bool
+	receipt     Receipt
 
 	previousJump *Trace
 	index        int
@@ -146,6 +153,15 @@ func (t *sentioTracer) CaptureTxEnd(restGas uint64) {
 
 func (t *sentioTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Address, create bool, input []byte, gas uint64, value *big.Int) {
 	t.env = env
+	t.receipt.BlockNumber = (*hexutil.Big)(env.Context.BlockNumber)
+	// TODO this current will block the tracer
+
+	// TODO bockHash & txHash
+	t.receipt.Nonce = env.StateDB.GetNonce(from) - 1
+	if ibs, ok := env.StateDB.(*corestate.StateDB); ok {
+		t.receipt.TransactionIndex = uint(ibs.TxIndex())
+	}
+
 	rules := env.ChainConfig().Rules(env.Context.BlockNumber, env.Context.Random != nil, env.Context.Time)
 	t.activePrecompiles = vm.ActivePrecompiles(rules)
 
@@ -487,15 +503,24 @@ func (t *sentioTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, s
 func (t *sentioTracer) CapturePreimage(pc uint64, hash common.Hash, preimage []byte) {}
 
 func (t *sentioTracer) GetResult() (json.RawMessage, error) {
+	type RootTrace struct {
+		Trace
+		TracerConfig *sentioTracerConfig `json:"tracerConfig,omitempty"`
+		Receipt      Receipt             `json:"receipt"`
+	}
+	root := RootTrace{
+		Trace:   t.callstack[0],
+		Receipt: t.receipt,
+	}
 	if t.config.Debug {
-		t.callstack[0].TracerConfig = &t.config
+		root.TracerConfig = &t.config
 	}
 
 	if len(t.callstack) != 1 {
 		log.Error("callstack length is not 1, is " + fmt.Sprint(len(t.callstack)))
 	}
 
-	res, err := json.Marshal(t.callstack[0])
+	res, err := json.Marshal(root)
 	if err != nil {
 		return nil, err
 	}
