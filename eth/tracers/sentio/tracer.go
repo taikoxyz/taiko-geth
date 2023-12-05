@@ -211,6 +211,16 @@ func (t *sentioTracer) CaptureEnter(typ vm.OpCode, from common.Address, to commo
 	if atomic.LoadUint32(&t.interrupt) > 0 {
 		return
 	}
+
+	if typ == vm.CALL || typ == vm.CALLCODE {
+		// After enter, make the assumped transfer as function call
+		topElementTraces := t.callstack[len(t.callstack)-1].Traces
+		call := topElementTraces[len(topElementTraces)-1]
+		topElementTraces = topElementTraces[:len(topElementTraces)-1]
+		t.callstack[len(t.callstack)-1].Traces = topElementTraces
+		t.callstack = append(t.callstack, call)
+	}
+
 	size := len(t.callstack)
 
 	t.callstack[size-1].From = &from
@@ -310,21 +320,22 @@ func (t *sentioTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, s
 	switch op {
 	case vm.CALL, vm.CALLCODE:
 		call := mergeBase(Trace{})
-		value := scope.Stack.Back(2)
-		//log.Infof("sentio debug: %s %s", value, t.env)
-		if !value.IsZero() && !t.env.Context.CanTransfer(t.env.StateDB, scope.Contract.Address(), value.ToBig()) {
-			// TODO better understand why some call will not be process by captureEnter
-			// core/vm/evm.go:181
-			call.Gas = math.HexOrDecimal64(scope.Stack.Back(0).Uint64())
-			from := scope.Contract.Address()
-			call.From = &from
-			to := common.BigToAddress(scope.Stack.Back(1).ToBig())
-			call.To = &to
-			call.Value = (*hexutil.Big)(value.ToBig())
-			t.callstack[len(t.callstack)-1].Traces = append(t.callstack[len(t.callstack)-1].Traces, call)
-		} else {
-			t.callstack = append(t.callstack, call)
+		call.Gas = math.HexOrDecimal64(scope.Stack.Back(0).Uint64())
+		from := scope.Contract.Address()
+		call.From = &from
+		to := common.BigToAddress(scope.Stack.Back(1).ToBig())
+		call.To = &to
+		call.Value = (*hexutil.Big)(scope.Stack.Back(2).ToBig())
+
+		v := call.Value.ToInt()
+		if v.BitLen() != 0 && !t.env.Context.CanTransfer(t.env.StateDB, from, v) {
+			if call.Error == "" {
+				call.Error = "insufficient funds for transfer"
+			}
 		}
+
+		// Treat this call as pure transfer until it enters the CaptureEnter
+		t.callstack[len(t.callstack)-1].Traces = append(t.callstack[len(t.callstack)-1].Traces, call)
 	case vm.CREATE, vm.CREATE2, vm.DELEGATECALL, vm.STATICCALL, vm.SELFDESTRUCT:
 		// more info to be add at CaptureEnter
 		call := mergeBase(Trace{})
