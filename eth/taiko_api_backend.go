@@ -108,7 +108,7 @@ func (s *TaikoAPIBackend) GetL2ParentHashes(blockID uint64) ([]common.Hash, erro
 			return nil, err
 		}
 
-		hashes = append(hashes, block.ParentHash())
+		hashes = append(hashes, block.Hash())
 	}
 	return hashes, nil
 }
