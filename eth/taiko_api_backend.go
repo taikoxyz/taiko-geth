@@ -1,6 +1,7 @@
 package eth
 
 import (
+	"context"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -8,7 +9,9 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // TaikoAPIBackend handles l2 node related RPC calls.
@@ -88,4 +91,45 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		locals,
 		maxTransactionsLists,
 	)
+}
+
+// Get L2ParentHashes retrieves the preceding 256 parent hashes given a block number.
+func (s *TaikoAPIBackend) GetL2ParentHashes(blockID uint64) ([]common.Hash, error) {
+	var hashes []common.Hash
+	furthest := 256
+
+	if blockID < 257 {
+		furthest = int(blockID)
+	}
+
+	for i := 1; i < furthest; i++ {
+		block, err := s.eth.APIBackend.BlockByNumber(context.Background(), rpc.BlockNumber(blockID-uint64(i)))
+		if err != nil {
+			return nil, err
+		}
+
+		hashes = append(hashes, block.ParentHash())
+	}
+	return hashes, nil
+}
+
+// Get L2ParentBlocks retrieves the preceding 256 parent blocks given a block number.
+func (s *TaikoAPIBackend) GetL2ParentBlocks(blockID uint64) ([]map[string]interface{}, error) {
+	var parents []map[string]interface{}
+	b := ethapi.NewBlockChainAPI(s.eth.APIBackend)
+	furthest := 256
+
+	if blockID < 257 {
+		furthest = int(blockID)
+	}
+
+	for i := 1; i < furthest; i++ {
+		block, err := b.GetBlockByNumber(context.Background(), rpc.BlockNumber(blockID-uint64(i)), false)
+		if err != nil {
+			return nil, err
+		}
+		parents = append(parents, block)
+	}
+
+	return parents, nil
 }
