@@ -104,6 +104,25 @@ func TestL1OriginByID(t *testing.T) {
 	require.Equal(t, testL1Origin, l1OriginFound)
 }
 
+func TestGetL2ParentHashes(t *testing.T) {
+	ec, _, _ := newTaikoAPITestClient(t)
+
+	hashes, err := ec.GetL2ParentHashes(context.Background(), big.NewInt(4).Uint64())
+	require.Nil(t, hashes)
+	require.NotNil(t, err)
+	// log.Info("error:", "errortype", err)
+	// fails since chain segment hasn't reached (?)
+
+	test := common.Big3.Uint64()
+
+	hashes, err = ec.GetL2ParentHashes(context.Background(), test)
+	require.Nil(t, err)
+
+	require.Equal(t, len(hashes), int(test-1))
+	require.Equal(t, hashes[test-3].String(), "0x4bab762ae8457561f28e3359a98e323c4f6ae5dce54442cd24eefd8886d2d838")
+	require.Equal(t, hashes[test-2].String(), "0x82b6413886df66f54c5e1de8689eb9a0dbcdd7c8fc6dbf32da8a081a353dc6ab")
+}
+
 // randomHash generates a random blob of data and returns it as a hash.
 func randomHash() common.Hash {
 	var hash common.Hash
