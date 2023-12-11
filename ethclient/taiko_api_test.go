@@ -110,7 +110,6 @@ func TestGetL2ParentHashes(t *testing.T) {
 	hashes, err := ec.GetL2ParentHashes(context.Background(), big.NewInt(4).Uint64())
 	require.Nil(t, hashes)
 	require.NotNil(t, err)
-	// log.Info("error:", "errortype", err)
 	// fails since chain segment hasn't reached
 
 	test := common.Big3.Uint64()
@@ -118,9 +117,44 @@ func TestGetL2ParentHashes(t *testing.T) {
 	hashes, err = ec.GetL2ParentHashes(context.Background(), test)
 	require.Nil(t, err)
 
-	require.Equal(t, len(hashes), int(test-1))
-	require.Equal(t, hashes[test-3], blocks[2].Hash())
-	require.Equal(t, hashes[test-2], blocks[1].Hash())
+	require.Equal(t, int(test-1), len(hashes))
+	require.Equal(t, blocks[2].Hash(), hashes[test-3])
+	require.Equal(t, blocks[1].Hash(), hashes[test-2])
+
+	// should work when shorter than length of chain
+	hashes, err = ec.GetL2ParentHashes(context.Background(), common.Big2.Uint64())
+	require.Nil(t, err)
+
+	require.Equal(t, 1, len(hashes))
+	require.Equal(t, blocks[1].Hash(), hashes[0])
+
+	// empty when 1 since genesis has no parent
+	hashes, err = ec.GetL2ParentHashes(context.Background(), common.Big1.Uint64())
+	require.Nil(t, err)
+
+	require.Equal(t, 0, len(hashes))
+}
+
+func TestGetL2ParentBlocks(t *testing.T) {
+	ec, blocks, _ := newTaikoAPITestClient(t)
+
+	res, err := ec.GetL2ParentBlocks(context.Background(), common.Big3.Uint64())
+	require.Nil(t, err)
+
+	require.Equal(t, 2, len(res))
+	require.Equal(t, res[0]["hash"], blocks[2].Hash().String())
+	require.Equal(t, res[1]["hash"], blocks[1].Hash().String())
+
+	res, err = ec.GetL2ParentBlocks(context.Background(), common.Big2.Uint64())
+	require.Nil(t, err)
+
+	require.Equal(t, 1, len(res))
+	require.Equal(t, res[0]["hash"], blocks[1].Hash().String())
+
+	res, err = ec.GetL2ParentBlocks(context.Background(), common.Big1.Uint64())
+	require.Nil(t, err)
+
+	require.Equal(t, 0, len(res))
 }
 
 // randomHash generates a random blob of data and returns it as a hash.
