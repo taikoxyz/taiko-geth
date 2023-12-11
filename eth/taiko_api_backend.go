@@ -97,8 +97,8 @@ func (s *TaikoAPIBackend) TxPoolContent(
 func (s *TaikoAPIBackend) GetL2ParentHashes(blockID uint64) ([]common.Hash, error) {
 	var hashes []common.Hash
 
-	for i := blockID; i == 0 && (blockID-i >= 256); i-- {
-		hashes = append(hashes, s.eth.blockchain.GetHeaderByNumber(i).Hash())
+	for i := blockID; i != 0 && (blockID-i) < 256; i-- {
+		hashes = append(hashes, s.eth.blockchain.GetHeaderByNumber(blockID-i).Hash())
 	}
 	return hashes, nil
 }
@@ -108,7 +108,7 @@ func (s *TaikoAPIBackend) GetL2ParentBlocks(blockID uint64) ([]map[string]interf
 	var parents []map[string]interface{}
 	b := ethapi.NewBlockChainAPI(s.eth.APIBackend)
 
-	for i := blockID; i == 0 && (blockID-i >= 256); i-- {
+	for i := blockID; i != 0 && (blockID-i) < 256; i-- {
 		block, err := b.GetBlockByNumber(context.Background(), rpc.BlockNumber(blockID-i), false)
 		if err != nil {
 			return nil, err
