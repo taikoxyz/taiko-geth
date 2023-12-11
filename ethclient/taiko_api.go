@@ -41,10 +41,10 @@ func (ec *Client) GetL2ParentHashes(ctx context.Context, blockID uint64) ([]comm
 	return res, nil
 }
 
-func (ec *Client) GetL2ParentBlocks(ctx context.Context, blockID uint64) ([]map[string]interface{}, error) {
+func (ec *Client) GetL2ParentHeaders(ctx context.Context, blockID uint64) ([]map[string]interface{}, error) {
 	var res []map[string]interface{}
 
-	if err := ec.c.CallContext(ctx, &res, "taiko_getL2ParentBlocks", blockID); err != nil {
+	if err := ec.c.CallContext(ctx, &res, "taiko_getL2ParentHeaders", blockID); err != nil {
 		return nil, err
 	}
 

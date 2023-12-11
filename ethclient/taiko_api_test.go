@@ -132,7 +132,7 @@ func TestGetL2ParentHashes(t *testing.T) {
 func TestGetL2ParentBlocks(t *testing.T) {
 	ec, blocks, _ := newTaikoAPITestClient(t)
 
-	res, err := ec.GetL2ParentBlocks(context.Background(), common.Big3.Uint64())
+	res, err := ec.GetL2ParentHeaders(context.Background(), common.Big3.Uint64())
 	require.Nil(t, err)
 
 	require.Equal(t, 3, len(res))
@@ -140,14 +140,14 @@ func TestGetL2ParentBlocks(t *testing.T) {
 	require.Equal(t, res[1]["hash"], blocks[1].Hash().String())
 	require.Equal(t, res[2]["hash"], blocks[2].Hash().String())
 
-	res, err = ec.GetL2ParentBlocks(context.Background(), common.Big2.Uint64())
+	res, err = ec.GetL2ParentHeaders(context.Background(), common.Big2.Uint64())
 	require.Nil(t, err)
 
 	require.Equal(t, 2, len(res))
 	require.Equal(t, res[0]["hash"], blocks[0].Hash().String())
 	require.Equal(t, res[1]["hash"], blocks[1].Hash().String())
 
-	res, err = ec.GetL2ParentBlocks(context.Background(), common.Big0.Uint64())
+	res, err = ec.GetL2ParentHeaders(context.Background(), common.Big0.Uint64())
 	require.Nil(t, err)
 
 	require.Equal(t, 0, len(res))

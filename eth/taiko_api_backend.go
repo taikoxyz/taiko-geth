@@ -1,7 +1,6 @@
 package eth
 
 import (
-	"context"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -9,9 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // TaikoAPIBackend handles l2 node related RPC calls.
@@ -97,24 +94,23 @@ func (s *TaikoAPIBackend) TxPoolContent(
 func (s *TaikoAPIBackend) GetL2ParentHashes(blockID uint64) ([]common.Hash, error) {
 	var hashes []common.Hash
 
-	for i := blockID; i != 0 && (blockID-i) < 256; i-- {
-		hashes = append(hashes, s.eth.blockchain.GetHeaderByNumber(blockID-i).Hash())
+	headers, err := s.GetL2ParentHeaders(blockID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, x := range headers {
+		hashes = append(hashes, x.Hash())
 	}
 	return hashes, nil
 }
 
 // Get L2ParentBlocks retrieves the preceding 256 parent blocks given a block number.
-func (s *TaikoAPIBackend) GetL2ParentBlocks(blockID uint64) ([]map[string]interface{}, error) {
-	var parents []map[string]interface{}
-	b := ethapi.NewBlockChainAPI(s.eth.APIBackend)
+func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, error) {
+	var headers []*types.Header
 
 	for i := blockID; i != 0 && (blockID-i) < 256; i-- {
-		block, err := b.GetBlockByNumber(context.Background(), rpc.BlockNumber(blockID-i), false)
-		if err != nil {
-			return nil, err
-		}
-		parents = append(parents, block)
+		headers = append(headers, s.eth.blockchain.GetHeaderByNumber(blockID-i))
 	}
-
-	return parents, nil
+	return headers, nil
 }
