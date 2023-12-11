@@ -112,14 +112,12 @@ func TestGetL2ParentHashes(t *testing.T) {
 	require.NotNil(t, err)
 	// fails since chain segment hasn't reached
 
-	test := common.Big3.Uint64()
-
-	hashes, err = ec.GetL2ParentHashes(context.Background(), test)
+	hashes, err = ec.GetL2ParentHashes(context.Background(), common.Big3.Uint64())
 	require.Nil(t, err)
 
-	require.Equal(t, int(test-1), len(hashes))
-	require.Equal(t, blocks[2].Hash(), hashes[test-3])
-	require.Equal(t, blocks[1].Hash(), hashes[test-2])
+	require.Equal(t, 2, len(hashes))
+	require.Equal(t, blocks[2].Hash(), hashes[0])
+	require.Equal(t, blocks[1].Hash(), hashes[1])
 
 	// should work when shorter than length of chain
 	hashes, err = ec.GetL2ParentHashes(context.Background(), common.Big2.Uint64())
