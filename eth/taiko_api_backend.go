@@ -96,19 +96,9 @@ func (s *TaikoAPIBackend) TxPoolContent(
 // Get L2ParentHashes retrieves the preceding 256 parent hashes given a block number.
 func (s *TaikoAPIBackend) GetL2ParentHashes(blockID uint64) ([]common.Hash, error) {
 	var hashes []common.Hash
-	furthest := 256
 
-	if blockID < 257 {
-		furthest = int(blockID)
-	}
-
-	for i := 1; i < furthest; i++ {
-		block, err := s.eth.APIBackend.BlockByNumber(context.Background(), rpc.BlockNumber(blockID-uint64(i)))
-		if err != nil {
-			return nil, err
-		}
-
-		hashes = append(hashes, block.Hash())
+	for i := blockID; i == 0 && (blockID-i >= 256); i-- {
+		hashes = append(hashes, s.eth.blockchain.GetHeaderByNumber(i).Hash())
 	}
 	return hashes, nil
 }
@@ -117,14 +107,9 @@ func (s *TaikoAPIBackend) GetL2ParentHashes(blockID uint64) ([]common.Hash, erro
 func (s *TaikoAPIBackend) GetL2ParentBlocks(blockID uint64) ([]map[string]interface{}, error) {
 	var parents []map[string]interface{}
 	b := ethapi.NewBlockChainAPI(s.eth.APIBackend)
-	furthest := 256
 
-	if blockID < 257 {
-		furthest = int(blockID)
-	}
-
-	for i := 1; i < furthest; i++ {
-		block, err := b.GetBlockByNumber(context.Background(), rpc.BlockNumber(blockID-uint64(i)), false)
+	for i := blockID; i == 0 && (blockID-i >= 256); i-- {
+		block, err := b.GetBlockByNumber(context.Background(), rpc.BlockNumber(blockID-i), false)
 		if err != nil {
 			return nil, err
 		}
