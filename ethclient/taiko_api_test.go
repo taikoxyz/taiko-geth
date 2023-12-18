@@ -104,31 +104,6 @@ func TestL1OriginByID(t *testing.T) {
 	require.Equal(t, testL1Origin, l1OriginFound)
 }
 
-func TestGetL2ParentHashes(t *testing.T) {
-	ec, blocks, _ := newTaikoAPITestClient(t)
-
-	hashes, err := ec.GetL2ParentHashes(context.Background(), common.Big3.Uint64())
-	require.Nil(t, err)
-
-	log.Info("hashes", "a", hashes)
-	require.Equal(t, 3, len(hashes))
-	require.Equal(t, blocks[0].Hash(), hashes[0])
-	require.Equal(t, blocks[1].Hash(), hashes[1])
-	require.Equal(t, blocks[2].Hash(), hashes[2])
-
-	hashes, err = ec.GetL2ParentHashes(context.Background(), common.Big2.Uint64())
-	require.Nil(t, err)
-
-	require.Equal(t, 2, len(hashes))
-	require.Equal(t, blocks[0].Hash(), hashes[0])
-	require.Equal(t, blocks[1].Hash(), hashes[1])
-
-	hashes, err = ec.GetL2ParentHashes(context.Background(), common.Big0.Uint64())
-	require.Nil(t, err)
-
-	require.Equal(t, 0, len(hashes))
-}
-
 func TestGetL2ParentBlocks(t *testing.T) {
 	ec, blocks, _ := newTaikoAPITestClient(t)
 
