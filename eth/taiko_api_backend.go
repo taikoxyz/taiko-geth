@@ -90,15 +90,15 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	)
 }
 
-// Get L2ParentBlocks retrieves the preceding 256 parent blocks given a block number.
+// Get L2ParentBlocks retrieves the block and 255 parent blocks given a block number.
 func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, error) {
 	headers := make([]*types.Header, 0, 256)
 	start := 0
-	if blockID > 256 {
-		start = int(blockID - 256)
+	if blockID > 255 {
+		start = int(blockID - 255)
 	}
 
-	for start < int(blockID) {
+	for start <= int(blockID) {
 		headers = append(headers, s.eth.blockchain.GetHeaderByNumber(uint64(start)))
 		start++
 	}
