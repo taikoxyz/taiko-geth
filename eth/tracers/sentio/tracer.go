@@ -143,6 +143,9 @@ func (t *sentioTracer) CaptureTxStart(gasLimit uint64) {
 }
 
 func (t *sentioTracer) CaptureTxEnd(restGas uint64) {
+	if len(t.callstack) == 0 {
+		return
+	}
 	t.callstack[0].EndIndex = t.index
 	t.callstack[0].GasUsed = math.HexOrDecimal64(t.gasLimit - restGas)
 	if t.callstack[0].StartIndex == -1 {
