@@ -1164,6 +1164,10 @@ func (api *API) traceBundle(ctx context.Context, bundle *Bundle, simulateContext
 			// TODO currently only support one tx in bundle
 			break
 		}
+		if args.Gas == nil {
+			gasCap := api.backend.RPCGasCap()
+			args.Gas = (*hexutil.Uint64)(&gasCap)
+		}
 		msg, err := args.ToMessage(api.backend.RPCGasCap(), block.BaseFee())
 		if err != nil {
 			return nil, err
