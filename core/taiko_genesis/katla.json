@@ -1,9 +1,9 @@
 {
   "0x1D2D1bb9D180541E88a6a682aCf3f61c1605B190": {
-    "balance": "0x3782dace9d90000000"
+    "balance": "0xfffffffffffffacbbb7ca13a7fffffff"
   },
   "0x39aF15916b41548f04D731079F283135B276652F": {
-    "balance": "0x3782dace9d90000000"
+    "balance": "0xfffffffffffffacbbb7ca13a7fffffff"
   },
   "0x0167008000000000000000000000000000000006": {
     "contractName": "SharedAddressManagerImpl",
