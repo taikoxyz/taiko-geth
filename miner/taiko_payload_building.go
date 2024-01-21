@@ -30,6 +30,16 @@ func (payload *Payload) afterSetFullBlock() {
 	payload.lock.Lock()
 	defer payload.lock.Unlock()
 
+		// Add a check if the channel is closed
+		select {
+		case <-payload.done:
+			log.Info("SetFullBlock payload done received", "id", payload.id)
+			return
+		default:
+			// Channel not closed, continue
+
+		}
+
 	select {
 	case <-payload.done:
 		log.Info("SetFullBlock payload done received", "id", payload.id)
