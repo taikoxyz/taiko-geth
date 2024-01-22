@@ -32,7 +32,14 @@ func (payload *Payload) afterSetFullBlock() {
 
 	select {
 	case <-payload.done:
-		log.Info("SetFullBlock payload done received", "id", payload.id)
+		log.Info("SetFullBlock payload.done received", "id", payload.id)
+		return
+	default:
+	}
+
+	select {
+	case <-payload.stop:
+		log.Info("SetFullBlock payload.stop received", "id", payload.id)
 		return
 	default:
 	}
