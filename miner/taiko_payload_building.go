@@ -43,9 +43,6 @@ func (payload *Payload) afterSetFullBlock() {
 			log.Info("SetFullBlock payload.stop received", "id", payload.id)
 			return
 		}
-
-		log.Info("SetFullBlock payload.stop channel closed", "id", payload.id)
-		return
 	default:
 	}
 
