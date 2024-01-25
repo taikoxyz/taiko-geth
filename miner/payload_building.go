@@ -66,16 +66,15 @@ func (args *BuildPayloadArgs) Id() engine.PayloadID {
 // the revenue. Therefore, the empty-block here is always available and full-block
 // will be set/updated afterwards.
 type Payload struct {
-	id                engine.PayloadID
-	empty             *types.Block
-	full              *types.Block
-	sidecars          []*types.BlobTxSidecar
-	fullFees          *big.Int
-	stop              chan struct{}
-	lock              sync.Mutex
-	cond              *sync.Cond
-	done              chan struct{} // CHANGE(taiko): done channel to communicate we shouldnt write to `stop` channel.
-	stopChannelClosed bool
+	id       engine.PayloadID
+	empty    *types.Block
+	full     *types.Block
+	sidecars []*types.BlobTxSidecar
+	fullFees *big.Int
+	stop     chan struct{}
+	lock     sync.Mutex
+	cond     *sync.Cond
+	done     chan struct{} // CHANGE(taiko): done channel to communicate we shouldnt write to `stop` channel.
 }
 
 // newPayload initializes the payload object.
@@ -134,7 +133,7 @@ func (payload *Payload) Resolve() *engine.ExecutionPayloadEnvelope {
 	select {
 	case <-payload.stop:
 	default:
-		payload.done <- struct{}{}
+		payload.done <- struct{}{} // CHANGE(taiko): signal to taiko payload builder to not write to `payload.stop` channel
 		close(payload.stop)
 	}
 	if payload.full != nil {
