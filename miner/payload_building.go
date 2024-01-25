@@ -133,6 +133,7 @@ func (payload *Payload) Resolve() *engine.ExecutionPayloadEnvelope {
 	select {
 	case <-payload.stop:
 	default:
+		payload.done <- struct{}{} // CHANGE(taiko): signal to taiko payload builder to not write to `payload.stop` channel
 		close(payload.stop)
 	}
 	if payload.full != nil {
