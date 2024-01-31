@@ -248,6 +248,9 @@ func init() {
 	)
 	flags.AutoEnvVars(app.Flags, "GETH")
 
+	// CHANGE(taiko): append Taiko flags into the original GETH flags
+	app.Flags = append(app.Flags, &utils.TaikoFlag)
+
 	app.Before = func(ctx *cli.Context) error {
 		maxprocs.Set() // Automatically set GOMAXPROCS to match Linux container CPU quota.
 		flags.MigrateGlobalFlags(ctx)

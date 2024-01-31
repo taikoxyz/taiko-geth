@@ -86,6 +86,9 @@ type TxData interface {
 	nonce() uint64
 	to() *common.Address
 
+	isAnchor() bool
+	markAsAnchor() error
+
 	rawSignatureValues() (v, r, s *big.Int)
 	setSignatureValues(chainID, v, r, s *big.Int)
 
