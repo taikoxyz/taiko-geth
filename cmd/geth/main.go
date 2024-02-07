@@ -246,6 +246,9 @@ func init() {
 		debug.Flags,
 		metricsFlags,
 	)
+	// CHANGE(taiko): append Taiko flags into the original GETH flags
+	app.Flags = append(app.Flags, &utils.TaikoFlag)
+
 	flags.AutoEnvVars(app.Flags, "GETH")
 
 	app.Before = func(ctx *cli.Context) error {
