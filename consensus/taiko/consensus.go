@@ -31,7 +31,7 @@ var (
 	GoldenTouchAccount   = common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
 	TaikoL2AddressSuffix = "10001"
 	AnchorSelector       = crypto.Keccak256([]byte("anchor(bytes32,bytes32,uint64,uint32)"))[:4]
-	AnchorGasLimit       = uint64(250_000)
+	AnchorGasLimit       = uint64(1_000_000)
 )
 
 // Taiko is a consensus engine used by L2 rollup.
