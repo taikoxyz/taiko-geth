@@ -4,41 +4,42 @@
 # or operating system, you probably want to add a global ignore instead:
 #   git config --global core.excludesfile ~/.gitignore_global
 
+# Ignore temporary files
 /tmp
-*/**/*un~
-*/**/*.test
 *un~
+
+# Ignore test files
+/**/*.test
+
+# Ignore system-specific files
 .DS_Store
 */**/.DS_Store
 .ethtest
+
+# Ignore specific directories and files
 */**/*tx_database*
 */**/*dapps*
 build/_vendor/pkg
 
-#*
-.#*
-*#
-*~
+# Ignore project-related files
 .project
 .settings
 
-# used by the Makefile
+# Ignore build-related directories
 /build/_workspace/
 /build/cache/
 /build/bin/
 /geth*.zip
 
-# travis
+# Ignore Travis CI related files
 profile.tmp
 profile.cov
 
-# IdeaIDE
+# Ignore IDE-specific files and directories
 .idea
-
-# VS Code
 .vscode
 
-# dashboard
+# Ignore dashboard assets
 /dashboard/assets/flow-typed
 /dashboard/assets/node_modules
 /dashboard/assets/stats.json
@@ -46,7 +47,7 @@ profile.cov
 /dashboard/assets/bundle.js.map
 /dashboard/assets/package-lock.json
 
+# Ignore logs and test results
 **/yarn-error.log
 logs/
-
 tests/spec-tests/
