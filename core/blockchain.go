@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"math/big"
-	"modernc.org/mathutil"
 	"runtime"
 	"strings"
 	"sync"
@@ -52,6 +51,7 @@ import (
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	"golang.org/x/exp/slices"
+	"modernc.org/mathutil"
 )
 
 var (
