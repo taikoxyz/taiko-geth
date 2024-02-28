@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"modernc.org/mathutil"
 	"runtime"
 	"strings"
 	"sync"
@@ -1005,7 +1006,16 @@ func (bc *BlockChain) Stop() {
 		if !bc.cacheConfig.TrieDirtyDisabled {
 			triedb := bc.triedb
 
-			for _, offset := range []uint64{0, 1, TriesInMemory - 1} {
+			maxOffset := uint64(TriesInMemory - 1)
+			if bc.chainConfig.Taiko {
+				finalHeader := bc.CurrentFinalBlock()
+				if finalHeader != nil {
+					maxOffset = mathutil.MaxUint64(maxOffset, bc.CurrentBlock().Number.Uint64()-finalHeader.Number.Uint64())
+				} else {
+					log.Warn("Finalized block not found, using default trie gc limit")
+				}
+			}
+			for _, offset := range []uint64{0, 1, maxOffset} {
 				if number := bc.CurrentBlock().Number.Uint64(); number > offset {
 					recent := bc.GetBlockByNumber(number - offset)
 
@@ -1397,6 +1407,14 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	}
 	// Find the next state trie we need to commit
 	chosen := current - TriesInMemory
+	if bc.chainConfig.Taiko {
+		finalHeader := bc.CurrentFinalBlock()
+		if finalHeader != nil {
+			chosen = mathutil.MinUint64(chosen, finalHeader.Number.Uint64())
+		} else {
+			log.Warn("Finalized block not found, using chosen number for trie gc")
+		}
+	}
 	flushInterval := time.Duration(bc.flushInterval.Load())
 	// If we exceeded time allowance, flush an entire trie to disk
 	if bc.gcproc > flushInterval {
