@@ -30,7 +30,8 @@ func (tx *DynamicFeeTx) markAsAnchor() error {
 }
 
 func (tx *LegacyTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	tx.isAnhcor = true
+	return nil
 }
 
 func (tx *AccessListTx) markAsAnchor() error {

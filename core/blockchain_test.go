@@ -41,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/assert"
 )
 
 // So we can deterministically seed different blockchains
@@ -2113,6 +2114,87 @@ func testLowDiffLongChain(t *testing.T, scheme string) {
 		}
 		header = chain.GetHeader(header.ParentHash, number-1)
 	}
+}
+
+func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop bool) {
+	// Generate a canonical chain to act as the main dataset
+	chainConfig := *params.TestChainConfig
+	balance := big.NewInt(math.MaxInt64)
+	balance.Mul(balance, big.NewInt(int64(1000)))
+	var (
+		engine = beacon.New(ethash.NewFaker())
+		key, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+		addr   = crypto.PubkeyToAddress(key.PublicKey)
+		nonce  = uint64(0)
+
+		gspec = &Genesis{
+			Config:  &chainConfig,
+			Alloc:   types.GenesisAlloc{addr: {Balance: balance}},
+			BaseFee: big.NewInt(params.InitialBaseFee),
+		}
+		signer     = types.LatestSigner(gspec.Config)
+		mergeBlock = math.MaxInt32
+	)
+	// Generate and import the canonical chain
+	chain, err := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create tester chain: %v", err)
+	}
+	//defer chain.Stop()
+	chain.chainConfig.Taiko = true
+
+	_, blocks, _ := GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *BlockGen) {
+		baseTx := types.NewTransaction(nonce, common.HexToAddress("deadbeef"), big.NewInt(100), 21000, big.NewInt(int64(i+1)*params.GWei), nil)
+		_ = baseTx.MarkAsAnchor()
+		tx, err := types.SignTx(baseTx, signer, key)
+		if err != nil {
+			t.Fatalf("failed to create tx: %v", err)
+		}
+		gen.AddTx(tx)
+		if int(gen.header.Number.Uint64()) >= mergeBlock {
+			gen.SetPoS()
+		}
+		nonce++
+	})
+
+	for i := 0; i < n; i++ {
+		block := blocks[i]
+		if n, err := chain.InsertChain([]*types.Block{block}); err != nil {
+			t.Fatalf("block %d: failed to insert into chain: %v", n, err)
+		}
+		if block.Number().Uint64() == finalizedNumber {
+			// Set the finalized block header.
+			chain.SetFinalized(block.Header())
+		}
+	}
+
+	// Stop chain.
+	if stop {
+		chain.Stop()
+	} else {
+		defer chain.Stop()
+	}
+
+	var firstNonPrunedBlock *types.Block
+	for i := 0; i < n; i++ {
+		block := blocks[i]
+		if chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
+			firstNonPrunedBlock = block
+			break
+		}
+	}
+
+	assert.NotEmpty(t, firstNonPrunedBlock)
+	assert.Equal(t, finalizedNumber, firstNonPrunedBlock.NumberU64())
+}
+
+func TestTaikoPruningFinalize(t *testing.T) {
+	testTaikoPruningFinalize(t, 2*TriesInMemory, TriesInMemory/2, false)
+	testTaikoPruningFinalize(t, 2*TriesInMemory, TriesInMemory/2, true)
+	testTaikoPruningFinalize(t, 2*TriesInMemory, 2*TriesInMemory-1, false)
+	testTaikoPruningFinalize(t, 2*TriesInMemory, 2*TriesInMemory-1, true)
+	testTaikoPruningFinalize(t, 8000, 100, true)
+	testTaikoPruningFinalize(t, 8000, 100, false)
 }
 
 // Tests that importing a sidechain (S), where

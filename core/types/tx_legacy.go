@@ -32,6 +32,9 @@ type LegacyTx struct {
 	Value    *big.Int        // wei amount
 	Data     []byte          // contract invocation input data
 	V, R, S  *big.Int        // signature values
+
+	// CHANGE(taiko): if this transaction is the first TaikoL2.anchor transaction in a block
+	isAnhcor bool
 }
 
 // NewTransaction creates an unsigned legacy transaction.

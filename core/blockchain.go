@@ -51,7 +51,6 @@ import (
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	"golang.org/x/exp/slices"
-	"modernc.org/mathutil"
 )
 
 var (
@@ -1008,11 +1007,11 @@ func (bc *BlockChain) Stop() {
 
 			maxOffset := uint64(TriesInMemory - 1)
 			if bc.chainConfig.Taiko {
-				finalHeader := bc.CurrentFinalBlock()
-				if finalHeader != nil {
-					maxOffset = mathutil.MaxUint64(maxOffset, bc.CurrentBlock().Number.Uint64()-finalHeader.Number.Uint64())
+				if header := bc.CurrentFinalBlock(); header != nil {
+					maxOffset = bc.CurrentBlock().Number.Uint64() - header.Number.Uint64()
 				} else {
-					log.Error("Finalized block not found, using default trie gc limit")
+					maxOffset = bc.CurrentBlock().Number.Uint64()
+					log.Warn("Finalized block not found, using default trie gc limit")
 				}
 			}
 			for _, offset := range []uint64{0, 1, maxOffset} {
@@ -1406,18 +1405,19 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		bc.triedb.Cap(limit - ethdb.IdealBatchSize)
 	}
 	// Find the next state trie we need to commit
-	chosen := current - TriesInMemory
+	var chosen uint64
 	if bc.chainConfig.Taiko {
-		finalHeader := bc.CurrentFinalBlock()
-		if finalHeader != nil {
-			chosen = mathutil.MinUint64(chosen, finalHeader.Number.Uint64())
+		if header := bc.CurrentFinalBlock(); header != nil {
+			chosen = header.Number.Uint64() - 1
 		} else {
-			log.Error("Finalized block not found, using chosen number for trie gc")
+			log.Warn("Finalized block not found, using chosen number for trie gc")
 		}
+	} else {
+		chosen = current - TriesInMemory
 	}
 	flushInterval := time.Duration(bc.flushInterval.Load())
 	// If we exceeded time allowance, flush an entire trie to disk
-	if bc.gcproc > flushInterval {
+	if chosen > 0 && bc.gcproc > flushInterval {
 		// If the header is missing (canonical chain behind), we're reorging a low
 		// diff sidechain. Suspend committing until this operation is completed.
 		header := bc.GetHeaderByNumber(chosen)
