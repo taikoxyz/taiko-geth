@@ -9,7 +9,7 @@ func (tx *Transaction) IsAnchor() bool {
 }
 
 func (tx *DynamicFeeTx) isAnchor() bool {
-	return tx.isAnhcor
+	return tx.anchor
 }
 
 func (tx *LegacyTx) isAnchor() bool {
@@ -25,12 +25,12 @@ func (tx *BlobTx) isAnchor() bool {
 }
 
 func (tx *DynamicFeeTx) markAsAnchor() error {
-	tx.isAnhcor = true
+	tx.anchor = true
 	return nil
 }
 
 func (tx *LegacyTx) markAsAnchor() error {
-	tx.isAnchor = true
+	tx.anchor = true
 	return nil
 }
 
