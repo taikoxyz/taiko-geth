@@ -30,7 +30,7 @@ func (tx *DynamicFeeTx) markAsAnchor() error {
 }
 
 func (tx *LegacyTx) markAsAnchor() error {
-	tx.isAnhcor = true
+	tx.isAnchor = true
 	return nil
 }
 
