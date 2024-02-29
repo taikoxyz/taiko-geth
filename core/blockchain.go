@@ -1012,7 +1012,7 @@ func (bc *BlockChain) Stop() {
 				if finalHeader != nil {
 					maxOffset = mathutil.MaxUint64(maxOffset, bc.CurrentBlock().Number.Uint64()-finalHeader.Number.Uint64())
 				} else {
-					log.Warn("Finalized block not found, using default trie gc limit")
+					log.Error("Finalized block not found, using default trie gc limit")
 				}
 			}
 			for _, offset := range []uint64{0, 1, maxOffset} {
@@ -1412,7 +1412,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		if finalHeader != nil {
 			chosen = mathutil.MinUint64(chosen, finalHeader.Number.Uint64())
 		} else {
-			log.Warn("Finalized block not found, using chosen number for trie gc")
+			log.Error("Finalized block not found, using chosen number for trie gc")
 		}
 	}
 	flushInterval := time.Duration(bc.flushInterval.Load())
