@@ -34,7 +34,7 @@ type LegacyTx struct {
 	V, R, S  *big.Int        // signature values
 
 	// CHANGE(taiko): if this transaction is the first TaikoL2.anchor transaction in a block
-	isAnhcor bool
+	isAnchor bool
 }
 
 // NewTransaction creates an unsigned legacy transaction.
