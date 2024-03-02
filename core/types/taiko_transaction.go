@@ -13,7 +13,7 @@ func (tx *DynamicFeeTx) isAnchor() bool {
 }
 
 func (tx *LegacyTx) isAnchor() bool {
-	return false
+	return tx.anchor
 }
 
 func (tx *AccessListTx) isAnchor() bool {
