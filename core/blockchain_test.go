@@ -2144,7 +2144,18 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 	chain.chainConfig.Taiko = true
 
 	_, blocks, _ := GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *BlockGen) {
-		baseTx := types.NewTransaction(nonce, common.HexToAddress("deadbeef"), big.NewInt(100), 21000, big.NewInt(int64(i+1)*params.GWei), nil)
+		to := common.HexToAddress("deadbeef")
+		baseTx := types.NewTx(&types.DynamicFeeTx{
+			ChainID:    chainConfig.ChainID,
+			Nonce:      nonce,
+			To:         &to,
+			Value:      big.NewInt(100),
+			Gas:        21000,
+			GasTipCap:  big.NewInt(100000),
+			GasFeeCap:  big.NewInt(100000),
+			AccessList: nil,
+			Data:       nil,
+		})
 		_ = baseTx.MarkAsAnchor()
 		tx, err := types.SignTx(baseTx, signer, key)
 		if err != nil {

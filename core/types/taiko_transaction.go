@@ -9,11 +9,11 @@ func (tx *Transaction) IsAnchor() bool {
 }
 
 func (tx *DynamicFeeTx) isAnchor() bool {
-	return tx.anchor
+	return tx.isAnhcor
 }
 
 func (tx *LegacyTx) isAnchor() bool {
-	return tx.anchor
+	return false
 }
 
 func (tx *AccessListTx) isAnchor() bool {
@@ -25,13 +25,12 @@ func (tx *BlobTx) isAnchor() bool {
 }
 
 func (tx *DynamicFeeTx) markAsAnchor() error {
-	tx.anchor = true
+	tx.isAnhcor = true
 	return nil
 }
 
 func (tx *LegacyTx) markAsAnchor() error {
-	tx.anchor = true
-	return nil
+	return ErrInvalidTxType
 }
 
 func (tx *AccessListTx) markAsAnchor() error {
