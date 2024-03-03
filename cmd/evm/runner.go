@@ -91,7 +91,7 @@ func timedExec(bench bool, execFunc func() ([]byte, uint64, error)) (output []by
 		// There are other useful stats here that could be reported.
 		stats.time = time.Duration(result.NsPerOp())
 		stats.allocs = result.AllocsPerOp()
-		stats.bytesAllocated = result.AllocedBytesPerOp()
+		stats.bytesAllocated = result.AllocatedBytesPerOp()
 	} else {
 		var memStatsBefore, memStatsAfter goruntime.MemStats
 		goruntime.ReadMemStats(&memStatsBefore)
