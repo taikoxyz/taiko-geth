@@ -21,7 +21,6 @@ import (
 func (w *worker) BuildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
-	maxTransactionsPerBlock uint64,
 	blockMaxGasLimit uint64,
 	maxBytesPerTxList uint64,
 	localAccounts []string,
@@ -75,7 +74,6 @@ func (w *worker) BuildTransactionsLists(
 			env,
 			newTransactionsByPriceAndNonce(signer, localTxs, baseFee),
 			newTransactionsByPriceAndNonce(signer, remoteTxs, baseFee),
-			maxTransactionsPerBlock,
 			maxBytesPerTxList,
 		)
 
@@ -205,7 +203,6 @@ func (w *worker) commitL2Transactions(
 	env *environment,
 	txsLocal *transactionsByPriceAndNonce,
 	txsRemote *transactionsByPriceAndNonce,
-	maxTransactionsPerBlock uint64,
 	maxBytesPerTxList uint64,
 ) {
 	var (
@@ -214,7 +211,6 @@ func (w *worker) commitL2Transactions(
 		accTxListBytes int
 	)
 
-loop:
 	for {
 		// If we don't have enough gas for any further transactions then we're done.
 		if env.gasPool.Gas() < params.TxGas {
@@ -285,10 +281,6 @@ loop:
 			// Everything ok, shift in the next transaction from the same account
 			env.tcount++
 			txs.Shift()
-
-			if env.tcount >= int(maxTransactionsPerBlock) {
-				break loop
-			}
 			accTxListBytes += len(b)
 
 		case errors.Is(err, types.ErrTxTypeNotSupported):
