@@ -23,7 +23,6 @@ func (miner *Miner) SealBlockWith(
 func (miner *Miner) BuildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
-	maxTransactionsPerBlock uint64,
 	blockMaxGasLimit uint64,
 	maxBytesPerTxList uint64,
 	locals []string,
@@ -32,7 +31,6 @@ func (miner *Miner) BuildTransactionsLists(
 	return miner.worker.BuildTransactionsLists(
 		beneficiary,
 		baseFee,
-		maxTransactionsPerBlock,
 		blockMaxGasLimit,
 		maxBytesPerTxList,
 		locals,
