@@ -277,6 +277,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	eth.netRPCService = ethapi.NewNetAPI(eth.p2pServer, networkID)
 
 	// Register the backend on the node
+	// CHANGE (taiko): pass in relay URL
 	stack.RegisterAPIs(eth.APIs(config.RelayURL))
 	stack.RegisterProtocols(eth.Protocols())
 	stack.RegisterLifecycle(eth)
@@ -306,6 +307,7 @@ func makeExtraData(extra []byte) []byte {
 
 // APIs return the collection of RPC services the ethereum package offers.
 // NOTE, some of these services probably need to be moved to somewhere else.
+// CHANGE (taiko): pass in relayURL
 func (s *Ethereum) APIs(relayUrl *string) []rpc.API {
 	apis := ethapi.GetAPIs(s.APIBackend, relayUrl)
 

@@ -289,10 +289,11 @@ type PersonalAccountAPI struct {
 	am        *accounts.Manager
 	nonceLock *AddrLocker
 	b         Backend
-	relayUrl  *string
+	relayUrl  *string // CHANGE (taiko): add relayUrl
 }
 
 // NewPersonalAccountAPI create a new PersonalAccountAPI.
+// CHANGE (taiko): add relayUrl
 func NewPersonalAccountAPI(b Backend, nonceLock *AddrLocker, relayUrl *string) *PersonalAccountAPI {
 	return &PersonalAccountAPI{
 		am:        b.AccountManager(),
@@ -1544,10 +1545,11 @@ type TransactionAPI struct {
 	b         Backend
 	nonceLock *AddrLocker
 	signer    types.Signer
-	relayUrl  *string
+	relayUrl  *string // CHANGE (taiko): add relayUrl
 }
 
 // NewTransactionAPI creates a new RPC service with methods for interacting with transactions.
+// CHANGE (taiko): add relayUrl
 func NewTransactionAPI(b Backend, nonceLock *AddrLocker, relayUrl *string) *TransactionAPI {
 	// The signer used by the API should always be the 'latest' known one because we expect
 	// signers to be backwards-compatible with old transactions.
