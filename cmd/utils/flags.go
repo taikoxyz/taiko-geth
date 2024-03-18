@@ -1728,6 +1728,13 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 			cfg.EthDiscoveryURLs = SplitAndTrim(urls)
 		}
 	}
+
+	// CHANGE(taiko): check relay tx url flag
+	if ctx.IsSet(RelayTransactionAPIURLFlag.Name) {
+		url := ctx.String(RelayTransactionAPIURLFlag.Name)
+		cfg.RelayURL = &url
+	}
+
 	// Override any default configs for hard coded networks.
 	switch {
 	// CHANGE(taiko): when --taiko flag is set, use the Taiko genesis.

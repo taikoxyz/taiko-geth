@@ -160,6 +160,9 @@ type Config struct {
 
 	// OverrideVerkle (TODO: remove after the fork)
 	OverrideVerkle *uint64 `toml:",omitempty"`
+
+	// CHANGE (taiko): url to relay transactions to
+	RelayURL *string
 }
 
 // CreateConsensusEngine creates a consensus engine for the given chain config.

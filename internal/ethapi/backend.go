@@ -99,7 +99,7 @@ type Backend interface {
 	ServiceFilter(ctx context.Context, session *bloombits.MatcherSession)
 }
 
-func GetAPIs(apiBackend Backend) []rpc.API {
+func GetAPIs(apiBackend Backend, relayUrl *string) []rpc.API {
 	nonceLock := new(AddrLocker)
 	return []rpc.API{
 		{
@@ -110,7 +110,7 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 			Service:   NewBlockChainAPI(apiBackend),
 		}, {
 			Namespace: "eth",
-			Service:   NewTransactionAPI(apiBackend, nonceLock),
+			Service:   NewTransactionAPI(apiBackend, nonceLock, relayUrl),
 		}, {
 			Namespace: "txpool",
 			Service:   NewTxPoolAPI(apiBackend),
@@ -122,7 +122,7 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 			Service:   NewEthereumAccountAPI(apiBackend.AccountManager()),
 		}, {
 			Namespace: "personal",
-			Service:   NewPersonalAccountAPI(apiBackend, nonceLock),
+			Service:   NewPersonalAccountAPI(apiBackend, nonceLock, relayUrl),
 		},
 	}
 }

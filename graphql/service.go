@@ -114,7 +114,7 @@ func New(stack *node.Node, backend ethapi.Backend, filterSystem *filters.FilterS
 // newHandler returns a new `http.Handler` that will answer GraphQL queries.
 // It additionally exports an interactive query browser on the / endpoint.
 func newHandler(stack *node.Node, backend ethapi.Backend, filterSystem *filters.FilterSystem, cors, vhosts []string) (*handler, error) {
-	q := Resolver{backend, filterSystem}
+	q := Resolver{backend, filterSystem, nil}
 
 	s, err := graphql.ParseSchema(schema, &q)
 	if err != nil {

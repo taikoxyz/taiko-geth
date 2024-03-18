@@ -16,6 +16,10 @@ var (
 		Name:  "taiko",
 		Usage: "Taiko network",
 	}
+	RelayTransactionAPIURLFlag = &cli.StringFlag{
+		Name:  "relayTransactionAPIUrl",
+		Usage: "URL to relay transactions to",
+	}
 )
 
 // RegisterTaikoAPIs initializes and registers the Taiko RPC APIs.

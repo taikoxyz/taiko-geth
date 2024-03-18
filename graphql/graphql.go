@@ -1284,6 +1284,7 @@ func (p *Pending) EstimateGas(ctx context.Context, args struct {
 type Resolver struct {
 	backend      ethapi.Backend
 	filterSystem *filters.FilterSystem
+	relayUrl     *string
 }
 
 func (r *Resolver) Block(ctx context.Context, args struct {
@@ -1386,7 +1387,7 @@ func (r *Resolver) SendRawTransaction(ctx context.Context, args struct{ Data hex
 	if err := tx.UnmarshalBinary(args.Data); err != nil {
 		return common.Hash{}, err
 	}
-	hash, err := ethapi.SubmitTransaction(ctx, r.backend, tx)
+	hash, err := ethapi.SubmitTransaction(ctx, r.backend, tx, r.relayUrl)
 	return hash, err
 }
 

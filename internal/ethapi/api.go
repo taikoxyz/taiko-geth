@@ -17,11 +17,14 @@
 package ethapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
 	"time"
 
@@ -286,14 +289,16 @@ type PersonalAccountAPI struct {
 	am        *accounts.Manager
 	nonceLock *AddrLocker
 	b         Backend
+	relayUrl  *string
 }
 
-// NewPersonalAccountAPI creates a new PersonalAccountAPI.
-func NewPersonalAccountAPI(b Backend, nonceLock *AddrLocker) *PersonalAccountAPI {
+// NewPersonalAccountAPI create a new PersonalAccountAPI.
+func NewPersonalAccountAPI(b Backend, nonceLock *AddrLocker, relayUrl *string) *PersonalAccountAPI {
 	return &PersonalAccountAPI{
 		am:        b.AccountManager(),
 		nonceLock: nonceLock,
 		b:         b,
+		relayUrl:  relayUrl,
 	}
 }
 
@@ -480,7 +485,7 @@ func (s *PersonalAccountAPI) SendTransaction(ctx context.Context, args Transacti
 		log.Warn("Failed transaction send attempt", "from", args.from(), "to", args.To, "value", args.Value.ToInt(), "err", err)
 		return common.Hash{}, err
 	}
-	return SubmitTransaction(ctx, s.b, signed)
+	return SubmitTransaction(ctx, s.b, signed, s.relayUrl)
 }
 
 // SignTransaction will create a transaction from the given arguments and
@@ -1539,14 +1544,15 @@ type TransactionAPI struct {
 	b         Backend
 	nonceLock *AddrLocker
 	signer    types.Signer
+	relayUrl  *string
 }
 
 // NewTransactionAPI creates a new RPC service with methods for interacting with transactions.
-func NewTransactionAPI(b Backend, nonceLock *AddrLocker) *TransactionAPI {
+func NewTransactionAPI(b Backend, nonceLock *AddrLocker, relayUrl *string) *TransactionAPI {
 	// The signer used by the API should always be the 'latest' known one because we expect
 	// signers to be backwards-compatible with old transactions.
 	signer := types.LatestSigner(b.ChainConfig())
-	return &TransactionAPI{b, nonceLock, signer}
+	return &TransactionAPI{b, nonceLock, signer, relayUrl}
 }
 
 // GetBlockTransactionCountByNumber returns the number of transactions in the block with the given block number.
@@ -1738,7 +1744,7 @@ func (s *TransactionAPI) sign(addr common.Address, tx *types.Transaction) (*type
 }
 
 // SubmitTransaction is a helper function that submits tx to txPool and logs a message.
-func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (common.Hash, error) {
+func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction, relayUrl *string) (common.Hash, error) {
 	// If the transaction fee cap is already specified, ensure the
 	// fee of the given transaction is _reasonable_.
 	if err := checkTxFee(tx.GasPrice(), tx.Gas(), b.RPCTxFeeCap()); err != nil {
@@ -1751,6 +1757,24 @@ func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (c
 	if err := b.SendTx(ctx, tx); err != nil {
 		return common.Hash{}, err
 	}
+
+	// CHANGE (taiko): if relay url is set, we also relay the transaction.
+	if relayUrl != nil {
+		// Send status to the host.
+		marshalled, err := json.Marshal(tx)
+		if err != nil {
+			return common.Hash{}, err
+		}
+
+		resp, err := http.Post(*relayUrl, "application/json", bytes.NewReader(marshalled))
+		if err != nil {
+			log.Error("Can't post to relay", "url", *relayUrl, "err", err)
+			return common.Hash{}, err
+		}
+
+		resp.Body.Close()
+	}
+
 	// Print a log with full tx details for manual investigations and interventions
 	head := b.CurrentBlock()
 	signer := types.MakeSigner(b.ChainConfig(), head.Number, head.Time)
@@ -1800,7 +1824,7 @@ func (s *TransactionAPI) SendTransaction(ctx context.Context, args TransactionAr
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return SubmitTransaction(ctx, s.b, signed)
+	return SubmitTransaction(ctx, s.b, signed, s.relayUrl)
 }
 
 // FillTransaction fills the defaults (nonce, gas, gasPrice or 1559 fields)
@@ -1829,7 +1853,7 @@ func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.B
 	if err := tx.UnmarshalBinary(input); err != nil {
 		return common.Hash{}, err
 	}
-	return SubmitTransaction(ctx, s.b, tx)
+	return SubmitTransaction(ctx, s.b, tx, s.relayUrl)
 }
 
 // Sign calculates an ECDSA signature for:
