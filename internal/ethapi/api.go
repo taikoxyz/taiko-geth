@@ -1746,6 +1746,7 @@ func (s *TransactionAPI) sign(addr common.Address, tx *types.Transaction) (*type
 }
 
 // SubmitTransaction is a helper function that submits tx to txPool and logs a message.
+// CHANGE (taiko): add relayUrl
 func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction, relayUrl *string) (common.Hash, error) {
 	// If the transaction fee cap is already specified, ensure the
 	// fee of the given transaction is _reasonable_.
