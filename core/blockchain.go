@@ -171,7 +171,7 @@ func (c *CacheConfig) triedbConfig() *triedb.Config {
 var defaultCacheConfig = &CacheConfig{
 	TrieCleanLimit: 256,
 	TrieDirtyLimit: 256,
-	TrieTimeLimit:  5 * time.Minute,
+	TrieTimeLimit:  2 * time.Minute,
 	SnapshotLimit:  256,
 	SnapshotWait:   true,
 	StateScheme:    rawdb.HashScheme,
@@ -1012,7 +1012,7 @@ func (bc *BlockChain) Stop() {
 					maxOffset = bc.CurrentBlock().Number.Uint64() - header.Number.Uint64()
 				} else {
 					maxOffset = bc.CurrentBlock().Number.Uint64()
-					log.Warn("Finalized block not found, using default trie gc limit")
+					log.Debug("Finalized block not found, using default trie gc limit")
 				}
 			}
 			for _, offset := range []uint64{0, 1, maxOffset} {
@@ -1412,7 +1412,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		if header := bc.CurrentFinalBlock(); header != nil {
 			chosen = header.Number.Uint64() - 1
 		} else {
-			log.Warn("Finalized block not found, using chosen number for trie gc")
+			log.Debug("Finalized block not found, using chosen number for trie gc")
 		}
 	} else {
 		chosen = current - TriesInMemory
@@ -1436,6 +1436,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 			bc.lastWrite = chosen
 			bc.gcproc = 0
 		}
+		fmt.Println("----------------------", bc.HasState(header.Root))
 	}
 	// Garbage collect anything below our required write retention
 	for !bc.triegc.Empty() {
