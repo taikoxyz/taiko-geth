@@ -171,7 +171,7 @@ func (c *CacheConfig) triedbConfig() *triedb.Config {
 var defaultCacheConfig = &CacheConfig{
 	TrieCleanLimit: 256,
 	TrieDirtyLimit: 256,
-	TrieTimeLimit:  5 * time.Minute,
+	TrieTimeLimit:  2 * time.Minute, // CHANGE(taiko): Increase the trie time limit to 2 minutes to avoid frequent trie flushing.
 	SnapshotLimit:  256,
 	SnapshotWait:   true,
 	StateScheme:    rawdb.HashScheme,
@@ -1012,7 +1012,7 @@ func (bc *BlockChain) Stop() {
 					maxOffset = bc.CurrentBlock().Number.Uint64() - header.Number.Uint64()
 				} else {
 					maxOffset = bc.CurrentBlock().Number.Uint64()
-					log.Warn("Finalized block not found, using default trie gc limit")
+					log.Debug("Finalized block not found, using default trie gc limit")
 				}
 			}
 			for _, offset := range []uint64{0, 1, maxOffset} {
@@ -1412,7 +1412,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		if header := bc.CurrentFinalBlock(); header != nil {
 			chosen = header.Number.Uint64() - 1
 		} else {
-			log.Warn("Finalized block not found, using chosen number for trie gc")
+			log.Debug("Finalized block not found, using chosen number for trie gc")
 		}
 	} else {
 		chosen = current - TriesInMemory
