@@ -1436,7 +1436,6 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 			bc.lastWrite = chosen
 			bc.gcproc = 0
 		}
-		fmt.Println("----------------------", bc.HasState(header.Root))
 	}
 	// Garbage collect anything below our required write retention
 	for !bc.triegc.Empty() {
