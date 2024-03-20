@@ -15,9 +15,14 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/holiman/uint256"
 )
 
-// BuildTransactionsLists builds multiple transactions lists which satisfy all the given limits.
+// BuildTransactionsLists builds multiple transactions lists which satisfy all the given conditions
+// 1. All transactions should all be able to pay the given base fee.
+// 2. The total gas used should not exceed the given blockMaxGasLimit
+// 3. The total bytes used should not exceed the given maxBytesPerTxList
+// 4. The total number of transactions lists should not exceed the given maxTransactionsLists
 func (w *worker) BuildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
@@ -25,9 +30,9 @@ func (w *worker) BuildTransactionsLists(
 	maxBytesPerTxList uint64,
 	localAccounts []string,
 	maxTransactionsLists uint64,
-) ([]types.Transactions, error) {
+) ([]*PreBuiltTxList, error) {
 	var (
-		txsLists    []types.Transactions
+		txsLists    []*PreBuiltTxList
 		currentHead = w.chain.CurrentBlock()
 	)
 
@@ -36,7 +41,7 @@ func (w *worker) BuildTransactionsLists(
 	}
 
 	// Check if tx pool is empty at first.
-	if len(w.eth.TxPool().Pending(txpool.PendingFilter{OnlyPlainTxs: true})) == 0 {
+	if len(w.eth.TxPool().Pending(txpool.PendingFilter{BaseFee: uint256.MustFromBig(baseFee), OnlyPlainTxs: true})) == 0 {
 		return txsLists, nil
 	}
 
@@ -60,7 +65,7 @@ func (w *worker) BuildTransactionsLists(
 		signer = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
 	)
 
-	commitTxs := func() (types.Transactions, error) {
+	commitTxs := func() (*PreBuiltTxList, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
@@ -68,7 +73,7 @@ func (w *worker) BuildTransactionsLists(
 
 		// Split the pending transactions into locals and remotes, then
 		// fill the block with all available pending transactions.
-		localTxs, remoteTxs := w.getPendingTxs(localAccounts)
+		localTxs, remoteTxs := w.getPendingTxs(localAccounts, baseFee)
 
 		w.commitL2Transactions(
 			env,
@@ -77,20 +82,23 @@ func (w *worker) BuildTransactionsLists(
 			maxBytesPerTxList,
 		)
 
-		return env.txs, nil
+		return &PreBuiltTxList{
+			TxList:           env.txs,
+			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
+		}, nil
 	}
 
 	for i := 0; i < int(maxTransactionsLists); i++ {
-		txs, err := commitTxs()
+		res, err := commitTxs()
 		if err != nil {
 			return nil, err
 		}
 
-		if len(txs) == 0 {
+		if len(res.TxList) == 0 {
 			break
 		}
 
-		txsLists = append(txsLists, txs)
+		txsLists = append(txsLists, res)
 	}
 
 	return txsLists, nil
@@ -180,11 +188,11 @@ func (w *worker) sealBlockWith(
 }
 
 // getPendingTxs fetches the pending transactions from tx pool.
-func (w *worker) getPendingTxs(localAccounts []string) (
+func (w *worker) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 	map[common.Address][]*txpool.LazyTransaction,
 	map[common.Address][]*txpool.LazyTransaction,
 ) {
-	pending := w.eth.TxPool().Pending(txpool.PendingFilter{OnlyPlainTxs: true})
+	pending := w.eth.TxPool().Pending(txpool.PendingFilter{OnlyPlainTxs: true, BaseFee: uint256.MustFromBig(baseFee)})
 	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
 
 	for _, local := range localAccounts {

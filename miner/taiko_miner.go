@@ -8,6 +8,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
+// PreBuiltTxList is a pre-built transaction list based on the latest chain state,
+// with estimated gas used.
+type PreBuiltTxList struct {
+	TxList           types.Transactions
+	EstimatedGasUsed uint64
+}
+
 // SealBlockWith mines and seals a block without changing the canonical chain.
 func (miner *Miner) SealBlockWith(
 	parent common.Hash,
@@ -27,7 +34,7 @@ func (miner *Miner) BuildTransactionsLists(
 	maxBytesPerTxList uint64,
 	locals []string,
 	maxTransactionsLists uint64,
-) ([]types.Transactions, error) {
+) ([]*PreBuiltTxList, error) {
 	return miner.worker.BuildTransactionsLists(
 		beneficiary,
 		baseFee,
