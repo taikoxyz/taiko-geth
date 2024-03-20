@@ -171,10 +171,11 @@ func (c *CacheConfig) triedbConfig() *triedb.Config {
 var defaultCacheConfig = &CacheConfig{
 	TrieCleanLimit: 256,
 	TrieDirtyLimit: 256,
-	TrieTimeLimit:  2 * time.Minute,
-	SnapshotLimit:  256,
-	SnapshotWait:   true,
-	StateScheme:    rawdb.HashScheme,
+	// CHANGE(taiko): Increase the trie time limit to 2 minutes to avoid frequent trie flushing.
+	TrieTimeLimit: 2 * time.Minute,
+	SnapshotLimit: 256,
+	SnapshotWait:  true,
+	StateScheme:   rawdb.HashScheme,
 }
 
 // DefaultCacheConfigWithScheme returns a deep copied default cache config with
