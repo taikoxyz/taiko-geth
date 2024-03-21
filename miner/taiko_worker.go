@@ -1,6 +1,8 @@
 package miner
 
 import (
+	"bytes"
+	"compress/zlib"
 	"errors"
 	"fmt"
 	"math/big"
@@ -82,9 +84,15 @@ func (w *worker) BuildTransactionsLists(
 			maxBytesPerTxList,
 		)
 
+		b, err := encodeAndComporeessTxList(env.txs)
+		if err != nil {
+			return nil, err
+		}
+
 		return &PreBuiltTxList{
-			TxList:           env.txs,
-			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
+			TxList:               env.txs,
+			EstimatedGasUsed:     env.header.GasLimit - env.gasPool.Gas(),
+			EstimatedBytesLength: uint64(len(b)),
 		}, nil
 	}
 
@@ -214,9 +222,8 @@ func (w *worker) commitL2Transactions(
 	maxBytesPerTxList uint64,
 ) {
 	var (
-		txs            = txsLocal
-		isLocal        = true
-		accTxListBytes int
+		txs     = txsLocal
+		isLocal = true
 	)
 
 	for {
@@ -247,13 +254,13 @@ func (w *worker) commitL2Transactions(
 		// during transaction acceptance is the transaction pool.
 		from, _ := types.Sender(env.signer, tx)
 
-		b, err := rlp.EncodeToBytes(tx)
+		b, err := encodeAndComporeessTxList(append(env.txs, tx))
 		if err != nil {
-			log.Trace("Failed to rlp encode the pending transaction %s: %w", tx.Hash(), err)
+			log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
 			txs.Pop()
 			continue
 		}
-		if accTxListBytes+len(b) >= int(maxBytesPerTxList) {
+		if len(b) >= int(maxBytesPerTxList) {
 			break
 		}
 
@@ -289,7 +296,6 @@ func (w *worker) commitL2Transactions(
 			// Everything ok, shift in the next transaction from the same account
 			env.tcount++
 			txs.Shift()
-			accTxListBytes += len(b)
 
 		case errors.Is(err, types.ErrTxTypeNotSupported):
 			// Pop the unsupported transaction without shifting in the next from the account
@@ -303,4 +309,31 @@ func (w *worker) commitL2Transactions(
 			txs.Shift()
 		}
 	}
+}
+
+// encodeAndComporeessTxList encodes and compresses the given transactions list.
+func encodeAndComporeessTxList(txs types.Transactions) ([]byte, error) {
+	b, err := rlp.EncodeToBytes(txs)
+	if err != nil {
+		return nil, err
+	}
+
+	return compress(b)
+}
+
+// compress compresses the given txList bytes using zlib.
+func compress(txListBytes []byte) ([]byte, error) {
+	var b bytes.Buffer
+	w := zlib.NewWriter(&b)
+	defer w.Close()
+
+	if _, err := w.Write(txListBytes); err != nil {
+		return nil, err
+	}
+
+	if err := w.Flush(); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
 }

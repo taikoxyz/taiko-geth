@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/miner"
 )
 
 // TaikoAPIBackend handles l2 node related RPC calls.
@@ -68,7 +69,7 @@ func (s *TaikoAPIBackend) TxPoolContent(
 	maxBytesPerTxList uint64,
 	locals []string,
 	maxTransactionsLists uint64,
-) ([]types.Transactions, error) {
+) ([]*miner.PreBuiltTxList, error) {
 	log.Info(
 		"Fetching L2 pending transactions finished",
 		"blockMaxGasLimit", blockMaxGasLimit,
