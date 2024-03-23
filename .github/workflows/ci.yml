@@ -2,9 +2,9 @@ name: "Unit tests"
 
 on:
   pull_request:
-    branches: [taiko]
+    branches: [taiko,test-full-2]
   push:
-    branches: [taiko]
+    branches: [taiko,test-full-2]
 
 jobs:
   test:
