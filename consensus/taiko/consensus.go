@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/holiman/uint256"
 )
 
 var (
@@ -240,7 +241,7 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	header.Difficulty = common.Big0
 	// Withdrawals processing.
 	for _, w := range withdrawals {
-		state.AddBalance(w.Address, new(big.Int).SetUint64(w.Amount))
+		state.AddBalance(w.Address, uint256.MustFromBig(new(big.Int).SetUint64(w.Amount)))
 	}
 	header.Root = state.IntermediateRoot(true)
 }
