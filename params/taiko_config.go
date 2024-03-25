@@ -18,6 +18,7 @@ var (
 	EldfellNetworkID          = big.NewInt(167006)
 	JolnirNetworkID           = big.NewInt(167007)
 	KatlaNetworkID            = big.NewInt(167008)
+	HeklaNetworkID            = big.NewInt(167009)
 )
 
 var networkIDToChainConfig = map[*big.Int]*ChainConfig{
