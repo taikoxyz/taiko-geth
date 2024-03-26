@@ -593,3 +593,15 @@ func copyAddressPtr(a *common.Address) *common.Address {
 	cpy := *a
 	return &cpy
 }
+
+// CHANGE(taiko): SetBlobTxSidecar sets the sidecar of a transaction.
+// The sidecar should match the blob-tx versioned hashes, or the transaction will be invalid.
+// This allows tools to easily re-attach blob sidecars to signed transactions that omit the sidecar.
+func (tx *Transaction) SetBlobTxSidecar(sidecar *BlobTxSidecar) error {
+	blobtx, ok := tx.inner.(*BlobTx)
+	if !ok {
+		return fmt.Errorf("not a blob tx, type = %d", tx.Type())
+	}
+	blobtx.Sidecar = sidecar
+	return nil
+}

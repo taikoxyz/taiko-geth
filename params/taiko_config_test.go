@@ -52,6 +52,11 @@ func TestNetworkIDToChainConfigOrDefault(t *testing.T) {
 			TaikoChainConfig,
 		},
 		{
+			"heklaNetworkID",
+			HeklaNetworkID,
+			TaikoChainConfig,
+		},
+		{
 			"mainnet",
 			MainnetChainConfig.ChainID,
 			MainnetChainConfig,
