@@ -2205,7 +2205,7 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 }
 
 func TestTaikoPruningFinalize(t *testing.T) {
-	//testTaikoPruningFinalize(t, 3*TriesInMemory, 0, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, 0, false)
 	testTaikoPruningFinalize(t, 3*TriesInMemory, 0, true)
 
 	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory/2, false)
