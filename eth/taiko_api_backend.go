@@ -4,6 +4,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -21,6 +22,17 @@ func NewTaikoAPIBackend(eth *Ethereum) *TaikoAPIBackend {
 	return &TaikoAPIBackend{
 		eth: eth,
 	}
+}
+
+// SealBlockWith mines and seals a block without changing the canonical chain.
+func (s *TaikoAPIBackend) SealBlockWith(
+	parent common.Hash,
+	timestamp uint64,
+	blkMeta *engine.BlockMetadata,
+	baseFeePerGas *big.Int,
+	withdrawals types.Withdrawals,
+) (*types.Block, error) {
+	return s.eth.miner.SealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdrawals)
 }
 
 // HeadL1Origin returns the latest L2 block's corresponding L1 origin.
