@@ -2116,98 +2116,6 @@ func testLowDiffLongChain(t *testing.T, scheme string) {
 	}
 }
 
-func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop bool) {
-	// Generate a canonical chain to act as the main dataset
-	chainConfig := *params.TestChainConfig
-	balance := big.NewInt(math.MaxInt64)
-	balance.Mul(balance, big.NewInt(int64(1000)))
-	var (
-		engine = beacon.New(ethash.NewFaker())
-		key, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
-		addr   = crypto.PubkeyToAddress(key.PublicKey)
-		nonce  = uint64(0)
-
-		gspec = &Genesis{
-			Config:  &chainConfig,
-			Alloc:   types.GenesisAlloc{addr: {Balance: balance}},
-			BaseFee: big.NewInt(params.InitialBaseFee),
-		}
-		signer     = types.LatestSigner(gspec.Config)
-		mergeBlock = math.MaxInt32
-	)
-	// Generate and import the canonical chain
-	chain, err := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, engine, vm.Config{}, nil, nil)
-	if err != nil {
-		t.Fatalf("failed to create tester chain: %v", err)
-	}
-	//defer chain.Stop()
-	chain.chainConfig.Taiko = true
-
-	_, blocks, _ := GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *BlockGen) {
-		to := common.HexToAddress("deadbeef")
-		baseTx := types.NewTx(&types.DynamicFeeTx{
-			ChainID:    chainConfig.ChainID,
-			Nonce:      nonce,
-			To:         &to,
-			Value:      big.NewInt(100),
-			Gas:        21000,
-			GasTipCap:  big.NewInt(100000),
-			GasFeeCap:  big.NewInt(100000),
-			AccessList: nil,
-			Data:       nil,
-		})
-		_ = baseTx.MarkAsAnchor()
-		tx, err := types.SignTx(baseTx, signer, key)
-		if err != nil {
-			t.Fatalf("failed to create tx: %v", err)
-		}
-		gen.AddTx(tx)
-		if int(gen.header.Number.Uint64()) >= mergeBlock {
-			gen.SetPoS()
-		}
-		nonce++
-	})
-
-	for i := 0; i < n; i++ {
-		block := blocks[i]
-		if n, err := chain.InsertChain([]*types.Block{block}); err != nil {
-			t.Fatalf("block %d: failed to insert into chain: %v", n, err)
-		}
-		if block.Number().Uint64() == finalizedNumber {
-			// Set the finalized block header.
-			chain.SetFinalized(block.Header())
-		}
-	}
-
-	// Stop chain.
-	if stop {
-		chain.Stop()
-	} else {
-		defer chain.Stop()
-	}
-
-	var firstNonPrunedBlock *types.Block
-	for i := 0; i < n; i++ {
-		block := blocks[i]
-		if chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
-			firstNonPrunedBlock = block
-			break
-		}
-	}
-
-	assert.NotEmpty(t, firstNonPrunedBlock)
-	assert.Equal(t, finalizedNumber, firstNonPrunedBlock.NumberU64())
-}
-
-func TestTaikoPruningFinalize(t *testing.T) {
-	testTaikoPruningFinalize(t, 2*TriesInMemory, TriesInMemory/2, false)
-	testTaikoPruningFinalize(t, 2*TriesInMemory, TriesInMemory/2, true)
-	testTaikoPruningFinalize(t, 2*TriesInMemory, 2*TriesInMemory-1, false)
-	testTaikoPruningFinalize(t, 2*TriesInMemory, 2*TriesInMemory-1, true)
-	testTaikoPruningFinalize(t, 8000, 100, true)
-	testTaikoPruningFinalize(t, 8000, 100, false)
-}
-
 // Tests that importing a sidechain (S), where
 // - S is sidechain, containing blocks [Sn...Sm]
 // - C is canon chain, containing blocks [G..Cn..Cm]
@@ -4418,4 +4326,108 @@ func TestEIP3651(t *testing.T) {
 	if actual.Cmp(expected) != 0 {
 		t.Fatalf("sender balance incorrect: expected %d, got %d", expected, actual)
 	}
+}
+
+func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop bool) {
+	// Generate a canonical chain to act as the main dataset
+	chainConfig := *params.TestChainConfig
+	balance := big.NewInt(math.MaxInt64)
+	balance.Mul(balance, big.NewInt(int64(1000)))
+	var (
+		engine = beacon.New(ethash.NewFaker())
+		key, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+		addr   = crypto.PubkeyToAddress(key.PublicKey)
+		nonce  = uint64(0)
+
+		gspec = &Genesis{
+			Config:  &chainConfig,
+			Alloc:   types.GenesisAlloc{addr: {Balance: balance}},
+			BaseFee: big.NewInt(params.InitialBaseFee),
+		}
+		signer     = types.LatestSigner(gspec.Config)
+		mergeBlock = math.MaxInt32
+	)
+	// Generate and import the canonical chain
+	chain, err := NewBlockChain(rawdb.NewMemoryDatabase(), nil, gspec, nil, engine, vm.Config{}, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create tester chain: %v", err)
+	}
+	chain.chainConfig.Taiko = true
+
+	_, blocks, _ := GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *BlockGen) {
+		to := common.HexToAddress("taiko")
+		baseTx := types.NewTx(&types.DynamicFeeTx{
+			ChainID:    chainConfig.ChainID,
+			Nonce:      nonce,
+			To:         &to,
+			Value:      big.NewInt(100),
+			Gas:        21000,
+			GasTipCap:  big.NewInt(100000),
+			GasFeeCap:  big.NewInt(100000),
+			AccessList: nil,
+			Data:       nil,
+		})
+		_ = baseTx.MarkAsAnchor()
+		tx, err := types.SignTx(baseTx, signer, key)
+		if err != nil {
+			t.Fatalf("failed to create tx: %v", err)
+		}
+		gen.AddTx(tx)
+		if int(gen.header.Number.Uint64()) >= mergeBlock {
+			gen.SetPoS()
+		}
+		nonce++
+	})
+
+	for i := 0; i < n; i++ {
+		block := blocks[i]
+		if n, err := chain.InsertChain([]*types.Block{block}); err != nil {
+			t.Fatalf("block %d: failed to insert into chain: %v", n, err)
+		}
+		if finalizedNumber > 0 && block.Number().Uint64() == finalizedNumber {
+			// Set the finalized block header.
+			chain.SetFinalized(block.Header())
+		}
+	}
+
+	// Stop chain.
+	if stop {
+		chain.Stop()
+	} else {
+		defer chain.Stop()
+	}
+
+	var firstNonPrunedBlock *types.Block
+	for i := 0; i < n; i++ {
+		block := blocks[i]
+		if chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
+			firstNonPrunedBlock = block
+			break
+		}
+	}
+
+	assert.True(t, firstNonPrunedBlock != nil)
+
+	if finalizedNumber == 0 || finalizedNumber <= TriesInMemory*2 {
+		assert.Equal(t, uint64(1), firstNonPrunedBlock.Number().Uint64())
+	} else {
+		assert.Equal(t, (finalizedNumber - TriesInMemory*2 + 1), firstNonPrunedBlock.Number().Uint64())
+	}
+}
+
+func TestTaikoPruningFinalize(t *testing.T) {
+	testTaikoPruningFinalize(t, 3*TriesInMemory, 0, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, 0, true)
+
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory/2, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory/2, true)
+
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2, true)
+
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2+1, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2+1, true)
+
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2+10, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2+10, true)
 }
