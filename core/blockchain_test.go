@@ -41,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
+	"github.com/stretchr/testify/assert"
 )
 
 // So we can deterministically seed different blockchains
