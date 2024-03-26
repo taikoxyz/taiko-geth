@@ -1411,6 +1411,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		if header := bc.CurrentFinalBlock(); header != nil && header.Number.Uint64() > TriesInMemory*2 {
 			chosen = header.Number.Uint64() - TriesInMemory*2
 		} else {
+			chosen = 0
 			log.Debug("Finalized block not found, using chosen number for trie gc")
 		}
 	}
