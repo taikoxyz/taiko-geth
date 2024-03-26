@@ -1005,14 +1005,12 @@ func (bc *BlockChain) Stop() {
 		if !bc.cacheConfig.TrieDirtyDisabled {
 			triedb := bc.triedb
 
-			maxOffset := uint64(TriesInMemory - 1)
 			// CHANGE(taiko): If Taiko is enabled, we need to set the max offset based on the finalized block.
+			maxOffset := uint64(TriesInMemory*2 - 1)
 			if bc.chainConfig.Taiko {
-				if header := bc.CurrentFinalBlock(); header != nil {
-					maxOffset = bc.CurrentBlock().Number.Uint64() - header.Number.Uint64()
-				} else {
-					maxOffset = bc.CurrentBlock().Number.Uint64()
-					log.Debug("Finalized block not found, using default trie gc limit")
+				header, curBlock := bc.CurrentFinalBlock(), bc.CurrentBlock()
+				if header != nil && curBlock != nil {
+					maxOffset += curBlock.Number.Uint64() - header.Number.Uint64()
 				}
 			}
 			for _, offset := range []uint64{0, 1, maxOffset} {
@@ -1409,8 +1407,8 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	// CHANGE(taiko): If Taiko is enabled, we need to set the max offset based on the finalized block.
 	var chosen uint64
 	if bc.chainConfig.Taiko {
-		if header := bc.CurrentFinalBlock(); header != nil {
-			chosen = header.Number.Uint64() - 1
+		if header := bc.CurrentFinalBlock(); header != nil && header.Number.Uint64() > TriesInMemory*2 {
+			chosen = header.Number.Uint64() - TriesInMemory*2
 		} else {
 			log.Debug("Finalized block not found, using chosen number for trie gc")
 		}

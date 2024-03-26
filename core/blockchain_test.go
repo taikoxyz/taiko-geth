@@ -2173,7 +2173,7 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		if n, err := chain.InsertChain([]*types.Block{block}); err != nil {
 			t.Fatalf("block %d: failed to insert into chain: %v", n, err)
 		}
-		if block.Number().Uint64() == finalizedNumber {
+		if finalizedNumber > 0 && block.Number().Uint64() == finalizedNumber {
 			// Set the finalized block header.
 			chain.SetFinalized(block.Header())
 		}
@@ -2195,17 +2195,30 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		}
 	}
 
-	assert.NotEmpty(t, firstNonPrunedBlock)
-	assert.Equal(t, finalizedNumber, firstNonPrunedBlock.NumberU64())
+	assert.True(t, firstNonPrunedBlock != nil)
+
+	if finalizedNumber == 0 || finalizedNumber <= TriesInMemory*2 {
+		assert.Equal(t, uint64(1), firstNonPrunedBlock.Number().Uint64())
+	} else {
+		assert.Equal(t, uint64(finalizedNumber-TriesInMemory*2+1), firstNonPrunedBlock.Number().Uint64())
+	}
 }
 
 func TestTaikoPruningFinalize(t *testing.T) {
-	testTaikoPruningFinalize(t, 2*TriesInMemory, TriesInMemory/2, false)
-	testTaikoPruningFinalize(t, 2*TriesInMemory, TriesInMemory/2, true)
-	testTaikoPruningFinalize(t, 2*TriesInMemory, 2*TriesInMemory-1, false)
-	testTaikoPruningFinalize(t, 2*TriesInMemory, 2*TriesInMemory-1, true)
-	testTaikoPruningFinalize(t, 8000, 100, true)
-	testTaikoPruningFinalize(t, 8000, 100, false)
+	//testTaikoPruningFinalize(t, 3*TriesInMemory, 0, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, 0, true)
+
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory/2, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory/2, true)
+
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2, true)
+
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2+1, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2+1, true)
+
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2+10, false)
+	testTaikoPruningFinalize(t, 3*TriesInMemory, TriesInMemory*2+10, true)
 }
 
 // Tests that importing a sidechain (S), where
