@@ -2,11 +2,32 @@ package ethclient
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/beacon/engine"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 )
+
+// SealBlockWith mines and seals a block without changing the canonical chain.
+func (ec *Client) SealBlockWith(
+	ctx context.Context,
+	parent common.Hash,
+	timestamp uint64,
+	blkMeta *engine.BlockMetadata,
+	baseFeePerGas *big.Int,
+	withdrawals types.Withdrawals,
+) (*types.Block, error) {
+	var res *types.Block
+
+	if err := ec.c.CallContext(ctx, &res, "taiko_sealBlockWith", parent, timestamp, blkMeta, baseFeePerGas, withdrawals); err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
 
 // HeadL1Origin returns the latest L2 block's corresponding L1 origin.
 func (ec *Client) HeadL1Origin(ctx context.Context) (*rawdb.L1Origin, error) {
