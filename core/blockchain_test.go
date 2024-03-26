@@ -2200,7 +2200,7 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 	if finalizedNumber == 0 || finalizedNumber <= TriesInMemory*2 {
 		assert.Equal(t, uint64(1), firstNonPrunedBlock.Number().Uint64())
 	} else {
-		assert.Equal(t, uint64(finalizedNumber-TriesInMemory*2+1), firstNonPrunedBlock.Number().Uint64())
+		assert.Equal(t, finalizedNumber-TriesInMemory*2+1, firstNonPrunedBlock.Number().Uint64())
 	}
 }
 
