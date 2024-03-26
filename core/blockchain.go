@@ -1005,9 +1005,10 @@ func (bc *BlockChain) Stop() {
 		if !bc.cacheConfig.TrieDirtyDisabled {
 			triedb := bc.triedb
 
-			// CHANGE(taiko): If Taiko is enabled, we need to set the max offset based on the finalized block.
-			maxOffset := uint64(TriesInMemory*2 - 1)
+			// CHANGE(taiko): If Taiko flag is enabled, we need to set the max offset based on the finalized block.
+			var maxOffset uint64 = TriesInMemory - 1
 			if bc.chainConfig.Taiko {
+				maxOffset = TriesInMemory*2 - 1
 				header, curBlock := bc.CurrentFinalBlock(), bc.CurrentBlock()
 				if header != nil && curBlock != nil {
 					maxOffset += curBlock.Number.Uint64() - header.Number.Uint64()
@@ -1404,20 +1405,23 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		bc.triedb.Cap(limit - ethdb.IdealBatchSize)
 	}
 	// Find the next state trie we need to commit
+	chosen := current - TriesInMemory
 	// CHANGE(taiko): If Taiko is enabled, we need to set the max offset based on the finalized block.
-	var chosen uint64
 	if bc.chainConfig.Taiko {
 		if header := bc.CurrentFinalBlock(); header != nil && header.Number.Uint64() > TriesInMemory*2 {
 			chosen = header.Number.Uint64() - TriesInMemory*2
 		} else {
 			log.Debug("Finalized block not found, using chosen number for trie gc")
 		}
-	} else {
-		chosen = current - TriesInMemory
 	}
 	flushInterval := time.Duration(bc.flushInterval.Load())
+	// CHANGE(taiko): If chosen is 0, we don't need to flush the trie.
+	needFlush := bc.gcproc > flushInterval
+	if bc.chainConfig.Taiko {
+		needFlush = bc.gcproc > flushInterval && chosen > 0
+	}
 	// If we exceeded time allowance, flush an entire trie to disk
-	if chosen > 0 && bc.gcproc > flushInterval { // CHANGE(taiko): If chosen is 0, we don't need to flush the trie.
+	if needFlush {
 		// If the header is missing (canonical chain behind), we're reorging a low
 		// diff sidechain. Suspend committing until this operation is completed.
 		header := bc.GetHeaderByNumber(chosen)
