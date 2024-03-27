@@ -62,6 +62,9 @@ const (
 	PooledTransactionsMsg         = 0x0a
 	GetReceiptsMsg                = 0x0f
 	ReceiptsMsg                   = 0x10
+	// CHANGE(taiko): L1Origin p2p handler.
+	GetL1OriginMsg = 0x11
+	L1OriginMsg    = 0x12
 )
 
 var (

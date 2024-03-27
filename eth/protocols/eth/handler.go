@@ -175,6 +175,9 @@ var eth68 = map[uint64]msgHandler{
 	ReceiptsMsg:                   handleReceipts,
 	GetPooledTransactionsMsg:      handleGetPooledTransactions,
 	PooledTransactionsMsg:         handlePooledTransactions,
+	// CHANGE(taiko): L1Origin p2p handler.
+	GetL1OriginMsg: handleGetL1Origins,
+	L1OriginMsg:    handleL1Origins,
 }
 
 // handleMessage is invoked whenever an inbound message is received from a remote

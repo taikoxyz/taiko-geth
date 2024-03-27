@@ -423,9 +423,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			l1Origin.L2BlockHash = block.Hash()
 
 			// Write L1Origin.
-			rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
-			// Write the head L1Origin.
-			rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
+			api.eth.BlockChain().WriteL1Origin(l1Origin)
 
 			return valid(&id), nil
 		}
