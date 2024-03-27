@@ -4397,15 +4397,10 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		defer chain.Stop()
 	}
 
-	var (
-		vls0 []uint64
-		vls1 []uint64
-	)
+	var vls1 []uint64
 	for i := 0; i < n; i++ {
 		block := blocks[i]
-		if chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
-			vls0 = append(vls0, block.NumberU64())
-		} else {
+		if !chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
 			vls1 = append(vls1, block.NumberU64())
 		}
 	}
