@@ -4397,22 +4397,35 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		defer chain.Stop()
 	}
 
-	var firstNonPrunedBlock *types.Block
+	var vls1 []uint64
 	for i := 0; i < n; i++ {
 		block := blocks[i]
-		if chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
-			firstNonPrunedBlock = block
-			break
+		if !chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
+			vls1 = append(vls1, block.NumberU64())
 		}
 	}
 
-	assert.True(t, firstNonPrunedBlock != nil)
+	if stop {
+		block0 := blocks[n-1]
+		block1 := blocks[n-2]
+		assert.True(t, true, chain.HasBlockAndState(block0.Hash(), block0.NumberU64()))
+		assert.True(t, true, chain.HasBlockAndState(block1.Hash(), block1.NumberU64()))
 
-	if finalizedNumber == 0 || finalizedNumber <= TriesInMemory*2 {
-		assert.Equal(t, uint64(1), firstNonPrunedBlock.Number().Uint64())
-	} else {
-		assert.Equal(t, (finalizedNumber - TriesInMemory*2 + 1), firstNonPrunedBlock.Number().Uint64())
+		if finalizedNumber > 0 {
+			block3 := blocks[n-1-(n-int(finalizedNumber))]
+			assert.Equal(t, finalizedNumber, block3.NumberU64())
+			assert.True(t, true, chain.HasBlockAndState(block3.Hash(), block3.NumberU64()))
+		}
+		return
 	}
+
+	if finalizedNumber <= TriesInMemory*2 {
+		assert.Equal(t, 0, len(vls1))
+		return
+	}
+
+	assert.Equal(t, finalizedNumber-TriesInMemory*2, uint64(len(vls1)))
+	assert.Equal(t, finalizedNumber-TriesInMemory*2, vls1[len(vls1)-1])
 }
 
 func TestTaikoPruningFinalize(t *testing.T) {
