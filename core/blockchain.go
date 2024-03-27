@@ -1409,10 +1409,11 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	}
 	// Find the next state trie we need to commit
 	chosen := current - TriesInMemory
-	var dereference uint64
+	var dereference = chosen
 	// CHANGE(taiko): If Taiko is enabled, we need to set the max offset based on the finalized block.
 	if bc.chainConfig.Taiko {
 		chosen = 0
+		dereference = 0
 		if header := bc.CurrentFinalBlock(); header != nil {
 			if bc.finalHeader == nil || header.Number.Uint64() > bc.finalHeader.Number.Uint64() {
 				bc.finalHeader = header
