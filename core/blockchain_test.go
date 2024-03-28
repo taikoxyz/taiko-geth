@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
-	"modernc.org/mathutil"
 	"os"
 	"sync"
 	"testing"
@@ -43,6 +42,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
+	"modernc.org/mathutil"
 )
 
 // So we can deterministically seed different blockchains
