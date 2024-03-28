@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"modernc.org/mathutil"
 	"os"
 	"sync"
 	"testing"
@@ -4384,7 +4385,7 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		if n, err := chain.InsertChain([]*types.Block{block}); err != nil {
 			t.Fatalf("block %d: failed to insert into chain: %v", n, err)
 		}
-		if finalizedNumber > 0 && block.Number().Uint64() == finalizedNumber {
+		if block.Number().Uint64() == finalizedNumber {
 			// Set the finalized block header.
 			chain.SetFinalized(block.Header())
 		}
@@ -4397,13 +4398,20 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		defer chain.Stop()
 	}
 
-	var vls1 []uint64
+	var (
+		vls0 []uint64
+		vls1 []uint64
+	)
 	for i := 0; i < n; i++ {
 		block := blocks[i]
 		if !chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
 			vls1 = append(vls1, block.NumberU64())
+		} else {
+			vls0 = append(vls0, block.NumberU64())
 		}
 	}
+	//t.Log(vls0)
+	//t.Log(vls1)
 
 	if stop {
 		block0 := blocks[n-1]
@@ -4419,13 +4427,16 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		return
 	}
 
-	if finalizedNumber <= TriesInMemory*2 {
-		assert.Equal(t, 0, len(vls1))
-		return
+	triesInMemory := 2 * TriesInMemory
+	if finalizedNumber > 0 {
+		triesInMemory = mathutil.Max(triesInMemory, n-int(finalizedNumber)+TriesInMemory)
 	}
 
-	assert.Equal(t, finalizedNumber-TriesInMemory*2, uint64(len(vls1)))
-	assert.Equal(t, finalizedNumber-TriesInMemory*2, vls1[len(vls1)-1])
+	if triesInMemory > n {
+		assert.Equal(t, 0, len(vls1))
+	} else {
+		assert.Equal(t, n-triesInMemory, len(vls1))
+	}
 }
 
 func TestTaikoPruningFinalize(t *testing.T) {
