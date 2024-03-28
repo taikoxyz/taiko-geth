@@ -27,3 +27,6 @@ var JolnirGenesisAllocJSON []byte
 
 //go:embed katla.json
 var KatlaGenesisAllocJSON []byte
+
+//go:embed hekla.json
+var HeklaGenesisAllocJSON []byte

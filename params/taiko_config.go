@@ -18,6 +18,7 @@ var (
 	EldfellNetworkID          = big.NewInt(167006)
 	JolnirNetworkID           = big.NewInt(167007)
 	KatlaNetworkID            = big.NewInt(167008)
+	HeklaNetworkID            = big.NewInt(167009)
 )
 
 var networkIDToChainConfig = map[*big.Int]*ChainConfig{
@@ -29,6 +30,7 @@ var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	EldfellNetworkID:           TaikoChainConfig,
 	JolnirNetworkID:            TaikoChainConfig,
 	KatlaNetworkID:             TaikoChainConfig,
+	HeklaNetworkID:             TaikoChainConfig,
 	MainnetChainConfig.ChainID: MainnetChainConfig,
 	SepoliaChainConfig.ChainID: SepoliaChainConfig,
 	GoerliChainConfig.ChainID:  GoerliChainConfig,
