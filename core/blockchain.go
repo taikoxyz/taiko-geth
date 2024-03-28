@@ -1430,7 +1430,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	// CHANGE(taiko): If chosen is 0, we don't need to flush the trie.
 	needFlush := bc.gcproc > flushInterval
 	if bc.chainConfig.Taiko {
-		needFlush = bc.gcproc > flushInterval && chosen > 0
+		needFlush = chosen > 0
 	}
 	// If we exceeded time allowance, flush an entire trie to disk
 	if needFlush {
