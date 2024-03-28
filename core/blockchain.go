@@ -1428,12 +1428,7 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	}
 	flushInterval := time.Duration(bc.flushInterval.Load())
 	// CHANGE(taiko): If chosen is 0, we don't need to flush the trie.
-	needFlush := bc.gcproc > flushInterval
-	if bc.chainConfig.Taiko {
-		needFlush = bc.gcproc > flushInterval && chosen > 0
-	}
-	// If we exceeded time allowance, flush an entire trie to disk
-	if needFlush {
+	if chosen > 0 {
 		// If the header is missing (canonical chain behind), we're reorging a low
 		// diff sidechain. Suspend committing until this operation is completed.
 		header := bc.GetHeaderByNumber(chosen)
