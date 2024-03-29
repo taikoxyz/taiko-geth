@@ -42,6 +42,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
+	"modernc.org/mathutil"
 )
 
 // So we can deterministically seed different blockchains
@@ -4384,7 +4385,7 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		if n, err := chain.InsertChain([]*types.Block{block}); err != nil {
 			t.Fatalf("block %d: failed to insert into chain: %v", n, err)
 		}
-		if finalizedNumber > 0 && block.Number().Uint64() == finalizedNumber {
+		if block.Number().Uint64() == finalizedNumber {
 			// Set the finalized block header.
 			chain.SetFinalized(block.Header())
 		}
@@ -4397,21 +4398,41 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		defer chain.Stop()
 	}
 
-	var firstNonPrunedBlock *types.Block
+	var (
+		vls1 []uint64
+	)
 	for i := 0; i < n; i++ {
 		block := blocks[i]
-		if chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
-			firstNonPrunedBlock = block
-			break
+		if !chain.HasBlockAndState(block.Hash(), block.NumberU64()) {
+			vls1 = append(vls1, block.NumberU64())
 		}
 	}
+	//t.Log(vls0)
+	//t.Log(vls1)
 
-	assert.True(t, firstNonPrunedBlock != nil)
+	if stop {
+		block0 := blocks[n-1]
+		block1 := blocks[n-2]
+		assert.True(t, true, chain.HasBlockAndState(block0.Hash(), block0.NumberU64()))
+		assert.True(t, true, chain.HasBlockAndState(block1.Hash(), block1.NumberU64()))
 
-	if finalizedNumber == 0 || finalizedNumber <= TriesInMemory*2 {
-		assert.Equal(t, uint64(1), firstNonPrunedBlock.Number().Uint64())
+		if finalizedNumber > 0 {
+			block3 := blocks[n-1-(n-int(finalizedNumber))]
+			assert.Equal(t, finalizedNumber, block3.NumberU64())
+			assert.True(t, true, chain.HasBlockAndState(block3.Hash(), block3.NumberU64()))
+		}
+		return
+	}
+
+	triesInMemory := 2 * TriesInMemory
+	if finalizedNumber > 0 {
+		triesInMemory = mathutil.Max(triesInMemory, n-int(finalizedNumber)+TriesInMemory)
+	}
+
+	if triesInMemory > n {
+		assert.Equal(t, 0, len(vls1))
 	} else {
-		assert.Equal(t, (finalizedNumber - TriesInMemory*2 + 1), firstNonPrunedBlock.Number().Uint64())
+		assert.Equal(t, n-triesInMemory, len(vls1))
 	}
 }
 
