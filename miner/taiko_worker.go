@@ -90,9 +90,9 @@ func (w *worker) BuildTransactionsLists(
 		}
 
 		return &PreBuiltTxList{
-			TxList:               env.txs,
-			EstimatedGasUsed:     env.header.GasLimit - env.gasPool.Gas(),
-			EstimatedBytesLength: uint64(len(b)),
+			TxList:           env.txs,
+			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
+			BytesLength:      uint64(len(b)),
 		}, nil
 	}
 
