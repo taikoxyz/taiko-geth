@@ -27,6 +27,7 @@ import (
 
 const MetadataApi = "rpc"
 const EngineApi = "engine"
+const TaikoAuth = "taikoAuth"
 
 // CodecOption specifies which type of messages a codec supports.
 //
