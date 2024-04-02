@@ -61,8 +61,36 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	return l1Origin, nil
 }
 
+// Get L2ParentBlocks retrieves the block and 255 parent blocks given a block number.
+func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, error) {
+	headers := make([]*types.Header, 0, 256)
+	start := 0
+	if blockID > 255 {
+		start = int(blockID - 255)
+	}
+
+	for start <= int(blockID) {
+		headers = append(headers, s.eth.blockchain.GetHeaderByNumber(uint64(start)))
+		start++
+	}
+
+	return headers, nil
+}
+
+// AuthTaikoAPIBackend handles l2 node related auth RPC calls.
+type AuthTaikoAPIBackend struct {
+	eth *Ethereum
+}
+
+// NewAuthTaikoAPIBackend creates a new AuthTaikoAPIBackend instance.
+func NewAuthTaikoAPIBackend(eth *Ethereum) *AuthTaikoAPIBackend {
+	return &AuthTaikoAPIBackend{
+		eth: eth,
+	}
+}
+
 // TxPoolContent retrieves the transaction pool content with the given upper limits.
-func (s *TaikoAPIBackend) TxPoolContent(
+func (a *AuthTaikoAPIBackend) TxPoolContent(
 	beneficiary common.Address,
 	baseFee *big.Int,
 	blockMaxGasLimit uint64,
@@ -78,7 +106,7 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		"locals", locals,
 	)
 
-	return s.eth.Miner().BuildTransactionsLists(
+	return a.eth.Miner().BuildTransactionsLists(
 		beneficiary,
 		baseFee,
 		blockMaxGasLimit,
@@ -86,20 +114,4 @@ func (s *TaikoAPIBackend) TxPoolContent(
 		locals,
 		maxTransactionsLists,
 	)
-}
-
-// Get L2ParentBlocks retrieves the block and 255 parent blocks given a block number.
-func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, error) {
-	headers := make([]*types.Header, 0, 256)
-	start := 0
-	if blockID > 255 {
-		start = int(blockID - 255)
-	}
-
-	for start <= int(blockID) {
-		headers = append(headers, s.eth.blockchain.GetHeaderByNumber(uint64(start)))
-		start++
-	}
-
-	return headers, nil
 }
