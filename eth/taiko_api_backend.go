@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/miner"
 )
 
-// TaikoAPIBackend handles l2 node related RPC calls.
+// TaikoAPIBackend handles L2 node related RPC calls.
 type TaikoAPIBackend struct {
 	eth *Ethereum
 }
@@ -77,20 +77,18 @@ func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, e
 	return headers, nil
 }
 
-// AuthTaikoAPIBackend handles l2 node related auth RPC calls.
-type AuthTaikoAPIBackend struct {
+// TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
+type TaikoAuthAPIBackend struct {
 	eth *Ethereum
 }
 
-// NewAuthTaikoAPIBackend creates a new AuthTaikoAPIBackend instance.
-func NewAuthTaikoAPIBackend(eth *Ethereum) *AuthTaikoAPIBackend {
-	return &AuthTaikoAPIBackend{
-		eth: eth,
-	}
+// NewTaikoAuthAPIBackend creates a new TaikoAuthAPIBackend instance.
+func NewTaikoAuthAPIBackend(eth *Ethereum) *TaikoAuthAPIBackend {
+	return &TaikoAuthAPIBackend{eth}
 }
 
 // TxPoolContent retrieves the transaction pool content with the given upper limits.
-func (a *AuthTaikoAPIBackend) TxPoolContent(
+func (a *TaikoAuthAPIBackend) TxPoolContent(
 	beneficiary common.Address,
 	baseFee *big.Int,
 	blockMaxGasLimit uint64,
@@ -98,8 +96,9 @@ func (a *AuthTaikoAPIBackend) TxPoolContent(
 	locals []string,
 	maxTransactionsLists uint64,
 ) ([]*miner.PreBuiltTxList, error) {
-	log.Info(
+	log.Debug(
 		"Fetching L2 pending transactions finished",
+		"baseFee", baseFee,
 		"blockMaxGasLimit", blockMaxGasLimit,
 		"maxBytesPerTxList", maxBytesPerTxList,
 		"maxTransactions", maxTransactionsLists,
