@@ -31,5 +31,11 @@ func RegisterTaikoAPIs(stack *node.Node, cfg *ethconfig.Config, backend *eth.Eth
 			Service:   eth.NewTaikoAPIBackend(backend),
 			Public:    true,
 		},
+		{
+			Namespace:     "taikoAuth",
+			Version:       params.VersionWithMeta,
+			Service:       eth.NewTaikoAuthAPIBackend(backend),
+			Authenticated: true,
+		},
 	})
 }

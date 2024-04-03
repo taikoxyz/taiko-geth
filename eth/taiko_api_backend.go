@@ -9,9 +9,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/miner"
 )
 
-// TaikoAPIBackend handles l2 node related RPC calls.
+// TaikoAPIBackend handles L2 node related RPC calls.
 type TaikoAPIBackend struct {
 	eth *Ethereum
 }
@@ -60,33 +61,6 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	return l1Origin, nil
 }
 
-// TxPoolContent retrieves the transaction pool content with the given upper limits.
-func (s *TaikoAPIBackend) TxPoolContent(
-	beneficiary common.Address,
-	baseFee *big.Int,
-	blockMaxGasLimit uint64,
-	maxBytesPerTxList uint64,
-	locals []string,
-	maxTransactionsLists uint64,
-) ([]types.Transactions, error) {
-	log.Info(
-		"Fetching L2 pending transactions finished",
-		"blockMaxGasLimit", blockMaxGasLimit,
-		"maxBytesPerTxList", maxBytesPerTxList,
-		"maxTransactions", maxTransactionsLists,
-		"locals", locals,
-	)
-
-	return s.eth.Miner().BuildTransactionsLists(
-		beneficiary,
-		baseFee,
-		blockMaxGasLimit,
-		maxBytesPerTxList,
-		locals,
-		maxTransactionsLists,
-	)
-}
-
 // Get L2ParentBlocks retrieves the block and 255 parent blocks given a block number.
 func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, error) {
 	headers := make([]*types.Header, 0, 256)
@@ -101,4 +75,42 @@ func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, e
 	}
 
 	return headers, nil
+}
+
+// TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
+type TaikoAuthAPIBackend struct {
+	eth *Ethereum
+}
+
+// NewTaikoAuthAPIBackend creates a new TaikoAuthAPIBackend instance.
+func NewTaikoAuthAPIBackend(eth *Ethereum) *TaikoAuthAPIBackend {
+	return &TaikoAuthAPIBackend{eth}
+}
+
+// TxPoolContent retrieves the transaction pool content with the given upper limits.
+func (a *TaikoAuthAPIBackend) TxPoolContent(
+	beneficiary common.Address,
+	baseFee *big.Int,
+	blockMaxGasLimit uint64,
+	maxBytesPerTxList uint64,
+	locals []string,
+	maxTransactionsLists uint64,
+) ([]*miner.PreBuiltTxList, error) {
+	log.Debug(
+		"Fetching L2 pending transactions finished",
+		"baseFee", baseFee,
+		"blockMaxGasLimit", blockMaxGasLimit,
+		"maxBytesPerTxList", maxBytesPerTxList,
+		"maxTransactions", maxTransactionsLists,
+		"locals", locals,
+	)
+
+	return a.eth.Miner().BuildTransactionsLists(
+		beneficiary,
+		baseFee,
+		blockMaxGasLimit,
+		maxBytesPerTxList,
+		locals,
+		maxTransactionsLists,
+	)
 }
