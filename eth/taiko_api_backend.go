@@ -1,6 +1,7 @@
 package eth
 
 import (
+	"github.com/ethereum/go-ethereum/eth/downloader"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -75,6 +76,11 @@ func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, e
 	}
 
 	return headers, nil
+}
+
+// GetSyncMode returns the node sync mode.
+func (s *TaikoAPIBackend) GetSyncMode() (downloader.SyncMode, error) {
+	return s.eth.config.SyncMode, nil
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
