@@ -42,7 +42,6 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
-	"modernc.org/mathutil"
 )
 
 // So we can deterministically seed different blockchains
@@ -4424,9 +4423,9 @@ func testTaikoPruningFinalize(t *testing.T, n int, finalizedNumber uint64, stop 
 		return
 	}
 
-	triesInMemory := 2 * TriesInMemory
+	triesInMemory := 3_000_000
 	if finalizedNumber > 0 {
-		triesInMemory = mathutil.Max(triesInMemory, n-int(finalizedNumber)+TriesInMemory)
+		triesInMemory = n - int(finalizedNumber) + TriesInMemory
 	}
 
 	if triesInMemory > n {

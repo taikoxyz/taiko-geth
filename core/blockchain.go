@@ -1375,12 +1375,10 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	}
 
 	// CHANGE(taiko): If Taiko flag is enabled, we need to set the max offset based on the finalized block.
-	triesInMemory := 2 * TriesInMemory
+	triesInMemory := 3_000_000
 	if bc.chainConfig.Taiko {
 		if header := bc.CurrentFinalBlock(); header != nil {
-			if distance := int(block.NumberU64()-header.Number.Uint64()) + TriesInMemory; distance > triesInMemory {
-				triesInMemory = distance
-			}
+			triesInMemory = int(block.NumberU64()-header.Number.Uint64()) + TriesInMemory
 		}
 		state.SetTriesInMemory(triesInMemory)
 	}
@@ -1390,6 +1388,18 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	if err != nil {
 		return err
 	}
+
+	// CHANGE(taiko): Log and show the state root of the block if Taiko flag is enabled.
+	if bc.chainConfig.Taiko {
+		if header := bc.CurrentFinalBlock(); header != nil {
+			log.Warn("log and show the state root of the block",
+				"number", header.Number.Uint64(),
+				"stateRoot", header.Root.String(),
+				"layer_exist", bc.snaps.Snapshot(header.Root) != nil,
+			)
+		}
+	}
+
 	// If node is running in path mode, skip explicit gc operation
 	// which is unnecessary in this mode.
 	if bc.triedb.Scheme() == rawdb.PathScheme {
