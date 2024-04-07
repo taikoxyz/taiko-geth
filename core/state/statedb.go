@@ -136,9 +136,6 @@ type StateDB struct {
 	AccountDeleted int
 	StorageDeleted int
 
-	// CHANGE(taiko): Add a field to store the current state roots.
-	triesInMemory int
-
 	// Testing hooks
 	onCommit func(states *triestate.Set) // Hook invoked when commit is performed
 }
@@ -1261,12 +1258,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 			// - head layer is paired with HEAD state
 			// - head-1 layer is paired with HEAD-1 state
 			// - head-127 layer(bottom-most diff layer) is paired with HEAD-127 state
-			// CHANGE(taiko): Allow the number of tries in memory to be set by the user.
-			triesInMemory := 128
-			if s.triesInMemory != 0 {
-				triesInMemory = s.triesInMemory
-			}
-			if err := s.snaps.Cap(root, triesInMemory); err != nil {
+			if err := s.snaps.Cap(root, 128); err != nil {
 				log.Warn("Failed to cap snapshot tree", "root", root, "layers", 128, "err", err)
 			}
 		}
@@ -1380,11 +1372,6 @@ func (s *StateDB) AddressInAccessList(addr common.Address) bool {
 // SlotInAccessList returns true if the given (address, slot)-tuple is in the access list.
 func (s *StateDB) SlotInAccessList(addr common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
 	return s.accessList.Contains(addr, slot)
-}
-
-// CHANGE(taiko): AccessList returns the current access list.
-func (s *StateDB) SetTriesInMemory(triesInMemory int) {
-	s.triesInMemory = triesInMemory
 }
 
 // convertAccountSet converts a provided account set from address keyed to hash keyed.
