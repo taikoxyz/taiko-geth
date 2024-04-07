@@ -1005,16 +1005,7 @@ func (bc *BlockChain) Stop() {
 		if !bc.cacheConfig.TrieDirtyDisabled {
 			triedb := bc.triedb
 
-			// CHANGE(taiko): If Taiko flag is enabled, we need to set the max offset based on the finalized block.
-			var maxOffset uint64 = TriesInMemory - 1
-			if bc.chainConfig.Taiko {
-				maxOffset = TriesInMemory*2 - 1
-				header, curBlock := bc.CurrentFinalBlock(), bc.CurrentBlock()
-				if header != nil && curBlock != nil {
-					maxOffset = curBlock.Number.Uint64() - header.Number.Uint64()
-				}
-			}
-			for _, offset := range []uint64{0, 1, maxOffset} {
+			for _, offset := range []uint64{0, 1, TriesInMemory - 1} {
 				if number := bc.CurrentBlock().Number.Uint64(); number > offset {
 					recent := bc.GetBlockByNumber(number - offset)
 
@@ -1373,33 +1364,11 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	if err := blockBatch.Write(); err != nil {
 		log.Crit("Failed to write block into disk", "err", err)
 	}
-
-	// CHANGE(taiko): If Taiko flag is enabled, we need to set the max offset based on the finalized block.
-	triesInMemory := 3_000_000
-	if bc.chainConfig.Taiko {
-		if header := bc.CurrentFinalBlock(); header != nil {
-			triesInMemory = int(block.NumberU64()-header.Number.Uint64()) + TriesInMemory
-		}
-		state.SetTriesInMemory(triesInMemory)
-	}
-
 	// Commit all cached state changes into underlying memory database.
 	root, err := state.Commit(block.NumberU64(), bc.chainConfig.IsEIP158(block.Number()))
 	if err != nil {
 		return err
 	}
-
-	// CHANGE(taiko): Log and show the state root of the block if Taiko flag is enabled.
-	if bc.chainConfig.Taiko {
-		if header := bc.CurrentFinalBlock(); header != nil {
-			log.Warn("log and show the state root of the block",
-				"number", header.Number.Uint64(),
-				"stateRoot", header.Root.String(),
-				"layer_exist", bc.snaps.Snapshot(header.Root) != nil,
-			)
-		}
-	}
-
 	// If node is running in path mode, skip explicit gc operation
 	// which is unnecessary in this mode.
 	if bc.triedb.Scheme() == rawdb.PathScheme {
@@ -1415,10 +1384,6 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 
 	// Flush limits are not considered for the first TriesInMemory blocks.
 	current := block.NumberU64()
-	// CHANGE(taiko): If Taiko flag is enabled, we need to set the max offset based on the finalized block.
-	if bc.chainConfig.Taiko && current <= uint64(triesInMemory) {
-		return nil
-	}
 	if current <= TriesInMemory {
 		return nil
 	}
@@ -1432,10 +1397,6 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 	}
 	// Find the next state trie we need to commit
 	chosen := current - TriesInMemory
-	// CHANGE(taiko): If Taiko flag is enabled, we need to set the max offset based on the finalized block.
-	if bc.Config().Taiko {
-		chosen = current - uint64(triesInMemory)
-	}
 	flushInterval := time.Duration(bc.flushInterval.Load())
 	// If we exceeded time allowance, flush an entire trie to disk
 	if bc.gcproc > flushInterval {
