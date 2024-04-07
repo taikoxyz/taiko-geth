@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 )
@@ -79,8 +78,8 @@ func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, e
 }
 
 // GetSyncMode returns the node sync mode.
-func (s *TaikoAPIBackend) GetSyncMode() (downloader.SyncMode, error) {
-	return s.eth.config.SyncMode, nil
+func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
+	return s.eth.config.SyncMode.String(), nil
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
