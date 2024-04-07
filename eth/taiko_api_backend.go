@@ -1,7 +1,6 @@
 package eth
 
 import (
-	"github.com/ethereum/go-ethereum/eth/downloader"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -9,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 )
