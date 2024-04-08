@@ -30,6 +30,17 @@ func (ec *Client) L1OriginByID(ctx context.Context, blockID *big.Int) (*rawdb.L1
 	return res, nil
 }
 
+// GetSyncMode returns the current sync mode of the L2 node.
+func (ec *Client) GetSyncMode(ctx context.Context) (string, error) {
+	var res string
+
+	if err := ec.c.CallContext(ctx, &res, "taiko_getSyncMode"); err != nil {
+		return "", err
+	}
+
+	return res, nil
+}
+
 func (ec *Client) GetL2ParentHeaders(ctx context.Context, blockID uint64) ([]map[string]interface{}, error) {
 	var res []map[string]interface{}
 

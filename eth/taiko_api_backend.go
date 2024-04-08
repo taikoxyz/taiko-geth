@@ -77,6 +77,11 @@ func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, e
 	return headers, nil
 }
 
+// GetSyncMode returns the node sync mode.
+func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
+	return s.eth.config.SyncMode.String(), nil
+}
+
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
 type TaikoAuthAPIBackend struct {
 	eth *Ethereum
