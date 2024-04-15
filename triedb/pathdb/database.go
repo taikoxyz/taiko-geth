@@ -136,6 +136,8 @@ type Database struct {
 	tree       *layerTree               // The group for all known layers
 	freezer    *rawdb.ResettableFreezer // Freezer for storing trie histories, nil possible in tests
 	lock       sync.RWMutex             // Lock to prevent mutations from happening at the same time
+	// CHANGE(TAIKO): Add the taiko cache.
+	taikoCache *taikoCache
 }
 
 // New attempts to load an already existing layer from a persistent key-value
@@ -203,6 +205,10 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 			log.Crit("Failed to disable database", "err", err) // impossible to happen
 		}
 	}
+
+	// CHANGE(TAIKO): Initialize the taiko cache.
+	db.taikoCache = newTaikoCache(config, diskdb)
+
 	log.Warn("Path-based state scheme is an experimental feature")
 	return db
 }
@@ -210,6 +216,10 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 // Reader retrieves a layer belonging to the given state root.
 func (db *Database) Reader(root common.Hash) (layer, error) {
 	l := db.tree.get(root)
+	// CHANGE(TAIKO): Retrieve the layer from the taiko cache.
+	if l == nil {
+		l = db.taikoCache.Reader(root)
+	}
 	if l == nil {
 		return nil, fmt.Errorf("state %#x is not available", root)
 	}
@@ -410,6 +420,9 @@ func (db *Database) Recoverable(root common.Hash) bool {
 func (db *Database) Close() error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
+
+	// CHANGE(TAIKO)
+	db.taikoCache.Close()
 
 	// Set the database to read-only mode to prevent all
 	// following mutations.
