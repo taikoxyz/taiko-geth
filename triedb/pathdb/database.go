@@ -207,7 +207,7 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 	}
 
 	// CHANGE(TAIKO): Initialize the taiko cache.
-	db.taikoCache = newTaikoCache(config, diskdb)
+	db.taikoCache = newTaikoCache(config, diskdb, db.freezer)
 
 	log.Warn("Path-based state scheme is an experimental feature")
 	return db
