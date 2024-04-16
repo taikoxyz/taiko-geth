@@ -41,7 +41,7 @@ func newTaikoLayer(t *taikoCache, root common.Hash) (*taikoLayer, error) {
 
 func (dl *taikoLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]byte, error) {
 	tLayer := dl.getTailLayer()
-	for startID := dl.id; startID >= 0; startID-- {
+	for startID := dl.id; ; startID-- {
 		tailID := tLayer.getTailID()
 		if startID < tailID {
 			break

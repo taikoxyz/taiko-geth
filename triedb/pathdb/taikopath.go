@@ -3,7 +3,6 @@ package pathdb
 import (
 	"bytes"
 	"fmt"
-	"sync"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -15,20 +14,10 @@ var (
 	pathLatestIDError = fmt.Errorf("latest id not found")
 )
 
-type journalPath struct {
-	Path []byte
-	Ids  []uint64
-}
-
 type ownerPath struct {
 	key    []byte
 	IDList []uint64
 	raws   atomic.Value
-	lock   sync.RWMutex
-}
-
-func newOwnerPath(key []byte) *ownerPath {
-	return &ownerPath{key: key, IDList: []uint64{}}
 }
 
 func (p *ownerPath) getLatestID(startID uint64) (uint64, error) {

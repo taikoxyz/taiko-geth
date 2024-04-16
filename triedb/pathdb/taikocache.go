@@ -94,7 +94,7 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 	}
 
 	// log the record layer
-	if time.Now().Sub(t.tm) > time.Second*3 {
+	if time.Since(t.tm) > time.Second*3 {
 		t.tm = time.Now()
 		log.Info("record layer", "id", lyer.id, "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
 	}
