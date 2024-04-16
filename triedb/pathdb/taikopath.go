@@ -66,13 +66,10 @@ func (p *ownerPath) addPath(subset map[string]*trienode.Node, id uint64) {
 func (p *ownerPath) truncateTail(tailID uint64) {
 	for path := range p.paths {
 		ids := p.paths[path]
-		var i = len(ids) - 1
-		for ; i >= 0; i-- {
-			if ids[i] <= tailID {
-				break
-			}
+		for len(ids) > 0 && ids[0] <= tailID {
+			ids = ids[1:]
 		}
-		p.paths[path] = ids[:i]
+		p.paths[path] = ids
 	}
 	return
 }

@@ -2,6 +2,7 @@ package pathdb
 
 import (
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
@@ -14,7 +15,6 @@ type taikoCache struct {
 	config *Config
 
 	diskdb  ethdb.Database
-	batchdb ethdb.Batch
 	freezer *rawdb.ResettableFreezer
 
 	tailLayer *tailLayer
@@ -22,6 +22,7 @@ type taikoCache struct {
 	ownerPaths *lru.Cache[common.Hash, *ownerPath]
 	taikoMetas *lru.Cache[uint64, *taikoMeta]
 
+	tm   time.Time
 	lock sync.RWMutex
 }
 
@@ -29,12 +30,13 @@ func newTaikoCache(config *Config, diskdb ethdb.Database, freezer *rawdb.Resetta
 	return &taikoCache{
 		config:  config,
 		diskdb:  diskdb,
-		batchdb: diskdb.NewBatch(),
 		freezer: freezer,
 
 		tailLayer:  newTailLayer(diskdb, config.DirtyCacheSize, config.CleanCacheSize),
 		ownerPaths: lru.NewCache[common.Hash, *ownerPath](100),
 		taikoMetas: lru.NewCache[uint64, *taikoMeta](10000),
+
+		tm: time.Now(),
 	}
 }
 
@@ -42,10 +44,18 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
-	// try to truncate the tail layer.
-	if err := t.truncateFromTail(); err != nil {
+	var (
+		start = time.Now()
+		batch = t.diskdb.NewBatch()
+	)
+
+	// write nodes to disk
+	data, err := encodeNodes(lyer.nodes)
+	if err != nil {
 		return err
 	}
+	rawdb.WriteNodeHistoryPrefix(t.diskdb, lyer.id, data)
+
 	tailID := t.tailLayer.getTailID()
 	for owner, subset := range lyer.nodes {
 		paths, ok := t.ownerPaths.Get(owner)
@@ -55,28 +65,30 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 		}
 
 		paths.addPath(subset, lyer.id)
-		if tailID > 0 {
+		// if tail id is updated then truncate the tail.
+		if tailID > 1 {
 			paths.truncateTail(tailID)
 		}
-		if err := paths.savePaths(t.batchdb); err != nil {
+		if err := paths.savePaths(batch); err != nil {
 			return err
 		}
 	}
 
-	// write nodes to disk
-	data, err := encodeNodes(lyer.nodes)
-	if err != nil {
+	// write data to disk.
+	size := batch.ValueSize()
+	if err = batch.Write(); err != nil {
+		log.Error("Failed to write batch", "err", err)
+	}
+
+	// try to truncate the tail layer.
+	if err = t.truncateFromTail(); err != nil {
 		return err
 	}
-	rawdb.WriteNodeHistoryPrefix(t.batchdb, lyer.id, data)
 
-	// write data to disk.
-	if size := t.batchdb.ValueSize(); size >= t.config.DirtyCacheSize {
-		if err := t.batchdb.Write(); err != nil {
-			log.Error("Failed to write batch", "err", err)
-		}
-		t.batchdb.Reset()
-		log.Debug("Flushed taiko cache", "size", size)
+	// log the record layer
+	if time.Now().Sub(t.tm) > time.Second*2 {
+		t.tm = time.Now()
+		log.Info("record layer", "id", lyer.id, "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
 	}
 
 	return nil
@@ -84,7 +96,7 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 
 func (t *taikoCache) Close() error {
 	// Truncate the taiko metas
-	return t.tailLayer.flush(t.batchdb, true)
+	return t.truncateFromTail()
 }
 
 func (t *taikoCache) Reader(root common.Hash) layer {
@@ -129,14 +141,12 @@ func (t *taikoCache) loadDiffLayer(id uint64) (*taikoMeta, error) {
 }
 
 func (t *taikoCache) truncateFromTail() error {
-	// Truncate the taiko metas
-	if err := t.tailLayer.flush(t.batchdb, false); err != nil {
-		return err
-	}
-
 	ohead, err := t.freezer.Ancients()
 	if err != nil {
 		return err
+	}
+	if ohead <= t.config.StateHistory {
+		return nil
 	}
 	ntail := ohead - t.config.StateHistory
 	// Load the meta objects in range [otail+1, ntail]
@@ -147,6 +157,11 @@ func (t *taikoCache) truncateFromTail() error {
 		}
 		t.tailLayer.commit(nodes.nodes)
 		t.tailLayer.setTailID(otail + 1)
+	}
+
+	// Truncate the taiko metas
+	if err := t.tailLayer.flush(false); err != nil {
+		return err
 	}
 
 	return nil

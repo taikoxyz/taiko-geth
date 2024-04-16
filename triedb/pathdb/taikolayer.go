@@ -158,7 +158,7 @@ func newTailLayer(diskdb ethdb.Database, dirtySize, cleanSize int) *tailLayer {
 		cleans: fastcache.New(cleanSize),
 		nodes:  make(map[common.Hash]map[string]*trienode.Node),
 	}
-	layer.tailID.Store(rawdb.ReadTaikoTailID(diskdb))
+	layer.tailID.Store(1)
 
 	return layer
 }
@@ -266,13 +266,16 @@ func (t *tailLayer) reset() {
 	t.nodes = make(map[common.Hash]map[string]*trienode.Node)
 }
 
-func (t *tailLayer) flush(batch ethdb.Batch, force bool) error {
+func (t *tailLayer) flush(force bool) error {
 	t.lock.Lock()
 	defer t.lock.Unlock()
 	if t.size <= t.limit && !force {
 		return nil
 	}
-	var start = time.Now()
+	var (
+		start = time.Now()
+		batch = t.diskdb.NewBatch()
+	)
 	for owner, subset := range t.nodes {
 		for path, n := range subset {
 			if n.IsDeleted() {
@@ -295,7 +298,10 @@ func (t *tailLayer) flush(batch ethdb.Batch, force bool) error {
 
 	// Flush all mutations in a single batch
 	size := batch.ValueSize()
-	log.Debug("Persisted pathdb nodes", "nodes", len(t.nodes), "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
+	if err := batch.Write(); err != nil {
+		return err
+	}
+	log.Warn("Persisted pathdb nodes", "nodes", len(t.nodes), "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
 	t.reset()
 	return nil
 }
