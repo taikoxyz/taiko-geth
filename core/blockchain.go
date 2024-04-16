@@ -160,6 +160,7 @@ func (c *CacheConfig) triedbConfig() *triedb.Config {
 	}
 	if c.StateScheme == rawdb.PathScheme {
 		config.PathDB = &pathdb.Config{
+			// CHANGE(TAIKO): Add taiko history
 			TaikoState:     c.TaikoState,
 			StateHistory:   c.StateHistory,
 			CleanCacheSize: c.TrieCleanLimit * 1024 * 1024,
