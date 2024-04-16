@@ -86,6 +86,8 @@ type layer interface {
 
 // Config contains the settings for database.
 type Config struct {
+	// CHANGE(TAIKO): Add the taiko history.
+	TaikoState     uint64 // Number of blocks from head whose taiko histories are reserved.
 	StateHistory   uint64 // Number of recent blocks to maintain state history for
 	CleanCacheSize int    // Maximum memory allowance (in bytes) for caching clean nodes
 	DirtyCacheSize int    // Maximum memory allowance (in bytes) for caching dirty nodes
@@ -207,7 +209,9 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 	}
 
 	// CHANGE(TAIKO): Initialize the taiko cache.
-	db.taikoCache = newTaikoCache(config, diskdb, db.freezer)
+	if config.TaikoState > 0 {
+		db.taikoCache = newTaikoCache(config, diskdb, db.freezer)
+	}
 
 	log.Warn("Path-based state scheme is an experimental feature")
 	return db

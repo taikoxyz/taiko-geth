@@ -3,12 +3,12 @@ package pathdb
 import (
 	"bytes"
 	"fmt"
+	"sync"
+	"sync/atomic"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie/trienode"
 )
 
 var (
@@ -21,18 +21,20 @@ type journalPath struct {
 }
 
 type ownerPath struct {
-	owner common.Hash
-	paths map[string][]uint64
+	key    []byte
+	IDList []uint64
+	raws   atomic.Value
+	lock   sync.RWMutex
 }
 
-func newOwnerPath(owner common.Hash) *ownerPath {
-	return &ownerPath{owner: owner, paths: map[string][]uint64{}}
+func newOwnerPath(key []byte) *ownerPath {
+	return &ownerPath{key: key, IDList: []uint64{}}
 }
 
-func (p *ownerPath) getLatestID(path string, startID uint64) (uint64, error) {
-	ids := p.paths[path]
+func (p *ownerPath) getLatestID(startID uint64) (uint64, error) {
+	ids := p.IDList
 	if ids == nil {
-		return 0, fmt.Errorf("path not found %s", path)
+		return 0, fmt.Errorf("id list is nil")
 	}
 	for i := len(ids) - 1; i >= 0; i-- {
 		if ids[i] <= startID {
@@ -43,62 +45,38 @@ func (p *ownerPath) getLatestID(path string, startID uint64) (uint64, error) {
 }
 
 func (p *ownerPath) savePaths(db ethdb.KeyValueWriter) error {
-	data, err := encodePaths(p.paths)
-	if err != nil {
-		return err
+	if p.raws.Load() == nil {
+		w := new(bytes.Buffer)
+		if err := rlp.Encode(w, p.IDList); err != nil {
+			return err
+		}
+		p.raws.Store(w.Bytes())
 	}
-	rawdb.WriteOwnerPath(db, p.owner, data)
+
+	rawdb.WriteOwnerPath(db, p.key, p.raws.Load().([]byte))
 	return nil
 }
 
-func (p *ownerPath) addPath(subset map[string]*trienode.Node, id uint64) {
-	for path := range subset {
-		ids := p.paths[path]
-		if ids == nil {
-			ids = []uint64{id}
-		} else {
-			ids = append(ids, id)
-		}
-		p.paths[path] = ids
-	}
+func (p *ownerPath) addPath(id uint64) {
+	p.IDList = append(p.IDList, id)
 }
 
 func (p *ownerPath) truncateTail(tailID uint64) {
-	for path := range p.paths {
-		ids := p.paths[path]
-		for len(ids) > 0 && ids[0] <= tailID {
-			ids = ids[1:]
-		}
-		p.paths[path] = ids
+	ids := p.IDList
+	for len(ids) > 0 && ids[0] <= tailID {
+		ids = ids[1:]
 	}
-	return
+	p.IDList = ids
 }
 
-func loadPaths(diskdb ethdb.Database, owner common.Hash) (*ownerPath, error) {
-	return decodePaths(rawdb.ReadOwnerPath(diskdb, owner))
-}
-
-func encodePaths(paths map[string][]uint64) ([]byte, error) {
-	jpaths := make([]journalPath, 0, len(paths))
-	for path, ids := range paths {
-		jpaths = append(jpaths, journalPath{Path: []byte(path), Ids: ids})
-	}
-	w := new(bytes.Buffer)
-	if err := rlp.Encode(w, jpaths); err != nil {
+func loadPaths(diskdb ethdb.Database, key []byte) (*ownerPath, error) {
+	data := rawdb.ReadOwnerPath(diskdb, key)
+	var idList []uint64
+	if err := rlp.Decode(bytes.NewReader(data), &idList); err != nil {
 		return nil, err
 	}
-	return w.Bytes(), nil
-}
-
-func decodePaths(data []byte) (*ownerPath, error) {
-	r := rlp.NewStream(bytes.NewReader(data), 0)
-	var paths []journalPath
-	if err := r.Decode(&paths); err != nil {
-		return nil, err
-	}
-	ownerPath := &ownerPath{paths: map[string][]uint64{}}
-	for _, paths := range paths {
-		ownerPath.paths[string(paths.Path)] = paths.Ids
-	}
-	return ownerPath, nil
+	return &ownerPath{
+		key:    key,
+		IDList: idList,
+	}, nil
 }

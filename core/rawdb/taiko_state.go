@@ -9,19 +9,19 @@ import (
 
 var (
 	taikoTailID       = []byte(":t:t-")
-	taikoOwnerTable   = []byte(":t:o-")
+	taikoIDListPrefix = []byte(":t:o-")
 	tailAccountPreFix = []byte(":t:a-")
 	tailStoragePreFix = []byte(":t:s-")
 	nodeHistoryPrefix = []byte(":t:h-")
 )
 
-func ReadOwnerPath(db ethdb.KeyValueReader, owner common.Hash) []byte {
-	data, _ := db.Get(append(taikoOwnerTable, owner[:]...))
+func ReadOwnerPath(db ethdb.KeyValueReader, key []byte) []byte {
+	data, _ := db.Get(append(taikoIDListPrefix, key[:]...))
 	return data
 }
 
-func WriteOwnerPath(db ethdb.KeyValueWriter, owner common.Hash, data []byte) {
-	if err := db.Put(append(taikoOwnerTable, owner[:]...), data); err != nil {
+func WriteOwnerPath(db ethdb.KeyValueWriter, key, data []byte) {
+	if err := db.Put(append(taikoIDListPrefix, key[:]...), data); err != nil {
 		log.Crit("WriteOwnerPath failed", "err", err)
 	}
 }

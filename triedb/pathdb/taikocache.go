@@ -12,14 +12,16 @@ import (
 )
 
 type taikoCache struct {
-	config *Config
+	taikoState     uint64 // Number of blocks from head whose taiko histories are reserved.
+	cleanCacheSize int    // Maximum memory allowance (in bytes) for caching clean nodes
+	dirtyCacheSize int    // Maximum memory allowance (in bytes) for caching dirty nodes
 
 	diskdb  ethdb.Database
 	freezer *rawdb.ResettableFreezer
 
 	tailLayer *tailLayer
 
-	ownerPaths *lru.Cache[common.Hash, *ownerPath]
+	ownerPaths *lru.Cache[string, *ownerPath]
 	taikoMetas *lru.Cache[uint64, *taikoMeta]
 
 	tm   time.Time
@@ -28,12 +30,15 @@ type taikoCache struct {
 
 func newTaikoCache(config *Config, diskdb ethdb.Database, freezer *rawdb.ResettableFreezer) *taikoCache {
 	return &taikoCache{
-		config:  config,
+		taikoState:     config.TaikoState,
+		cleanCacheSize: config.CleanCacheSize,
+		dirtyCacheSize: config.DirtyCacheSize,
+
 		diskdb:  diskdb,
 		freezer: freezer,
 
 		tailLayer:  newTailLayer(diskdb, config.DirtyCacheSize, config.CleanCacheSize),
-		ownerPaths: lru.NewCache[common.Hash, *ownerPath](100),
+		ownerPaths: lru.NewCache[string, *ownerPath](500),
 		taikoMetas: lru.NewCache[uint64, *taikoMeta](10000),
 
 		tm: time.Now(),
@@ -56,21 +61,24 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 	}
 	rawdb.WriteNodeHistoryPrefix(t.diskdb, lyer.id, data)
 
-	tailID := t.tailLayer.getTailID()
+	var (
+		tailID = t.tailLayer.getTailID()
+	)
 	for owner, subset := range lyer.nodes {
-		paths, ok := t.ownerPaths.Get(owner)
-		if !ok {
-			paths = newOwnerPath(owner)
-			t.ownerPaths.Add(owner, paths)
-		}
-
-		paths.addPath(subset, lyer.id)
-		// if tail id is updated then truncate the tail.
-		if tailID > 1 {
-			paths.truncateTail(tailID)
-		}
-		if err := paths.savePaths(batch); err != nil {
-			return err
+		for path := range subset {
+			key := cacheKey(owner, []byte(path))
+			paths, err := t.loadOwnerPaths(key)
+			if err != nil {
+				return err
+			}
+			paths.addPath(lyer.id)
+			// if tail id is updated then truncate the tail.
+			if tailID > 1 {
+				paths.truncateTail(tailID)
+			}
+			if err = paths.savePaths(batch); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -86,7 +94,7 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 	}
 
 	// log the record layer
-	if time.Now().Sub(t.tm) > time.Second*2 {
+	if time.Now().Sub(t.tm) > time.Second*3 {
 		t.tm = time.Now()
 		log.Info("record layer", "id", lyer.id, "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
 	}
@@ -112,19 +120,26 @@ func (t *taikoCache) getTailLayer() *tailLayer {
 	return t.tailLayer
 }
 
-func (t *taikoCache) getLatestIDByPath(owner common.Hash, path string, startID uint64) (uint64, error) {
-	paths, ok := t.ownerPaths.Get(owner)
+func (t *taikoCache) getLatestIDByPath(key []byte, startID uint64) (uint64, error) {
+	paths, err := t.loadOwnerPaths(key)
+	if err != nil {
+		return 0, err
+	}
+	return paths.getLatestID(startID)
+}
+
+func (t *taikoCache) loadOwnerPaths(key []byte) (*ownerPath, error) {
+	paths, ok := t.ownerPaths.Get(string(key))
 	if !ok {
 		// load paths from disk.
 		var err error
-		paths, err = loadPaths(t.diskdb, owner)
+		paths, err = loadPaths(t.diskdb, key)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		t.ownerPaths.Add(owner, paths)
+		t.ownerPaths.Add(string(key), paths)
 	}
-
-	return paths.getLatestID(path, startID)
+	return paths, nil
 }
 
 func (t *taikoCache) loadDiffLayer(id uint64) (*taikoMeta, error) {
@@ -145,10 +160,10 @@ func (t *taikoCache) truncateFromTail() error {
 	if err != nil {
 		return err
 	}
-	if ohead <= t.config.StateHistory {
+	if ohead <= t.taikoState {
 		return nil
 	}
-	ntail := ohead - t.config.StateHistory
+	ntail := ohead - t.taikoState
 	// Load the meta objects in range [otail+1, ntail]
 	for otail := t.tailLayer.getTailID(); otail < ntail; otail++ {
 		nodes, err := t.loadDiffLayer(otail)
