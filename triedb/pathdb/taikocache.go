@@ -199,7 +199,7 @@ func (t *taikoCache) truncateFromTail(latestID uint64) error {
 	}
 
 	// delete the pre area owner paths.
-	if tailID > 1000 {
+	if tailID > batchSize {
 		t.wg.Add(1)
 		go func() {
 			defer t.wg.Done()
