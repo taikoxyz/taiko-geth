@@ -3,11 +3,15 @@ package pathdb
 import (
 	"bytes"
 	"fmt"
-	"sync/atomic"
-
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
+	"strconv"
+)
+
+var (
+	batchSize uint64 = 1000
 )
 
 var (
@@ -16,12 +20,11 @@ var (
 
 type ownerPath struct {
 	key    []byte
-	IDList []uint64
-	raws   atomic.Value
+	idList []uint64
 }
 
 func (p *ownerPath) getLatestID(startID uint64) (uint64, error) {
-	ids := p.IDList
+	ids := p.idList
 	if ids == nil {
 		return 0, fmt.Errorf("id list is nil")
 	}
@@ -33,39 +36,49 @@ func (p *ownerPath) getLatestID(startID uint64) (uint64, error) {
 	return 0, pathLatestIDError
 }
 
-func (p *ownerPath) savePaths(db ethdb.KeyValueWriter) error {
-	if p.raws.Load() == nil {
-		w := new(bytes.Buffer)
-		if err := rlp.Encode(w, p.IDList); err != nil {
-			return err
-		}
-		p.raws.Store(w.Bytes())
-	}
-
-	rawdb.WriteOwnerPath(db, p.key, p.raws.Load().([]byte))
-	return nil
-}
-
 func (p *ownerPath) addPath(id uint64) {
-	p.IDList = append(p.IDList, id)
+	p.idList = append(p.idList, id)
 }
 
-func (p *ownerPath) truncateTail(tailID uint64) {
-	ids := p.IDList
-	for len(ids) > 0 && ids[0] <= tailID {
-		ids = ids[1:]
-	}
-	p.IDList = ids
+type journalUint64 struct {
+	IDList []uint64
 }
 
 func loadPaths(diskdb ethdb.Database, key []byte) (*ownerPath, error) {
 	data := rawdb.ReadOwnerPath(diskdb, key)
-	var idList []uint64
-	if err := rlp.Decode(bytes.NewReader(data), &idList); err != nil {
+	if len(data) == 0 {
+		return &ownerPath{
+			key:    key,
+			idList: make([]uint64, 0),
+		}, nil
+	}
+	var journal = new(journalUint64)
+	if err := rlp.Decode(bytes.NewReader(data), journal); err != nil {
 		return nil, err
 	}
 	return &ownerPath{
 		key:    key,
-		IDList: idList,
+		idList: journal.IDList,
 	}, nil
+}
+
+func (p *ownerPath) savePaths(db ethdb.KeyValueWriter) error {
+	w := new(bytes.Buffer)
+	if err := rlp.Encode(w, &journalUint64{IDList: p.idList}); err != nil {
+		return err
+	}
+	rawdb.WriteOwnerPath(db, p.key, w.Bytes())
+	return nil
+}
+
+// cacheKey constructs the unique key of clean cache.
+func taikoKey(owner common.Hash, path []byte, id uint64) []byte {
+	area := id / batchSize
+	key := []byte(strconv.FormatInt(int64(area), 10))
+	if owner == (common.Hash{}) {
+		key = append(key, path...)
+		return key
+	}
+	key = append(key, append(owner.Bytes(), path...)...)
+	return key
 }

@@ -210,7 +210,7 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 
 	// CHANGE(TAIKO): Initialize the taiko cache.
 	if config.TaikoState > 0 {
-		db.taikoCache = newTaikoCache(config, diskdb, db.freezer)
+		db.taikoCache = newTaikoCache(config, diskdb)
 	}
 
 	log.Warn("Path-based state scheme is an experimental feature")
@@ -221,7 +221,7 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 func (db *Database) Reader(root common.Hash) (layer, error) {
 	l := db.tree.get(root)
 	// CHANGE(TAIKO): Retrieve the layer from the taiko cache.
-	if l == nil {
+	if l == nil && db.taikoCache != nil {
 		l = db.taikoCache.Reader(root)
 	}
 	if l == nil {
@@ -425,15 +425,17 @@ func (db *Database) Close() error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
-	// CHANGE(TAIKO)
-	db.taikoCache.Close()
-
 	// Set the database to read-only mode to prevent all
 	// following mutations.
 	db.readOnly = true
 
 	// Release the memory held by clean cache.
 	db.tree.bottom().resetCache()
+
+	// CHANGE(TAIKO)
+	if db.taikoCache != nil {
+		db.taikoCache.Close()
+	}
 
 	// Close the attached state history freezer.
 	if db.freezer == nil {

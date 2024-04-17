@@ -41,21 +41,21 @@ func newTaikoLayer(t *taikoCache, root common.Hash) (*taikoLayer, error) {
 
 func (dl *taikoLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]byte, error) {
 	tLayer := dl.getTailLayer()
-	for startID := dl.id; ; startID-- {
+	for layerID := dl.id; ; layerID-- {
 		tailID := tLayer.getTailID()
-		if startID < tailID {
+		if layerID <= tailID {
 			break
 		}
 
 		// use `id < tailID` aims to make sure the latest node is not in the diff layer.
-		id, err := dl.getLatestIDByPath(cacheKey(owner, path), startID)
+		id, err := dl.getLatestIDByPath(taikoKey(owner, path, layerID), layerID)
 		if errors.Is(err, pathLatestIDError) || id < tailID {
 			break
 		}
 		if err != nil {
 			return nil, err
 		}
-		log.Warn("node message", "owner", owner.String(), "startID", startID, "id", id)
+		log.Warn("node message", "owner", owner.String(), "layerID", layerID, "id", id)
 		node, err := dl.loadDiffLayer(id)
 		if err != nil {
 			return nil, err

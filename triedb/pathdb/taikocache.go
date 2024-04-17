@@ -2,6 +2,7 @@ package pathdb
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -16,26 +17,26 @@ type taikoCache struct {
 	cleanCacheSize int    // Maximum memory allowance (in bytes) for caching clean nodes
 	dirtyCacheSize int    // Maximum memory allowance (in bytes) for caching dirty nodes
 
-	diskdb  ethdb.Database
-	freezer *rawdb.ResettableFreezer
+	diskdb ethdb.Database
 
 	tailLayer *tailLayer
 
 	ownerPaths *lru.Cache[string, *ownerPath]
 	taikoMetas *lru.Cache[uint64, *taikoMeta]
 
-	tm   time.Time
-	lock sync.RWMutex
+	tm       time.Time
+	wg       sync.WaitGroup
+	readonly atomic.Bool
+	lock     sync.RWMutex
 }
 
-func newTaikoCache(config *Config, diskdb ethdb.Database, freezer *rawdb.ResettableFreezer) *taikoCache {
+func newTaikoCache(config *Config, diskdb ethdb.Database) *taikoCache {
 	return &taikoCache{
 		taikoState:     config.TaikoState,
 		cleanCacheSize: config.CleanCacheSize,
 		dirtyCacheSize: config.DirtyCacheSize,
 
-		diskdb:  diskdb,
-		freezer: freezer,
+		diskdb: diskdb,
 
 		tailLayer:  newTailLayer(diskdb, config.DirtyCacheSize, config.CleanCacheSize),
 		ownerPaths: lru.NewCache[string, *ownerPath](500),
@@ -46,6 +47,10 @@ func newTaikoCache(config *Config, diskdb ethdb.Database, freezer *rawdb.Resetta
 }
 
 func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
+	if t.readonly.Load() {
+		return nil
+	}
+
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
@@ -61,36 +66,29 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 	}
 	rawdb.WriteNodeHistoryPrefix(t.diskdb, lyer.id, data)
 
-	var (
-		tailID = t.tailLayer.getTailID()
-	)
 	for owner, subset := range lyer.nodes {
 		for path := range subset {
-			key := cacheKey(owner, []byte(path))
-			paths, err := t.loadOwnerPaths(key)
+			paths, err := t.loadOwnerPaths(taikoKey(owner, []byte(path), lyer.id))
 			if err != nil {
 				return err
 			}
 			paths.addPath(lyer.id)
 			// if tail id is updated then truncate the tail.
-			if tailID > 1 {
-				paths.truncateTail(tailID)
-			}
 			if err = paths.savePaths(batch); err != nil {
 				return err
 			}
 		}
 	}
 
+	// try to truncate the tail layer.
+	if err = t.truncateFromTail(lyer.id); err != nil {
+		return err
+	}
+
 	// write data to disk.
 	size := batch.ValueSize()
 	if err = batch.Write(); err != nil {
 		log.Error("Failed to write batch", "err", err)
-	}
-
-	// try to truncate the tail layer.
-	if err = t.truncateFromTail(); err != nil {
-		return err
 	}
 
 	// log the record layer
@@ -103,8 +101,16 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 }
 
 func (t *taikoCache) Close() error {
+	// Set the readonly flag.
+	t.readonly.Store(true)
 	// Truncate the taiko metas
-	return t.truncateFromTail()
+	err := t.tailLayer.flush(true)
+	if err != nil {
+		log.Error("Failed to truncate taiko metas", "err", err)
+	}
+	t.wg.Wait()
+
+	return err
 }
 
 func (t *taikoCache) Reader(root common.Hash) layer {
@@ -155,23 +161,49 @@ func (t *taikoCache) loadDiffLayer(id uint64) (*taikoMeta, error) {
 	return node, nil
 }
 
-func (t *taikoCache) truncateFromTail() error {
-	ohead, err := t.freezer.Ancients()
-	if err != nil {
-		return err
-	}
-	if ohead <= t.taikoState {
+func (t *taikoCache) truncateFromTail(latestID uint64) error {
+	if latestID <= t.taikoState {
 		return nil
 	}
-	ntail := ohead - t.taikoState
+	ntail := latestID - t.taikoState
 	// Load the meta objects in range [otail+1, ntail]
-	for otail := t.tailLayer.getTailID(); otail < ntail; otail++ {
+	tailID := t.tailLayer.getTailID()
+	for otail := tailID; otail < ntail; otail++ {
 		nodes, err := t.loadDiffLayer(otail)
 		if err != nil {
 			return err
 		}
 		t.tailLayer.commit(nodes.nodes)
-		t.tailLayer.setTailID(otail + 1)
+		t.tailLayer.setTailID(otail)
+		// Delete the tail taiko layer.
+		rawdb.DeleteNodeHistoryPrefix(t.diskdb, otail)
+	}
+
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		for otail := tailID; otail < ntail; otail++ {
+			// Delete the tail taiko layer.
+			rawdb.DeleteNodeHistoryPrefix(t.diskdb, otail)
+		}
+	}()
+
+	// delete the pre area owner paths.
+	if tailID > 1000 {
+		t.wg.Add(1)
+		go func() {
+			defer t.wg.Done()
+			areaID := tailID/batchSize - 1
+			for owner, subset := range t.tailLayer.nodes {
+				for path := range subset {
+					key := taikoKey(owner, []byte(path), areaID)
+					if !rawdb.HasOwnerPath(t.diskdb, key) {
+						break
+					}
+					rawdb.DeleteOwnerPath(t.diskdb, key)
+				}
+			}
+		}()
 	}
 
 	// Truncate the taiko metas
