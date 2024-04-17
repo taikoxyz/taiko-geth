@@ -132,7 +132,7 @@ func (t *taikoCache) getTailLayer() *tailLayer {
 
 func (t *taikoCache) getLatestIDByPath(owner common.Hash, path []byte, startID uint64) (uint64, error) {
 	tailID := t.tailLayer.getTailID()
-	for areaID := startID; areaID >= tailID; areaID -= batchSize {
+	for areaID := startID; areaID > tailID; areaID -= batchSize {
 		paths, err := t.loadOwnerPaths(taikoKey(owner, path, areaID))
 		if err != nil {
 			return 0, err
@@ -187,7 +187,7 @@ func (t *taikoCache) truncateFromTail(latestID uint64) error {
 	ntail := latestID - t.taikoState
 	// Load the meta objects in range [otail+1, ntail]
 	tailID := t.tailLayer.getTailID()
-	for otail := tailID; otail < ntail; otail++ {
+	for otail := tailID + 1; otail < ntail; otail++ {
 		nodes, err := t.loadDiffLayer(otail)
 		if err != nil {
 			return err

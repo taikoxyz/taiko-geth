@@ -153,17 +153,13 @@ type tailLayer struct {
 }
 
 func newTailLayer(diskdb ethdb.Database, dirtySize, cleanSize int) *tailLayer {
-	tailID := rawdb.ReadTaikoTailID(diskdb)
-	if tailID == 0 {
-		tailID = 1
-	}
 	layer := &tailLayer{
 		limit:  uint64(dirtySize),
 		diskdb: diskdb,
 		cleans: fastcache.New(cleanSize),
 		nodes:  make(map[common.Hash]map[string]*trienode.Node),
 	}
-	layer.tailID.Store(tailID)
+	layer.tailID.Store(rawdb.ReadTaikoTailID(diskdb))
 
 	return layer
 }
