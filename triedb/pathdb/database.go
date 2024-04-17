@@ -434,7 +434,9 @@ func (db *Database) Close() error {
 
 	// CHANGE(TAIKO)
 	if db.taikoCache != nil {
-		db.taikoCache.Close()
+		if err := db.taikoCache.Close(); err != nil {
+			log.Error("failed to close taiko cache", "err", err)
+		}
 	}
 
 	// Close the attached state history freezer.

@@ -2,7 +2,6 @@ package pathdb
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -21,7 +21,7 @@ import (
 )
 
 type cacheInterface interface {
-	getLatestIDByPath(key []byte, startID uint64) (uint64, error)
+	getLatestIDByPath(owner common.Hash, path []byte, startID uint64) (uint64, error)
 	loadDiffLayer(id uint64) (*taikoMeta, error)
 	getTailLayer() *tailLayer
 }
@@ -43,19 +43,20 @@ func (dl *taikoLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]
 	tLayer := dl.getTailLayer()
 	for layerID := dl.id; ; layerID-- {
 		tailID := tLayer.getTailID()
+		log.Info("node message", "owner", owner.String(), "path", hexutil.Encode(path), "layerID", layerID, "tailID", tailID)
 		if layerID <= tailID {
 			break
 		}
 
 		// use `id < tailID` aims to make sure the latest node is not in the diff layer.
-		id, err := dl.getLatestIDByPath(taikoKey(owner, path, layerID), layerID)
-		if errors.Is(err, pathLatestIDError) || id < tailID {
-			break
-		}
+		id, err := dl.getLatestIDByPath(owner, path, layerID)
 		if err != nil {
 			return nil, err
 		}
-		log.Warn("node message", "owner", owner.String(), "layerID", layerID, "id", id)
+		if id <= tailID {
+			break
+		}
+		//log.Warn("node message", "owner", owner.String(), "layerID", layerID, "id", id)
 		node, err := dl.loadDiffLayer(id)
 		if err != nil {
 			return nil, err
@@ -68,7 +69,7 @@ func (dl *taikoLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]
 				// If the trie node is not hash matched, or marked as removed,
 				// bubble up an error here. It shouldn't happen at all.
 				if n.Hash != hash {
-					log.Error("Unexpected trie node in diff layer", "owner", owner, "path", path, "expect", hash, "got", n.Hash)
+					log.Error("taiko layer unexpected trie node in diff layer", "owner", owner, "path", path, "expect", hash, "got", n.Hash)
 					return nil, fmt.Errorf("unexpected trie node in diff layer: %x", hash)
 				}
 				return n.Blob, nil
@@ -183,7 +184,7 @@ func (t *tailLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]by
 	if ok {
 		if node, ok := n[string(path)]; ok {
 			if node.Hash != hash {
-				log.Error("Unexpected trie node in tail layer", "owner", owner, "path", path, "expect", hash, "got", node.Hash)
+				log.Error("tail layer unexpected trie node in tail layer", "owner", owner, "path", path, "expect", hash, "got", node.Hash)
 				return nil, fmt.Errorf("unexpected trie node in tail layer: %x", hash)
 			}
 			return node.Blob, nil
@@ -211,7 +212,7 @@ func (t *tailLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]by
 		nBlob, nHash = rawdb.ReadTailStorageTrieNode(t.diskdb, owner, path)
 	}
 	if nHash != hash {
-		log.Error("Unexpected trie node in disk", "owner", owner, "path", path, "expect", hash, "got", nHash)
+		log.Error("tail layer unexpected trie node in disk", "owner", owner, "path", path, "expect", hash, "got", nHash)
 		return nil, newUnexpectedNodeError("disk", hash, nHash, owner, path, nBlob)
 	}
 	if len(nBlob) > 0 {
@@ -305,7 +306,7 @@ func (t *tailLayer) flush(force bool) error {
 	if err := batch.Write(); err != nil {
 		return err
 	}
-	log.Warn("Persisted pathdb nodes", "nodes", len(t.nodes), "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
+	log.Info("Persisted pathdb nodes", "tail_id", t.tailID.Load(), "nodes", len(t.nodes), "bytes", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
 	t.reset()
 	return nil
 }

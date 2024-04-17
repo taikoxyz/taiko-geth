@@ -1,6 +1,7 @@
 package pathdb
 
 import (
+	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -103,6 +104,9 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 func (t *taikoCache) Close() error {
 	// Set the readonly flag.
 	t.readonly.Store(true)
+
+	log.Info("closing taiko cache ...")
+
 	// Truncate the taiko metas
 	err := t.tailLayer.flush(true)
 	if err != nil {
@@ -126,12 +130,27 @@ func (t *taikoCache) getTailLayer() *tailLayer {
 	return t.tailLayer
 }
 
-func (t *taikoCache) getLatestIDByPath(key []byte, startID uint64) (uint64, error) {
-	paths, err := t.loadOwnerPaths(key)
-	if err != nil {
+func (t *taikoCache) getLatestIDByPath(owner common.Hash, path []byte, startID uint64) (uint64, error) {
+	tailID := t.tailLayer.getTailID()
+	for areaID := startID; areaID >= tailID; areaID -= batchSize {
+		paths, err := t.loadOwnerPaths(taikoKey(owner, path, areaID))
+		if err != nil {
+			return 0, err
+		}
+		if len(paths.idList) == 0 {
+			continue
+		}
+		latestID, err := paths.getLatestID(startID)
+		if err == nil {
+			return latestID, nil
+		}
+		if errors.Is(err, pathLatestIDError) {
+			continue
+		}
 		return 0, err
 	}
-	return paths.getLatestID(startID)
+
+	return tailID, nil
 }
 
 func (t *taikoCache) loadOwnerPaths(key []byte) (*ownerPath, error) {
@@ -178,15 +197,6 @@ func (t *taikoCache) truncateFromTail(latestID uint64) error {
 		// Delete the tail taiko layer.
 		rawdb.DeleteNodeHistoryPrefix(t.diskdb, otail)
 	}
-
-	t.wg.Add(1)
-	go func() {
-		defer t.wg.Done()
-		for otail := tailID; otail < ntail; otail++ {
-			// Delete the tail taiko layer.
-			rawdb.DeleteNodeHistoryPrefix(t.diskdb, otail)
-		}
-	}()
 
 	// delete the pre area owner paths.
 	if tailID > 1000 {
