@@ -16,6 +16,11 @@ var (
 		Name:  "taiko",
 		Usage: "Taiko network",
 	}
+	TaikoStateFlag = cli.Uint64Flag{
+		Name:  "taiko.state",
+		Usage: "Number of recent blocks to retain state history for when `--taiko` is enabled",
+		Value: 3_000_000,
+	}
 )
 
 // RegisterTaikoAPIs initializes and registers the Taiko RPC APIs.

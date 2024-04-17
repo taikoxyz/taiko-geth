@@ -203,6 +203,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			Preimages:           config.Preimages,
 			StateHistory:        config.StateHistory,
 			StateScheme:         scheme,
+			// CHANGE(TAIKO): Add TaikoState to cacheConfig
+			TaikoState: config.TaikoState,
 		}
 	)
 	// Override the chain config with provided settings.

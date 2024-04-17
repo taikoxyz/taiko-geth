@@ -86,6 +86,8 @@ type layer interface {
 
 // Config contains the settings for database.
 type Config struct {
+	// CHANGE(TAIKO): Add the taiko history.
+	TaikoState     uint64 // Number of blocks from head whose taiko histories are reserved.
 	StateHistory   uint64 // Number of recent blocks to maintain state history for
 	CleanCacheSize int    // Maximum memory allowance (in bytes) for caching clean nodes
 	DirtyCacheSize int    // Maximum memory allowance (in bytes) for caching dirty nodes
@@ -136,6 +138,8 @@ type Database struct {
 	tree       *layerTree               // The group for all known layers
 	freezer    *rawdb.ResettableFreezer // Freezer for storing trie histories, nil possible in tests
 	lock       sync.RWMutex             // Lock to prevent mutations from happening at the same time
+	// CHANGE(TAIKO): Add the taiko cache.
+	taikoCache *taikoCache
 }
 
 // New attempts to load an already existing layer from a persistent key-value
@@ -203,6 +207,12 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 			log.Crit("Failed to disable database", "err", err) // impossible to happen
 		}
 	}
+
+	// CHANGE(TAIKO): Initialize the taiko cache.
+	if config.TaikoState > 0 {
+		db.taikoCache = newTaikoCache(config, diskdb)
+	}
+
 	log.Warn("Path-based state scheme is an experimental feature")
 	return db
 }
@@ -210,6 +220,10 @@ func New(diskdb ethdb.Database, config *Config) *Database {
 // Reader retrieves a layer belonging to the given state root.
 func (db *Database) Reader(root common.Hash) (layer, error) {
 	l := db.tree.get(root)
+	// CHANGE(TAIKO): Retrieve the layer from the taiko cache.
+	if l == nil && db.taikoCache != nil {
+		l = db.taikoCache.Reader(root)
+	}
 	if l == nil {
 		return nil, fmt.Errorf("state %#x is not available", root)
 	}
@@ -417,6 +431,11 @@ func (db *Database) Close() error {
 
 	// Release the memory held by clean cache.
 	db.tree.bottom().resetCache()
+
+	// CHANGE(TAIKO)
+	if db.taikoCache != nil {
+		db.taikoCache.Close()
+	}
 
 	// Close the attached state history freezer.
 	if db.freezer == nil {

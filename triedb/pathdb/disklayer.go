@@ -172,6 +172,13 @@ func (dl *diskLayer) commit(bottom *diffLayer, force bool) (*diskLayer, error) {
 	dl.lock.Lock()
 	defer dl.lock.Unlock()
 
+	// CHANGE(TAIKO): Record the diff layer for the taiko cache.
+	if dl.db.taikoCache != nil {
+		if err := dl.db.taikoCache.recordDiffLayer(bottom); err != nil {
+			log.Error("Failed to record diff layer", "id", bottom.id, "err", err)
+		}
+	}
+
 	// Construct and store the state history first. If crash happens after storing
 	// the state history but without flushing the corresponding states(journal),
 	// the stored state history will be truncated from head in the next restart.

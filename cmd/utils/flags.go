@@ -1653,6 +1653,13 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	if ctx.IsSet(StateSchemeFlag.Name) {
 		cfg.StateScheme = ctx.String(StateSchemeFlag.Name)
 	}
+	// CHANGE(TAIKO): when taiko.state and taiko flags are set, use the pathdb cache.
+	if ctx.IsSet(TaikoStateFlag.Name) && ctx.IsSet(TaikoFlag.Name) {
+		if cfg.StateScheme != rawdb.PathScheme {
+			log.Warn("The flag --taiko.state is available, but --state.scheme is not 'pathdb', using 'pathdb' scheme or the flag won't work")
+		}
+		cfg.TaikoState = ctx.Uint64(TaikoStateFlag.Name)
+	}
 	// Parse transaction history flag, if user is still using legacy config
 	// file with 'TxLookupLimit' configured, copy the value to 'TransactionHistory'.
 	if cfg.TransactionHistory == ethconfig.Defaults.TransactionHistory && cfg.TxLookupLimit != ethconfig.Defaults.TxLookupLimit {
