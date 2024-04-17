@@ -2,9 +2,10 @@ package pathdb
 
 import (
 	"bytes"
+	"testing"
+
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestUint64(t *testing.T) {
