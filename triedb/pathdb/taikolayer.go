@@ -34,7 +34,7 @@ type taikoLayer struct {
 func newTaikoLayer(t *taikoCache, root common.Hash) (*taikoLayer, error) {
 	id := rawdb.ReadStateID(t.diskdb, root)
 	if id == nil {
-		return nil, fmt.Errorf("id not found %x", root)
+		return nil, fmt.Errorf("id not found when create taiko layer, root: %x", root)
 	}
 	return &taikoLayer{cacheInterface: t, id: *id}, nil
 }
@@ -43,7 +43,7 @@ func (dl *taikoLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]
 	tLayer := dl.getTailLayer()
 	for layerID := dl.id; ; layerID-- {
 		tailID := tLayer.getTailID()
-		log.Info("node message", "owner", owner.String(), "path", hexutil.Encode(path), "layerID", layerID, "tailID", tailID)
+		log.Debug("taiko layer node message", "owner", owner.String(), "path", hexutil.Encode(path), "layerID", layerID, "tailID", tailID)
 		if layerID <= tailID {
 			break
 		}
