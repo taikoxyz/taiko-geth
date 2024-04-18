@@ -2,6 +2,7 @@ package pathdb
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -75,6 +76,10 @@ func (dl *taikoLayer) Node(owner common.Hash, path []byte, hash common.Hash) ([]
 				return n.Blob, nil
 			}
 		}
+	}
+
+	if tLayer.getTailID() == 0 {
+		return nil, errors.New("unexpected trie node in tail layer")
 	}
 
 	return tLayer.Node(owner, path, hash)

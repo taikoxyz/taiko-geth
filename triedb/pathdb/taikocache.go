@@ -132,8 +132,12 @@ func (t *taikoCache) getTailLayer() *tailLayer {
 
 func (t *taikoCache) getLatestIDByPath(owner common.Hash, path []byte, startID uint64) (uint64, error) {
 	tailID := t.tailLayer.getTailID()
-	for areaID := startID; areaID > tailID; areaID -= batchSize {
-		paths, err := t.loadOwnerPaths(taikoKey(owner, path, areaID))
+	minAreaID := tailID / batchSize
+	if minAreaID > 0 {
+		minAreaID -= 1
+	}
+	for areaID := startID / batchSize; areaID >= minAreaID; areaID -= 1 {
+		paths, err := t.loadOwnerPaths(taikoKey(owner, path, areaID*batchSize))
 		if err != nil {
 			return 0, err
 		}
@@ -187,7 +191,7 @@ func (t *taikoCache) truncateFromTail(latestID uint64) error {
 	ntail := latestID - t.taikoState
 	// Load the meta objects in range [otail+1, ntail]
 	tailID := t.tailLayer.getTailID()
-	for otail := tailID + 1; otail < ntail; otail++ {
+	for otail := tailID + 1; otail <= ntail; otail++ {
 		nodes, err := t.loadDiffLayer(otail)
 		if err != nil {
 			return err
@@ -199,14 +203,14 @@ func (t *taikoCache) truncateFromTail(latestID uint64) error {
 	}
 
 	// delete the pre area owner paths.
-	if tailID > batchSize {
+	if tailID/batchSize >= 2 {
 		t.wg.Add(1)
 		go func() {
 			defer t.wg.Done()
-			areaID := tailID/batchSize - 1
+			areaID := tailID/batchSize - 2
 			for owner, subset := range t.tailLayer.nodes {
 				for path := range subset {
-					key := taikoKey(owner, []byte(path), areaID)
+					key := taikoKey(owner, []byte(path), areaID*batchSize)
 					if !rawdb.HasOwnerPath(t.diskdb, key) {
 						break
 					}
