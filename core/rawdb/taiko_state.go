@@ -9,11 +9,12 @@ import (
 )
 
 var (
-	taikoTailID       = []byte(":t:t-")
-	taikoIDListPrefix = []byte(":t:o-")
-	tailAccountPreFix = []byte(":t:a-")
-	tailStoragePreFix = []byte(":t:s-")
-	nodeHistoryPrefix = []byte(":t:h-")
+	taikoTailID        = []byte(":t:t-")
+	taikoIDListPrefix  = []byte(":t:o-")
+	tailAccountPreFix  = []byte(":t:a-")
+	tailStoragePreFix  = []byte(":t:s-")
+	nodeHistoryPrefix  = []byte(":t:h-")
+	taikoStateIDPrefix = []byte(":t:i-")
 )
 
 func ReadTailAccountTrieNode(db ethdb.KeyValueReader, path []byte) ([]byte, common.Hash) {
@@ -113,5 +114,28 @@ func WriteNodeHistoryPrefix(db ethdb.KeyValueWriter, id uint64, data []byte) {
 func DeleteNodeHistoryPrefix(db ethdb.KeyValueWriter, id uint64) {
 	if err := db.Delete(append(nodeHistoryPrefix, encodeBlockNumber(id)...)); err != nil {
 		log.Crit("DeleteNodeHistoryPrefix failed", "err", err)
+	}
+}
+
+func ReadTaikoStateID(db ethdb.KeyValueReader, root common.Hash) *uint64 {
+	data, err := db.Get(append(taikoStateIDPrefix, root[:]...))
+	if err != nil || len(data) == 0 {
+		return nil
+	}
+	number := binary.BigEndian.Uint64(data)
+	return &number
+}
+
+func WriteTaikoStateID(db ethdb.KeyValueWriter, root common.Hash, id uint64) {
+	var buff [8]byte
+	binary.BigEndian.PutUint64(buff[:], id)
+	if err := db.Put(append(taikoStateIDPrefix, root[:]...), buff[:]); err != nil {
+		log.Crit("WriteTaikoStateID failed", "err", err)
+	}
+}
+
+func DeleteTaikoStateID(db ethdb.KeyValueWriter, root common.Hash) {
+	if err := db.Delete(append(taikoStateIDPrefix, root[:]...)); err != nil {
+		log.Crit("DeleteTaikoStateID failed", "err", err)
 	}
 }

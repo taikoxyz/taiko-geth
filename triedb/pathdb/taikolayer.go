@@ -33,7 +33,7 @@ type taikoLayer struct {
 }
 
 func newTaikoLayer(t *taikoCache, root common.Hash) (*taikoLayer, error) {
-	id := rawdb.ReadStateID(t.diskdb, root)
+	id := rawdb.ReadTaikoStateID(t.diskdb, root)
 	if id == nil {
 		return nil, fmt.Errorf("id not found when create taiko layer, root: %x", root)
 	}
@@ -102,14 +102,26 @@ func (dl *taikoLayer) journal(w io.Writer) error {
 }
 
 type taikoMeta struct {
+	root  common.Hash
+	block uint64
+	id    uint64
 	nodes map[common.Hash]map[string]*trienode.Node
 }
 
-func encodeNodes(nodes map[common.Hash]map[string]*trienode.Node) ([]byte, error) {
+func encodeLayer(lyer *diffLayer) ([]byte, error) {
 	w := new(bytes.Buffer)
+
+	// Write the root hash and block number
+	if err := rlp.Encode(w, lyer.root); err != nil {
+		return nil, err
+	}
+	// Write the block number
+	if err := rlp.Encode(w, lyer.block); err != nil {
+		return nil, err
+	}
 	// Write the accumulated trie nodes into buffer
-	res := make([]journalNodes, 0, len(nodes))
-	for owner, subset := range nodes {
+	res := make([]journalNodes, 0, len(lyer.nodes))
+	for owner, subset := range lyer.nodes {
 		entry := journalNodes{Owner: owner}
 		for path, node := range subset {
 			entry.Nodes = append(entry.Nodes, journalNode{Path: []byte(path), Blob: node.Blob})
@@ -122,8 +134,17 @@ func encodeNodes(nodes map[common.Hash]map[string]*trienode.Node) ([]byte, error
 	return w.Bytes(), nil
 }
 
-func decodeNodes(data []byte) (map[common.Hash]map[string]*trienode.Node, error) {
+func decodeLayer(data []byte) (*diffLayer, error) {
 	r := rlp.NewStream(bytes.NewReader(data), 0)
+
+	var root common.Hash
+	if err := r.Decode(&root); err != nil {
+		return nil, err
+	}
+	var block uint64
+	if err := r.Decode(&block); err != nil {
+		return nil, err
+	}
 	// Read in-memory trie nodes from journal
 	var encoded []journalNodes
 	if err := r.Decode(&encoded); err != nil {
@@ -141,7 +162,11 @@ func decodeNodes(data []byte) (map[common.Hash]map[string]*trienode.Node, error)
 		}
 		nodes[entry.Owner] = subset
 	}
-	return nodes, nil
+	return &diffLayer{
+		root:  root,
+		block: block,
+		nodes: nodes,
+	}, nil
 }
 
 type tailLayer struct {
