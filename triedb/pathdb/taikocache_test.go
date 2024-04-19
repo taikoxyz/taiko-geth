@@ -14,9 +14,7 @@ import (
 )
 
 type taikoTester struct {
-	db     ethdb.Database
-	owners map[common.Hash][]uint64
-	paths  map[string][]uint64
+	db ethdb.Database
 
 	layers     []*diffLayer
 	taikoCache *taikoCache
