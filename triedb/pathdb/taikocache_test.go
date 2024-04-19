@@ -2,6 +2,7 @@ package pathdb
 
 import (
 	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -13,8 +14,11 @@ import (
 )
 
 type taikoTester struct {
-	db         ethdb.Database
-	lyers      []*diffLayer
+	db     ethdb.Database
+	owners map[common.Hash][]uint64
+	paths  map[string][]uint64
+
+	layers     []*diffLayer
 	taikoCache *taikoCache
 
 	t *testing.T
@@ -37,13 +41,16 @@ func fillLayers(startID uint64, count int) []*diffLayer {
 	lyers := make([]*diffLayer, 0, count)
 	for i := 0; i < count; i, startID = i+1, startID+1 {
 		nodes := make(map[common.Hash]map[string]*trienode.Node)
-		nodes[common.Hash{}] = make(map[string]*trienode.Node)
-		for i := 0; i < 200; i++ {
+		for j := 0; j < 20; j++ {
 			var (
-				path = testutil.RandBytes(32)
-				node = testutil.RandomNode()
+				path  = testutil.RandBytes(1)
+				node  = testutil.RandomNode()
+				owner = common.BigToHash(big.NewInt(int64(j)))
 			)
-			nodes[common.Hash{}][string(path)] = trienode.New(node.Hash, node.Blob)
+			if _, ok := nodes[owner]; !ok {
+				nodes[owner] = make(map[string]*trienode.Node)
+			}
+			nodes[owner][string(path)] = trienode.New(node.Hash, node.Blob)
 		}
 		lyers = append(lyers, &diffLayer{
 			id:    startID,
@@ -71,11 +78,11 @@ func TestTaikoCache_recordLayers(t *testing.T) {
 	}
 	for _, val := range structTest {
 		tester := newTaikoTester(t, val.taikoState)
-		tester.lyers = fillLayers(1, int(val.fillCount))
+		tester.layers = fillLayers(1, int(val.fillCount))
 
 		blocks := make(map[uint64]common.Hash, val.fillCount)
 
-		for _, layer := range tester.lyers {
+		for _, layer := range tester.layers {
 			blocks[layer.id] = layer.root
 			assert.NoError(t, tester.taikoCache.recordDiffLayer(layer))
 		}
@@ -83,7 +90,7 @@ func TestTaikoCache_recordLayers(t *testing.T) {
 		for id := uint64(1); id < val.fillCount; id++ {
 			l := tester.taikoCache.Reader(blocks[id])
 			data := rawdb.ReadNodeHistoryPrefix(tester.db, id)
-			if val.taikoState < val.fillCount && id-1 < val.fillCount-val.taikoState {
+			if val.taikoState < val.fillCount && id <= val.fillCount-val.taikoState {
 				assert.Equal(t, 0, len(data))
 				assert.Equal(t, nil, l)
 			} else {

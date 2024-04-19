@@ -22,8 +22,8 @@ type taikoCache struct {
 
 	tailLayer *tailLayer
 
-	ownerPaths *lru.Cache[string, *ownerPath]
-	taikoMetas *lru.Cache[uint64, *taikoMeta]
+	ownerPaths *lru.Cache[string, *pathIndex]
+	taikoMetas *lru.Cache[uint64, *metaLayer]
 
 	tm       time.Time
 	wg       sync.WaitGroup
@@ -40,8 +40,8 @@ func newTaikoCache(config *Config, diskdb ethdb.Database) *taikoCache {
 		diskdb: diskdb,
 
 		tailLayer:  newTailLayer(diskdb, config.DirtyCacheSize, config.CleanCacheSize),
-		ownerPaths: lru.NewCache[string, *ownerPath](500),
-		taikoMetas: lru.NewCache[uint64, *taikoMeta](10000),
+		ownerPaths: lru.NewCache[string, *pathIndex](500),
+		taikoMetas: lru.NewCache[uint64, *metaLayer](10000),
 
 		tm: time.Now(),
 	}
@@ -70,13 +70,13 @@ func (t *taikoCache) recordDiffLayer(lyer *diffLayer) error {
 
 	for owner, subset := range lyer.nodes {
 		for path := range subset {
-			paths, err := t.loadOwnerPaths(taikoKey(owner, []byte(path), lyer.id))
+			paths, err := t.loadPathIndex(taikoKey(owner, []byte(path), lyer.id))
 			if err != nil {
 				return err
 			}
 			paths.addPath(lyer.id)
 			// if tail id is updated then truncate the tail.
-			if err = paths.savePaths(batch); err != nil {
+			if err = paths.savePathIndex(batch); err != nil {
 				return err
 			}
 		}
@@ -134,11 +134,8 @@ func (t *taikoCache) getTailLayer() *tailLayer {
 func (t *taikoCache) getLatestIDByPath(owner common.Hash, path []byte, startID uint64) (uint64, error) {
 	tailID := t.tailLayer.getTailID()
 	minAreaID := tailID / batchSize
-	if minAreaID > 0 {
-		minAreaID -= 1
-	}
 	for areaID := startID / batchSize; areaID >= minAreaID; areaID -= 1 {
-		paths, err := t.loadOwnerPaths(taikoKey(owner, path, areaID*batchSize))
+		paths, err := t.loadPathIndex(taikoKey(owner, path, areaID*batchSize))
 		if err != nil {
 			return 0, err
 		}
@@ -158,12 +155,12 @@ func (t *taikoCache) getLatestIDByPath(owner common.Hash, path []byte, startID u
 	return tailID, nil
 }
 
-func (t *taikoCache) loadOwnerPaths(key []byte) (*ownerPath, error) {
+func (t *taikoCache) loadPathIndex(key []byte) (*pathIndex, error) {
 	paths, ok := t.ownerPaths.Get(string(key))
 	if !ok {
 		// load paths from disk.
 		var err error
-		paths, err = loadPaths(t.diskdb, key)
+		paths, err = loadPathIndex(t.diskdb, key)
 		if err != nil {
 			return nil, err
 		}
@@ -172,14 +169,14 @@ func (t *taikoCache) loadOwnerPaths(key []byte) (*ownerPath, error) {
 	return paths, nil
 }
 
-func (t *taikoCache) loadDiffLayer(id uint64) (*taikoMeta, error) {
+func (t *taikoCache) loadDiffLayer(id uint64) (*metaLayer, error) {
 	if !t.taikoMetas.Contains(id) {
 		var err error
 		lyer, err := decodeLayer(rawdb.ReadNodeHistoryPrefix(t.diskdb, id))
 		if err != nil {
 			return nil, err
 		}
-		t.taikoMetas.Add(id, &taikoMeta{
+		t.taikoMetas.Add(id, &metaLayer{
 			root:  lyer.root,
 			block: lyer.block,
 			id:    id,
@@ -219,10 +216,10 @@ func (t *taikoCache) truncateFromTail(latestID uint64) error {
 			for owner, subset := range t.tailLayer.nodes {
 				for path := range subset {
 					key := taikoKey(owner, []byte(path), areaID*batchSize)
-					if !rawdb.HasOwnerPath(t.diskdb, key) {
+					if !rawdb.HasPathIndex(t.diskdb, key) {
 						break
 					}
-					rawdb.DeleteOwnerPath(t.diskdb, key)
+					rawdb.DeletePathIndex(t.diskdb, key)
 				}
 			}
 		}()

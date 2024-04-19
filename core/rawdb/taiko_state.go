@@ -10,7 +10,7 @@ import (
 
 var (
 	taikoTailID        = []byte(":t:t-")
-	taikoIDListPrefix  = []byte(":t:o-")
+	taikoIndexPrefix   = []byte(":t:o-")
 	tailAccountPreFix  = []byte(":t:a-")
 	tailStoragePreFix  = []byte(":t:s-")
 	nodeHistoryPrefix  = []byte(":t:h-")
@@ -75,28 +75,28 @@ func WriteTaikoTailID(db ethdb.KeyValueWriter, number uint64) {
 	}
 }
 
-// ReadOwnerPath reads the owner path from the database.
-// key: id + owner + path
-// key: id + path
-func ReadOwnerPath(db ethdb.KeyValueReader, key []byte) []byte {
-	data, _ := db.Get(append(taikoIDListPrefix, key[:]...))
+// ReadPathIndex reads the owner path from the database.
+// key: `owner != null` then equal to id + owner + path
+// key: when `owner == null` key equal to id + path
+func ReadPathIndex(db ethdb.KeyValueReader, key []byte) []byte {
+	data, _ := db.Get(append(taikoIndexPrefix, key[:]...))
 	return data
 }
 
-func WriteOwnerPath(db ethdb.KeyValueWriter, key, data []byte) {
-	if err := db.Put(append(taikoIDListPrefix, key[:]...), data); err != nil {
-		log.Crit("WriteOwnerPath failed", "err", err)
+func WritePathIndex(db ethdb.KeyValueWriter, key, data []byte) {
+	if err := db.Put(append(taikoIndexPrefix, key[:]...), data); err != nil {
+		log.Crit("WritePathIndex failed", "err", err)
 	}
 }
 
-func HasOwnerPath(db ethdb.KeyValueReader, key []byte) bool {
-	ok, _ := db.Has(append(taikoIDListPrefix, key[:]...))
+func HasPathIndex(db ethdb.KeyValueReader, key []byte) bool {
+	ok, _ := db.Has(append(taikoIndexPrefix, key[:]...))
 	return ok
 }
 
-func DeleteOwnerPath(db ethdb.KeyValueWriter, key []byte) {
-	if err := db.Delete(append(taikoIDListPrefix, key[:]...)); err != nil {
-		log.Crit("DeleteOwnerPath failed", "err", err)
+func DeletePathIndex(db ethdb.KeyValueWriter, key []byte) {
+	if err := db.Delete(append(taikoIndexPrefix, key[:]...)); err != nil {
+		log.Crit("DeletePathIndex failed", "err", err)
 	}
 }
 

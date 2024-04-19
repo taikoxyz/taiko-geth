@@ -23,7 +23,7 @@ import (
 
 type cacheInterface interface {
 	getLatestIDByPath(owner common.Hash, path []byte, startID uint64) (uint64, error)
-	loadDiffLayer(id uint64) (*taikoMeta, error)
+	loadDiffLayer(id uint64) (*metaLayer, error)
 	getTailLayer() *tailLayer
 }
 
@@ -101,7 +101,7 @@ func (dl *taikoLayer) journal(w io.Writer) error {
 	panic("unimplemented")
 }
 
-type taikoMeta struct {
+type metaLayer struct {
 	root  common.Hash
 	block uint64
 	id    uint64

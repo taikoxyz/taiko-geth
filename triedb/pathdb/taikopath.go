@@ -19,12 +19,12 @@ var (
 	pathLatestIDError = fmt.Errorf("latest id not found")
 )
 
-type ownerPath struct {
+type pathIndex struct {
 	key    []byte
 	idList []uint64
 }
 
-func (p *ownerPath) getLatestID(startID uint64) (uint64, error) {
+func (p *pathIndex) getLatestID(startID uint64) (uint64, error) {
 	ids := p.idList
 	if ids == nil {
 		return 0, fmt.Errorf("id list is nil")
@@ -37,38 +37,38 @@ func (p *ownerPath) getLatestID(startID uint64) (uint64, error) {
 	return 0, pathLatestIDError
 }
 
-func (p *ownerPath) addPath(id uint64) {
+func (p *pathIndex) addPath(id uint64) {
 	p.idList = append(p.idList, id)
 }
 
-type journalUint64 struct {
+type journalIndex struct {
 	IDList []uint64
 }
 
-func loadPaths(diskdb ethdb.Database, key []byte) (*ownerPath, error) {
-	data := rawdb.ReadOwnerPath(diskdb, key)
+func loadPathIndex(diskdb ethdb.Database, key []byte) (*pathIndex, error) {
+	data := rawdb.ReadPathIndex(diskdb, key)
 	if len(data) == 0 {
-		return &ownerPath{
+		return &pathIndex{
 			key:    key,
 			idList: make([]uint64, 0),
 		}, nil
 	}
-	var journal = new(journalUint64)
+	var journal = new(journalIndex)
 	if err := rlp.Decode(bytes.NewReader(data), journal); err != nil {
 		return nil, err
 	}
-	return &ownerPath{
+	return &pathIndex{
 		key:    key,
 		idList: journal.IDList,
 	}, nil
 }
 
-func (p *ownerPath) savePaths(db ethdb.KeyValueWriter) error {
+func (p *pathIndex) savePathIndex(db ethdb.KeyValueWriter) error {
 	w := new(bytes.Buffer)
-	if err := rlp.Encode(w, &journalUint64{IDList: p.idList}); err != nil {
+	if err := rlp.Encode(w, &journalIndex{IDList: p.idList}); err != nil {
 		return err
 	}
-	rawdb.WriteOwnerPath(db, p.key, w.Bytes())
+	rawdb.WritePathIndex(db, p.key, w.Bytes())
 	return nil
 }
 
