@@ -1,6 +1,7 @@
 package pathdb
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -82,12 +83,12 @@ func TestTaikoCache_recordLayers(t *testing.T) {
 		for id := uint64(1); id < val.fillCount; id++ {
 			l := tester.taikoCache.Reader(blocks[id])
 			data := rawdb.ReadNodeHistoryPrefix(tester.db, id)
-			if val.taikoState < val.fillCount && id < val.fillCount-val.taikoState {
+			if val.taikoState < val.fillCount && id-1 < val.fillCount-val.taikoState {
 				assert.Equal(t, 0, len(data))
 				assert.Equal(t, nil, l)
 			} else {
-				assert.Equal(t, true, len(data) > 0)
-				assert.Equal(t, true, l != nil)
+				assert.Equal(t, true, len(data) > 0, fmt.Sprintf("id: %d", id))
+				assert.Equal(t, true, l != nil, fmt.Sprintf("id: %d", id))
 			}
 		}
 		tester.close()
