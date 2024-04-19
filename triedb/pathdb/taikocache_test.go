@@ -11,11 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-type testNode struct {
-	hash common.Hash
-	blob []byte
-}
-
 type taikoTester struct {
 	db         ethdb.Database
 	lyers      []*diffLayer
