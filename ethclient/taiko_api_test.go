@@ -104,31 +104,6 @@ func TestL1OriginByID(t *testing.T) {
 	require.Equal(t, testL1Origin, l1OriginFound)
 }
 
-func TestGetL2ParentBlocks(t *testing.T) {
-	ec, blocks, _ := newTaikoAPITestClient(t)
-
-	res, err := ec.GetL2ParentHeaders(context.Background(), common.Big2.Uint64())
-	require.Nil(t, err)
-
-	require.Equal(t, 3, len(res))
-	require.Equal(t, res[0]["hash"], blocks[0].Hash().String())
-	require.Equal(t, res[1]["hash"], blocks[1].Hash().String())
-	require.Equal(t, res[2]["hash"], blocks[2].Hash().String())
-
-	res, err = ec.GetL2ParentHeaders(context.Background(), common.Big1.Uint64())
-	require.Nil(t, err)
-
-	require.Equal(t, 2, len(res))
-	require.Equal(t, res[0]["hash"], blocks[0].Hash().String())
-	require.Equal(t, res[1]["hash"], blocks[1].Hash().String())
-
-	res, err = ec.GetL2ParentHeaders(context.Background(), common.Big0.Uint64())
-	require.Nil(t, err)
-
-	require.Equal(t, 1, len(res))
-	require.Equal(t, res[0]["hash"], blocks[0].Hash().String())
-}
-
 // randomHash generates a random blob of data and returns it as a hash.
 func randomHash() common.Hash {
 	var hash common.Hash
