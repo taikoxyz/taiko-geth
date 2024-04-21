@@ -17,7 +17,7 @@ jobs:
       - name: Login to GAR
         uses: docker/login-action@v2
         with:
-          registry: us-central1-docker.pkg.dev
+          registry: us-docker.pkg.dev
           username: _json_key
           password: ${{ secrets.GAR_JSON_KEY }}
 
@@ -32,7 +32,7 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: |
-            us-central1-docker.pkg.dev/evmchain/evmchain/taiko-geth
+            us-docker.pkg.dev/evmchain/images/taiko-geth
           tags: |
             type=ref,event=branch
             type=ref,event=pr
