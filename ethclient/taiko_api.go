@@ -40,13 +40,3 @@ func (ec *Client) GetSyncMode(ctx context.Context) (string, error) {
 
 	return res, nil
 }
-
-func (ec *Client) GetL2ParentHeaders(ctx context.Context, blockID uint64) ([]map[string]interface{}, error) {
-	var res []map[string]interface{}
-
-	if err := ec.c.CallContext(ctx, &res, "taiko_getL2ParentHeaders", blockID); err != nil {
-		return nil, err
-	}
-
-	return res, nil
-}

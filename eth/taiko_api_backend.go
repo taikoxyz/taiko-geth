@@ -7,7 +7,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 )
@@ -59,22 +58,6 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	}
 
 	return l1Origin, nil
-}
-
-// Get L2ParentBlocks retrieves the block and 255 parent blocks given a block number.
-func (s *TaikoAPIBackend) GetL2ParentHeaders(blockID uint64) ([]*types.Header, error) {
-	headers := make([]*types.Header, 0, 256)
-	start := 0
-	if blockID > 255 {
-		start = int(blockID - 255)
-	}
-
-	for start <= int(blockID) {
-		headers = append(headers, s.eth.blockchain.GetHeaderByNumber(uint64(start)))
-		start++
-	}
-
-	return headers, nil
 }
 
 // GetSyncMode returns the node sync mode.
