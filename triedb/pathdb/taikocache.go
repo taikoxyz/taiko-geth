@@ -14,9 +14,7 @@ import (
 )
 
 type taikoCache struct {
-	taikoState     uint64 // Number of blocks from head whose taiko histories are reserved.
-	cleanCacheSize int    // Maximum memory allowance (in bytes) for caching clean nodes
-	dirtyCacheSize int    // Maximum memory allowance (in bytes) for caching dirty nodes
+	taikoState uint64 // Number of blocks from head whose taiko histories are reserved.
 
 	diskdb ethdb.Database
 
@@ -33,12 +31,8 @@ type taikoCache struct {
 
 func newTaikoCache(config *Config, diskdb ethdb.Database) *taikoCache {
 	return &taikoCache{
-		taikoState:     config.TaikoState,
-		cleanCacheSize: config.CleanCacheSize,
-		dirtyCacheSize: config.DirtyCacheSize,
-
-		diskdb: diskdb,
-
+		taikoState: config.TaikoState,
+		diskdb:     diskdb,
 		tailLayer:  newTailLayer(diskdb, config.DirtyCacheSize, config.CleanCacheSize),
 		ownerPaths: lru.NewCache[string, *pathIndex](500),
 		taikoMetas: lru.NewCache[uint64, *metaLayer](10000),
