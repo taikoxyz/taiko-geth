@@ -12,6 +12,11 @@ func TestNetworkIDToChainConfigOrDefault(t *testing.T) {
 		wantChainConfig *ChainConfig
 	}{
 		{
+			"taikoMainnetNetworkID",
+			TaikoMainnetNetworkID,
+			TaikoChainConfig,
+		},
+		{
 			"taikoInternalL2ANetworkId",
 			TaikoInternalL2ANetworkID,
 			TaikoChainConfig,

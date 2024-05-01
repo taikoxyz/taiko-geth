@@ -316,6 +316,7 @@ var NetworkNames = map[string]string{
 	SepoliaChainConfig.ChainID.String(): "sepolia",
 	HoleskyChainConfig.ChainID.String(): "holesky",
 	// CHANGE(taiko): add Taiko network name.
+	TaikoMainnetNetworkID.String():     "Taiko",
 	TaikoInternalL2ANetworkID.String(): "Taiko Internal L2A Devnet",
 	TaikoInternalL2BNetworkID.String(): "Taiko Internal L2B Devnet",
 	SnaefellsjokullNetworkID.String():  "Taiko Alpha-1 (Snæfellsjökull)",

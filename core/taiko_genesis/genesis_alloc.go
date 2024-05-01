@@ -30,3 +30,6 @@ var KatlaGenesisAllocJSON []byte
 
 //go:embed hekla.json
 var HeklaGenesisAllocJSON []byte
+
+//go:embed mainnet.json
+var MainnetGenesisAllocJSON []byte
