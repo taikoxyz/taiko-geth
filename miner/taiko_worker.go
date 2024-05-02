@@ -67,7 +67,9 @@ func (w *worker) BuildTransactionsLists(
 		signer = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
 		// Split the pending transactions into locals and remotes, then
 		// fill the block with all available pending transactions.
-		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee)
+		localTxs, remoteTxs    = w.getPendingTxs(localAccounts, baseFee)
+		localsByPriceAndNonce  = newTransactionsByPriceAndNonce(signer, localTxs, baseFee)
+		remotesByPriceAndNonce = newTransactionsByPriceAndNonce(signer, remoteTxs, baseFee)
 	)
 
 	commitTxs := func() (*PreBuiltTxList, error) {
@@ -78,8 +80,18 @@ func (w *worker) BuildTransactionsLists(
 
 		w.commitL2Transactions(
 			env,
-			newTransactionsByPriceAndNonce(signer, localTxs, baseFee),
-			newTransactionsByPriceAndNonce(signer, remoteTxs, baseFee),
+			&transactionsByPriceAndNonce{
+				txs:     localsByPriceAndNonce.txs,
+				heads:   localsByPriceAndNonce.heads,
+				signer:  localsByPriceAndNonce.signer,
+				baseFee: localsByPriceAndNonce.baseFee,
+			},
+			&transactionsByPriceAndNonce{
+				txs:     remotesByPriceAndNonce.txs,
+				heads:   remotesByPriceAndNonce.heads,
+				signer:  remotesByPriceAndNonce.signer,
+				baseFee: remotesByPriceAndNonce.baseFee,
+			},
 			maxBytesPerTxList,
 		)
 
