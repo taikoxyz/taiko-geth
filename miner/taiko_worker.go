@@ -67,9 +67,7 @@ func (w *worker) BuildTransactionsLists(
 		signer = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
 		// Split the pending transactions into locals and remotes, then
 		// fill the block with all available pending transactions.
-		localTxs, remoteTxs    = w.getPendingTxs(localAccounts, baseFee)
-		localsByPriceAndNonce  = newTransactionsByPriceAndNonce(signer, localTxs, baseFee)
-		remotesByPriceAndNonce = newTransactionsByPriceAndNonce(signer, remoteTxs, baseFee)
+		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee)
 	)
 
 	commitTxs := func() (*PreBuiltTxList, error) {
@@ -78,20 +76,22 @@ func (w *worker) BuildTransactionsLists(
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
+		var (
+			locals  = make(map[common.Address][]*txpool.LazyTransaction)
+			remotes = make(map[common.Address][]*txpool.LazyTransaction)
+		)
+
+		for address, txs := range localTxs {
+			locals[address] = txs
+		}
+		for address, txs := range remoteTxs {
+			remotes[address] = txs
+		}
+
 		w.commitL2Transactions(
 			env,
-			&transactionsByPriceAndNonce{
-				txs:     localsByPriceAndNonce.txs,
-				heads:   localsByPriceAndNonce.heads,
-				signer:  localsByPriceAndNonce.signer,
-				baseFee: localsByPriceAndNonce.baseFee,
-			},
-			&transactionsByPriceAndNonce{
-				txs:     remotesByPriceAndNonce.txs,
-				heads:   remotesByPriceAndNonce.heads,
-				signer:  remotesByPriceAndNonce.signer,
-				baseFee: remotesByPriceAndNonce.baseFee,
-			},
+			newTransactionsByPriceAndNonce(signer, locals, baseFee),
+			newTransactionsByPriceAndNonce(signer, remotes, baseFee),
 			maxBytesPerTxList,
 		)
 
