@@ -65,6 +65,9 @@ func (w *worker) BuildTransactionsLists(
 
 	var (
 		signer = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
+		// Split the pending transactions into locals and remotes, then
+		// fill the block with all available pending transactions.
+		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee)
 	)
 
 	commitTxs := func() (*PreBuiltTxList, error) {
@@ -72,10 +75,6 @@ func (w *worker) BuildTransactionsLists(
 		env.txs = []*types.Transaction{}
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
-
-		// Split the pending transactions into locals and remotes, then
-		// fill the block with all available pending transactions.
-		localTxs, remoteTxs := w.getPendingTxs(localAccounts, baseFee)
 
 		w.commitL2Transactions(
 			env,
