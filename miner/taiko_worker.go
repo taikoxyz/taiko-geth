@@ -229,7 +229,7 @@ func (w *worker) commitL2Transactions(
 	for {
 		// If we don't have enough gas for any further transactions then we're done.
 		if env.gasPool.Gas() < params.TxGas {
-			log.Trace("Not enough gas for further transactions", "have", env.gasPool, "want", params.TxGas)
+			log.Warn("Not enough gas for further transactions", "have", env.gasPool, "want", params.TxGas)
 			break
 		}
 
@@ -256,7 +256,7 @@ func (w *worker) commitL2Transactions(
 
 		b, err := encodeAndComporeessTxList(append(env.txs, tx))
 		if err != nil {
-			log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
+			log.Warn("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
 			txs.Pop()
 			continue
 		}
@@ -267,7 +267,7 @@ func (w *worker) commitL2Transactions(
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
 		if tx.Protected() && !w.chainConfig.IsEIP155(env.header.Number) {
-			log.Trace("Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
+			log.Warn("Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", w.chainConfig.EIP155Block)
 
 			txs.Pop()
 			continue
@@ -290,7 +290,7 @@ func (w *worker) commitL2Transactions(
 		default:
 			// Transaction is regarded as invalid, drop all consecutive transactions from
 			// the same sender because of `nonce-too-high` clause.
-			log.Info("Transaction failed, account skipped", "hash", ltx.Hash, "err", err)
+			log.Warn("Transaction failed, account skipped", "hash", ltx.Hash, "err", err)
 			txs.Pop()
 		}
 	}
