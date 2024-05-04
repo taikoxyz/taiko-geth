@@ -2124,6 +2124,9 @@ func DialRPCWithHeaders(endpoint string, headers []string) (*rpc.Client, error) 
 func MakeGenesis(ctx *cli.Context) *core.Genesis {
 	var genesis *core.Genesis
 	switch {
+	// CHANGE(taiko): when --taiko flag is set, use the Taiko genesis.
+	case ctx.IsSet(TaikoFlag.Name):
+		genesis = core.TaikoGenesisBlock(ctx.Uint64(TaikoFlag.Name))
 	case ctx.Bool(MainnetFlag.Name):
 		genesis = core.DefaultGenesisBlock()
 	case ctx.Bool(HoleskyFlag.Name):
