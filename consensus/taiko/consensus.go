@@ -201,6 +201,7 @@ func (t *Taiko) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []
 	} else if headers[index-1].Hash() == headers[index].ParentHash {
 		parent = headers[index-1]
 	}
+
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
 	}
