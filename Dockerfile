@@ -6,15 +6,20 @@ ARG BUILDNUM=""
 # Build Geth in a stock Go builder container
 FROM golang:1.21-alpine as builder
 
+# CHANGE(TAIKO): Set the GOPROXY to use the taiko's private proxy
+RUN go env -w GOMODCACHE=/root/.cache/go-build
+
 RUN apk add --no-cache gcc musl-dev linux-headers git
 
 # Get dependencies - will also be cached if we won't change go.mod/go.sum
 COPY go.mod /go-ethereum/
 COPY go.sum /go-ethereum/
-RUN cd /go-ethereum && go mod download
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    cd /go-ethereum && go mod download
 
 ADD . /go-ethereum
-RUN cd /go-ethereum && go run build/ci.go install -static ./cmd/geth
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    cd /go-ethereum && go run build/ci.go install -static ./cmd/geth
 
 # Pull Geth into a second stage deploy alpine container
 FROM alpine:latest
