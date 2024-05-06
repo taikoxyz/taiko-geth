@@ -44,7 +44,7 @@ jobs:
         id: cache
         with:
           path: |
-            /root/.cache/go-build
+            /tmp/.cache/go-build
           key: cache-${{ hashFiles('Dockerfile') }}
 
       - name: inject cache into docker
@@ -52,7 +52,7 @@ jobs:
         with:
           cache-map: |
             {
-              "/root/.cache/go-build": "/root/.cache/go-build"
+              "/tmp/.cache/go-build": "/tmp/.cache/go-build"
             }
           skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
