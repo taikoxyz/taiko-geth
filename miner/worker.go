@@ -985,13 +985,8 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	}
 	// Set baseFee and GasLimit if we are on an EIP-1559 chain
 	if w.chainConfig.IsLondon(header.Number) {
-		// CHANGE(TAIKO): Set the base fee per gas for the next block.
-		if w.chainConfig.Taiko {
-			if genParams.baseFeePerGas != nil {
-				header.BaseFee = genParams.baseFeePerGas
-			} else {
-				log.Error("Base fee per gas is not set for Taiko protocol")
-			}
+		if w.chainConfig.Taiko && genParams.baseFeePerGas != nil {
+			header.BaseFee = genParams.baseFeePerGas
 		} else {
 			header.BaseFee = eip1559.CalcBaseFee(w.chainConfig, parent)
 			if !w.chainConfig.IsLondon(parent.Number) {
