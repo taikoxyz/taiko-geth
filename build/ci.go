@@ -215,7 +215,7 @@ func doInstall(cmdline []string) {
 	// better disable it. This check isn't the best, it should probably
 	// check for something in env instead.
 	if env.CI && runtime.GOARCH == "arm64" {
-		gobuild.Args = append(gobuild.Args, "-p", "1")
+		gobuild.Args = append(gobuild.Args, "-p", strconv.Itoa(runtime.NumCPU()))
 	}
 	// We use -trimpath to avoid leaking local paths into the built executables.
 	gobuild.Args = append(gobuild.Args, "-trimpath")
