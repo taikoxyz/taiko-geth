@@ -176,7 +176,7 @@ func (w *worker) sealBlockWith(
 			if i == 0 {
 				return nil, fmt.Errorf("anchor tx invalid chain id, expected: %v, actual: %v", w.chainConfig.ChainID, tx.ChainId())
 			} else {
-				log.Debug("Skip an invalid chain id", "hash", tx.Hash(), "expect", w.chainConfig.ChainID, "actual", tx.ChainId())
+				log.Debug("Skip an proposed transaction with invalid chain id", "hash", tx.Hash(), "expect", w.chainConfig.ChainID, "actual", tx.ChainId())
 				continue
 			}
 		}
