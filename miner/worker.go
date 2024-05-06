@@ -964,9 +964,7 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 			}
 			timestamp = parent.Time + 1
 		} else {
-			if parent.Time >= timestamp {
-				return nil, fmt.Errorf("invalid timestamp, parent %d given %d", parent.Time, timestamp)
-			}
+			return nil, fmt.Errorf("invalid timestamp, parent %d given %d", parent.Time, timestamp)
 		}
 	}
 	// Construct the sealing block header.
