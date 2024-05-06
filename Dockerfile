@@ -15,7 +15,7 @@ RUN apk add --no-cache gcc musl-dev linux-headers git
 COPY go.mod /go-ethereum/
 COPY go.sum /go-ethereum/
 RUN --mount=type=cache,target=/tmp/.cache/go-build,sharing=shared \
-    cd /go-ethereum && go mod download
+    cd /go-ethereum && go mod tidy
 
 ADD . /go-ethereum
 RUN --mount=type=cache,target=/tmp/.cache/go-build,sharing=shared \
