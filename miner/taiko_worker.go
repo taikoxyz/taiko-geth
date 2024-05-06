@@ -76,22 +76,10 @@ func (w *worker) BuildTransactionsLists(
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
-		var (
-			locals  = make(map[common.Address][]*txpool.LazyTransaction)
-			remotes = make(map[common.Address][]*txpool.LazyTransaction)
-		)
-
-		for address, txs := range localTxs {
-			locals[address] = txs
-		}
-		for address, txs := range remoteTxs {
-			remotes[address] = txs
-		}
-
 		w.commitL2Transactions(
 			env,
-			newTransactionsByPriceAndNonce(signer, locals, baseFee),
-			newTransactionsByPriceAndNonce(signer, remotes, baseFee),
+			newTransactionsByPriceAndNonce(signer, localTxs, baseFee),
+			newTransactionsByPriceAndNonce(signer, remoteTxs, baseFee),
 			maxBytesPerTxList,
 		)
 
