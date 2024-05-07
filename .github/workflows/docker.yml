@@ -1,14 +1,18 @@
-name: "Push amd64 docker image to GAR"
+name: "Push docker image to GAR"
 
 on:
   push:
-    branches: [ taiko ]
+    branches: [ add_docker_cache ]
     tags:
       - "v*"
 
 jobs:
   push-docker-image:
     runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        platform: [ amd64, arm64 ]
 
     steps:
       - name: Checkout
@@ -39,6 +43,15 @@ jobs:
             type=ref,event=tag
             type=sha
 
+      - name: Cache Go build in arm64
+        uses: actions/cache@v4
+        with:
+          path: |
+            go-build-arm64
+          key: ${{ runner.os }}-go_build-arm64
+          restore-keys: |
+            ${{ runner.os }}-go_build-arm64
+
       - name: Cache Go build in amd64
         uses: actions/cache@v4
         with:
@@ -46,24 +59,27 @@ jobs:
             go-build-amd64
           key: ${{ runner.os }}-go_build-amd64
           restore-keys: |
-            ${{ runner.os }}-go_build-amd64    
+            ${{ runner.os }}-go_build-amd64   
 
       - name: Inject cache into docker
         uses: reproducible-containers/buildkit-cache-dance@v3.1.0
         with:
           cache-map: |
             {
-              "go-build-amd64": "/root/.cache/go-build"
+              "go-build-amd64": "/tmp/gocache-amd64"
+              "go-build-arm64": "/tmp/gocache-arm64"
             }
           skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+
+      - name: Set GOCACHE folder
+        run: |
+          mkdir -p /tmp/gocache-${{ matrix.platform }}
+          echo "GOCACHE=/tmp/gocache-${{ matrix.platform }}" >> $GITHUB_ENV
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          context: .
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64
-          push: false
+          platforms: ${{ matrix.platform }}
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

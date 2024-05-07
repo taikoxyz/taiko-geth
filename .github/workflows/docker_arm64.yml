@@ -2,7 +2,7 @@ name: "Push arm64 docker image to GAR"
 
 on:
   push:
-    branches: [ add_docker_cache ]
+    branches: [ taiko ]
     tags:
       - "v*"
 
