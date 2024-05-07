@@ -42,6 +42,7 @@ jobs:
       - name: Go Build Cache for Docker
         uses: actions/cache@v3
         with:
+          enable-dependency-cache: true
           path: go-build-cache
           key: ${{ runner.os }}-go-build-cache-${{ hashFiles('**/go.sum') }}
 

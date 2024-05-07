@@ -214,8 +214,8 @@ func doInstall(cmdline []string) {
 	// arm64 CI builders are memory-constrained and can't handle concurrent builds,
 	// better disable it. This check isn't the best, it should probably
 	// check for something in env instead.
-	if env.CI && runtime.GOARCH == "arm64" {
-		gobuild.Args = append(gobuild.Args, "-p", "1")
+	if env.CI {
+		gobuild.Args = append(gobuild.Args, "-p", strconv.Itoa(runtime.NumCPU()))
 	}
 	// We use -trimpath to avoid leaking local paths into the built executables.
 	gobuild.Args = append(gobuild.Args, "-trimpath")
