@@ -39,20 +39,21 @@ jobs:
             type=ref,event=tag
             type=sha
 
-      - name: Go Build Cache for Docker
-        uses: actions/cache@v3
+      - name: Cache Go dependencies
+        uses: actions/cache@v2
         with:
-          path: go-build-cache
-          key: arm64_go_cache-${{ hashFiles('Dockerfile') }}
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go_mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go_mod
 
-      - name: inject go-build-cache into docker
-        # v1 was composed of two actions: "inject" and "extract".
-        # v2 is unified to a single action.
-        uses: reproducible-containers/buildkit-cache-dance@v2.1.2
+      - name: Cache Go build
+        uses: actions/cache@v2
         with:
-          cache-map: |
-            "go-build-cache": "/tmp/.cache/go-build"
-          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+          path: ~/go/pkg/go-build
+          key: ${{ runner.os }}-go_build
+          restore-keys: |
+            ${{ runner.os }}-go_build
 
       - name: Build and push
         uses: docker/build-push-action@v2
