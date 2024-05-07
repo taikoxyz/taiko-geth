@@ -2,7 +2,7 @@ name: "Push docker image to GAR"
 
 on:
   push:
-    branches: [ add_docker_cache ]
+    branches: [ add_docker_cache_2 ]
     tags:
       - "v*"
 
@@ -42,14 +42,28 @@ jobs:
       - name: Cache Go build
         uses: actions/cache@v4
         with:
-          path: ~/.cache/go-build
+          enableCrossOsArchive: true
+          path: |
+            go-build
           key: ${{ runner.os }}-go_build
           restore-keys: |
             ${{ runner.os }}-go_build
 
+      - name: Inject cache into docker
+        uses: reproducible-containers/buildkit-cache-dance@v3.1.0
+        with:
+          cache-map: |
+            {
+              "go-build": "/root/.cache/go-build"
+            }
+          skip-extraction: ${{ steps.cache.outputs.cache-hit }}
+
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
+          context: .
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
