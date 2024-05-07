@@ -13,6 +13,8 @@ COPY go.mod /go-ethereum/
 COPY go.sum /go-ethereum/
 RUN cd /go-ethereum && go mod download
 
+RUN echo $GOCACHE
+
 ADD . /go-ethereum
 RUN --mount=type=cache,target=$GOCACHE,sharing=locked \
     cd /go-ethereum && go run build/ci.go install -static ./cmd/geth
