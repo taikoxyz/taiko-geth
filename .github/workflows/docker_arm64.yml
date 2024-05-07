@@ -1,4 +1,4 @@
-name: "Push docker image to GAR"
+name: "Push arm64 docker image to GAR"
 
 on:
   push:
