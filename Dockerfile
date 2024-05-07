@@ -13,8 +13,7 @@ RUN apk add --no-cache gcc musl-dev linux-headers git
 # Get dependencies - will also be cached if we won't change go.mod/go.sum
 COPY go.mod /go-ethereum/
 COPY go.sum /go-ethereum/
-RUN --mount=type=cache,target=/tmp/.cache/go-build \
-    cd /go-ethereum && go mod download
+RUN cd /go-ethereum && go mod download
 
 ADD . /go-ethereum
 RUN --mount=type=cache,target=/tmp/.cache/go-build \
