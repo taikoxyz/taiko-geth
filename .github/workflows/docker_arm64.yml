@@ -2,7 +2,7 @@ name: "Push docker image to GAR"
 
 on:
   push:
-    branches: [ add_docker_cache_2 ]
+    branches: [ add_docker_cache ]
     tags:
       - "v*"
 
