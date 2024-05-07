@@ -1,9 +1,0 @@
-=============== May 7, 2024 (+08) ===============
-23:58:12.416083 log@legend F·NumFile S·FileSize N·Entry C·BadEntry B·BadBlock Ke·KeyError D·DroppedEntry L·Level Q·SeqNum T·TimeElapsed
-23:58:12.439909 db@open opening
-23:58:12.441642 version@stat F·[] S·0B[] Sc·[]
-23:58:12.447497 db@janitor F·2 G·0
-23:58:12.447586 db@open done T·7.618417ms
-=============== May 8, 2024 (+08) ===============
-00:07:01.635308 db@close closing
-00:07:01.635540 db@close done T·232.916µs
