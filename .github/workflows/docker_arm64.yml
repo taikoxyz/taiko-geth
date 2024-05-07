@@ -50,7 +50,7 @@ jobs:
       - name: Cache Go build
         uses: actions/cache@v2
         with:
-          path: ~/go/pkg/go-build
+          path: /tmp/.cache/go-build
           key: ${{ runner.os }}-go_build
           restore-keys: |
             ${{ runner.os }}-go_build
