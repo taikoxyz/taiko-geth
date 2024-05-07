@@ -12,6 +12,7 @@ jobs:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -19,6 +20,19 @@ jobs:
           cache-dependency-path: |
             go.mod
             go.sum
+
+      - name: Cache Go dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/go/pkg/mod
+          key: ${{ runner.os }}-go_mod-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go_mod
+
+      - name: Go mod
+        if: steps.cache-primes.outputs.cache-hit != 'true'
+        run: go mod tidy
+
       - name: Run tests
         run: go test -short ./...
         env:
