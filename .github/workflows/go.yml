@@ -21,14 +21,6 @@ jobs:
             go.mod
             go.sum
 
-      - name: Cache Go dependencies
-        uses: actions/cache@v2
-        with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go_mod-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            ${{ runner.os }}-go_mod
-
       - name: Go mod
         if: steps.cache-primes.outputs.cache-hit != 'true'
         run: go mod tidy

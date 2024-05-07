@@ -39,28 +39,20 @@ jobs:
             type=ref,event=tag
             type=sha
 
-      - name: Cache Go dependencies
+      - name: Cache Go dependencies and build
         uses: actions/cache@v2
         with:
-          path: ~/go/pkg/mod
-          key: ${{ runner.os }}-go_mod-${{ hashFiles('**/go.sum') }}
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: |
-            ${{ runner.os }}-go_mod
-
-      - name: Cache Go build
-        uses: actions/cache@v2
-        with:
-          path: /tmp/.cache/go-build
-          key: ${{ runner.os }}-go_build
-          restore-keys: |
-            ${{ runner.os }}-go_build
+            ${{ runner.os }}-go
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
           context: .
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           platforms: linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
