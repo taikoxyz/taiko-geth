@@ -43,43 +43,32 @@ jobs:
             type=ref,event=tag
             type=sha
 
-      - name: Cache Go build in arm64
+      - name: Cache Go build
         uses: actions/cache@v4
         with:
+          enableCrossOsArchive: true
           path: |
-            go-build-arm64
-          key: ${{ runner.os }}-go_build-arm64
+            go-build-platforms
+          key: ${{ runner.os }}-go_build-platforms
           restore-keys: |
-            ${{ runner.os }}-go_build-arm64
-
-      - name: Cache Go build in amd64
-        uses: actions/cache@v4
-        with:
-          path: |
-            go-build-amd64
-          key: ${{ runner.os }}-go_build-amd64
-          restore-keys: |
-            ${{ runner.os }}-go_build-amd64   
+            ${{ runner.os }}-go_build-platforms
 
       - name: Inject cache into docker
         uses: reproducible-containers/buildkit-cache-dance@v3.1.0
         with:
           cache-map: |
             {
-              "go-build-amd64": "/tmp/gocache-amd64",
-              "go-build-arm64": "/tmp/gocache-arm64"
+              "go-build-platforms": "/root/.cache/go-build"
             }
           skip-extraction: ${{ steps.cache.outputs.cache-hit }}
-
-      - name: Set GOCACHE folder
-        run: |
-          mkdir -p /tmp/gocache-${{ matrix.platform }}
-          echo "GOCACHE=/tmp/gocache-${{ matrix.platform }}" >> $GITHUB_ENV
 
       - name: Build and push
         uses: docker/build-push-action@v2
         with:
-          platforms: ${{ matrix.platform }}
+          context: .
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
