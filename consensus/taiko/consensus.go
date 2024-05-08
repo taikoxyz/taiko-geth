@@ -313,8 +313,8 @@ func (t *Taiko) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 
 // ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchor transaction.
 func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (bool, error) {
-	if tx.Type() != types.DynamicFeeTxType {
-		return false, nil
+	if !tx.IsAnchor() {
+		return false, ErrAnchorTxNotFound
 	}
 
 	if tx.To() == nil || *tx.To() != t.taikoL2Address {
