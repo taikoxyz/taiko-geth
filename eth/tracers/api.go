@@ -658,6 +658,14 @@ func (api *API) traceBlockParallel(ctx context.Context, block *types.Block, stat
 	if threads > len(txs) {
 		threads = len(txs)
 	}
+
+	// CHANGE(TAIKO): mark anchor tx.
+	if len(txs) > 0 {
+		if err := txs[0].MarkAsAnchor(); err != nil {
+			return nil, err
+		}
+	}
+
 	jobs := make(chan *txTraceTask, threads)
 	for th := 0; th < threads; th++ {
 		pend.Add(1)
