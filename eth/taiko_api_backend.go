@@ -3,7 +3,6 @@ package eth
 import (
 	"math/big"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -30,17 +29,9 @@ func (s *TaikoAPIBackend) HeadL1Origin() (*rawdb.L1Origin, error) {
 		return nil, err
 	}
 
-	if blockID == nil {
-		return nil, ethereum.NotFound
-	}
-
 	l1Origin, err := rawdb.ReadL1Origin(s.eth.ChainDb(), blockID)
 	if err != nil {
 		return nil, err
-	}
-
-	if l1Origin == nil {
-		return nil, ethereum.NotFound
 	}
 
 	return l1Origin, nil
@@ -51,10 +42,6 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	l1Origin, err := rawdb.ReadL1Origin(s.eth.ChainDb(), (*big.Int)(blockID))
 	if err != nil {
 		return nil, err
-	}
-
-	if l1Origin == nil {
-		return nil, ethereum.NotFound
 	}
 
 	return l1Origin, nil
