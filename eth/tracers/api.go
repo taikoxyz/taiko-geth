@@ -659,8 +659,8 @@ func (api *API) traceBlockParallel(ctx context.Context, block *types.Block, stat
 		threads = len(txs)
 	}
 
-	// CHANGE(TAIKO): mark anchor tx.
-	if len(txs) > 0 {
+	// CHANGE(taiko): mark the first transaction as anchor transaction.
+	if len(txs) > 0 && api.backend.ChainConfig().Taiko {
 		if err := txs[0].MarkAsAnchor(); err != nil {
 			return nil, err
 		}
