@@ -180,6 +180,11 @@ var (
 		utils.BatchResponseMaxSize,
 	}
 
+	mevCommitApiFlags = []cli.Flag{
+		utils.MevCommitProviderEnabled,
+		utils.MevCommitProviderEndpoint,
+	}
+
 	metricsFlags = []cli.Flag{
 		utils.MetricsEnabledFlag,
 		utils.MetricsEnabledExpensiveFlag,
@@ -244,6 +249,7 @@ func init() {
 	app.Flags = flags.Merge(
 		nodeFlags,
 		rpcFlags,
+		mevCommitApiFlags,
 		consoleFlags,
 		debug.Flags,
 		metricsFlags,

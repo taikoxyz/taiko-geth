@@ -61,6 +61,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/metrics/influxdb"
+	"github.com/ethereum/go-ethereum/mevcommit"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -559,6 +560,20 @@ var (
 		Usage:     `Hash of the block to full sync to (dev testing feature)`,
 		TakesFile: true,
 		Category:  flags.MiscCategory,
+	}
+
+	MevCommitProviderEnabled = &cli.BoolFlag{
+		Name:     "mevcommit.provider_enable",
+		Usage:    "Enable the mevcommit provider node",
+		Category: flags.MevCommitCategory,
+	}
+
+	MevCommitProviderEndpoint = &cli.StringFlag{
+		Name:     "mevcommit.provider_endpoint",
+		Usage:    "Specifies the endpoint URL of the MEV-Commit provider node",
+		EnvVars:  []string{"MEVCOMMIT_PROVIDER_ENDPOINT"},
+		Value:    "",
+		Category: flags.MevCommitCategory,
 	}
 
 	// RPC settings
@@ -1344,6 +1359,13 @@ func SetP2PConfig(ctx *cli.Context, cfg *p2p.Config) {
 	}
 }
 
+func SetMevCommitConfig(ctx *cli.Context, cfg *mevcommit.Config) {
+	if ctx.IsSet(MevCommitProviderEnabled.Name) {
+		cfg.MevCommitProviderEnabled = ctx.Bool(MevCommitProviderEnabled.Name)
+		cfg.MevCommitProviderEndpoint = ctx.String(MevCommitProviderEndpoint.Name)
+	}
+}
+
 // SetNodeConfig applies node-related command line flags to the config.
 func SetNodeConfig(ctx *cli.Context, cfg *node.Config) {
 	SetP2PConfig(ctx, &cfg.P2P)
@@ -1862,11 +1884,16 @@ func SetDNSDiscoveryDefaults(cfg *ethconfig.Config, genesis common.Hash) {
 
 // RegisterEthService adds an Ethereum client to the stack.
 // The second return value is the full node instance.
-func RegisterEthService(stack *node.Node, cfg *ethconfig.Config) (ethapi.Backend, *eth.Ethereum) {
+func RegisterEthService(stack *node.Node, cfg *ethconfig.Config, mcCfg *mevcommit.Config) (ethapi.Backend, *eth.Ethereum) {
 	backend, err := eth.New(stack, cfg)
 	if err != nil {
 		Fatalf("Failed to register the Ethereum service: %v", err)
 	}
+
+	if err := mevcommit.Register(stack, backend, mcCfg); err != nil {
+		Fatalf("Failed to register the builder service: %v", err)
+	}
+
 	stack.RegisterAPIs(tracers.APIs(backend.APIBackend))
 	return backend.APIBackend, backend
 }

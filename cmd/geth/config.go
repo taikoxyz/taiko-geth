@@ -41,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/mevcommit"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/naoina/toml"
@@ -91,10 +92,11 @@ type ethstatsConfig struct {
 }
 
 type gethConfig struct {
-	Eth      ethconfig.Config
-	Node     node.Config
-	Ethstats ethstatsConfig
-	Metrics  metrics.Config
+	Eth       ethconfig.Config
+	Node      node.Config
+	Ethstats  ethstatsConfig
+	MevCommit mevcommit.Config
+	Metrics   metrics.Config
 }
 
 func loadConfig(file string, cfg *gethConfig) error {
@@ -128,9 +130,10 @@ func defaultNodeConfig() node.Config {
 func loadBaseConfig(ctx *cli.Context) gethConfig {
 	// Load defaults.
 	cfg := gethConfig{
-		Eth:     ethconfig.Defaults,
-		Node:    defaultNodeConfig(),
-		Metrics: metrics.DefaultConfig,
+		Eth:       ethconfig.Defaults,
+		Node:      defaultNodeConfig(),
+		MevCommit: mevcommit.DefaultConfig,
+		Metrics:   metrics.DefaultConfig,
 	}
 
 	// Load config file.
@@ -163,6 +166,8 @@ func makeConfigNode(ctx *cli.Context) (*node.Node, gethConfig) {
 	}
 	applyMetricConfig(ctx, &cfg)
 
+	utils.SetMevCommitConfig(ctx, &cfg.MevCommit)
+
 	return stack, cfg
 }
 
@@ -177,7 +182,7 @@ func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 		v := ctx.Uint64(utils.OverrideVerkle.Name)
 		cfg.Eth.OverrideVerkle = &v
 	}
-	backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
+	backend, eth := utils.RegisterEthService(stack, &cfg.Eth, &cfg.MevCommit)
 
 	// CHANGE(TAIKO): register Taiko RPC APIs.
 	utils.RegisterTaikoAPIs(stack, &cfg.Eth, eth)
