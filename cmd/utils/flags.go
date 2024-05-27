@@ -817,7 +817,6 @@ var (
 	GpoDefaultGasPriceFlag = &cli.Int64Flag{
 		Name:     "gpo.defaultprice",
 		Usage:    "Default gas price",
-		Value:    ethconfig.Defaults.GPO.Default.Int64(),
 		Category: flags.GasPriceCategory,
 	}
 
