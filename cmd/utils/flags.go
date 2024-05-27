@@ -810,6 +810,7 @@ var (
 	GpoIgnoreGasPriceFlag = &cli.Int64Flag{
 		Name:     "gpo.ignoreprice",
 		Usage:    "Gas price below which gpo will ignore transactions",
+		Value:    ethconfig.Defaults.GPO.IgnorePrice.Int64(),
 		Category: flags.GasPriceCategory,
 	}
 	// CHANGE(taiko): use default gas price flag
