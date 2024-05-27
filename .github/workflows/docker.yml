@@ -2,7 +2,7 @@ name: "Push docker image to GAR"
 
 on:
   push:
-    branches: [ taiko ]
+    branches: [ fix_github_cache ]
     tags:
       - "v*"
 
@@ -42,9 +42,8 @@ jobs:
       - name: Cache Go build
         uses: actions/cache@v4
         with:
-          enableCrossOsArchive: true
           path: |
-            go-build-platforms
+            ${{ runner.os }}-go_build-platforms
           key: ${{ runner.os }}-go_build-platforms
           restore-keys: |
             ${{ runner.os }}-go_build-platforms
@@ -54,7 +53,7 @@ jobs:
         with:
           cache-map: |
             {
-              "go-build-platforms": "/root/.cache/go-build"
+              "${{ runner.os }}-go_build-platforms": "/root/.cache/go-build"
             }
           skip-extraction: ${{ steps.cache.outputs.cache-hit }}
 
@@ -65,6 +64,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
