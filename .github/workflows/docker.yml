@@ -42,7 +42,6 @@ jobs:
       - name: Cache Go build
         uses: actions/cache@v4
         with:
-          enableCrossOsArchive: true
           path: |
             ${{ runner.os }}-go_build-platforms
           key: ${{ runner.os }}-go_build-platforms
