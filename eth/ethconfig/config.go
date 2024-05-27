@@ -45,7 +45,8 @@ var FullNodeGPO = gasprice.Config{
 	MaxBlockHistory:  1024,
 	MaxPrice:         gasprice.DefaultMaxPrice,
 	IgnorePrice:      gasprice.DefaultIgnorePrice,
-	Default:          gasprice.DefaultGasPrice,
+	// CHANGE(taiko): use default gas price
+	Default: gasprice.DefaultGasPrice,
 }
 
 // Defaults contains default settings for use on the Ethereum main net.
