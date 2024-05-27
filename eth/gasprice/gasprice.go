@@ -37,6 +37,7 @@ const sampleNumber = 3 // Number of transactions sampled in a block
 var (
 	DefaultMaxPrice    = big.NewInt(500 * params.GWei)
 	DefaultIgnorePrice = big.NewInt(2 * params.Wei)
+	DefaultGasPrice    = big.NewInt(10000000 * params.Wei)
 )
 
 type Config struct {

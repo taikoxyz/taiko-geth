@@ -810,12 +810,12 @@ var (
 	GpoIgnoreGasPriceFlag = &cli.Int64Flag{
 		Name:     "gpo.ignoreprice",
 		Usage:    "Gas price below which gpo will ignore transactions",
-		Value:    ethconfig.Defaults.GPO.IgnorePrice.Int64(),
 		Category: flags.GasPriceCategory,
 	}
+	// CHANGE(taiko): use default gas price flag
 	GpoDefaultGasPriceFlag = &cli.Int64Flag{
 		Name:     "gpo.defaultprice",
-		Usage:    "Defaul gas price",
+		Usage:    "Default gas price",
 		Value:    ethconfig.Defaults.GPO.Default.Int64(),
 		Category: flags.GasPriceCategory,
 	}
@@ -1456,8 +1456,8 @@ func setGPO(ctx *cli.Context, cfg *gasprice.Config) {
 	if ctx.IsSet(GpoIgnoreGasPriceFlag.Name) {
 		cfg.IgnorePrice = big.NewInt(ctx.Int64(GpoIgnoreGasPriceFlag.Name))
 	}
-
-	if ctx.IsSet(GpoIgnoreGasPriceFlag.Name) {
+	// CHANGE(taiko): use flag
+	if ctx.IsSet(GpoDefaultGasPriceFlag.Name) {
 		cfg.Default = big.NewInt(ctx.Int64(GpoDefaultGasPriceFlag.Name))
 	}
 }
