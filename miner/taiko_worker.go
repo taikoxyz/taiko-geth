@@ -211,7 +211,11 @@ func (w *worker) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 	map[common.Address][]*txpool.LazyTransaction,
 	map[common.Address][]*txpool.LazyTransaction,
 ) {
-	pending := w.eth.TxPool().Pending(txpool.PendingFilter{OnlyPlainTxs: true, BaseFee: uint256.MustFromBig(baseFee)})
+	pending := w.eth.TxPool().Pending(txpool.PendingFilter{
+		OnlyPlainTxs: true,
+		OnlyBlobTxs:  false,
+		BaseFee:      uint256.MustFromBig(baseFee),
+	})
 	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
 
 	for _, local := range localAccounts {
