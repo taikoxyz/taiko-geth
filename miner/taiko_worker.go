@@ -20,10 +20,6 @@ import (
 	"github.com/holiman/uint256"
 )
 
-const (
-	bytesLimitCheckStep = 10
-)
-
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given conditions
 // 1. All transactions should all be able to pay the given base fee.
 // 2. The total gas used should not exceed the given blockMaxGasLimit
@@ -269,21 +265,6 @@ func (w *worker) commitL2Transactions(
 		// during transaction acceptance is the transaction pool.
 		from, _ := types.Sender(env.signer, tx)
 
-		if env.tcount%bytesLimitCheckStep == 0 {
-			b, err := encodeAndComporeessTxList(append(env.txs, tx))
-			if err != nil {
-				log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
-				txs.Pop()
-				continue
-			}
-			if len(b) > int(maxBytesPerTxList) {
-				if env.tcount > bytesLimitCheckStep {
-					env.txs = env.txs[0 : env.tcount-bytesLimitCheckStep]
-				}
-				break
-			}
-		}
-
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
 		// phase, start ignoring the sender until we do.
 		if tx.Protected() && !w.chainConfig.IsEIP155(env.header.Number) {
@@ -312,6 +293,17 @@ func (w *worker) commitL2Transactions(
 			// the same sender because of `nonce-too-high` clause.
 			log.Trace("Transaction failed, account skipped", "hash", ltx.Hash, "err", err)
 			txs.Pop()
+		}
+
+		b, err := encodeAndComporeessTxList(append(env.txs, tx))
+		if err != nil {
+			log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
+			txs.Pop()
+			continue
+		}
+		if len(b) > int(maxBytesPerTxList) {
+			env.txs = env.txs[0 : env.tcount-1]
+			break
 		}
 	}
 }
