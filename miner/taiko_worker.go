@@ -20,6 +20,10 @@ import (
 	"github.com/holiman/uint256"
 )
 
+const (
+	bytesLimitCheckStep = 10
+)
+
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given conditions
 // 1. All transactions should all be able to pay the given base fee.
 // 2. The total gas used should not exceed the given blockMaxGasLimit
@@ -265,14 +269,19 @@ func (w *worker) commitL2Transactions(
 		// during transaction acceptance is the transaction pool.
 		from, _ := types.Sender(env.signer, tx)
 
-		b, err := encodeAndComporeessTxList(append(env.txs, tx))
-		if err != nil {
-			log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
-			txs.Pop()
-			continue
-		}
-		if len(b) > int(maxBytesPerTxList) {
-			break
+		if env.tcount%bytesLimitCheckStep == 0 {
+			b, err := encodeAndComporeessTxList(append(env.txs, tx))
+			if err != nil {
+				log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
+				txs.Pop()
+				continue
+			}
+			if len(b) > int(maxBytesPerTxList) {
+				if env.tcount > bytesLimitCheckStep {
+					env.txs = env.txs[0 : env.tcount-bytesLimitCheckStep]
+				}
+				break
+			}
 		}
 
 		// Check whether the tx is replay protected. If we're not in the EIP155 hf
@@ -286,7 +295,7 @@ func (w *worker) commitL2Transactions(
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 
-		_, err = w.commitTransaction(env, tx)
+		_, err := w.commitTransaction(env, tx)
 		switch {
 		case errors.Is(err, core.ErrNonceTooLow):
 			// New head notification data race between the transaction pool and miner, shift
