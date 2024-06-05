@@ -1,6 +1,8 @@
 package miner
 
 import (
+	"bytes"
+	"compress/zlib"
 	"errors"
 	"fmt"
 	"math/big"
@@ -263,7 +265,7 @@ func (w *worker) commitL2Transactions(
 		// during transaction acceptance is the transaction pool.
 		from, _ := types.Sender(env.signer, tx)
 
-		b, err := encodeAndComporeessTxList(append(env.txs, tx))
+		b, err := encodeTxList(append(env.txs, tx))
 		if err != nil {
 			log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
 			txs.Pop()
@@ -315,7 +317,29 @@ func encodeAndComporeessTxList(txs types.Transactions) ([]byte, error) {
 	return compress(b)
 }
 
+// encodeAndComporeessTxList encodes and compresses the given transactions list.
+func encodeTxList(txs types.Transactions) ([]byte, error) {
+	b, err := rlp.EncodeToBytes(txs)
+	if err != nil {
+		return nil, err
+	}
+
+	return b, nil
+}
+
 // compress compresses the given txList bytes using zlib.
 func compress(txListBytes []byte) ([]byte, error) {
-	return txListBytes, nil
+	var b bytes.Buffer
+	w := zlib.NewWriter(&b)
+	defer w.Close()
+
+	if _, err := w.Write(txListBytes); err != nil {
+		return nil, err
+	}
+
+	if err := w.Flush(); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
 }
