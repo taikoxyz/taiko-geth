@@ -1,8 +1,6 @@
 package miner
 
 import (
-	"bytes"
-	"compress/zlib"
 	"errors"
 	"fmt"
 	"math/big"
@@ -319,17 +317,5 @@ func encodeAndComporeessTxList(txs types.Transactions) ([]byte, error) {
 
 // compress compresses the given txList bytes using zlib.
 func compress(txListBytes []byte) ([]byte, error) {
-	var b bytes.Buffer
-	w := zlib.NewWriter(&b)
-	defer w.Close()
-
-	if _, err := w.Write(txListBytes); err != nil {
-		return nil, err
-	}
-
-	if err := w.Flush(); err != nil {
-		return nil, err
-	}
-
-	return b.Bytes(), nil
+	return txListBytes, nil
 }
