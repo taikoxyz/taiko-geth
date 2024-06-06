@@ -295,7 +295,7 @@ func (w *worker) commitL2Transactions(
 			txs.Pop()
 		}
 
-                // Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break
+		// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
 		b, err := encodeAndComporeessTxList(append(env.txs, tx))
 		if err != nil {
 			log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
