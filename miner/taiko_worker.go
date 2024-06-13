@@ -144,7 +144,7 @@ func (w *worker) sealBlockWith(
 	}
 
 	if len(txs) == 0 {
-		// A L2 block needs to have have at least one `V1TaikoL2.anchor` or
+		// A L2 block needs to have at least one `V1TaikoL2.anchor` or
 		// `V1TaikoL2.invalidateBlock` transaction.
 		return nil, fmt.Errorf("too less transactions in the block")
 	}
@@ -182,6 +182,10 @@ func (w *worker) sealBlockWith(
 			if err := tx.MarkAsAnchor(); err != nil {
 				return nil, err
 			}
+		}
+		// CHANGE(TAIKO): disable blob txs.
+		if tx.Type() == types.BlobTxType {
+			continue
 		}
 		sender, err := types.LatestSignerForChainID(w.chainConfig.ChainID).Sender(tx)
 		if err != nil {
