@@ -1238,7 +1238,7 @@ func (p *BlobPool) add(tx *types.Transaction) (err error) {
 	}(time.Now())
 
 	// Ensure the transaction is valid from all perspectives
-	if err := p.validateTx(tx); err != nil {
+	/*if err := p.validateTx(tx); err != nil {
 		log.Trace("Transaction validation failed", "hash", tx.Hash(), "err", err)
 		switch {
 		case errors.Is(err, txpool.ErrUnderpriced):
@@ -1257,7 +1257,7 @@ func (p *BlobPool) add(tx *types.Transaction) (err error) {
 			addInvalidMeter.Mark(1)
 		}
 		return err
-	}
+	}*/
 	// If the address is not yet known, request exclusivity to track the account
 	// only by this subpool until all transactions are evicted
 	from, _ := types.Sender(p.signer, tx) // already validated above
