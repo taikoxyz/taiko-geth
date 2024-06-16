@@ -201,6 +201,10 @@ func (tm *testMatcher) walk(t *testing.T, dir string, runTest interface{}) {
 	}
 	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 		name := filepath.ToSlash(strings.TrimPrefix(path, dir+string(filepath.Separator)))
+		// CHANGE(TAIKO): ignore cancun test cases.
+		if strings.HasPrefix(name, "cancun") {
+			return nil
+		}
 		if info.IsDir() {
 			if _, skipload := tm.findSkip(name + "/"); skipload {
 				return filepath.SkipDir
