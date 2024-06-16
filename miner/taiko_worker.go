@@ -183,7 +183,6 @@ func (w *worker) sealBlockWith(
 				return nil, err
 			}
 		}
-		// CHANGE(TAIKO): skip blob txs.
 		if tx.Type() == types.BlobTxType {
 			continue
 		}
