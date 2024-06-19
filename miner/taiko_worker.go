@@ -183,7 +183,7 @@ func (w *worker) sealBlockWith(
 				return nil, err
 			}
 		}
-		// Ignore blob txs.
+		// Skip blob transactions
 		if tx.Type() == types.BlobTxType {
 			log.Debug("Skip a blob transaction", "hash", tx.Hash())
 			continue
