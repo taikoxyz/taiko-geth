@@ -144,7 +144,7 @@ func (w *worker) sealBlockWith(
 	}
 
 	if len(txs) == 0 {
-		// A L2 block needs to have at least one `V1TaikoL2.anchor` or
+		// A L2 block needs to have have at least one `V1TaikoL2.anchor` or
 		// `V1TaikoL2.invalidateBlock` transaction.
 		return nil, fmt.Errorf("too less transactions in the block")
 	}
@@ -183,6 +183,7 @@ func (w *worker) sealBlockWith(
 				return nil, err
 			}
 		}
+		// Skip blob transactions
 		if tx.Type() == types.BlobTxType {
 			log.Debug("Skip a blob transaction", "hash", tx.Hash())
 			continue
