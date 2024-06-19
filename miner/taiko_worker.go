@@ -185,7 +185,7 @@ func (w *worker) sealBlockWith(
 		}
 		// Ignore blob txs.
 		if tx.Type() == types.BlobTxType {
-			log.Warn("Skip a blob transaction", "hash", tx.Hash())
+			log.Debug("Skip a blob transaction", "hash", tx.Hash())
 			continue
 		}
 		sender, err := types.LatestSignerForChainID(w.chainConfig.ChainID).Sender(tx)
