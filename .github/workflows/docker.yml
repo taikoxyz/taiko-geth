@@ -2,7 +2,7 @@ name: "Push docker image to GAR"
 
 on:
   push:
-    branches: [ ignore_blob_tx ]
+    branches: [ taiko ]
     tags:
       - "v*"
 
