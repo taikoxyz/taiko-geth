@@ -378,7 +378,7 @@ func testSubscribePendingTransactions(t *testing.T, client *rpc.Client) {
 		t.Fatal(err)
 	}
 	// Send transaction
-	err = ethcl.SendTransaction(context.Background(), signedTx)
+	err = ethcl.SendTransaction(context.Background(), signedTx, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +412,7 @@ func testSubscribeFullPendingTransactions(t *testing.T, client *rpc.Client) {
 		t.Fatal(err)
 	}
 	// Send transaction
-	err = ethcl.SendTransaction(context.Background(), signedTx)
+	err = ethcl.SendTransaction(context.Background(), signedTx, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}

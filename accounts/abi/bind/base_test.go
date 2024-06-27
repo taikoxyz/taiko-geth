@@ -71,7 +71,7 @@ func (mt *mockTransactor) EstimateGas(ctx context.Context, call ethereum.CallMsg
 	return 0, nil
 }
 
-func (mt *mockTransactor) SendTransaction(ctx context.Context, tx *types.Transaction) error {
+func (mt *mockTransactor) SendTransaction(ctx context.Context, tx *types.Transaction, slot uint64, signature string) error {
 	return nil
 }
 

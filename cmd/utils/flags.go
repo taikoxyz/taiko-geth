@@ -788,6 +788,14 @@ var (
 		Category: flags.APICategory,
 	}
 
+	// CHANGE(taiko): preconf url
+	PreconfirmationForwardingURLFlag = &cli.StringFlag{
+		Name:     "preconfirmationforwardingurl",
+		Usage:    "URL to forward eth_sendTransaction requests before confirmation",
+		Category: flags.APICategory,
+		Value:    "",
+	}
+
 	// Gas price oracle settings
 	GpoBlocksFlag = &cli.IntFlag{
 		Name:     "gpo.blocks",

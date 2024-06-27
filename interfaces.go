@@ -206,7 +206,7 @@ type LogFilterer interface {
 // API can use package accounts to maintain local private keys and need can retrieve the
 // next available nonce using PendingNonceAt.
 type TransactionSender interface {
-	SendTransaction(ctx context.Context, tx *types.Transaction) error
+	SendTransaction(ctx context.Context, tx *types.Transaction, slot uint64, signature string) error
 }
 
 // GasPricer wraps the gas price oracle, which monitors the blockchain to determine the

@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -48,6 +49,13 @@ type EthAPIBackend struct {
 	allowUnprotectedTxs bool
 	eth                 *Ethereum
 	gpo                 *gasprice.Oracle
+	preconfirmationURL  string // change(taiko)
+}
+
+// GetPreconfirmationForwardingURL
+func (b *EthAPIBackend) GetPreconfirmationForwardingURL() string {
+	log.Info("getting preconf from backend", "url", b.preconfirmationURL)
+	return b.preconfirmationURL
 }
 
 // ChainConfig returns the active chain configuration.

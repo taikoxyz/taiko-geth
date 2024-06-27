@@ -123,7 +123,7 @@ func TestSendTransaction(t *testing.T) {
 		t.Errorf("could not create transaction: %v", err)
 	}
 	// send tx to simulated backend
-	err = client.SendTransaction(ctx, signedTx)
+	err = client.SendTransaction(ctx, signedTx, 0, "")
 	if err != nil {
 		t.Errorf("could not add tx to pending block: %v", err)
 	}
@@ -213,7 +213,7 @@ func TestForkResendTx(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not create transaction: %v", err)
 	}
-	client.SendTransaction(ctx, tx)
+	client.SendTransaction(ctx, tx, 0, "")
 	sim.Commit()
 
 	// 3.
@@ -229,7 +229,7 @@ func TestForkResendTx(t *testing.T) {
 
 	// 5.
 	sim.Commit()
-	if err := client.SendTransaction(ctx, tx); err != nil {
+	if err := client.SendTransaction(ctx, tx, 0, ""); err != nil {
 		t.Fatalf("sending transaction: %v", err)
 	}
 	sim.Commit()
@@ -260,7 +260,7 @@ func TestCommitReturnValue(t *testing.T) {
 	gasPrice := new(big.Int).Add(head.BaseFee, big.NewInt(1))
 	_tx := types.NewTransaction(0, testAddr, big.NewInt(1000), params.TxGas, gasPrice, nil)
 	tx, _ := types.SignTx(_tx, types.HomesteadSigner{}, testKey)
-	client.SendTransaction(ctx, tx)
+	client.SendTransaction(ctx, tx, 0, "")
 
 	h2 := sim.Commit()
 

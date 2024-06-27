@@ -753,5 +753,5 @@ func sendTransaction(ec *Client) error {
 	if err != nil {
 		return err
 	}
-	return ec.SendTransaction(context.Background(), tx)
+	return ec.SendTransaction(context.Background(), tx, 0, "")
 }

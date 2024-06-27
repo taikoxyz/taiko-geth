@@ -423,7 +423,8 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	if opts.NoSend {
 		return signedTx, nil
 	}
-	if err := c.transactor.SendTransaction(ensureContext(opts.Context), signedTx); err != nil {
+	// change(taiko): slot and sig
+	if err := c.transactor.SendTransaction(ensureContext(opts.Context), signedTx, 0, ""); err != nil {
 		return nil, err
 	}
 	return signedTx, nil

@@ -1800,6 +1800,7 @@ func (s *TransactionAPI) SendTransaction(ctx context.Context, args TransactionAr
 	if err != nil {
 		return common.Hash{}, err
 	}
+
 	return SubmitTransaction(ctx, s.b, signed)
 }
 
@@ -1822,13 +1823,26 @@ func (s *TransactionAPI) FillTransaction(ctx context.Context, args TransactionAr
 	return &SignTransactionResult{data, tx}, nil
 }
 
+// change(taiko): preconf logic
 // SendRawTransaction will add the signed transaction to the transaction pool.
 // The sender is responsible for signing the transaction and using the correct nonce.
-func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
+func (s *TransactionAPI) SendRawTransaction(ctx context.Context, txBytes hexutil.Bytes, slot *uint64, signature *string) (interface{}, error) {
+	// Decode the raw transaction
 	tx := new(types.Transaction)
-	if err := tx.UnmarshalBinary(input); err != nil {
+	if err := tx.UnmarshalBinary(txBytes); err != nil {
 		return common.Hash{}, err
 	}
+
+	fmt.Println("url", s.b.GetPreconfirmationForwardingURL(), slot, signature)
+	// Check if PreconfirmationForwardingURL is set
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		if signature != nil && slot != nil {
+			// Forward the raw transaction to the specified URL
+			return forwardRawTransaction(forwardURL, txBytes, *slot, *signature)
+		}
+	}
+
+	// Submit the transaction to the local node
 	return SubmitTransaction(ctx, s.b, tx)
 }
 
