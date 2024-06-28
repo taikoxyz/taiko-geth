@@ -1662,6 +1662,18 @@ func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.
 		return nil, NewTxIndexingError() // transaction is not fully indexed
 	}
 	if !found {
+		// change(taiko): check to see if it exists from the preconfer.
+		// Check if PreconfirmationForwardingURL is set
+		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+			// Forward the raw transaction to the specified URL
+			res, err := forwardGetTransactionReceipt(forwardURL, hash)
+			if err != nil {
+				return nil, err
+			}
+
+			return res, nil
+		}
+
 		return nil, nil // transaction is not existent or reachable
 	}
 	header, err := s.b.HeaderByHash(ctx, blockHash)
@@ -1826,20 +1838,17 @@ func (s *TransactionAPI) FillTransaction(ctx context.Context, args TransactionAr
 // change(taiko): preconf logic
 // SendRawTransaction will add the signed transaction to the transaction pool.
 // The sender is responsible for signing the transaction and using the correct nonce.
-func (s *TransactionAPI) SendRawTransaction(ctx context.Context, txBytes hexutil.Bytes, slot *uint64, signature *string) (interface{}, error) {
-	// Decode the raw transaction
-	tx := new(types.Transaction)
-	if err := tx.UnmarshalBinary(txBytes); err != nil {
-		return common.Hash{}, err
-	}
-
-	fmt.Println("url", s.b.GetPreconfirmationForwardingURL(), slot, signature)
+func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-		if signature != nil && slot != nil {
-			// Forward the raw transaction to the specified URL
-			return forwardRawTransaction(forwardURL, txBytes, *slot, *signature)
-		}
+		// Forward the raw transaction to the specified URL
+		return forwardRawTransaction(forwardURL, input)
+	}
+
+	// Decode the raw transaction
+	tx := new(types.Transaction)
+	if err := tx.UnmarshalBinary(input); err != nil {
+		return common.Hash{}, err
 	}
 
 	// Submit the transaction to the local node

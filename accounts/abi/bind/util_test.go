@@ -82,7 +82,7 @@ func TestWaitDeployed(t *testing.T) {
 		}()
 
 		// Send and mine the transaction.
-		backend.Client().SendTransaction(ctx, tx, 0, "")
+		backend.Client().SendTransaction(ctx, tx)
 		backend.Commit()
 
 		select {
@@ -116,7 +116,7 @@ func TestWaitDeployedCornerCases(t *testing.T) {
 	tx, _ = types.SignTx(tx, types.LatestSigner(params.AllDevChainProtocolChanges), testKey)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	backend.Client().SendTransaction(ctx, tx, 0, "")
+	backend.Client().SendTransaction(ctx, tx)
 	backend.Commit()
 	notContractCreation := errors.New("tx is not contract creation")
 	if _, err := bind.WaitDeployed(ctx, backend.Client(), tx); err.Error() != notContractCreation.Error() {
@@ -134,6 +134,6 @@ func TestWaitDeployedCornerCases(t *testing.T) {
 		}
 	}()
 
-	backend.Client().SendTransaction(ctx, tx, 0, "")
+	backend.Client().SendTransaction(ctx, tx)
 	cancel()
 }

@@ -617,36 +617,13 @@ func (ec *Client) EstimateGas(ctx context.Context, msg ethereum.CallMsg) (uint64
 //
 // If the transaction was a contract creation use the TransactionReceipt method to get the
 // contract address after the transaction has been mined.
-func (ec *Client) SendTransaction(ctx context.Context, tx *types.Transaction, slot uint64, signature string) error {
-	type rawTransactionRequest struct {
-		RawTx     hexutil.Bytes `json:"tx"`
-		Slot      uint64        `json:"slot"`
-		Signature string        `json:"signature"`
-	}
-
+func (ec *Client) SendTransaction(ctx context.Context, tx *types.Transaction) error {
 	data, err := tx.MarshalBinary()
 	if err != nil {
 		return err
 	}
 
-	request := rawTransactionRequest{
-		RawTx:     data,
-		Slot:      slot,
-		Signature: signature,
-	}
-
-	type inclusionPreconfirmationResponse struct {
-		Request           rawTransactionRequest `json:"request"`
-		ProposerSignature string                `json:"proposerSignature"`
-	}
-
-	var result *inclusionPreconfirmationResponse = nil
-
-	if slot != 0 && signature != "" {
-		result = &inclusionPreconfirmationResponse{}
-	}
-
-	return ec.c.CallContext(ctx, result, "eth_sendRawTransaction", request)
+	return ec.c.CallContext(ctx, nil, "eth_sendRawTransaction", data)
 }
 
 func toBlockNumArg(number *big.Int) string {

@@ -4,38 +4,96 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
-type InclusionPreconfirmationRequest struct {
-	Tx        []byte `json:"tx"`
-	Slot      uint64 `json:"slot"`
-	Signature string `json:"signature"`
+type rpcRequest struct {
+	Jsonrpc string        `json:"jsonrpc"`
+	Method  string        `json:"method"`
+	Params  []interface{} `json:"params"`
+	ID      int           `json:"id"`
 }
 
-type InclusionPreconfirmationResponse struct {
-	Request           InclusionPreconfirmationRequest `json:"request"`
-	ProposerSignature string                          `json:"proposerSignature"`
+type rpcResponse struct {
+	Jsonrpc string      `json:"jsonrpc"`
+	ID      int         `json:"id"`
+	Result  interface{} `json:"result"`
+	Error   *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+		Data    string `json:"data"`
+	} `json:"error,omitempty"`
 }
 
 // change(taiko)
-func forwardRawTransaction(forwardURL string, input hexutil.Bytes, slot uint64, signature string) (*InclusionPreconfirmationResponse, error) {
-	// Prepare the request
-	request := InclusionPreconfirmationRequest{
-		Tx:        input,
-		Slot:      slot,      // Set the appropriate slot value
-		Signature: signature, // Set the appropriate signature value (a keccak256 hash)
+func forwardRawTransaction(forwardURL string, input hexutil.Bytes) (common.Hash, error) {
+	rpcReq := rpcRequest{
+		Jsonrpc: "2.0",
+		Method:  "eth_sendRawTransaction",
+		Params:  []interface{}{input.String()},
+		ID:      1,
 	}
 
-	jsonData, err := json.Marshal(request)
+	jsonData, err := json.Marshal(rpcReq)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	req, err := http.NewRequest("POST", forwardURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return common.Hash{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return common.Hash{}, fmt.Errorf("failed to forward transaction, status code: %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return common.Hash{}, err
+	}
+
+	var rpcResp rpcResponse
+
+	// Unmarshal the response into the struct
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return common.Hash{}, err
+	}
+
+	// Check for errors in the response
+	if rpcResp.Error != nil {
+		return common.Hash{}, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+	}
+
+	return common.HexToHash(rpcResp.Result.(string)), nil
+}
+
+func forwardGetTransactionReceipt(forwardURL string, hash common.Hash) (map[string]interface{}, error) {
+	rpcReq := rpcRequest{
+		Jsonrpc: "2.0",
+		Method:  "eth_getTransactionReceipt",
+		Params:  []interface{}{hash.Hex()},
+		ID:      1,
+	}
+
+	jsonData, err := json.Marshal(rpcReq)
 	if err != nil {
 		return nil, err
 	}
 
-	// Send the request
-	req, err := http.NewRequest("POST", fmt.Sprintf("%v/%v", forwardURL, "commitments/v1/request_preconf"), bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", forwardURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}
@@ -52,12 +110,21 @@ func forwardRawTransaction(forwardURL string, input hexutil.Bytes, slot uint64, 
 		return nil, fmt.Errorf("failed to forward transaction, status code: %d", resp.StatusCode)
 	}
 
-	// Parse the response
-	var response InclusionPreconfirmationResponse
-	err = json.NewDecoder(resp.Body).Decode(&response)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
 
-	return &response, nil
+	var rpcResp rpcResponse
+	// Unmarshal the response into the struct
+	if err := json.Unmarshal(body, &rpcResp); err != nil {
+		return nil, err
+	}
+
+	// Check for errors in the response
+	if rpcResp.Error != nil {
+		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+	}
+
+	return rpcResp.Result.(map[string]interface{}), nil
 }
