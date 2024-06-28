@@ -1658,10 +1658,7 @@ func (s *TransactionAPI) GetRawTransactionByHash(ctx context.Context, hash commo
 // GetTransactionReceipt returns the transaction receipt for the given transaction hash.
 func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
 	found, tx, blockHash, blockNumber, index, err := s.b.GetTransaction(ctx, hash)
-	if err != nil {
-		return nil, NewTxIndexingError() // transaction is not fully indexed
-	}
-	if !found {
+	if err != nil || !found {
 		// change(taiko): check to see if it exists from the preconfer.
 		// Check if PreconfirmationForwardingURL is set
 		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
@@ -1674,6 +1671,12 @@ func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.
 			return res, nil
 		}
 
+		if err != nil {
+			return nil, NewTxIndexingError() // transaction is not fully indexed
+		}
+	}
+
+	if !found {
 		return nil, nil // transaction is not existent or reachable
 	}
 	header, err := s.b.HeaderByHash(ctx, blockHash)
