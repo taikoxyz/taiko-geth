@@ -45,9 +45,9 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	case params.HeklaNetworkID.Uint64():
 		chainConfig.ChainID = params.HeklaNetworkID
 		allocJSON = taikoGenesis.HeklaGenesisAllocJSON
-	case params.PreconfNetworkID.Uint64():
-		chainConfig.ChainID = params.PreconfNetworkID
-		allocJSON = taikoGenesis.PreconfGenesisAllocJSON
+	case params.PreconfsNetworkID.Uint64():
+		chainConfig.ChainID = params.PreconfsNetworkID
+		allocJSON = taikoGenesis.PreconfsGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoInternalL2ANetworkID
 		allocJSON = taikoGenesis.InternalL2AGenesisAllocJSON
