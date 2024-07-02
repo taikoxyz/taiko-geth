@@ -338,6 +338,19 @@ loop:
 			log.Trace("Transaction failed, account skipped", "hash", ltx.Hash, "err", err)
 			txs.Pop()
 		}
+
+		// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
+		b, err := encodeAndComporeessTxList(env.txs)
+		if err != nil {
+			log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
+			txs.Pop()
+			continue
+		}
+		if len(b) > int(maxBytesPerTxList) {
+			lastTransaction = env.txs[env.tcount-1]
+			env.txs = env.txs[0 : env.tcount-1]
+			break
+		}
 	}
 
 	return lastTransaction
