@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"os"
-	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
@@ -34,6 +32,7 @@ func (w *worker) BuildTransactionsLists(
 	maxBytesPerTxList uint64,
 	localAccounts []string,
 	maxTransactionsLists uint64,
+	minTip uint64,
 ) ([]*PreBuiltTxList, error) {
 	var (
 		txsLists    []*PreBuiltTxList
@@ -96,6 +95,7 @@ func (w *worker) BuildTransactionsLists(
 			newTransactionsByPriceAndNonce(signer, locals, baseFee),
 			newTransactionsByPriceAndNonce(signer, remotes, baseFee),
 			maxBytesPerTxList,
+			minTip,
 		)
 
 		b, err := encodeAndComporeessTxList(env.txs)
@@ -243,6 +243,7 @@ func (w *worker) commitL2Transactions(
 	txsLocal *transactionsByPriceAndNonce,
 	txsRemote *transactionsByPriceAndNonce,
 	maxBytesPerTxList uint64,
+	minTip uint64,
 ) *types.Transaction {
 	var (
 		txs             = txsLocal
@@ -254,6 +255,7 @@ func (w *worker) commitL2Transactions(
 		env.txs = append(env.txs, firstTransaction)
 	}
 
+loop:
 	for {
 		// If we don't have enough gas for any further transactions then we're done.
 		if env.gasPool.Gas() < params.TxGas {
@@ -279,17 +281,10 @@ func (w *worker) commitL2Transactions(
 			continue
 		}
 
-		if os.Getenv("TAIKO_MIN_TIP") != "" {
-			minTip, err := strconv.Atoi(os.Getenv("TAIKO_MIN_TIP"))
-			if err != nil {
-				log.Error("Failed to parse TAIKO_MIN_TIP", "err", err)
-			} else {
-				if tx.GasTipCapIntCmp(new(big.Int).SetUint64(uint64(minTip))) < 0 {
-					log.Trace("Ignoring transaction with low tip", "hash", tx.Hash(), "tip", tx.GasTipCap(), "minTip", minTip)
-					txs.Pop()
-					continue
-				}
-			}
+		if tx.GasTipCapIntCmp(new(big.Int).SetUint64(minTip)) < 0 {
+			log.Trace("Ignoring transaction with low tip", "hash", tx.Hash(), "tip", tx.GasTipCap(), "minTip", minTip)
+			txs.Pop()
+			continue
 		}
 
 		// Error may be ignored here. The error has already been checked
@@ -319,24 +314,23 @@ func (w *worker) commitL2Transactions(
 			env.tcount++
 			txs.Shift()
 
+			// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
+			b, err := encodeAndComporeessTxList(env.txs)
+			if err != nil {
+				log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
+				txs.Pop()
+				continue
+			}
+			if len(b) > int(maxBytesPerTxList) {
+				lastTransaction = env.txs[env.tcount-1]
+				env.txs = env.txs[0 : env.tcount-1]
+				break loop
+			}
 		default:
 			// Transaction is regarded as invalid, drop all consecutive transactions from
 			// the same sender because of `nonce-too-high` clause.
 			log.Trace("Transaction failed, account skipped", "hash", ltx.Hash, "err", err)
 			txs.Pop()
-		}
-
-		// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
-		b, err := encodeAndComporeessTxList(append(env.txs, tx))
-		if err != nil {
-			log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
-			txs.Pop()
-			continue
-		}
-		if len(b) > int(maxBytesPerTxList) {
-			lastTransaction = env.txs[env.tcount-1]
-			env.txs = env.txs[0 : env.tcount-1]
-			break
 		}
 	}
 
