@@ -120,6 +120,7 @@ func (a *TaikoAuthAPIBackend) TxPoolContentWithMinTip(
 		"maxBytesPerTxList", maxBytesPerTxList,
 		"maxTransactions", maxTransactionsLists,
 		"locals", locals,
+		"minTip", minTip,
 	)
 
 	return a.eth.Miner().BuildTransactionsListsWithMinTip(
