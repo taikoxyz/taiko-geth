@@ -34,7 +34,7 @@ jobs:
         uses: docker/metadata-action@v4
         with:
           images: |
-            us-docker.pkg.dev/evmchain/helder/taiko-geth
+            us-docker.pkg.dev/evmchain/images/taiko-geth
           tags: |
             type=ref,event=branch
             type=ref,event=pr
