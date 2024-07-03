@@ -281,7 +281,7 @@ loop:
 			continue
 		}
 
-		if tx.GasTipCapIntCmp(new(big.Int).SetUint64(uint64(minTip))) < 0 {
+		if tx.GasTipCapIntCmp(new(big.Int).SetUint64(minTip)) < 0 {
 			log.Trace("Ignoring transaction with low tip", "hash", tx.Hash(), "tip", tx.GasTipCap(), "minTip", minTip)
 			txs.Pop()
 			continue
