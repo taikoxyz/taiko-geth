@@ -10,7 +10,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 type rpcRequest struct {
@@ -67,12 +66,10 @@ func forwardRawTransaction(forwardURL string, input hexutil.Bytes) (common.Hash,
 		return common.Hash{}, err
 	}
 
-	log.Info("forward response", "esp", string(body))
-
 	var rpcResp rpcResponse
 
 	// Unmarshal the response into the struct
-	if err := json.Unmarshal(body, &resp); err != nil {
+	if err := json.Unmarshal(body, &rpcResp); err != nil {
 		return common.Hash{}, err
 	}
 
