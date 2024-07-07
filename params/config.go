@@ -318,6 +318,7 @@ var NetworkNames = map[string]string{
 	// CHANGE(taiko): add Taiko network name.
 	TaikoMainnetNetworkID.String():     "Taiko",
 	TaikoInternalL2ANetworkID.String(): "Taiko Internal L2A Devnet",
+	PreconfsNetworkID.String():         "Taiko Preconfs Devnet",
 	TaikoInternalL2BNetworkID.String(): "Taiko Internal L2B Devnet",
 	SnaefellsjokullNetworkID.String():  "Taiko Alpha-1 (Snæfellsjökull)",
 	AskjaNetworkID.String():            "Taiko Alpha-2 (Askja)",

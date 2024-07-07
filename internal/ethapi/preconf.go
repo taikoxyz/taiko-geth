@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -72,12 +73,19 @@ func forwardRawTransaction(forwardURL string, input hexutil.Bytes) (common.Hash,
 		return common.Hash{}, err
 	}
 
+	spew.Dump(rpcResp)
+
 	// Check for errors in the response
 	if rpcResp.Error != nil {
 		return common.Hash{}, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
-	return common.HexToHash(rpcResp.Result.(string)), nil
+	res, ok := rpcResp.Result.(string)
+	if !ok {
+		return common.Hash{}, fmt.Errorf("result could not be converted to string")
+	}
+
+	return common.HexToHash(res), nil
 }
 
 func forwardGetTransactionReceipt(forwardURL string, hash common.Hash) (map[string]interface{}, error) {
