@@ -639,6 +639,14 @@ func (api *BlockChainAPI) ChainId() *hexutil.Big {
 
 // BlockNumber returns the block number of the chain head.
 func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
+	// change(taiko): check to see if it exists from the preconfer.
+	// Check if PreconfirmationForwardingURL is set
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		// Forward the raw transaction to the specified URL
+		res, _ := forward[hexutil.Uint64](forwardURL, "eth_blockNumber", rpc.LatestBlockNumber)
+		return res
+	}
+
 	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
 	return hexutil.Uint64(header.Number.Uint64())
 }
@@ -647,6 +655,18 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 // given block number. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta
 // block numbers are also allowed.
 func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Big, error) {
+	// change(taiko): check to see if it exists from the preconfer.
+	// Check if PreconfirmationForwardingURL is set
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		if blockNr, ok := blockNrOrHash.Number(); ok {
+			return forward[*hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockNr.Int64()})
+		}
+
+		if blockHash, ok := blockNrOrHash.Hash(); ok {
+			return forward[*hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockHash.Hex()})
+		}
+	}
+
 	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	if state == nil || err != nil {
 		return nil, err
@@ -818,6 +838,13 @@ func (s *BlockChainAPI) GetHeaderByHash(ctx context.Context, hash common.Hash) m
 //   - When fullTx is true all transactions in the block are returned, otherwise
 //     only the transaction hash is returned.
 func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
+	// change(taiko): check to see if it exists from the preconfer.
+	// Check if PreconfirmationForwardingURL is set
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		// Forward the raw transaction to the specified URL
+		return forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number, fullTx})
+	}
+
 	block, err := s.b.BlockByNumber(ctx, number)
 	if block != nil && err == nil {
 		response, err := s.rpcMarshalBlock(ctx, block, true, fullTx)
@@ -835,6 +862,12 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in the block are returned in full
 // detail, otherwise only the transaction hash is returned.
 func (s *BlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fullTx bool) (map[string]interface{}, error) {
+	// change(taiko): check to see if it exists from the preconfer.
+	// Check if PreconfirmationForwardingURL is set
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		return forward[map[string]interface{}](forwardURL, "eth_getBlockByHash", []interface{}{hash.Hex(), fullTx})
+	}
+
 	block, err := s.b.BlockByHash(ctx, hash)
 	if block != nil {
 		return s.rpcMarshalBlock(ctx, block, true, fullTx)
@@ -1601,6 +1634,18 @@ func (s *TransactionAPI) GetRawTransactionByBlockHashAndIndex(ctx context.Contex
 
 // GetTransactionCount returns the number of transactions the given address has sent for the given block number
 func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
+	// change(taiko): check to see if it exists from the preconfer.
+	// Check if PreconfirmationForwardingURL is set
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		if blockNr, ok := blockNrOrHash.Number(); ok {
+			return forward[*hexutil.Uint64](forwardURL, "eth_getTrasnactionCount", []interface{}{address.Hex(), blockNr.Int64()})
+		}
+
+		if blockHash, ok := blockNrOrHash.Hash(); ok {
+			return forward[*hexutil.Uint64](forwardURL, "eth_getTrasnactionCount", []interface{}{address.Hex(), blockHash.Hex()})
+		}
+	}
+
 	// Ask transaction pool for the nonce which includes pending transactions
 	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
 		nonce, err := s.b.GetPoolNonce(ctx, address)
@@ -1663,12 +1708,7 @@ func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.
 		// Check if PreconfirmationForwardingURL is set
 		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 			// Forward the raw transaction to the specified URL
-			res, err := forwardGetTransactionReceipt(forwardURL, hash)
-			if err != nil {
-				return nil, err
-			}
-
-			return res, nil
+			return forward[map[string]interface{}](forwardURL, "eth_getTransactionReceipt", []interface{}{hash.Hex()})
 		}
 
 		if err != nil {
@@ -1845,7 +1885,7 @@ func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.B
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		// Forward the raw transaction to the specified URL
-		return forwardRawTransaction(forwardURL, input)
+		return forward[common.Hash](forwardURL, "eth_sendRawTransaction", []interface{}{input.String()})
 	}
 
 	// Decode the raw transaction
