@@ -643,7 +643,7 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		// Forward the raw transaction to the specified URL
-		res, _ := forward[hexutil.Uint64](forwardURL, "eth_blockNumber", rpc.LatestBlockNumber)
+		res, _ := forward[hexutil.Uint64](forwardURL, "eth_blockNumber", nil)
 		return res
 	}
 
