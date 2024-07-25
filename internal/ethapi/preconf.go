@@ -74,6 +74,10 @@ func forward[T any](forwardURL string, method string, params []interface{}) (*T,
 
 	// Check for errors in the response
 	if rpcResp.Error != nil {
+		err := fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+
+		log.Error("forwarded request error", "err", err)
+
 		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
