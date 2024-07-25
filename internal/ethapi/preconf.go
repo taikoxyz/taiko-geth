@@ -27,9 +27,7 @@ type rpcResponse struct {
 }
 
 // change(taiko)
-func forward[T any](forwardURL string, method string, params []interface{}) (T, error) {
-	var zeroT T
-
+func forward[T any](forwardURL string, method string, params []interface{}) (*T, error) {
 	rpcReq := rpcRequest{
 		Jsonrpc: "2.0",
 		Method:  method,
@@ -39,42 +37,48 @@ func forward[T any](forwardURL string, method string, params []interface{}) (T, 
 
 	jsonData, err := json.Marshal(rpcReq)
 	if err != nil {
-		return zeroT, err
+		return nil, err
 	}
 
 	req, err := http.NewRequest("POST", forwardURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return zeroT, err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return zeroT, err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return zeroT, fmt.Errorf("failed to forward transaction, status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to forward transaction, status code: %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return zeroT, err
+		return nil, err
 	}
 
 	var rpcResp rpcResponse
 
 	// Unmarshal the response into the struct
 	if err := json.Unmarshal(body, &rpcResp); err != nil {
-		return zeroT, err
+		return nil, err
 	}
 
 	// Check for errors in the response
 	if rpcResp.Error != nil {
-		return zeroT, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
-	return rpcResp.Result.(T), nil
+	t, ok := rpcResp.Result.(T)
+
+	if ok {
+		return &t, nil
+	}
+
+	return nil, nil
 }
