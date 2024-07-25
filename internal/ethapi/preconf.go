@@ -76,7 +76,7 @@ func forward[T any](forwardURL string, method string, params []interface{}) (*T,
 		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
-	log.Info("forwarded request result", "res", rpcResp.Result)
+	log.Info("forwarded request result", "method", method, "res", rpcResp.Result)
 
 	t, ok := rpcResp.Result.(T)
 
