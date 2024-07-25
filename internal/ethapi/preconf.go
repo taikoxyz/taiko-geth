@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
 
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -19,9 +18,9 @@ type rpcRequest struct {
 }
 
 type rpcResponse struct {
-	Jsonrpc string      `json:"jsonrpc"`
-	ID      int         `json:"id"`
-	Result  interface{} `json:"result"`
+	Jsonrpc string           `json:"jsonrpc"`
+	ID      int              `json:"id"`
+	Result  *json.RawMessage `json:"result"`
 	Error   *struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
@@ -86,16 +85,9 @@ func forward[T any](forwardURL string, method string, params []interface{}) (*T,
 		return nil, nil
 	}
 
-	log.Info("forwarded request result", "method", method, "type", reflect.TypeOf(rpcResp.Result).String())
-
-	// Convert the result to the desired type
-	resultData, err := json.Marshal(rpcResp.Result)
-	if err != nil {
-		return nil, err
-	}
-
+	// Unmarshal the Result into the desired type
 	var result T
-	if err := json.Unmarshal(resultData, &result); err != nil {
+	if err := json.Unmarshal(*rpcResp.Result, &result); err != nil {
 		return nil, err
 	}
 
