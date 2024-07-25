@@ -646,28 +646,17 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 		log.Info("forwarding block number request", "url", forwardURL)
 
 		// Forward the raw transaction to the specified URL
-		res, err := forward[string](forwardURL, "eth_blockNumber", nil)
+		res, _ := forward[string](forwardURL, "eth_blockNumber", nil)
 
-		if err != nil && res != nil {
+		if res != nil {
 			log.Info("forwarded block number request", "res", res)
-			if isHexNumber(*res) {
-				i, _ := strconv.ParseUint(*res, 16, 64)
-				return hexutil.Uint64(i)
-			} else {
-				i, _ := strconv.Atoi(*res)
-
-				return hexutil.Uint64(i)
-			}
+			i, _ := strconv.ParseUint(*res, 16, 64)
+			return hexutil.Uint64(i)
 		}
 	}
 
 	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
 	return hexutil.Uint64(header.Number.Uint64())
-}
-
-func isHexNumber(s string) bool {
-	_, err := strconv.ParseUint(s, 16, 64)
-	return err == nil
 }
 
 // GetBalance returns the amount of wei for the given address in the state of the
@@ -1940,10 +1929,10 @@ func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.B
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		log.Info("forwarding send raw tx", "url", forwardURL)
 		// Forward the raw transaction to the specified URL
-		h, err := forward[common.Hash](forwardURL, "eth_sendRawTransaction", []interface{}{input.String()})
+		h, err := forward[string](forwardURL, "eth_sendRawTransaction", []interface{}{input.String()})
 		if err != nil && h != nil {
-			log.Info("forwarded sendRawTransaction", "res", h.Hex())
-			return *h, nil
+			log.Info("forwarded sendRawTransaction", "res", h)
+			return common.HexToHash(*h), nil
 		}
 	}
 
