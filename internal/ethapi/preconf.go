@@ -84,5 +84,7 @@ func forward[T any](forwardURL string, method string, params []interface{}) (*T,
 
 	log.Info("forwarded request result", "method", method, "res", rpcResp.Result, "type", reflect.TypeOf(rpcResp.Result).String())
 
-	return rpcResp.Result.(*T), nil
+	t, _ := rpcResp.Result.(T)
+
+	return &t, nil
 }
