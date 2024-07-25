@@ -88,7 +88,16 @@ func forward[T any](forwardURL string, method string, params []interface{}) (*T,
 
 	log.Info("forwarded request result", "method", method, "type", reflect.TypeOf(rpcResp.Result).String())
 
-	t, _ := rpcResp.Result.(T)
+	// Convert the result to the desired type
+	resultData, err := json.Marshal(rpcResp.Result)
+	if err != nil {
+		return nil, err
+	}
 
-	return &t, nil
+	var result T
+	if err := json.Unmarshal(resultData, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
