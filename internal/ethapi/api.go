@@ -646,9 +646,9 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 		log.Info("forwarding block number request", "url", forwardURL)
 
 		// Forward the raw transaction to the specified URL
-		res, _ := forward[string](forwardURL, "eth_blockNumber", nil)
+		res, err := forward[string](forwardURL, "eth_blockNumber", nil)
 
-		if res != nil {
+		if err == nil && res != nil {
 			log.Info("forwarded block number request", "res", res)
 			i, _ := strconv.ParseUint(*res, 0, 64)
 
@@ -1664,7 +1664,7 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-		log.Info("forwarding get transaction count", "url", forwardURL)
+		log.Info("forwarding getTransactionCount", "url", forwardURL)
 
 		if blockNr, ok := blockNrOrHash.Number(); ok {
 			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.String()})
