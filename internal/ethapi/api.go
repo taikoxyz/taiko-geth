@@ -1665,7 +1665,7 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 		log.Info("forwarding get transaction count", "url", forwardURL)
 
 		if blockNr, ok := blockNrOrHash.Number(); ok {
-			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.Int64()})
+			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.String()})
 			if err == nil && txCount != nil {
 				return txCount, nil
 			}
