@@ -679,11 +679,21 @@ func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, 
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		log.Info("forwarding balance request", "url", forwardURL)
 		if blockNr, ok := blockNrOrHash.Number(); ok {
-			return forward[hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockNr.Int64()})
+			bal, err := forward[hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockNr.Int64()})
+			if err != nil && bal != nil {
+				log.Info("forwarded getBalance", "res", bal)
+			}
+
+			return bal, nil
 		}
 
 		if blockHash, ok := blockNrOrHash.Hash(); ok {
-			return forward[hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockHash.Hex()})
+			bal, err := forward[hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockHash.Hex()})
+			if err != nil && bal != nil {
+				log.Info("forwarded getBalance", "res", bal)
+			}
+
+			return bal, nil
 		}
 	}
 
@@ -861,10 +871,11 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-		log.Info("forwarding get block by number request", "url", forwardURL)
+		log.Info("forwarding getBlockByNumber", "url", forwardURL)
 		// Forward the raw transaction to the specified URL
 		b, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number, fullTx})
 		if err != nil && b != nil {
+			log.Info("forwarded getBlockByNumber", "res", b)
 			return *b, nil
 		}
 	}
@@ -889,9 +900,10 @@ func (s *BlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fu
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-		log.Info("forwarding get block by hash", "url", forwardURL)
+		log.Info("forwardinggetBlockByHash", "url", forwardURL)
 		m, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByHash", []interface{}{hash.Hex(), fullTx})
 		if err != nil && m != nil {
+			log.Info("forwarded getBlockByHash", "res", m)
 			return *m, nil
 		}
 	}
@@ -1670,6 +1682,7 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 		if blockNr, ok := blockNrOrHash.Number(); ok {
 			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.Int64()})
 			if err != nil && txCount != nil {
+				log.Info("forwarded getTransactionCount", "res", txCount)
 				return txCount, nil
 			}
 		}
@@ -1677,6 +1690,7 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 		if blockHash, ok := blockNrOrHash.Hash(); ok {
 			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockHash.Hex()})
 			if err != nil && txCount != nil {
+				log.Info("forwarded getTransactionCount", "res", txCount)
 				return txCount, nil
 			}
 		}
@@ -1928,6 +1942,7 @@ func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.B
 		// Forward the raw transaction to the specified URL
 		h, err := forward[common.Hash](forwardURL, "eth_sendRawTransaction", []interface{}{input.String()})
 		if err != nil && h != nil {
+			log.Info("forwarded sendRawTransaction", "res", h.Hex())
 			return *h, nil
 		}
 	}
