@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -642,13 +643,30 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding block number request", "url", forwardURL)
+
 		// Forward the raw transaction to the specified URL
-		res, _ := forward[hexutil.Uint64](forwardURL, "eth_blockNumber", nil)
-		return res
+		res, _ := forward[string](forwardURL, "eth_blockNumber", nil)
+
+		log.Info("forwarded block number request", "res", res)
+
+		if isHexNumber(res) {
+			i, _ := strconv.ParseUint(res, 16, 64)
+			return hexutil.Uint64(i)
+		} else {
+			i, _ := strconv.Atoi(res)
+
+			return hexutil.Uint64(i)
+		}
 	}
 
 	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
 	return hexutil.Uint64(header.Number.Uint64())
+}
+
+func isHexNumber(s string) bool {
+	_, err := strconv.ParseUint(s, 16, 64)
+	return err == nil
 }
 
 // GetBalance returns the amount of wei for the given address in the state of the
@@ -658,6 +676,7 @@ func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, 
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding balance request", "url", forwardURL)
 		if blockNr, ok := blockNrOrHash.Number(); ok {
 			return forward[*hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockNr.Int64()})
 		}
@@ -841,6 +860,7 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding get block by number request", "url", forwardURL)
 		// Forward the raw transaction to the specified URL
 		return forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number, fullTx})
 	}
@@ -865,6 +885,7 @@ func (s *BlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fu
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding get block by hash", "url", forwardURL)
 		return forward[map[string]interface{}](forwardURL, "eth_getBlockByHash", []interface{}{hash.Hex(), fullTx})
 	}
 
@@ -1637,6 +1658,8 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding get transaction count", "url", forwardURL)
+
 		if blockNr, ok := blockNrOrHash.Number(); ok {
 			return forward[*hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.Int64()})
 		}
@@ -1707,6 +1730,7 @@ func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.
 		// change(taiko): check to see if it exists from the preconfer.
 		// Check if PreconfirmationForwardingURL is set
 		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+			log.Info("forwarding get transaction receipt", "url", forwardURL)
 			// Forward the raw transaction to the specified URL
 			return forward[map[string]interface{}](forwardURL, "eth_getTransactionReceipt", []interface{}{hash.Hex()})
 		}
@@ -1884,6 +1908,7 @@ func (s *TransactionAPI) FillTransaction(ctx context.Context, args TransactionAr
 func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding send raw tx", "url", forwardURL)
 		// Forward the raw transaction to the specified URL
 		return forward[common.Hash](forwardURL, "eth_sendRawTransaction", []interface{}{input.String()})
 	}
