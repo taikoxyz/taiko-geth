@@ -668,6 +668,7 @@ func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, 
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		log.Info("forwarding balance request", "url", forwardURL)
 		if blockNr, ok := blockNrOrHash.Number(); ok {
+			log.Info("forwarding balance request", "blockNr", blockNr.Int64())
 			bal, err := forward[string](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockNr.Int64()})
 			if err == nil && bal != nil {
 				return (*hexutil.Big)(hexutil.MustDecodeBig(*bal)), nil
@@ -675,6 +676,7 @@ func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, 
 		}
 
 		if blockHash, ok := blockNrOrHash.Hash(); ok {
+			log.Info("forwarding balance request", "blockNr", blockHash.Hex())
 			bal, err := forward[string](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockHash.Hex()})
 			if err == nil && bal != nil {
 				return (*hexutil.Big)(hexutil.MustDecodeBig(*bal)), nil
