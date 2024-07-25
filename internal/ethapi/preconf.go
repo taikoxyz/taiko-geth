@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type rpcRequest struct {
@@ -73,6 +75,8 @@ func forward[T any](forwardURL string, method string, params []interface{}) (*T,
 	if rpcResp.Error != nil {
 		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
+
+	log.Info("forwarded request result", "res", rpcResp.Result)
 
 	t, ok := rpcResp.Result.(T)
 
