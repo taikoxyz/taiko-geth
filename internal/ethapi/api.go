@@ -650,7 +650,7 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 
 		if res != nil {
 			log.Info("forwarded block number request", "res", res)
-			i, _ := strconv.ParseUint(*res, 16, 64)
+			i, _ := strconv.ParseUint(*res, 0, 64)
 			return hexutil.Uint64(i)
 		}
 	}
