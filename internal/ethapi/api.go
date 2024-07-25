@@ -1638,11 +1638,11 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		if blockNr, ok := blockNrOrHash.Number(); ok {
-			return forward[*hexutil.Uint64](forwardURL, "eth_getTrasnactionCount", []interface{}{address.Hex(), blockNr.Int64()})
+			return forward[*hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.Int64()})
 		}
 
 		if blockHash, ok := blockNrOrHash.Hash(); ok {
-			return forward[*hexutil.Uint64](forwardURL, "eth_getTrasnactionCount", []interface{}{address.Hex(), blockHash.Hex()})
+			return forward[*hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockHash.Hex()})
 		}
 	}
 

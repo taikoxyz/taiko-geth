@@ -37,7 +37,6 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -54,7 +53,6 @@ type EthAPIBackend struct {
 
 // GetPreconfirmationForwardingURL
 func (b *EthAPIBackend) GetPreconfirmationForwardingURL() string {
-	log.Info("getting preconf from backend", "url", b.preconfirmationURL)
 	return b.preconfirmationURL
 }
 
