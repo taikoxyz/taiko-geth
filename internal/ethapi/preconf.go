@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -76,7 +77,7 @@ func forward[T any](forwardURL string, method string, params []interface{}) (*T,
 		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
-	log.Info("forwarded request result", "method", method, "res", rpcResp.Result)
+	log.Info("forwarded request result", "method", method, "res", rpcResp.Result, "type", reflect.TypeOf(rpcResp.Result).String())
 
 	return rpcResp.Result.(*T), nil
 }
