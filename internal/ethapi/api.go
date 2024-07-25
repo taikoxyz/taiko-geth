@@ -670,19 +670,15 @@ func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, 
 		if blockNr, ok := blockNrOrHash.Number(); ok {
 			bal, err := forward[hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockNr.Int64()})
 			if err == nil && bal != nil {
-				log.Info("forwarded getBalance", "res", bal)
+				return bal, nil
 			}
-
-			return bal, nil
 		}
 
 		if blockHash, ok := blockNrOrHash.Hash(); ok {
 			bal, err := forward[hexutil.Big](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockHash.Hex()})
 			if err == nil && bal != nil {
-				log.Info("forwarded getBalance", "res", bal)
+				return bal, nil
 			}
-
-			return bal, nil
 		}
 	}
 
@@ -864,7 +860,6 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 		// Forward the raw transaction to the specified URL
 		b, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number, fullTx})
 		if err == nil && b != nil {
-			log.Info("forwarded getBlockByNumber", "res", b)
 			return *b, nil
 		}
 	}
@@ -892,7 +887,6 @@ func (s *BlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fu
 		log.Info("forwardinggetBlockByHash", "url", forwardURL)
 		m, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByHash", []interface{}{hash.Hex(), fullTx})
 		if err == nil && m != nil {
-			log.Info("forwarded getBlockByHash", "res", m)
 			return *m, nil
 		}
 	}
@@ -1671,7 +1665,6 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 		if blockNr, ok := blockNrOrHash.Number(); ok {
 			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.Int64()})
 			if err == nil && txCount != nil {
-				log.Info("forwarded getTransactionCount", "res", txCount)
 				return txCount, nil
 			}
 		}
@@ -1679,7 +1672,6 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 		if blockHash, ok := blockNrOrHash.Hash(); ok {
 			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockHash.Hex()})
 			if err == nil && txCount != nil {
-				log.Info("forwarded getTransactionCount", "res", txCount)
 				return txCount, nil
 			}
 		}
@@ -1931,7 +1923,6 @@ func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.B
 		// Forward the raw transaction to the specified URL
 		h, err := forward[string](forwardURL, "eth_sendRawTransaction", []interface{}{input.String()})
 		if err == nil && h != nil {
-			log.Info("forwarded sendRawTransaction", "res", h)
 			return common.HexToHash(*h), nil
 		}
 	}
