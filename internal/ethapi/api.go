@@ -864,7 +864,10 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 		// Forward the raw transaction to the specified URL
 		b, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number.String(), fullTx})
 		if err == nil && b != nil {
+			log.Info("successful eth_getBlockByNumber response", "block", b)
 			return *b, nil
+		} else {
+			log.Info("unsuccessful eth_getBlockByNumber response", "error", err)
 		}
 	}
 
