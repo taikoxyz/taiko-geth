@@ -860,7 +860,7 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-		log.Info("forwarding getBlockByNumber", "url", forwardURL)
+		log.Info("forwarding getBlockByNumber", "url", forwardURL, "number", number.Int64(), "numberStr", number.String())
 		// Forward the raw transaction to the specified URL
 		b, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number.String(), fullTx})
 		if err == nil && b != nil {
