@@ -285,7 +285,7 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 		return false, nil
 	}
 
-	if !bytes.HasPrefix(tx.Data(), AnchorSelector) || !bytes.HasPrefix(tx.Data(), AnchorV2Selector) {
+	if !bytes.HasPrefix(tx.Data(), AnchorSelector) && !bytes.HasPrefix(tx.Data(), AnchorV2Selector) {
 		return false, nil
 	}
 
