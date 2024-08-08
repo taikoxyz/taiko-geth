@@ -44,7 +44,7 @@ func (w *worker) BuildTransactionsLists(
 	}
 
 	// Check if tx pool is empty at first.
-	if len(w.eth.TxPool().Pending(txpool.PendingFilter{BaseFee: uint256.MustFromBig(baseFee), OnlyPlainTxs: true})) == 0 {
+	if len(w.eth.TxPool().Pending(txpool.PendingFilter{MinTip: uint256.NewInt(minTip), BaseFee: uint256.MustFromBig(baseFee), OnlyPlainTxs: true})) == 0 {
 		return txsLists, nil
 	}
 
@@ -144,8 +144,7 @@ func (w *worker) sealBlockWith(
 	}
 
 	if len(txs) == 0 {
-		// A L2 block needs to have have at least one `V1TaikoL2.anchor` or
-		// `V1TaikoL2.invalidateBlock` transaction.
+		// A L2 block needs to have have at least one `TaikoL2.anchor` / `TaikoL2.anchorV2`.
 		return nil, fmt.Errorf("too less transactions in the block")
 	}
 
