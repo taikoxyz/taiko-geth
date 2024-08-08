@@ -538,7 +538,8 @@ func (st *StateTransition) getTreasuryAddress() common.Address {
 	)
 }
 
-// DecodeOntakeExtraData decodes an ontake block's extradata, returns basefeeSharingPctg configurations.
+// DecodeOntakeExtraData decodes an ontake block's extradata, returns basefeeSharingPctg configurations,
+// the corresponding enocding function in protocol is `LibProposing._encodeGasConfigs`.
 func DecodeOntakeExtraData(extradata []byte) uint8 {
 	return uint8(new(big.Int).SetBytes(extradata).Uint64())
 }
