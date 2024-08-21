@@ -300,6 +300,7 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 	}
 
 	if tx.GasFeeCap().Cmp(header.BaseFee) != 0 {
+		log.Info("anchor tx fails validation", "gasFeeCap", tx.GasFeeCap(), "header baseFee", header.BaseFee)
 		return false, nil
 	}
 
