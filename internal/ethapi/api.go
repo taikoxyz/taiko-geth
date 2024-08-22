@@ -1182,6 +1182,7 @@ func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.S
 		return nil, fmt.Errorf("execution aborted (timeout = %v)", timeout)
 	}
 	if err != nil {
+		log.Info("error executing in doCall", "isAnchor", msg.IsAnchor, "err", err)
 		return result, fmt.Errorf("err: %w (supplied gas %d)", err, msg.GasLimit)
 	}
 	return result, nil
