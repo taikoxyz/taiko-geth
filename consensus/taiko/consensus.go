@@ -225,6 +225,9 @@ func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 	// Verify anchor transaction
 	if len(txs) != 0 { // Transactions list might be empty when building empty payload.
 		isAnchor, err := t.ValidateAnchorTx(txs[0], header)
+
+		log.Info("ValidatorAnchorTx", "isAnchor", isAnchor, "err", err)
+
 		if err != nil {
 			return nil, err
 		}
