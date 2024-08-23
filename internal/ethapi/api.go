@@ -1161,6 +1161,7 @@ func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.S
 	if err != nil {
 		return nil, err
 	}
+
 	evm := b.GetEVM(ctx, msg, state, header, &vm.Config{NoBaseFee: true}, &blockCtx)
 
 	// Wait for the context to be done and cancel the evm. Even if the
