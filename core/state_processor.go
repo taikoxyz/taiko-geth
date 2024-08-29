@@ -28,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -174,7 +173,6 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	// add it to the Message, if its an ontake block.
 	if config.IsOntake(header.Number) {
 		msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
-		log.Info("Decode the basefeeSharingPctg config from the extradata", "extra", header.Extra, "BasefeeSharingPctg", msg.BasefeeSharingPctg)
 	}
 	// Create a new context to be used in the EVM environment
 	blockContext := NewEVMBlockContext(header, bc, author)
