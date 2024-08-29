@@ -18,7 +18,6 @@ package core
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
 	"math"
 	"math/big"
 	"strings"
@@ -474,14 +473,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		// CHANGE(taiko): basefee is not burnt, but sent to a treasury and block.coinbase instead.
 		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.msg.IsAnchor {
 			totalFee := new(big.Int).Mul(st.evm.Context.BaseFee, new(big.Int).SetUint64(st.gasUsed()))
-			log.Info("Total fee is", "totalFee", totalFee)
 			feeCoinbase := new(big.Int).Div(
 				new(big.Int).Mul(totalFee, new(big.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
 				new(big.Int).SetUint64(100),
 			)
-			log.Info("Sent to coinbase", "feeCoinbase", feeCoinbase, "Coinbase", st.evm.Context.Coinbase)
 			feeTreasury := new(big.Int).Sub(totalFee, feeCoinbase)
-			log.Info("Sent to treasury", "feeTreasury", feeTreasury, "Treasury", st.getTreasuryAddress())
 			st.state.AddBalance(st.getTreasuryAddress(), uint256.MustFromBig(feeTreasury))
 			st.state.AddBalance(st.evm.Context.Coinbase, uint256.MustFromBig(feeCoinbase))
 		}

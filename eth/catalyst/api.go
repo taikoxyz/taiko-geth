@@ -565,11 +565,7 @@ func (api *ConsensusAPI) NewPayloadV2(params engine.ExecutableData) (engine.Payl
 	if params.BlobGasUsed != nil {
 		return engine.PayloadStatusV1{Status: engine.INVALID}, engine.InvalidParams.With(errors.New("non-nil blobGasUsed pre-cancun"))
 	}
-	payloads, err := api.newPayload(params, nil, nil)
-	if err != nil {
-		log.Error("NewPayloadV2", "err", err)
-	}
-	return payloads, err
+	return api.newPayload(params, nil, nil)
 }
 
 // NewPayloadV3 creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
