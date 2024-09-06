@@ -378,6 +378,17 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 
 	// Execute the transaction and return the result.
 	env.state.SetTxContext(tx.Hash(), env.tcount)
+
+	signer := types.MakeSigner(g.chainConfig, env.header.Number, env.header.Time)
+	from, err := types.Sender(signer, tx)
+	if err != nil {
+		log.Error("error retrieving sender address from transaction", "err", err.Error())
+		return nil, nil, 0, err
+	}
+	if len(env.txs) == 0 && from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
+		return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
+	}
+
 	receipt, err := g.commitPreconfTransaction(env, tx)
 	if err != nil {
 		return nil, nil, 0, err
@@ -385,8 +396,6 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 
 	log.Info("PRECONF: simulated tx.", "was success", receipt != nil)
 
-	// Fetch nonce and balance
-	signer := types.MakeSigner(g.chainConfig, env.header.Number, env.header.Time)
 	sender, err := signer.Sender(tx)
 	if err != nil {
 		log.Error("PRECONF: failed to recover sender", "err", err)
