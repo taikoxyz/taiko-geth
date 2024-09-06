@@ -94,6 +94,11 @@ type environment struct {
 	receipts []*types.Receipt
 	sidecars []*types.BlobTxSidecar
 	blobs    int
+
+	//gattaca
+	startBalance             uint256.Int
+	hashReceipts             map[string]*types.Receipt
+	cumulativeBuilderPayment uint256.Int
 }
 
 // copy creates a deep copy of environment.
@@ -115,8 +120,18 @@ func (env *environment) copy() *environment {
 
 	cpy.sidecars = make([]*types.BlobTxSidecar, len(env.sidecars))
 	copy(cpy.sidecars, env.sidecars)
+	cpy.hashReceipts = make(map[string]*types.Receipt, len(env.hashReceipts))
+	for k, v := range env.hashReceipts {
+		cpy.hashReceipts[k] = v
+	}
 
 	return cpy
+}
+
+func (env *environment) reset() {
+	env.txs = make([]*types.Transaction, 0)
+	env.startBalance = *env.state.GetBalance(env.coinbase)
+	env.cumulativeBuilderPayment = *uint256.NewInt(0)
 }
 
 // discard terminates the background prefetcher go-routine. It should

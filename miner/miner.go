@@ -78,18 +78,26 @@ type Miner struct {
 	stopCh  chan struct{}
 	worker  *worker
 
+	// gattacaWorker: worker state manager and api override provider
+	gattacaWorker *GattacaWorker
+
 	wg sync.WaitGroup
 }
 
 func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *event.TypeMux, engine consensus.Engine, isLocalBlock func(header *types.Header) bool) *Miner {
+	gattacaWorker, err := NewGattacaWorker(chainConfig, eth.BlockChain(), config, engine)
+	if err != nil {
+		panic(err)
+	}
 	miner := &Miner{
-		mux:     mux,
-		eth:     eth,
-		engine:  engine,
-		exitCh:  make(chan struct{}),
-		startCh: make(chan struct{}),
-		stopCh:  make(chan struct{}),
-		worker:  newWorker(config, chainConfig, engine, eth, mux, isLocalBlock, true),
+		mux:           mux,
+		eth:           eth,
+		engine:        engine,
+		exitCh:        make(chan struct{}),
+		startCh:       make(chan struct{}),
+		stopCh:        make(chan struct{}),
+		worker:        newWorker(config, chainConfig, engine, eth, mux, isLocalBlock, true),
+		gattacaWorker: gattacaWorker,
 	}
 	miner.wg.Add(1)
 	go miner.update()

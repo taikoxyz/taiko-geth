@@ -247,11 +247,6 @@ func buildFlags(env build.Environment, staticLinking bool, buildTags []string) (
 		ld = append(ld, "-X", "github.com/ethereum/go-ethereum/internal/version.gitCommit="+env.Commit)
 		ld = append(ld, "-X", "github.com/ethereum/go-ethereum/internal/version.gitDate="+env.Date)
 	}
-	// Strip DWARF on darwin. This used to be required for certain things,
-	// and there is no downside to this, so we just keep doing it.
-	if runtime.GOOS == "darwin" {
-		ld = append(ld, "-s")
-	}
 	if runtime.GOOS == "linux" {
 		// Enforce the stacksize to 8M, which is the case on most platforms apart from
 		// alpine Linux.
