@@ -205,7 +205,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 		case ev := <-newBlockCh:
 			block := ev.Block
 			var idx int
-			var cBlocks *types.Block
+			var cBlocks types.Block
 			for idx, cBlocks = range g.builtBlocks {
 				if cBlocks.NumberU64() == block.NumberU64() {
 					break
