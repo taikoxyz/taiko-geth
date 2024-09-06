@@ -206,12 +206,14 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 			block := ev.Block
 			var idx int
 			var cBlocks types.Block
+			found := false
 			for idx, cBlocks = range g.builtBlocks {
 				if cBlocks.NumberU64() == block.NumberU64() {
+					found = true
 					break
 				}
 			}
-			if block != nil {
+			if found {
 				if cBlocks.Hash() == block.Hash() {
 					g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
 				} else {
