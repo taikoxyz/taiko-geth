@@ -248,6 +248,7 @@ func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res ch
 		return
 	}
 	simEnv := env.copy()
+	startBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	if err != nil {
 		var gasUsed uint64
@@ -262,10 +263,12 @@ func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res ch
 		}
 		return
 	}
+	endBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
 	var newStateId uint32
 	newStateId = uuid.New().ID()
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
-	simEnv.cumulativeBuilderPayment.Sub(simEnv.state.GetBalance(env.coinbase), &simEnv.startBalance)
+	builderPayment := endBalance - startBalance
+	simEnv.cumulativeBuilderPayment += builderPayment
 	g.envMap[newStateId] = simEnv
 	simEnv.receipts = append(simEnv.receipts, receipt)
 	if stateId < 100 {
@@ -278,7 +281,7 @@ func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res ch
 		error:          nil,
 		gasUsed:        receipt.GasUsed,
 		stateId:        newStateId,
-		builderPayment: simEnv.cumulativeBuilderPayment.Hex(),
+		builderPayment: fmt.Sprintf("%x", builderPayment),
 	}
 }
 
@@ -328,18 +331,18 @@ func (g *GattacaWorker) commitEnvToPreconf(stateId uint32, simRes chan CommitSta
 func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
-	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment.Clone()
 	blkNumber := uint64(1) + g.startBlockNumber + uint64(len(g.builtBlocks))
 	g.preconfHead.header.Number.Set(big.NewInt(int64(blkNumber)))
 	// Create a new block using the current preconfHead values.
 	block := types.NewBlock(g.preconfHead.header, g.preconfHead.txs, nil, g.preconfHead.receipts, trie.NewStackTrie(nil))
 	g.builtBlocks = append(g.builtBlocks, *block)
+	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment
 	g.preconfHead.reset()
 	block.Hash()
 	// Send the response back indicating success.
 	req.Response <- SealBlockResponse{
 		block:                    block,
-		cumulativeBuilderPayment: cumulativeBuilderPayment.Hex(),
+		cumulativeBuilderPayment: fmt.Sprintf("%x", cumulativeBuilderPayment),
 		err:                      nil,
 	}
 }

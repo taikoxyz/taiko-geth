@@ -98,18 +98,19 @@ type environment struct {
 	//gattaca
 	startBalance             uint256.Int
 	hashReceipts             map[string]*types.Receipt
-	cumulativeBuilderPayment uint256.Int
+	cumulativeBuilderPayment uint64
 }
 
 // copy creates a deep copy of environment.
 func (env *environment) copy() *environment {
 	cpy := &environment{
-		signer:   env.signer,
-		state:    env.state.Copy(),
-		tcount:   env.tcount,
-		coinbase: env.coinbase,
-		header:   types.CopyHeader(env.header),
-		receipts: copyReceipts(env.receipts),
+		signer:                   env.signer,
+		state:                    env.state.Copy(),
+		tcount:                   env.tcount,
+		coinbase:                 env.coinbase,
+		header:                   types.CopyHeader(env.header),
+		receipts:                 copyReceipts(env.receipts),
+		cumulativeBuilderPayment: env.cumulativeBuilderPayment,
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool
@@ -131,7 +132,7 @@ func (env *environment) copy() *environment {
 func (env *environment) reset() {
 	env.txs = make([]*types.Transaction, 0)
 	env.startBalance = *env.state.GetBalance(env.coinbase)
-	env.cumulativeBuilderPayment = *uint256.NewInt(0)
+	env.cumulativeBuilderPayment = 0
 }
 
 // discard terminates the background prefetcher go-routine. It should
