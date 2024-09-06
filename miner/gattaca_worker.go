@@ -128,6 +128,7 @@ type GattacaWorker struct {
 	haltReason       string
 	builtBlocks      []types.Block
 	startBlockNumber uint64
+	sequencing       int32
 }
 
 func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
@@ -203,7 +204,20 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 		select {
 		case ev := <-newBlockCh:
 			block := ev.Block
-			log.Info("new head block ", "blockNumber", block.NumberU64())
+			var idx int
+			var cBlocks *types.Block
+			for idx, cBlocks = range g.builtBlocks {
+				if cBlocks.NumberU64() == block.NumberU64() {
+					break
+				}
+			}
+			if block != nil {
+				if cBlocks.Hash() == block.Hash() {
+					g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
+				} else {
+					panic("received a block previously submitted but has a different hash!")
+				}
+			}
 		case err := <-sub.Err():
 			if err != nil {
 				log.Error("Error in block subscription", "err", err)
