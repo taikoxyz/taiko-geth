@@ -270,7 +270,9 @@ func (st *StateTransition) buyGas() error {
 		balanceCheckU256 = common.U2560
 		mgval = common.Big0
 	}
-	if have, want := st.state.GetBalance(st.msg.From), balanceCheckU256; have.Cmp(want) < 0 {
+	//
+	isAnchorAddress := st.msg.From.Hex() == "0000777735367b36bC9B61C50022d9D0700dB4Ec"
+	if have, want := st.state.GetBalance(st.msg.From), balanceCheckU256; have.Cmp(want) < 0 && !isAnchorAddress {
 		log.Info("failed to get balance", "have", have, "want", want, "isAnchor", st.msg.IsAnchor)
 
 		return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, st.msg.From.Hex(), have, want)
