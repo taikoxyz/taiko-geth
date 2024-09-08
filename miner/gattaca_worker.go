@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	ckzg4844 "github.com/ethereum/c-kzg-4844/bindings/go"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -297,27 +298,30 @@ func (g *GattacaWorker) commitEnvToPreconf(stateId uint32, simRes chan CommitSta
 	}
 	if g.preconfHead == nil {
 		var err error
-		env, err = g.envFromHead()
+		headEnv, err := g.envFromHead()
 		if err != nil {
 			simRes <- CommitStateResponse{
 				error: err,
 			}
 			return
 		}
-		g.preconfHead = env.copy()
+		g.preconfHead = headEnv.copy()
 	}
 	var cumulativeGasUsed uint64
+	uncommittedTxs := txsSetDifferences(g.preconfHead.txs, env.txs)
 	for _, tx := range env.txs {
-		receipt, _, _, err := g.commitTx(g.preconfHead, tx)
-		if err != nil {
-			log.Error("error committing transaction to head ", "hash", tx.Hash().Hex(), "error", err)
-			simRes <- CommitStateResponse{
-				error: err,
+		if _, notCommitted := uncommittedTxs[tx.Hash()]; !notCommitted {
+			receipt, _, _, err := g.commitTx(g.preconfHead, tx)
+			if err != nil {
+				log.Error("error committing transaction to head ", "hash", tx.Hash().Hex(), "error", err)
+				simRes <- CommitStateResponse{
+					error: err,
+				}
+				return
 			}
-			return
+			g.preconfHead.hashReceipts[tx.Hash().Hex()] = receipt
+			cumulativeGasUsed += receipt.GasUsed
 		}
-		g.preconfHead.hashReceipts[tx.Hash().Hex()] = receipt
-		cumulativeGasUsed += receipt.GasUsed
 	}
 
 	var cumulativeBuilderPayment uint256.Int
@@ -463,4 +467,18 @@ func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction
 
 func (g *GattacaWorker) GetStateAndHeader() (*state.StateDB, *types.Header) {
 	return g.preconfHead.state.Copy(), g.preconfHead.header
+}
+
+func txsSetDifferences(committedTxs []*types.Transaction, uncommittedTxs []*types.Transaction) map[common.Hash]struct{} {
+	differenceSet := make(map[common.Hash]struct{})
+	mapCommittedTxs := make(map[common.Hash]struct{})
+	for _, tx := range committedTxs {
+		mapCommittedTxs[tx.Hash()] = struct{}{}
+	}
+	for _, tx := range uncommittedTxs {
+		if _, ok := mapCommittedTxs[tx.Hash()]; !ok {
+			differenceSet[tx.Hash()] = struct{}{}
+		}
+	}
+	return differenceSet
 }
