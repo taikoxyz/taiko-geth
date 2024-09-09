@@ -394,6 +394,11 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 	}
 	if len(env.txs) == 0 && from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
 		return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
+	} else {
+		err = tx.MarkAsAnchor()
+		if err != nil {
+			log.Error("error marking transaction as anchor as anchor", "err", err.Error())
+		}
 	}
 
 	receipt, err := g.commitPreconfTransaction(env, tx)
