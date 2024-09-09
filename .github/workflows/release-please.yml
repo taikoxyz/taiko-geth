@@ -3,7 +3,7 @@ name: Release Please
 on:
   push:
     branches:
-      - taiko
+      - feature/devnet-ontake-50
 
 permissions:
   contents: write

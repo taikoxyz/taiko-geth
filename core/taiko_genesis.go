@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	InternalDevnetOntakeBlock = new(big.Int).SetUint64(2)
+	InternalDevnetOntakeBlock = new(big.Int).SetUint64(50)
 	HeklaOntakeBlock          = new(big.Int).SetUint64(840_512)
 	// TODO: update this value when mainnet fork height is decided
 	MainnetOntakeBlock = new(big.Int).SetUint64(9_000_000)
