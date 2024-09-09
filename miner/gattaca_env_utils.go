@@ -170,7 +170,12 @@ func (g *GattacaWorker) retrieveEnv(stateId uint32) (*environment, error) {
 		if g.preconfHead != nil {
 			env = g.preconfHead
 		} else {
-			return nil, errors.New("preconf head not yet committed")
+			log.Warn("nothing committed yet, retrieving env from chain head")
+			env, err = g.envFromHead()
+			if err != nil {
+				log.Error("Failed  envFromHead", "err", err)
+				return nil, err
+			}
 		}
 	} else {
 		var exists bool

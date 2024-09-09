@@ -126,7 +126,7 @@ func (env *environment) copy() *environment {
 	for k, v := range env.hashReceipts {
 		cpy.hashReceipts[k] = v
 	}
-
+	cpy.txHashSet = make(map[string]struct{}, len(env.txHashSet))
 	for k, v := range env.txHashSet {
 		cpy.txHashSet[k] = v
 	}
