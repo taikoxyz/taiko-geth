@@ -99,6 +99,7 @@ type environment struct {
 	startBalance             uint256.Int
 	hashReceipts             map[string]*types.Receipt
 	cumulativeBuilderPayment uint64
+	txHashSet                map[string]struct{}
 }
 
 // copy creates a deep copy of environment.
@@ -124,6 +125,10 @@ func (env *environment) copy() *environment {
 	cpy.hashReceipts = make(map[string]*types.Receipt, len(env.hashReceipts))
 	for k, v := range env.hashReceipts {
 		cpy.hashReceipts[k] = v
+	}
+
+	for k, v := range env.txHashSet {
+		cpy.txHashSet[k] = v
 	}
 
 	return cpy
