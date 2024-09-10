@@ -409,13 +409,15 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 		log.Error("error retrieving sender address from transaction", "err", err.Error())
 		return nil, nil, 0, err
 	}
-	if len(env.txs) == 0 && from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
-		log.Error("first transaction must come from GoldenTouchAccount")
-		//return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
-	} else {
-		err = tx.MarkAsAnchor()
-		if err != nil {
-			log.Error("error marking transaction as anchor as anchor", "err", err.Error())
+	if len(env.txs) == 0 {
+		if from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
+			log.Error("first transaction must come from GoldenTouchAccount")
+			//return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
+		} else {
+			err = tx.MarkAsAnchor()
+			if err != nil {
+				log.Error("error marking transaction as anchor", "err", err.Error())
+			}
 		}
 	}
 
