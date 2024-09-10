@@ -214,22 +214,27 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 		case ev := <-newBlockCh:
 			block := ev.Block
 			var idx int
-			var cBlocks inMemoryStore
+			var localBlock inMemoryStore
 			found := false
-			for idx, cBlocks = range g.builtBlocks {
-				if cBlocks.block.NumberU64() == block.NumberU64() {
+			for idx, localBlock = range g.builtBlocks {
+				if localBlock.block.NumberU64() == block.NumberU64() {
 					found = true
 					break
 				}
 			}
 			if found {
-				if cBlocks.block.Hash() == block.Hash() {
-					g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
-					delete(g.mapBlockNumber, int64(block.NumberU64()))
-					delete(g.mapBlockHash, block.Hash().Hex())
-				} else {
-					panic("received a block previously submitted but has a different hash!")
+				if len(localBlock.block.Transactions()) != len(block.Transactions()) {
+					log.Crit("blocks txs length differ between in memory block and block received")
 				}
+				localTxs := localBlock.block.Transactions()
+				receivedTxs := block.Transactions()
+				for i := 1; i < len(localBlock.block.Transactions()); i++ {
+					if localTxs[i].Hash().Hex() != receivedTxs[i].Hash().Hex() {
+						log.Crit("transaction hash differs.", "local hash", localTxs[i].Hash().Hex(), "received hash", receivedTxs[i].Hash().Hex())
+					}
+				}
+				delete(g.mapBlockNumber, int64(block.NumberU64()))
+				delete(g.mapBlockHash, block.Hash().Hex())
 			}
 		case err := <-sub.Err():
 			if err != nil {
