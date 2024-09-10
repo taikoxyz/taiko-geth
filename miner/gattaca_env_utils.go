@@ -128,6 +128,7 @@ func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coin
 		hashReceipts:             make(map[string]*types.Receipt),
 		cumulativeBuilderPayment: 0,
 		txHashSet:                make(map[string]struct{}),
+		txs:                      make([]*types.Transaction, 0),
 	}
 	// Keep track of transactions which return errors so they can be removed
 	env.tcount = 0

@@ -80,76 +80,6 @@ func (g *GattacaWorker) GetTransactionReceipt(ctx context.Context, hash common.H
 	return marshalReceipt(receipt, blockHash, blockNumber, signer, tx, int(index)), nil
 }
 
-func (g *GattacaWorker) BlockNumber() hexutil.Uint64 {
-	header := g.chain.CurrentBlock() // latest header should always be available
-	chainCurrentBlock := header.Number.Uint64()
-	if len(g.builtBlocks) > 0 {
-		lastBlock := g.builtBlocks[len(g.builtBlocks)-1].NumberU64()
-		if lastBlock > chainCurrentBlock {
-			return hexutil.Uint64(lastBlock)
-		}
-	}
-	return hexutil.Uint64(chainCurrentBlock)
-
-}
-
-func (g *GattacaWorker) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
-	log.Info("block number requested ", "number", number.Int64())
-	block, err := g.blockByNumber(ctx, number)
-	if block != nil && err == nil {
-		response, err := g.rpcMarshalBlock(ctx, block, true, fullTx)
-		if err == nil && number == rpc.PendingBlockNumber {
-			// Pending blocks need to nil out a few fields
-			for _, field := range []string{"hash", "nonce", "miner"} {
-				response[field] = nil
-			}
-		}
-		return response, err
-	}
-	return nil, err
-}
-
-func (g *GattacaWorker) GetBlockByHash(ctx context.Context, hash common.Hash, fullTx bool) (map[string]interface{}, error) {
-	block, err := g.blockByHash(ctx, hash)
-	if block != nil {
-		return g.rpcMarshalBlock(ctx, block, true, fullTx)
-	}
-	return nil, err
-}
-
-func (g *GattacaWorker) GetTransactionCount(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
-	// Ask transaction pool for the nonce which includes pending transactions
-	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
-		nonce, err := g.getPoolNonce(ctx, address)
-		if err != nil {
-			return nil, err
-		}
-		return (*hexutil.Uint64)(&nonce), nil
-	}
-	// Resolve block number and use its state to ask for the nonce
-	state, _, err := g.stateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
-	if state == nil || err != nil {
-		return nil, err
-	}
-
-	nonce := state.GetNonce(address)
-
-	return (*hexutil.Uint64)(&nonce), state.Error()
-}
-
-func (g *GattacaWorker) GetBalance(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Big, error) {
-	if g.preconfHead != nil {
-		b := g.preconfHead.state.GetBalance(address).ToBig()
-		return (*hexutil.Big)(b), nil
-	}
-	state, _, err := g.stateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
-	if state == nil || err != nil {
-		return nil, err
-	}
-	b := state.GetBalance(address).ToBig()
-	return (*hexutil.Big)(b), state.Error()
-}
-
 func (g *GattacaWorker) getTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
 	lookup, tx, err := g.chain.GetTransactionLookup(txHash)
 	if err != nil {
@@ -212,18 +142,6 @@ func (g *GattacaWorker) getTd(ctx context.Context, hash common.Hash) *big.Int {
 	}
 	return nil
 }
-
-func (g *GattacaWorker) blockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
-	if len(g.builtBlocks) > 0 {
-		for _, builtBlock := range g.builtBlocks {
-			if builtBlock.Hash() == hash {
-				return &builtBlock, nil
-			}
-		}
-	}
-	return g.chain.GetBlockByHash(hash), nil
-}
-
 func (g *GattacaWorker) getPoolNonce(ctx context.Context, addr common.Address) (uint64, error) {
 	return g.preconfHead.state.GetNonce(addr), nil
 }
@@ -276,57 +194,6 @@ func (g *GattacaWorker) stateAndHeaderByNumberOrHash(ctx context.Context, blockN
 		return stateDb, header, nil
 	}
 	return nil, nil, errors.New("invalid arguments; neither block nor hash specified")
-}
-
-func (g *GattacaWorker) blockByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Block, error) {
-	block := g.getBlockFromPool(ctx, rpc.LatestBlockNumber)
-	if block != nil {
-		return block, nil
-	}
-	// Otherwise resolve and return the block
-	if number == rpc.LatestBlockNumber {
-		header := g.chain.CurrentBlock()
-		return g.chain.GetBlock(header.Hash(), header.Number.Uint64()), nil
-	}
-	if number == rpc.FinalizedBlockNumber {
-		header := g.chain.CurrentFinalBlock()
-		if header == nil {
-			return nil, errors.New("finalized block not found")
-		}
-		return g.chain.GetBlock(header.Hash(), header.Number.Uint64()), nil
-	}
-	if number == rpc.SafeBlockNumber {
-		header := g.chain.CurrentSafeBlock()
-		if header == nil {
-			return nil, errors.New("safe block not found")
-		}
-		return g.chain.GetBlock(header.Hash(), header.Number.Uint64()), nil
-	}
-	return g.chain.GetBlockByNumber(uint64(number)), nil
-}
-
-func (g *GattacaWorker) getBlockFromPool(ctx context.Context, number rpc.BlockNumber) *types.Block {
-	blockNumber := number.Int64()
-	startBlockNumber := int64(g.startBlockNumber)
-	builtBlocksLen := int64(len(g.builtBlocks))
-	if number == rpc.LatestBlockNumber {
-		currentBlock := g.chain.CurrentBlock().Number.Int64()
-		if startBlockNumber+builtBlocksLen > currentBlock {
-			last := builtBlocksLen - 1
-			if last > -1 {
-				return &g.builtBlocks[last]
-			}
-
-		}
-
-	}
-	if blockNumber >= startBlockNumber && blockNumber <= startBlockNumber+builtBlocksLen {
-		idx := blockNumber - startBlockNumber
-		if idx >= 0 && idx < builtBlocksLen {
-			return &g.builtBlocks[idx]
-		}
-	}
-	return nil
 }
 
 // marshalReceipt marshals a transaction receipt into a JSON object.

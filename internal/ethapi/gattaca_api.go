@@ -41,7 +41,6 @@ func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.By
 			return nil, err
 		}
 	}
-	log.Info("simulate tx", "stateId", stateId, "hash", tx.Hash().Hex())
 	resCh := make(chan miner.SimulationResponse, 1)
 	miner.SimCh <- miner.SimulateTxRequest{
 		RawTx:   nil,
@@ -53,8 +52,6 @@ func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.By
 }
 
 func (s *TransactionAPI) CommitState(ctx context.Context, stateId uint32) (map[string]interface{}, error) {
-	log.Info("commit state to preconfHead", "stateId", stateId)
-	
 	resCh := make(chan miner.CommitStateResponse, 1)
 	miner.CommitCh <- miner.ReqCommitState{
 		StateId: stateId,
@@ -68,7 +65,6 @@ func (s *TransactionAPI) CommitState(ctx context.Context, stateId uint32) (map[s
 }
 
 func (s *TransactionAPI) SealBlock(ctx context.Context, stateId uint32) (map[string]interface{}, error) {
-	log.Info("seal block")
 	resCh := make(chan miner.SealBlockResponse, 1)
 	miner.SealBlock <- miner.SealBlockRequest{
 		StateId:  stateId,

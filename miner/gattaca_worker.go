@@ -85,6 +85,11 @@ type CommitStateResponse struct {
 	error                    error
 }
 
+type inMemoryStore struct {
+	block *types.Block
+	env   *environment
+}
+
 func (c CommitStateResponse) CumulativeGasUsed() uint64 {
 	return c.cumulativeGasUsed
 }
@@ -126,9 +131,11 @@ type GattacaWorker struct {
 	preconfHead      *environment
 	halt             bool
 	haltReason       string
-	builtBlocks      []types.Block
+	builtBlocks      []inMemoryStore
 	startBlockNumber uint64
 	sequencing       int32
+	mapBlockNumber   map[int64]inMemoryStore
+	mapBlockHash     map[string]inMemoryStore
 }
 
 func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
@@ -137,18 +144,20 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 	if singletonGattaca == nil {
 
 		singletonGattaca = &GattacaWorker{
-			chainConfig: chainConfig,
-			chain:       chain,
-			config:      config,
-			engine:      engine,
-			extra:       config.ExtraData,
-			envMap:      make(map[uint32]*environment),
-			envBuilder:  make(map[uint32][]uint32),
-			preconfHead: nil,
-			halt:        false,
-			haltReason:  "",
-			commitMutex: sync.Mutex{},
-			builtBlocks: make([]types.Block, 0),
+			chainConfig:    chainConfig,
+			chain:          chain,
+			config:         config,
+			engine:         engine,
+			extra:          config.ExtraData,
+			envMap:         make(map[uint32]*environment),
+			envBuilder:     make(map[uint32][]uint32),
+			preconfHead:    nil,
+			halt:           false,
+			haltReason:     "",
+			commitMutex:    sync.Mutex{},
+			builtBlocks:    make([]inMemoryStore, 0),
+			mapBlockNumber: make(map[int64]inMemoryStore),
+			mapBlockHash:   make(map[string]inMemoryStore),
 		}
 		env, err := singletonGattaca.retrieveEnv(1)
 		if err != nil {
@@ -205,17 +214,19 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 		case ev := <-newBlockCh:
 			block := ev.Block
 			var idx int
-			var cBlocks types.Block
+			var cBlocks inMemoryStore
 			found := false
 			for idx, cBlocks = range g.builtBlocks {
-				if cBlocks.NumberU64() == block.NumberU64() {
+				if cBlocks.block.NumberU64() == block.NumberU64() {
 					found = true
 					break
 				}
 			}
 			if found {
-				if cBlocks.Hash() == block.Hash() {
+				if cBlocks.block.Hash() == block.Hash() {
 					g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
+					delete(g.mapBlockNumber, int64(block.NumberU64()))
+					delete(g.mapBlockHash, block.Hash().Hex())
 				} else {
 					panic("received a block previously submitted but has a different hash!")
 				}
@@ -282,7 +293,7 @@ func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res ch
 		error:          nil,
 		gasUsed:        receipt.GasUsed,
 		stateId:        newStateId,
-		builderPayment: fmt.Sprintf("%x", builderPayment),
+		builderPayment: fmt.Sprintf("0x%x", builderPayment),
 	}
 }
 
@@ -339,10 +350,16 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.preconfHead.header.Number.Set(big.NewInt(int64(blkNumber)))
 	// Create a new block using the current preconfHead values.
 	block := types.NewBlock(g.preconfHead.header, g.preconfHead.txs, nil, g.preconfHead.receipts, trie.NewStackTrie(nil))
-	g.builtBlocks = append(g.builtBlocks, *block)
+	entry := inMemoryStore{
+		block: block,
+		env:   g.preconfHead.copy(),
+	}
+	log.Info("seal block")
+	g.builtBlocks = append(g.builtBlocks, entry)
+	g.mapBlockNumber[int64(block.NumberU64())] = entry
+	g.mapBlockHash[block.Hash().Hex()] = entry
 	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment
 	g.preconfHead.reset()
-	block.Hash()
 	// Send the response back indicating success.
 	req.Response <- SealBlockResponse{
 		block:                    block,
@@ -393,7 +410,8 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 		return nil, nil, 0, err
 	}
 	if len(env.txs) == 0 && from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
-		return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
+		log.Error("first transaction must come from GoldenTouchAccount")
+		//return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
 	} else {
 		err = tx.MarkAsAnchor()
 		if err != nil {

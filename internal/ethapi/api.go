@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/miner"
 	"math/big"
-	"strconv"
 	"strings"
 	"time"
 
@@ -647,25 +646,14 @@ func (api *BlockChainAPI) ChainId() *hexutil.Big {
 func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 	worker := miner.GetWorker(5)
 	if worker != nil {
-		return worker.BlockNumber()
-	}
-	// change(taiko): check to see if it exists from the preconfer.
-	// Check if PreconfirmationForwardingURL is set
-	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-		log.Info("forwarding blockNumber request")
-
-		// Forward the raw transaction to the specified URL
-		res, err := forward[string](forwardURL, "eth_blockNumber", nil)
-
-		if err == nil && res != nil {
-			log.Info("forwarded block number request", "res", res)
-			i, _ := strconv.ParseUint(*res, 0, 64)
-
-			log.Info("parsed block number", "bn", hexutil.Uint64(i))
-			return hexutil.Uint64(i)
+		blNumber := worker.BlockNumber()
+		header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber)
+		if blNumber > header.Number.Uint64() {
+			return hexutil.Uint64(blNumber)
 		}
-	}
+		return hexutil.Uint64(header.Number.Uint64())
 
+	}
 	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
 	return hexutil.Uint64(header.Number.Uint64())
 }
@@ -675,31 +663,16 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 // block numbers are also allowed.
 func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Big, error) {
 	worker := miner.GetWorker(5)
+	var state *state.StateDB
+	var err error
 	if worker != nil {
-		return worker.GetBalance(ctx, address, blockNrOrHash)
-	}
-	// change(taiko): check to see if it exists from the preconfer.
-	// Check if PreconfirmationForwardingURL is set
-	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-		log.Info("forwarding balance request", "addr", address.Hex())
-		if blockNr, ok := blockNrOrHash.Number(); ok {
-			log.Info("forwarding balance request", "blockNr", blockNr.String())
-			bal, err := forward[string](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockNr.String()})
-			if err == nil && bal != nil {
-				return (*hexutil.Big)(hexutil.MustDecodeBig(*bal)), nil
-			}
+		state, _, err = worker.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+		if state == nil {
+			state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 		}
-
-		if blockHash, ok := blockNrOrHash.Hash(); ok {
-			log.Info("forwarding balance request", "blockNr", blockHash.Hex())
-			bal, err := forward[string](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockHash.Hex()})
-			if err == nil && bal != nil {
-				return (*hexutil.Big)(hexutil.MustDecodeBig(*bal)), nil
-			}
-		}
+	} else {
+		state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	}
-
-	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -871,10 +844,16 @@ func (s *BlockChainAPI) GetHeaderByHash(ctx context.Context, hash common.Hash) m
 //     only the transaction hash is returned.
 func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
 	worker := miner.GetWorker(5)
+	var block *types.Block
+	var err error
 	if worker != nil {
-		return worker.GetBlockByNumber(ctx, number, fullTx)
+		block, err = worker.GetBlockByNumber(ctx, number)
+		if block == nil {
+			block, err = s.b.BlockByNumber(ctx, number)
+		}
+	} else {
+		block, err = s.b.BlockByNumber(ctx, number)
 	}
-	block, err := s.b.BlockByNumber(ctx, number)
 	if block != nil && err == nil {
 		response, err := s.rpcMarshalBlock(ctx, block, true, fullTx)
 		if err == nil && number == rpc.PendingBlockNumber {
@@ -884,17 +863,6 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 			}
 		}
 		return response, err
-	} else {
-		// change(taiko): check to see if it exists from the preconfer.
-		// Check if PreconfirmationForwardingURL is set
-		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-			log.Info("forwarding getBlockByNumber", "number", number.Int64(), "numberStr", number.String())
-			// Forward the raw transaction to the specified URL
-			b, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number.String(), fullTx})
-			if err == nil && b != nil {
-				return *b, nil
-			}
-		}
 	}
 	return nil, err
 }
@@ -902,23 +870,19 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in the block are returned in full
 // detail, otherwise only the transaction hash is returned.
 func (s *BlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fullTx bool) (map[string]interface{}, error) {
+	var block *types.Block
+	var err error
 	worker := miner.GetWorker(5)
 	if worker != nil {
-		return worker.GetBlockByHash(ctx, hash, fullTx)
+		block = worker.GetBlockByHash(ctx, hash, fullTx)
+		if block == nil {
+			block, err = s.b.BlockByHash(ctx, hash)
+		}
+	} else {
+		block, err = s.b.BlockByHash(ctx, hash)
 	}
-	block, err := s.b.BlockByHash(ctx, hash)
 	if block != nil {
 		return s.rpcMarshalBlock(ctx, block, true, fullTx)
-	} else {
-		// change(taiko): check to see if it exists from the preconfer.
-		// Check if PreconfirmationForwardingURL is set
-		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-			log.Info("forwarding getBlockByHash", "hash", hash.Hex())
-			m, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByHash", []interface{}{hash.Hex(), fullTx})
-			if err == nil && m != nil {
-				return *m, nil
-			}
-		}
 	}
 	return nil, err
 }
@@ -1633,7 +1597,7 @@ type TransactionAPI struct {
 	signer    types.Signer
 }
 
-// NewTransactionAPI creates a new RPC service with methods for interacting with transactions.
+// NewTransactionApi creates a new RPC service with methods for interacting with transactions.
 func NewTransactionAPI(b Backend, nonceLock *AddrLocker) *TransactionAPI {
 	// The signer used by the API should always be the 'latest' known one because we expect
 	// signers to be backwards-compatible with old transactions.
@@ -1693,40 +1657,31 @@ func (s *TransactionAPI) GetRawTransactionByBlockHashAndIndex(ctx context.Contex
 
 // GetTransactionCount returns the number of transactions the given address has sent for the given block number
 func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
-	worker := miner.GetWorker(5)
-	if worker != nil {
-		return worker.GetTransactionCount(ctx, address, blockNrOrHash)
-	}
-	// change(taiko): check to see if it exists from the preconfer.
-	// Check if PreconfirmationForwardingURL is set
-	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
-		log.Info("forwarding getTransactionCount", "addr", address.Hex())
-
-		if blockNr, ok := blockNrOrHash.Number(); ok {
-			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.String()})
-			if err == nil && txCount != nil {
-				return txCount, nil
-			}
-		}
-
-		if blockHash, ok := blockNrOrHash.Hash(); ok {
-			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockHash.Hex()})
-			if err == nil && txCount != nil {
-				return txCount, nil
-			}
-		}
-	}
-
 	// Ask transaction pool for the nonce which includes pending transactions
+	worker := miner.GetWorker(5)
 	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
-		nonce, err := s.b.GetPoolNonce(ctx, address)
-		if err != nil {
-			return nil, err
+		if worker != nil {
+			nonce := worker.GetPendingPoolNonce(address)
+			return (*hexutil.Uint64)(&nonce), nil
+		} else {
+			nonce, err := s.b.GetPoolNonce(ctx, address)
+			if err != nil {
+				return nil, err
+			}
+			return (*hexutil.Uint64)(&nonce), nil
 		}
-		return (*hexutil.Uint64)(&nonce), nil
 	}
 	// Resolve block number and use its state to ask for the nonce
-	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	var state *state.StateDB
+	var err error
+	if worker != nil {
+		state, _, err = worker.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+		if state == nil {
+			state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+		}
+	} else {
+		state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	}
 	if state == nil || err != nil {
 		return nil, err
 	}
