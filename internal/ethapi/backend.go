@@ -135,7 +135,7 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 func RegisterVanillaTransactionApi(apiBackend Backend) error {
 	stack, err := node.New(&node.Config{
 		HTTPHost: "0.0.0.0",
-		HTTPPort: 9090,
+		HTTPPort: 8545,
 	})
 	if err != nil {
 		log.Crit("Failed to create the protocol stack", "err", err)
