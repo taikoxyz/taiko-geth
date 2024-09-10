@@ -81,7 +81,7 @@ type SimulationResponse struct {
 
 type CommitStateResponse struct {
 	cumulativeGasUsed        uint64
-	cumulativeBuilderPayment uint256.Int
+	cumulativeBuilderPayment string
 	error                    error
 }
 
@@ -95,7 +95,7 @@ func (c CommitStateResponse) CumulativeGasUsed() uint64 {
 }
 
 func (c CommitStateResponse) CumulativeBuilderPayment() string {
-	return c.cumulativeBuilderPayment.Hex()
+	return c.cumulativeBuilderPayment
 }
 
 func (c CommitStateResponse) Error() error {
@@ -339,11 +339,9 @@ func (g *GattacaWorker) commitEnvToPreconf(stateId uint32, simRes chan CommitSta
 		}
 	}
 
-	var cumulativeBuilderPayment uint256.Int
-	cumulativeBuilderPayment.Sub(g.preconfHead.state.GetBalance(env.coinbase), &env.startBalance)
 	simRes <- CommitStateResponse{
 		cumulativeGasUsed:        cumulativeGasUsed,
-		cumulativeBuilderPayment: cumulativeBuilderPayment,
+		cumulativeBuilderPayment: fmt.Sprintf("0x%x", g.preconfHead.cumulativeBuilderPayment),
 	}
 }
 
@@ -367,7 +365,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	// Send the response back indicating success.
 	req.Response <- SealBlockResponse{
 		block:                    block,
-		cumulativeBuilderPayment: fmt.Sprintf("%x", cumulativeBuilderPayment),
+		cumulativeBuilderPayment: fmt.Sprintf("0x%x", cumulativeBuilderPayment),
 		err:                      nil,
 	}
 }
