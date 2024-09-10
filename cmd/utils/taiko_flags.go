@@ -1,6 +1,9 @@
 package utils
 
 import (
+	"github.com/ethereum/go-ethereum/eth/filters"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
+	"github.com/ethereum/go-ethereum/log"
 	"os"
 
 	"github.com/ethereum/go-ethereum/eth"
@@ -38,4 +41,37 @@ func RegisterTaikoAPIs(stack *node.Node, cfg *ethconfig.Config, backend *eth.Eth
 			Authenticated: true,
 		},
 	})
+}
+
+func RegisterVanillaTransactionApi(stack *node.Node, backend *eth.Ethereum, ethcfg *ethconfig.Config) error {
+	filterSystem := filters.NewFilterSystem(backend.APIBackend, filters.Config{
+		LogCacheSize: ethcfg.FilterLogCacheSize,
+	})
+	vanillaApi := []rpc.API{
+		{
+			Namespace: "eth",
+			Service:   ethapi.NewVanillaTransactionAPI(backend.APIBackend, new(ethapi.AddrLocker)),
+		},
+		{
+			Namespace: "eth",
+			Service:   ethapi.NewVanillaBlockChainAPI(backend.APIBackend),
+		},
+		{
+			Namespace: "net",
+			Service:   ethapi.NewNetAPI(backend.P2PServer(), 167010),
+		},
+		{
+			Namespace: "taiko",
+			Version:   params.VersionWithMeta,
+			Service:   eth.NewTaikoAPIBackend(backend),
+			Public:    true,
+		},
+		{
+			Namespace: "eth",
+			Service:   filters.NewFilterAPI(filterSystem, false),
+		},
+	}
+	stack.RegisterAPIs(vanillaApi)
+	log.Info("vanilla api registered")
+	return stack.Start()
 }

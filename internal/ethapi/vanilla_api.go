@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/rpc"
 	"strconv"
 )
@@ -159,6 +160,88 @@ func (v *VanillaBlockChainAPI) BlockNumber() hexutil.Uint64 {
 
 	header, _ := v.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
 	return hexutil.Uint64(header.Number.Uint64())
+}
+
+func (api *VanillaBlockChainAPI) ChainId() *hexutil.Big {
+	return (*hexutil.Big)(api.b.ChainConfig().ChainID)
+}
+
+// GetBlockByNumber returns the requested canonical block.
+//   - When blockNr is -1 the chain pending block is returned.
+//   - When blockNr is -2 the chain latest block is returned.
+//   - When blockNr is -3 the chain finalized block is returned.
+//   - When blockNr is -4 the chain safe block is returned.
+//   - When fullTx is true all transactions in the block are returned, otherwise
+//     only the transaction hash is returned.
+func (s *VanillaBlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
+	worker := miner.GetWorker(5)
+	var block *types.Block
+	var err error
+	if worker != nil {
+		block, err = worker.GetBlockByNumber(ctx, number)
+		if block == nil {
+			block, err = s.b.BlockByNumber(ctx, number)
+		}
+	} else {
+		block, err = s.b.BlockByNumber(ctx, number)
+	}
+	if block != nil && err == nil {
+		response, err := s.rpcMarshalBlock(ctx, block, true, fullTx)
+		if err == nil && number == rpc.PendingBlockNumber {
+			// Pending blocks need to nil out a few fields
+			for _, field := range []string{"hash", "nonce", "miner"} {
+				response[field] = nil
+			}
+		}
+		return response, err
+	}
+	return nil, err
+}
+
+// rpcMarshalBlock uses the generalized output filler, then adds the total difficulty field, which requires
+// a `BlockchainAPI`.
+func (s *VanillaBlockChainAPI) rpcMarshalBlock(ctx context.Context, b *types.Block, inclTx bool, fullTx bool) (map[string]interface{}, error) {
+	fields := RPCMarshalBlock(b, inclTx, fullTx, s.b.ChainConfig())
+	if inclTx {
+		fields["totalDifficulty"] = (*hexutil.Big)(s.b.GetTd(ctx, b.Hash()))
+	}
+	return fields, nil
+}
+
+// GetBlockByHash returns the requested block. When fullTx is true all transactions in the block are returned in full
+// detail, otherwise only the transaction hash is returned.
+func (s *VanillaBlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fullTx bool) (map[string]interface{}, error) {
+	var block *types.Block
+	var err error
+	worker := miner.GetWorker(5)
+	if worker != nil {
+		block = worker.GetBlockByHash(ctx, hash, fullTx)
+		if block == nil {
+			block, err = s.b.BlockByHash(ctx, hash)
+		}
+	} else {
+		block, err = s.b.BlockByHash(ctx, hash)
+	}
+	if block != nil {
+		return s.rpcMarshalBlock(ctx, block, true, fullTx)
+	}
+	return nil, err
+}
+
+func (s *VanillaBlockChainAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, overrides *StateOverride, blockOverrides *BlockOverrides) (hexutil.Bytes, error) {
+	if blockNrOrHash == nil {
+		latest := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
+		blockNrOrHash = &latest
+	}
+	result, err := DoCall(ctx, s.b, args, *blockNrOrHash, overrides, blockOverrides, s.b.RPCEVMTimeout(), s.b.RPCGasCap())
+	if err != nil {
+		return nil, err
+	}
+	// If the result contains a revert reason, try to unpack and return it.
+	if len(result.Revert()) > 0 {
+		return nil, newRevertError(result.Revert())
+	}
+	return result.Return(), result.Err
 }
 
 // GetTransactionReceipt returns the transaction receipt for the given transaction hash.

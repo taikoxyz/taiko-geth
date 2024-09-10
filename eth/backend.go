@@ -285,11 +285,6 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	stack.RegisterProtocols(eth.Protocols())
 	stack.RegisterLifecycle(eth)
 
-	err = eth.RegisterVanillaTransactionApi()
-	if err != nil {
-		log.Crit("Failed to register vanilla transaction api", "err", err)
-	}
-
 	// Successful startup; push a marker and check previous unclean shutdowns.
 	eth.shutdownTracker.MarkStartup()
 
@@ -343,10 +338,6 @@ func (s *Ethereum) APIs() []rpc.API {
 			Service:   s.netRPCService,
 		},
 	}...)
-}
-
-func (s *Ethereum) RegisterVanillaTransactionApi() error {
-	return ethapi.RegisterVanillaTransactionApi(s.APIBackend)
 }
 
 func (s *Ethereum) ResetWithGenesisBlock(gb *types.Block) {
@@ -562,4 +553,9 @@ func (s *Ethereum) Stop() error {
 	s.eventMux.Stop()
 
 	return nil
+}
+
+// Expose p2p.Server
+func (s *Ethereum) P2PServer() *p2p.Server {
+	return s.p2pServer
 }

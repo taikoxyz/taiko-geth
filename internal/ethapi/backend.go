@@ -19,8 +19,6 @@ package ethapi
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
 	"math/big"
 	"time"
 
@@ -130,27 +128,4 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 			Service:   NewPersonalAccountAPI(apiBackend, nonceLock),
 		},
 	}
-}
-
-func RegisterVanillaTransactionApi(apiBackend Backend) error {
-	stack, err := node.New(&node.Config{
-		HTTPHost: "0.0.0.0",
-		HTTPPort: 8545,
-	})
-	if err != nil {
-		log.Crit("Failed to create the protocol stack", "err", err)
-	}
-	vanillaApi := []rpc.API{
-		{
-			Namespace: "eth",
-			Service:   NewVanillaTransactionAPI(apiBackend, new(AddrLocker)),
-		},
-		{
-			Namespace: "eth",
-			Service:   NewVanillaBlockChainAPI(apiBackend),
-		},
-	}
-	stack.RegisterAPIs(vanillaApi)
-	log.Info("vanilla api registered")
-	return stack.Start()
 }
