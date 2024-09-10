@@ -213,10 +213,9 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 		select {
 		case ev := <-newBlockCh:
 			block := ev.Block
-			var idx int
 			var localBlock inMemoryStore
 			found := false
-			for idx, localBlock = range g.builtBlocks {
+			for _, localBlock = range g.builtBlocks {
 				if localBlock.block.NumberU64() == block.NumberU64() {
 					found = true
 					break
