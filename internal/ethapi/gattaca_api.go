@@ -31,7 +31,6 @@ type Reason struct {
 
 func (s *TransactionAPI) SimulateAnchorAtState(ctx context.Context,
 	input hexutil.Bytes,
-	stateId uint32,
 	timestamp uint64,
 	baseFee uint64) (map[string]interface{}, error) {
 	tx := new(types.Transaction)
@@ -47,7 +46,6 @@ func (s *TransactionAPI) SimulateAnchorAtState(ctx context.Context,
 	}
 	resCh := make(chan miner.SimulationResponse, 1)
 	miner.SimAnchorTx <- miner.SimulateAnchorTx{
-		StateId:   stateId,
 		Tx:        tx,
 		Timestamp: timestamp,
 		BaseFee:   baseFee,

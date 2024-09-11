@@ -41,7 +41,6 @@ type SimulateTxRequest struct {
 }
 
 type SimulateAnchorTx struct {
-	StateId   uint32             `json:"stateId"`
 	Tx        *types.Transaction `json:"-"`
 	Timestamp uint64
 	BaseFee   uint64
@@ -211,7 +210,7 @@ func (g *GattacaWorker) runLoop() {
 			log.Info("run seal block ", req.StateId)
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
-			go g.simulateAnchorTx(req.StateId, req.Tx, req.Timestamp, req.BaseFee, req.SimRes)
+			go g.simulateAnchorTx(req.Tx, req.Timestamp, req.BaseFee, req.SimRes)
 		}
 	}
 }
@@ -255,7 +254,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 	}
 }
 
-func (g *GattacaWorker) simulateAnchorTx(stateId uint32, tx *types.Transaction, timestamp uint64, baseFee uint64, res chan SimulationResponse) {
+func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64, baseFee uint64, res chan SimulationResponse) {
 	env, err := g.retrieveEnv(2)
 	if err != nil {
 		res <- SimulationResponse{
@@ -324,14 +323,7 @@ func (g *GattacaWorker) simulateAnchorTx(stateId uint32, tx *types.Transaction, 
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.txHashSet[tx.Hash().Hex()] = struct{}{}
 	simEnv.receipts = append(simEnv.receipts, receipt)
-
-	g.envMap[newStateId] = simEnv
-	if stateId < 100 {
-		g.envBuilder[newStateId] = make([]uint32, 0)
-	} else {
-		prevBuild := g.envBuilder[stateId]
-		g.envBuilder[newStateId] = append(prevBuild, newStateId)
-	}
+	g.envBuilder[newStateId] = make([]uint32, 0)
 
 	res <- SimulationResponse{
 		error:          nil,
