@@ -1,9 +1,11 @@
 package miner
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	ckzg4844 "github.com/ethereum/c-kzg-4844/bindings/go"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -13,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/google/uuid"
 	"github.com/holiman/uint256"
+	"golang.org/x/crypto/sha3"
 	"math/big"
 	"os"
 	"sync"
@@ -447,26 +450,49 @@ func (g *GattacaWorker) commitEnvToPreconf(stateId uint32, simRes chan CommitSta
 func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
-	blkNumber := uint64(1) + g.startBlockNumber + uint64(len(g.builtBlocks))
-	g.preconfHead.header.Number.Set(big.NewInt(int64(blkNumber)))
-	// Create a new block using the current preconfHead values.
+
 	block := types.NewBlock(g.preconfHead.header, g.preconfHead.txs, nil, g.preconfHead.receipts, trie.NewStackTrie(nil))
 	entry := inMemoryStore{
 		block: block,
 		env:   g.preconfHead.copy(),
 	}
-	log.Info("seal block")
+
 	g.builtBlocks = append(g.builtBlocks, entry)
 	g.mapBlockNumber[int64(block.NumberU64())] = entry
 	g.mapBlockHash[block.Hash().Hex()] = entry
 	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment
+
+	log.Info("computed mixHas", "mixHash", genMixHash(block.NumberU64()))
+
 	g.preconfHead.reset()
-	// Send the response back indicating success.
+
 	req.Response <- SealBlockResponse{
 		block:                    block,
 		cumulativeBuilderPayment: fmt.Sprintf("0x%x", cumulativeBuilderPayment),
 		err:                      nil,
 	}
+}
+
+func genMixHash(blockNumber uint64) common.Hash {
+	taikoDifficulty := []byte("TAIKO_DIFFICULTY")
+
+	// Unsigned integer (equivalent to local.b.numBlocks in Solidity)
+	numBlocks := uint64(100) // replace with actual value
+
+	// ABI encoding equivalent: combine "TAIKO_DIFFICULTY" with numBlocks
+	encoded := append(taikoDifficulty, uint64ToBytes(numBlocks)...)
+
+	// Perform keccak256 hashing (Keccak-256 is sha3.NewLegacyKeccak256)
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write(encoded)
+	result := hash.Sum(nil)
+	return common.HexToHash(fmt.Sprintf("0x%x", result))
+}
+
+func uint64ToBytes(num uint64) []byte {
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, num)
+	return buf
 }
 
 func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*types.Receipt, *uint256.Int, uint64, error) {
