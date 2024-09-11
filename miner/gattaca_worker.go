@@ -323,6 +323,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.txHashSet[tx.Hash().Hex()] = struct{}{}
 	simEnv.receipts = append(simEnv.receipts, receipt)
+	g.envMap[newStateId] = simEnv
 	g.envBuilder[newStateId] = make([]uint32, 0)
 
 	res <- SimulationResponse{
@@ -355,7 +356,7 @@ func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res ch
 	if len(simEnv.txs) == 0 {
 		res <- SimulationResponse{
 			stateId:        0,
-			error:          errors.New("first transaction needs to executed by simulateAnchorAtState"),
+			error:          errors.New(fmt.Sprintf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId)),
 			gasUsed:        0,
 			builderPayment: "0x0",
 		}
