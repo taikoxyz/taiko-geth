@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -32,7 +33,8 @@ type Reason struct {
 func (s *TransactionAPI) SimulateAnchorAtState(ctx context.Context,
 	input hexutil.Bytes,
 	timestamp uint64,
-	baseFee uint64) (map[string]interface{}, error) {
+	baseFee uint64,
+	mixHash common.Hash) (map[string]interface{}, error) {
 	tx := new(types.Transaction)
 	if err := tx.UnmarshalBinary(input); err != nil {
 		log.Warn("PRECONF: unmarshalBinary failed, trying RLP decode", "error", err)
@@ -49,6 +51,7 @@ func (s *TransactionAPI) SimulateAnchorAtState(ctx context.Context,
 		Tx:        tx,
 		Timestamp: timestamp,
 		BaseFee:   baseFee,
+		MixHash:   mixHash,
 		SimRes:    resCh,
 	}
 	return handleResponse(resCh)

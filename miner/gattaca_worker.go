@@ -47,6 +47,7 @@ type SimulateAnchorTx struct {
 	Tx        *types.Transaction `json:"-"`
 	Timestamp uint64
 	BaseFee   uint64
+	MixHash   common.Hash
 	SimRes    chan SimulationResponse `json:"-"`
 }
 
@@ -147,6 +148,8 @@ type GattacaWorker struct {
 	sequencing       int32
 	mapBlockNumber   map[int64]inMemoryStore
 	mapBlockHash     map[string]inMemoryStore
+
+	mixHash common.Hash
 }
 
 func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
@@ -213,7 +216,7 @@ func (g *GattacaWorker) runLoop() {
 			log.Info("run seal block ", req.StateId)
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
-			go g.simulateAnchorTx(req.Tx, req.Timestamp, req.BaseFee, req.SimRes)
+			go g.simulateAnchorTx(req.Tx, req.Timestamp, req.BaseFee, req.MixHash, req.SimRes)
 		}
 	}
 }
@@ -257,7 +260,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 	}
 }
 
-func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64, baseFee uint64, res chan SimulationResponse) {
+func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64, baseFee uint64, mixHash common.Hash, res chan SimulationResponse) {
 	env, err := g.retrieveEnv(2)
 	if err != nil {
 		res <- SimulationResponse{
@@ -328,6 +331,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 	simEnv.receipts = append(simEnv.receipts, receipt)
 	g.envMap[newStateId] = simEnv
 	g.envBuilder[newStateId] = make([]uint32, 0)
+	g.mixHash = mixHash
 
 	res <- SimulationResponse{
 		error:          nil,
@@ -451,7 +455,40 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
 
+	chainHead, err := g.retrieveEnv(1)
+	if err != nil {
+		log.Crit("error getting chain head")
+		req.Response <- SealBlockResponse{
+			block:                    nil,
+			cumulativeBuilderPayment: "",
+			err:                      err,
+		}
+		return
+	}
+	chainNo := chainHead.header.Number.Uint64()
+	headerNo := g.preconfHead.header.Number.Uint64()
+
+	if len(g.builtBlocks) > 0 {
+		lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
+		if lastBlockNumber > chainNo {
+			g.preconfHead.header.Number = big.NewInt(int64(lastBlockNumber))
+		} else {
+			g.preconfHead.header.Number = big.NewInt(int64(chainNo))
+		}
+	} else {
+		if chainNo > headerNo {
+			g.preconfHead.header.Number = big.NewInt(int64(chainNo))
+		}
+	}
+
+	prevDigest := g.preconfHead.header.MixDigest
+
+	g.preconfHead.header.MixDigest = g.mixHash
+
 	block := types.NewBlock(g.preconfHead.header, g.preconfHead.txs, nil, g.preconfHead.receipts, trie.NewStackTrie(nil))
+
+	g.preconfHead.header.MixDigest = prevDigest
+
 	entry := inMemoryStore{
 		block: block,
 		env:   g.preconfHead.copy(),
@@ -462,8 +499,6 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.mapBlockHash[block.Hash().Hex()] = entry
 	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment
 
-	log.Info("computed mixHas", "mixHash", genMixHash(block.NumberU64()))
-
 	g.preconfHead.reset()
 
 	req.Response <- SealBlockResponse{
@@ -471,28 +506,6 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		cumulativeBuilderPayment: fmt.Sprintf("0x%x", cumulativeBuilderPayment),
 		err:                      nil,
 	}
-}
-
-func genMixHash(blockNumber uint64) common.Hash {
-	taikoDifficulty := []byte("TAIKO_DIFFICULTY")
-
-	// Unsigned integer (equivalent to local.b.numBlocks in Solidity)
-	numBlocks := uint64(100) // replace with actual value
-
-	// ABI encoding equivalent: combine "TAIKO_DIFFICULTY" with numBlocks
-	encoded := append(taikoDifficulty, uint64ToBytes(numBlocks)...)
-
-	// Perform keccak256 hashing (Keccak-256 is sha3.NewLegacyKeccak256)
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write(encoded)
-	result := hash.Sum(nil)
-	return common.HexToHash(fmt.Sprintf("0x%x", result))
-}
-
-func uint64ToBytes(num uint64) []byte {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, num)
-	return buf
 }
 
 func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*types.Receipt, *uint256.Int, uint64, error) {
@@ -619,4 +632,23 @@ func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction
 
 func (g *GattacaWorker) GetStateAndHeader() (*state.StateDB, *types.Header) {
 	return g.preconfHead.state.Copy(), g.preconfHead.header
+}
+
+func genMixHash(blockNumber uint64) common.Hash {
+	taikoDifficulty := []byte("TAIKO_DIFFICULTY")
+
+	// ABI encoding equivalent: combine "TAIKO_DIFFICULTY" with numBlocks
+	encoded := append(taikoDifficulty, uint64ToBytes(blockNumber)...)
+
+	// Perform keccak256 hashing (Keccak-256 is sha3.NewLegacyKeccak256)
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write(encoded)
+	result := hash.Sum(nil)
+	return common.HexToHash(fmt.Sprintf("0x%x", result))
+}
+
+func uint64ToBytes(num uint64) []byte {
+	buf := make([]byte, 8)
+	binary.BigEndian.PutUint64(buf, num)
+	return buf
 }
