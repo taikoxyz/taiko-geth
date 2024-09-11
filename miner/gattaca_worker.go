@@ -21,6 +21,7 @@ import (
 
 var (
 	SimCh             = make(chan SimulateTxRequest, 1000)
+	SimAnchorTx       = make(chan SimulateAnchorTx, 1000)
 	CommitCh          = make(chan ReqCommitState, 1000)
 	SealBlock         = make(chan SealBlockRequest, 1)
 	taikoMinTip       = big.NewInt(0)
@@ -37,6 +38,14 @@ type SimulateTxRequest struct {
 	StateId uint32                  `json:"stateId"`
 	Tx      *types.Transaction      `json:"-"`
 	SimRes  chan SimulationResponse `json:"-"`
+}
+
+type SimulateAnchorTx struct {
+	StateId   uint32             `json:"stateId"`
+	Tx        *types.Transaction `json:"-"`
+	Timestamp uint64
+	BaseFee   uint64
+	SimRes    chan SimulationResponse `json:"-"`
 }
 
 type SealBlockResponse struct {
@@ -201,6 +210,8 @@ func (g *GattacaWorker) runLoop() {
 		case req := <-SealBlock:
 			log.Info("run seal block ", req.StateId)
 			go g.sealBlock(req)
+		case req := <-SimAnchorTx:
+			go g.simulateAnchorTx(req.StateId, req.Tx, req.Timestamp, req.BaseFee, req.SimRes)
 		}
 	}
 }
@@ -244,6 +255,92 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 	}
 }
 
+func (g *GattacaWorker) simulateAnchorTx(stateId uint32, tx *types.Transaction, timestamp uint64, baseFee uint64, res chan SimulationResponse) {
+	env, err := g.retrieveEnv(2)
+	if err != nil {
+		res <- SimulationResponse{
+			stateId:        0,
+			error:          errors.New(fmt.Sprintf("failed to retrieve environment. err: %s", err.Error())),
+			gasUsed:        0,
+			builderPayment: "0x0",
+		}
+		return
+	}
+	simEnv := env.copy()
+	env.header.Time = timestamp
+	env.header.BaseFee = big.NewInt(int64(baseFee))
+
+	signer := types.MakeSigner(g.chainConfig, env.header.Number, env.header.Time)
+	from, err := types.Sender(signer, tx)
+	if err != nil {
+		log.Error("error retrieving sender address from transaction", "err", err.Error())
+		res <- SimulationResponse{
+			stateId:        0,
+			error:          errors.New("failed to retrieve sender address from transaction"),
+			gasUsed:        0,
+			builderPayment: "0x0",
+		}
+		return
+	}
+	if len(env.txs) > 0 {
+		log.Error("anchor tx needs to be the first committed transaction")
+		res <- SimulationResponse{
+			stateId:        0,
+			error:          errors.New("anchor tx needs to be the first committed transaction"),
+			gasUsed:        0,
+			builderPayment: "0x0",
+		}
+		return
+	}
+	if from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
+		log.Error("first transaction must come from GoldenTouchAccount")
+		res <- SimulationResponse{
+			stateId:        0,
+			error:          errors.New("first transaction must come from GoldenTouchAccount"),
+			gasUsed:        0,
+			builderPayment: "0x0",
+		}
+		return
+	}
+
+	receipt, _, _, err := g.commitTx(simEnv, tx)
+	if err != nil {
+		var gasUsed uint64
+		var commitError CommitError
+		if errors.As(err, &commitError) {
+			gasUsed = simEnv.gasPool.Gas()
+		}
+		log.Error("Failed to simulate transaction", "err", err)
+		res <- SimulationResponse{
+			error:   NewCommitError(err),
+			gasUsed: gasUsed,
+		}
+		return
+	}
+
+	var newStateId uint32
+	newStateId = uuid.New().ID()
+
+	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
+	simEnv.txHashSet[tx.Hash().Hex()] = struct{}{}
+	simEnv.receipts = append(simEnv.receipts, receipt)
+
+	g.envMap[newStateId] = simEnv
+	if stateId < 100 {
+		g.envBuilder[newStateId] = make([]uint32, 0)
+	} else {
+		prevBuild := g.envBuilder[stateId]
+		g.envBuilder[newStateId] = append(prevBuild, newStateId)
+	}
+
+	res <- SimulationResponse{
+		error:          nil,
+		gasUsed:        receipt.GasUsed,
+		stateId:        newStateId,
+		builderPayment: "0x0",
+	}
+}
+
 func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res chan SimulationResponse) {
 	g.lock.RLock()
 	defer g.lock.RUnlock()
@@ -263,6 +360,15 @@ func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res ch
 		return
 	}
 	simEnv := env.copy()
+	if len(simEnv.txs) == 0 {
+		res <- SimulationResponse{
+			stateId:        0,
+			error:          errors.New("first transaction needs to executed by simulateAnchorAtState"),
+			gasUsed:        0,
+			builderPayment: "0x0",
+		}
+		return
+	}
 	startBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	if err != nil {
