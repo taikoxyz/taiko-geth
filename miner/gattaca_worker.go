@@ -327,7 +327,6 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 	newStateId = uuid.New().ID()
 
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
-	simEnv.txHashSet[tx.Hash().Hex()] = struct{}{}
 	simEnv.receipts = append(simEnv.receipts, receipt)
 	g.envMap[newStateId] = simEnv
 	g.envBuilder[newStateId] = make([]uint32, 0)
@@ -390,7 +389,6 @@ func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res ch
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	builderPayment := endBalance - startBalance
 	simEnv.cumulativeBuilderPayment += builderPayment
-	simEnv.txHashSet[tx.Hash().Hex()] = struct{}{}
 	g.envMap[newStateId] = simEnv
 	simEnv.receipts = append(simEnv.receipts, receipt)
 	if stateId < 100 {
@@ -439,6 +437,7 @@ func (g *GattacaWorker) commitEnvToPreconf(stateId uint32, simRes chan CommitSta
 				}
 				return
 			}
+			g.preconfHead.receipts = append(g.preconfHead.receipts, receipt)
 			g.preconfHead.hashReceipts[tx.Hash().Hex()] = receipt
 			g.preconfHead.txHashSet[tx.Hash().Hex()] = struct{}{}
 			cumulativeGasUsed += receipt.GasUsed
@@ -484,7 +483,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	prevDigest := g.preconfHead.header.MixDigest
 
 	g.preconfHead.header.MixDigest = g.mixHash
-
+	log.Info("receipts length", "len", len(g.preconfHead.receipts))
 	block := types.NewBlock(g.preconfHead.header, g.preconfHead.txs, nil, g.preconfHead.receipts, trie.NewStackTrie(nil))
 
 	g.preconfHead.header.MixDigest = prevDigest
