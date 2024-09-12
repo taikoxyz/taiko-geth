@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/trie"
 	"github.com/google/uuid"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
@@ -481,11 +480,30 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	}
 
 	prevDigest := g.preconfHead.header.MixDigest
-
 	g.preconfHead.header.MixDigest = g.mixHash
-	log.Info("receipts length", "len", len(g.preconfHead.receipts))
-	block := types.NewBlock(g.preconfHead.header, g.preconfHead.txs, nil, g.preconfHead.receipts, trie.NewStackTrie(nil))
+	g.preconfHead.header.Extra = make([]byte, 32)
+	log.Info("Header extra data is", "extra-data", len(g.preconfHead.header.Extra), "content", g.preconfHead.header.Extra)
+	block, err := g.engine.FinalizeAndAssemble(g.chain, g.preconfHead.header, g.preconfHead.state, g.preconfHead.txs, nil, g.preconfHead.receipts, make([]*types.Withdrawal, 0))
+	if err != nil {
 
+		req.Response <- SealBlockResponse{
+			block:                    nil,
+			cumulativeBuilderPayment: "",
+			err:                      err,
+		}
+		return
+	}
+
+	results := make(chan *types.Block, 1)
+	if err := g.engine.Seal(g.chain, block, results, nil); err != nil {
+		req.Response <- SealBlockResponse{
+			block:                    nil,
+			cumulativeBuilderPayment: "",
+			err:                      err,
+		}
+		return
+	}
+	block = <-results
 	g.preconfHead.header.MixDigest = prevDigest
 
 	entry := inMemoryStore{
