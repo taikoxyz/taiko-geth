@@ -155,6 +155,8 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
 	env.startBalance.Set(env.state.GetBalance(env.coinbase))
+	var empty common.Hash
+	env.parentHash = empty
 	return env, nil
 }
 

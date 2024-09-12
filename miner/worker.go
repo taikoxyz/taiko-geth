@@ -100,6 +100,7 @@ type environment struct {
 	hashReceipts             map[string]*types.Receipt
 	cumulativeBuilderPayment uint64
 	txHashSet                map[string]struct{}
+	parentHash               common.Hash
 }
 
 // copy creates a deep copy of environment.
@@ -112,6 +113,7 @@ func (env *environment) copy() *environment {
 		header:                   types.CopyHeader(env.header),
 		receipts:                 copyReceipts(env.receipts),
 		cumulativeBuilderPayment: env.cumulativeBuilderPayment,
+		parentHash:               env.parentHash,
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool

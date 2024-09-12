@@ -463,6 +463,11 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		}
 		return
 	}
+	parentHash := g.preconfHead.header.ParentHash
+	var empty common.Hash
+	if g.preconfHead.parentHash != empty {
+		g.preconfHead.header.ParentHash = g.preconfHead.parentHash
+	}
 	chainNo := chainHead.header.Number.Uint64()
 	headerNo := g.preconfHead.header.Number.Uint64()
 
@@ -517,6 +522,8 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment
 
 	g.preconfHead.reset()
+
+	g.preconfHead.parentHash = parentHash
 
 	req.Response <- SealBlockResponse{
 		block:                    block,
