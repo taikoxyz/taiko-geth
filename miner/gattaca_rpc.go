@@ -43,18 +43,27 @@ type RPCTransaction struct {
 // GetTransactionReceipt returns the transaction receipt for the given transaction hash.
 func (g *GattacaWorker) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
 	if receipt, ok := g.preconfHead.hashReceipts[hash.Hex()]; ok {
-		var blockNumber int
+		var entry inMemoryStore
 		var transaction *types.Transaction
-		for idx, tx := range g.preconfHead.txs {
-			if tx.Hash().Hex() == hash.Hex() {
-				blockNumber = idx
-				transaction = tx
+		var txIdx int
+		for _, block := range g.builtBlocks {
+			for idx, tx := range block.block.Transactions() {
+				if tx.Hash().Hex() == hash.Hex() {
+					entry = block
+					transaction = tx
+					txIdx = idx
+					break
+				}
+			}
+			if transaction != nil {
 				break
 			}
 		}
-		signer := types.MakeSigner(g.chain.Config(), g.preconfHead.header.Number, g.preconfHead.header.Time)
-		receipt := marshalReceipt(receipt, common.Hash{}, 0, signer, transaction, blockNumber)
-		return receipt, nil
+		if transaction != nil {
+			signer := types.MakeSigner(g.chain.Config(), entry.block.Number(), entry.block.Time())
+			receipt := marshalReceipt(receipt, common.Hash{}, 0, signer, transaction, txIdx)
+			return receipt, nil
+		}
 	}
 	log.Info("no receipt found for ", "hash", hash.Hex())
 	found, tx, blockHash, blockNumber, index, err := g.getTransaction(ctx, hash)
