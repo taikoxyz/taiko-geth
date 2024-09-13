@@ -228,27 +228,22 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 		select {
 		case ev := <-newBlockCh:
 			block := ev.Block
-			var localBlock inMemoryStore
+			var entry inMemoryStore
 			found := false
-			for _, localBlock = range g.builtBlocks {
-				if localBlock.block.NumberU64() == block.NumberU64() {
+			var idx int
+			for idx, entry = range g.builtBlocks {
+				if entry.block.NumberU64() == block.NumberU64() {
 					found = true
 					break
 				}
 			}
 			if found {
-				if len(localBlock.block.Transactions()) != len(block.Transactions()) {
+				if len(entry.block.Hash().Hex()) != len(block.Hash().Hex()) {
 					log.Crit("blocks txs length differ between in memory block and block received")
-				}
-				localTxs := localBlock.block.Transactions()
-				receivedTxs := block.Transactions()
-				for i := 1; i < len(localBlock.block.Transactions()); i++ {
-					if localTxs[i].Hash().Hex() != receivedTxs[i].Hash().Hex() {
-						log.Crit("transaction hash differs.", "local hash", localTxs[i].Hash().Hex(), "received hash", receivedTxs[i].Hash().Hex())
-					}
 				}
 				delete(g.mapBlockNumber, int64(block.NumberU64()))
 				delete(g.mapBlockHash, block.Hash().Hex())
+				g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
 			}
 		case err := <-sub.Err():
 			if err != nil {
