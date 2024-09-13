@@ -221,6 +221,8 @@ func (g *GattacaWorker) runLoop() {
 }
 
 func (g *GattacaWorker) newHeadEventSubscriber() {
+	g.lock.Lock()
+	defer g.lock.Unlock()
 	newBlockCh := make(chan core.ChainHeadEvent, 10)
 	sub := g.chain.SubscribeChainHeadEvent(newBlockCh)
 	defer sub.Unsubscribe()
