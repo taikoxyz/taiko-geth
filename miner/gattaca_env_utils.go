@@ -119,6 +119,7 @@ func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coin
 	}
 	state.StartPrefetcher("miner")
 	// Note the passed coinbase may be different with header.Coinbase.
+	log.Info("current gasUsed", "gasUsed", header.GasUsed)
 	env := &environment{
 		signer:                   types.MakeSigner(g.chainConfig, header.Number, header.Time),
 		state:                    state,
