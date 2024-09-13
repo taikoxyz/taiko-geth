@@ -212,7 +212,7 @@ func (g *GattacaWorker) runLoop() {
 			log.Debug("run commit state ", req.StateId)
 			go g.commitEnvToPreconf(req.StateId, req.SimRes)
 		case req := <-SealBlock:
-			log.Info("run seal block ", req.StateId)
+			log.Info("run seal block ", "stateId", req.StateId)
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
 			go g.simulateAnchorTx(req.Tx, req.Timestamp, req.BaseFee, req.MixHash, req.SimRes)
@@ -221,7 +221,7 @@ func (g *GattacaWorker) runLoop() {
 }
 
 func (g *GattacaWorker) newHeadEventSubscriber() {
-	g.lock.Lock()
+	/*g.lock.Lock()
 	defer g.lock.Unlock()
 	newBlockCh := make(chan core.ChainHeadEvent, 10)
 	sub := g.chain.SubscribeChainHeadEvent(newBlockCh)
@@ -253,7 +253,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 			}
 			break
 		}
-	}
+	}*/
 }
 
 func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64, baseFee uint64, mixHash common.Hash, res chan SimulationResponse) {
