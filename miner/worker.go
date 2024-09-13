@@ -142,6 +142,7 @@ func (env *environment) reset() {
 	env.cumulativeBuilderPayment = 0
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
+	env.header.GasUsed = 0
 	env.startBalance.Set(env.state.GetBalance(env.coinbase))
 }
 
