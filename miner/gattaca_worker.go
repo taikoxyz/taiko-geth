@@ -464,7 +464,6 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		return
 	}
 	var empty common.Hash
-	log.Info("env parent Hash", "hash", g.preconfHead.parentHash.Hex())
 	if g.preconfHead.parentHash.Hex() != empty.Hex() {
 		g.preconfHead.header.ParentHash = g.preconfHead.parentHash
 	}
