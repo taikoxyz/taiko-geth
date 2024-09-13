@@ -464,7 +464,8 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		return
 	}
 	var empty common.Hash
-	if g.preconfHead.parentHash != empty {
+	log.Info("env parent Hash", "hash", g.preconfHead.parentHash.Hex())
+	if g.preconfHead.parentHash.Hex() != empty.Hex() {
 		g.preconfHead.header.ParentHash = g.preconfHead.parentHash
 	}
 	chainNo := chainHead.header.Number.Uint64()
@@ -520,9 +521,8 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.mapBlockHash[block.Hash().Hex()] = entry
 	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment
 
-	g.preconfHead.reset()
-
 	g.preconfHead.parentHash = block.Hash()
+	g.preconfHead.reset()
 
 	req.Response <- SealBlockResponse{
 		block:                    block,
