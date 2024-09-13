@@ -138,11 +138,13 @@ func (env *environment) copy() *environment {
 
 func (env *environment) reset() {
 	env.txs = make([]*types.Transaction, 0)
-	env.startBalance = *env.state.GetBalance(env.coinbase)
-	env.cumulativeBuilderPayment = 0
+	env.receipts = make([]*types.Receipt, 0)
+	env.sidecars = make([]*types.BlobTxSidecar, 0)
+	env.blobs = 0
+	env.tcount = 0
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
-	env.startBalance.Set(env.state.GetBalance(env.coinbase))
+	env.header.GasUsed = 0
 }
 
 // discard terminates the background prefetcher go-routine. It should
