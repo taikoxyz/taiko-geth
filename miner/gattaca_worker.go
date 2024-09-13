@@ -465,6 +465,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	}
 	parentHash := g.preconfHead.header.ParentHash
 	var empty common.Hash
+	log.Info("is parent hash empty?", "empty", g.preconfHead.parentHash == empty)
 	if g.preconfHead.parentHash != empty {
 		g.preconfHead.header.ParentHash = g.preconfHead.parentHash
 	}
