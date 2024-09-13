@@ -463,9 +463,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		}
 		return
 	}
-	parentHash := g.preconfHead.header.ParentHash
 	var empty common.Hash
-	log.Info("is parent hash empty?", "empty", g.preconfHead.parentHash == empty)
 	if g.preconfHead.parentHash != empty {
 		g.preconfHead.header.ParentHash = g.preconfHead.parentHash
 	}
@@ -524,7 +522,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 
 	g.preconfHead.reset()
 
-	g.preconfHead.parentHash = parentHash
+	g.preconfHead.parentHash = block.Hash()
 
 	req.Response <- SealBlockResponse{
 		block:                    block,
