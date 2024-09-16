@@ -1679,6 +1679,9 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 	var err error
 	if worker != nil {
 		state, _, err = worker.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+		if err != nil {
+			panic(err.Error())
+		}
 		if state == nil {
 			state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 		}

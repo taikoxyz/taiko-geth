@@ -13,7 +13,10 @@ import (
 func (g *GattacaWorker) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error) {
 	log.Info("gattaca StateAndHeaderByNumberOrHash")
 	if number, ok := blockNrOrHash.Number(); ok {
-		log.Info("gattaca StateAndHeaderByNumberOrHash", "number", number)
+		if number == rpc.LatestBlockNumber {
+			//TODO it's incorrect in casae of multiple sequencers.
+			return g.preconfHead.state, g.preconfHead.header, nil
+		}
 		if int64(number) == g.preconfHead.header.Number.Int64() {
 			return g.preconfHead.state, g.preconfHead.header, nil
 		}
