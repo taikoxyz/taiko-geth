@@ -104,6 +104,7 @@ func (s *VanillaTransactionAPI) GetRawTransactionByBlockHashAndIndex(ctx context
 func (s *VanillaTransactionAPI) GetTransactionCount(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
 	// change(taiko): check to see if it exists from the preconfer.
 	// Check if PreconfirmationForwardingURL is set
+	log.Info("Calling VanillaTransactionAPI.GetTransactionCount")
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		log.Info("forwarding getTransactionCount", "addr", address.Hex())
 
