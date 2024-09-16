@@ -1658,7 +1658,9 @@ func (s *TransactionAPI) GetRawTransactionByBlockHashAndIndex(ctx context.Contex
 // GetTransactionCount returns the number of transactions the given address has sent for the given block number
 func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
 	// Ask transaction pool for the nonce which includes pending transactions
+
 	worker := miner.GetWorker(5)
+	log.Info("GetTransactionCount", "worker status", worker != nil)
 	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
 		log.Info("getting pending nonce from pending block ", "workerStatus", worker != nil)
 		if worker != nil {
