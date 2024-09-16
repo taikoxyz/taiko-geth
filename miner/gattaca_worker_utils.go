@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -28,6 +29,7 @@ func (g *GattacaWorker) StateAndHeaderByNumberOrHash(ctx context.Context, blockN
 }
 
 func (g *GattacaWorker) GetPendingPoolNonce(address common.Address) uint64 {
+	log.Info("getting pending pool nonce")
 	return g.preconfHead.state.GetNonce(address)
 }
 
