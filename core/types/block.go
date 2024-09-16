@@ -20,6 +20,7 @@ package types
 import (
 	"encoding/binary"
 	"fmt"
+	"github.com/ethereum/go-ethereum/log"
 	"io"
 	"math/big"
 	"reflect"
@@ -232,6 +233,7 @@ func NewBlock(header *Header, txs []*Transaction, uncles []*Header, receipts []*
 		copy(b.transactions, txs)
 	}
 
+	log.Info("receipt is empty", "receipts", len(receipts))
 	if len(receipts) == 0 {
 		b.header.ReceiptHash = EmptyReceiptsHash
 	} else {

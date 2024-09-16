@@ -1660,6 +1660,7 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 	// Ask transaction pool for the nonce which includes pending transactions
 	worker := miner.GetWorker(5)
 	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
+		log.Info("getting pending nonce from pending block ", "workerStatus", worker != nil)
 		if worker != nil {
 			nonce := worker.GetPendingPoolNonce(address)
 			return (*hexutil.Uint64)(&nonce), nil
