@@ -13,6 +13,7 @@ import (
 func (g *GattacaWorker) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error) {
 	log.Info("gattaca StateAndHeaderByNumberOrHash")
 	if number, ok := blockNrOrHash.Number(); ok {
+		log.Info("gattaca StateAndHeaderByNumberOrHash", "number", number)
 		if int64(number) == g.preconfHead.header.Number.Int64() {
 			return g.preconfHead.state, g.preconfHead.header, nil
 		}
@@ -21,6 +22,7 @@ func (g *GattacaWorker) StateAndHeaderByNumberOrHash(ctx context.Context, blockN
 		}
 	}
 	if hash, ok := blockNrOrHash.Hash(); ok {
+		log.Info("gattaca StateAndHeaderByNumberOrHash", "hash", hash.Hex())
 		if entry, in := g.mapBlockHash[hash.Hex()]; in {
 			return entry.env.state, entry.env.header, nil
 		}
