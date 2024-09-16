@@ -484,7 +484,11 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.preconfHead.header.MixDigest = g.mixHash
 	g.preconfHead.header.Extra = make([]byte, 32)
 	log.Info("Header extra data is", "extra-data", len(g.preconfHead.header.Extra), "content", g.preconfHead.header.Extra)
-	log.Info("number of transaction per block", "blockNo", g.preconfHead.header.Number.Uint64(), "transaction count", len(g.preconfHead.txs))
+	transactionGas := uint64(0)
+	for _, tx := range g.preconfHead.txs {
+		transactionGas += g.preconfHead.hashReceipts[tx.Hash().Hex()].GasUsed
+	}
+	log.Info("number of transaction per block", "blockNo", g.preconfHead.header.Number.Uint64(), "transaction count", len(g.preconfHead.txs), "txGas", transactionGas)
 	block, err := g.engine.FinalizeAndAssemble(g.chain, g.preconfHead.header, g.preconfHead.state, g.preconfHead.txs, nil, g.preconfHead.receipts, make([]*types.Withdrawal, 0))
 	if err != nil {
 
