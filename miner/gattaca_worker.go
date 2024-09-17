@@ -486,7 +486,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 
 	// Update preconf head env to match chain head env if it's ahead.
 	if chainHeadNo >= initialPreconfHead {
-		log.Info("sealBlock chain head >= preconf head. Resetting preconf head data to chain head")
+		log.Info("sealBlock chain head >= preconf head. Resetting preconf head data to chain head", "preconf head header", g.preconfHead.header, "chainHead header", chainHead.header)
 		g.preconfHead = chainHead.copy()
 	}
 
