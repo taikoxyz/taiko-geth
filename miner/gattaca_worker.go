@@ -555,6 +555,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.preconfHead.parentHash = block.Hash()
 	g.preconfHead.reset()
 	g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
+	g.preconfHead.header.ParentHash = block.Hash()
 
 	req.Response <- SealBlockResponse{
 		block:                    block,
