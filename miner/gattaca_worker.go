@@ -307,7 +307,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	log.Info("Anchor tx receipt: %+v", receipt)
 
-	if err != nil || receipt.Status == 0 {
+	if err != nil || receipt == nil || receipt.Status == 0 {
 		var gasUsed uint64
 		var commitError CommitError
 		if errors.As(err, &commitError) {
