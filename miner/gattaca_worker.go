@@ -257,6 +257,8 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 }
 
 func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64, baseFee uint64, mixHash common.Hash, res chan SimulationResponse) {
+	log.Info("simulateAnchorTx params", "timestamp", timestamp, "baseFee", baseFee, "mixHash", mixHash)
+
 	env, err := g.retrieveEnv(2)
 	if err != nil {
 		res <- SimulationResponse{
