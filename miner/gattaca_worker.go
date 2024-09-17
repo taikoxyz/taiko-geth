@@ -270,10 +270,10 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 		return
 	}
 	simEnv := env.copy()
-	env.header.Time = timestamp
-	env.header.BaseFee = big.NewInt(int64(baseFee))
+	simEnv.header.Time = timestamp
+	simEnv.header.BaseFee = big.NewInt(int64(baseFee))
 
-	signer := types.MakeSigner(g.chainConfig, env.header.Number, env.header.Time)
+	signer := types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
 	from, err := types.Sender(signer, tx)
 	if err != nil {
 		log.Error("error retrieving sender address from transaction", "err", err.Error())
@@ -285,7 +285,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 		}
 		return
 	}
-	if len(env.txs) > 0 {
+	if len(simEnv.txs) > 0 {
 		log.Error("anchor tx needs to be the first committed transaction")
 		res <- SimulationResponse{
 			stateId:        0,
