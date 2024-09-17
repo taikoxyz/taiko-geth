@@ -307,7 +307,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	log.Info("Anchor tx receipt: %+v", receipt)
 
-	if err != nil || receipt == nil || receipt.Status == 0 {
+	if err != nil {
 		var gasUsed uint64
 		var commitError CommitError
 		if errors.As(err, &commitError) {
@@ -317,6 +317,14 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 		res <- SimulationResponse{
 			error:   NewCommitError(err),
 			gasUsed: gasUsed,
+		}
+		return
+	} else if receipt.Status == 0 {
+		log.Error("transaction reverted", "receipt", receipt)
+		err := errors.New("transaction reverted")
+		res <- SimulationResponse{
+			error:   NewCommitError(err),
+			gasUsed: receipt.GasUsed,
 		}
 		return
 	}
