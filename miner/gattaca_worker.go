@@ -484,13 +484,13 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	initialPreconfHead := g.preconfHead.header.Number.Uint64()
 	chainHeadNo := chainHead.header.Number.Uint64()
 
-	// Set preconf head to the latest chain head (preconf or canonical) + 1
+	// Update preconf head env to match chain head env if it's ahead.
 	if chainHeadNo > initialPreconfHead {
-		g.preconfHead.header.Number = big.NewInt(0).Add(chainHead.header.Number, big.NewInt(1))
-	} else {
-		g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
+		g.preconfHead = chainHead.copy()
 	}
 
+	// Increment preconf head number
+	g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
 	//if len(g.builtBlocks) > 0 {
 	//	lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
 	//	if lastBlockNumber > chainHeadNo {
