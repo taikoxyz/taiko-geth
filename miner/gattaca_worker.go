@@ -491,7 +491,8 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	}
 
 	// Increment preconf head number
-	g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
+	log.Info("sealBlock", "chainHead", chainHeadNo, "preconfHead", initialPreconfHead)
+	//g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
 	//if len(g.builtBlocks) > 0 {
 	//	lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
 	//	if lastBlockNumber > chainHeadNo {
