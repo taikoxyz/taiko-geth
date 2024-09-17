@@ -273,6 +273,10 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 	simEnv.header.Time = timestamp
 	simEnv.header.BaseFee = big.NewInt(int64(baseFee))
 
+	// Hacky - shouldn't need
+	env.header.Time = timestamp
+	env.header.BaseFee = big.NewInt(int64(baseFee))
+
 	signer := types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
 	from, err := types.Sender(signer, tx)
 	if err != nil {
