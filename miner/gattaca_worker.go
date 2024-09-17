@@ -487,14 +487,19 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
 		if lastBlockNumber > chainNo {
 			g.preconfHead.header.Number = big.NewInt(int64(lastBlockNumber))
+			log.Info("sealBlock setting to lastBlockNumber")
 		} else {
 			g.preconfHead.header.Number = big.NewInt(int64(chainNo))
+			log.Info("sealBlock setting to chainNo")
 		}
 	} else {
 		if chainNo > headerNo {
 			g.preconfHead.header.Number = big.NewInt(int64(chainNo))
+			log.Info("sealBlock setting to chainNo")
 		}
 	}
+
+	log.Info("sealBlock", "initialHeaderNo", headerNo, "newHeaderNo", g.preconfHead.header.Number)
 
 	prevDigest := g.preconfHead.header.MixDigest
 	g.preconfHead.header.MixDigest = g.mixHash
