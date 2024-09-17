@@ -480,26 +480,34 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	if g.preconfHead.parentHash.Hex() != empty.Hex() {
 		g.preconfHead.header.ParentHash = g.preconfHead.parentHash
 	}
-	chainNo := chainHead.header.Number.Uint64()
-	headerNo := g.preconfHead.header.Number.Uint64()
 
-	if len(g.builtBlocks) > 0 {
-		lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
-		if lastBlockNumber > chainNo {
-			g.preconfHead.header.Number = big.NewInt(int64(lastBlockNumber))
-			log.Info("sealBlock setting to lastBlockNumber")
-		} else {
-			g.preconfHead.header.Number = big.NewInt(int64(chainNo))
-			log.Info("sealBlock setting to chainNo")
-		}
+	initialPreconfHead := g.preconfHead.header.Number.Uint64()
+	chainHeadNo := chainHead.header.Number.Uint64()
+
+	// Set preconf head to the latest chain head (preconf or canonical) + 1
+	if chainHeadNo > initialPreconfHead {
+		g.preconfHead.header.Number = big.NewInt(0).Add(chainHead.header.Number, big.NewInt(1))
 	} else {
-		if chainNo > headerNo {
-			g.preconfHead.header.Number = big.NewInt(int64(chainNo))
-			log.Info("sealBlock setting to chainNo")
-		}
+		g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
 	}
 
-	log.Info("sealBlock", "initialHeaderNo", headerNo, "newHeaderNo", g.preconfHead.header.Number)
+	//if len(g.builtBlocks) > 0 {
+	//	lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
+	//	if lastBlockNumber > chainHeadNo {
+	//		g.preconfHead.header.Number = big.NewInt(int64(lastBlockNumber))
+	//		log.Info("sealBlock setting to lastBlockNumber")
+	//	} else {
+	//		g.preconfHead.header.Number = big.NewInt(int64(chainHeadNo))
+	//		log.Info("sealBlock setting to chainNo")
+	//	}
+	//} else {
+	//	if chainNo > headerNo {
+	//		g.preconfHead.header.Number = big.NewInt(int64(chainNo))
+	//		log.Info("sealBlock setting to chainNo")
+	//	}
+	//}
+
+	log.Info("sealBlock", "initialHeaderNo", initialPreconfHead, "newHeaderNo", g.preconfHead.header.Number)
 
 	prevDigest := g.preconfHead.header.MixDigest
 	g.preconfHead.header.MixDigest = g.mixHash
