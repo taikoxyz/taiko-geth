@@ -37,6 +37,13 @@ func (state *PreconfState) SealPendingPreconfBlock() error {
 	return nil
 }
 
+func (state *PreconfState) SetPendingPreconfBlock(block *environment) {
+	if state.pendingPreconfBlock != nil {
+		log.Warn("received new anchor transaction but pending block is not yet sealed, overwriting pendingPreconfBlock")
+	}
+	state.pendingPreconfBlock = block
+}
+
 // OnNewChainHeadEvent clears all sealedPreconfBlocks that have been added to the canonical chain.
 // This function will return an error if the new block hash mismatches with a sealed preconf block.
 func (state *PreconfState) OnNewChainHeadEvent(event *core.ChainHeadEvent) error {

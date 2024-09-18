@@ -16,6 +16,7 @@ import (
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 	"math/big"
+	"math/rand"
 	"os"
 	"sync"
 	"time"
@@ -43,11 +44,15 @@ type SimulateTxRequest struct {
 }
 
 type SimulateAnchorTx struct {
-	Tx        *types.Transaction `json:"-"`
-	Timestamp uint64
-	BaseFee   uint64
-	MixHash   common.Hash
-	SimRes    chan SimulationResponse `json:"-"`
+	Tx       *types.Transaction            `json:"-"`
+	BlockEnv common.BlockEnv               `json:"-"`
+	SimRes   chan SimulateAnchorTxResponse `json:"-"`
+}
+
+type SimulateAnchorTxResponse struct {
+	StateId uint64 `json:"stateId"`
+	Err     error  `json:"err"`
+	GasUsed uint64 `json:"gasUsed"`
 }
 
 type SealBlockResponse struct {
@@ -146,14 +151,18 @@ type GattacaWorker struct {
 
 	mixHash common.Hash
 
-	envMap     map[uint32]*environment
+	envMap     map[uint64]*environment
 	envBuilder map[uint32][]uint32
 
 	preconfHead *environment
 	builtBlocks []inMemoryStore
+
+	preconfState *PreconfState
 }
 
 func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
+	rand.Seed(time.Now().UnixNano())
+
 	singletonLock.Lock()
 	defer singletonLock.Unlock()
 	if singletonGattaca == nil {
@@ -256,6 +265,73 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 			}
 			g.lock.Unlock()
 		}
+	}
+}
+
+func (g *GattacaWorker) simulateAnchorTxV2(tx *types.Transaction, env common.BlockEnv, mixDigest common.Hash, res chan SimulateAnchorTxResponse) {
+	blockEnv, err := g.retrieveEnv(1)
+	if err != nil {
+		panic(err)
+	}
+	blockNumber := big.NewInt(0)
+	blockEnv.header.Number = blockNumber.Add(env.Number.ToInt(), big.NewInt(1))
+	blockEnv.header.Coinbase = env.Coinbase
+	blockEnv.header.MixDigest = mixDigest
+	blockEnv.header.GasLimit = env.GasLimit.ToInt().Uint64()
+	blockEnv.header.BaseFee = env.BaseFee.ToInt()
+	blockEnv.header.Time = env.Timestamp.ToInt().Uint64()
+	// simulate tx
+	signer := types.MakeSigner(g.chainConfig, blockEnv.header.Number, blockEnv.header.Time)
+	from, err := types.Sender(signer, tx)
+	if err != nil {
+		log.Error("error retrieving sender address from transaction", "err", err.Error())
+		res <- SimulateAnchorTxResponse{
+			Err:     errors.New("failed to retrieve sender address from transaction"),
+			StateId: 0,
+		}
+		return
+	}
+	if from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
+		log.Error("first transaction must come from GoldenTouchAccount")
+		res <- SimulateAnchorTxResponse{
+			Err: errors.New("first transaction must come from GoldenTouchAccount"),
+		}
+		return
+	}
+
+	receipt, _, _, err := g.commitTx(blockEnv, tx)
+	log.Info("Anchor tx receipt: %+v", receipt)
+
+	if err != nil {
+		var gasUsed uint64
+		var commitError CommitError
+		if errors.As(err, &commitError) {
+			gasUsed = blockEnv.gasPool.Gas()
+		}
+		log.Error("Failed to simulate transaction", "err", err)
+		res <- SimulateAnchorTxResponse{
+			Err:     NewCommitError(err),
+			GasUsed: gasUsed,
+		}
+		return
+	} else if receipt.Status == 0 {
+		log.Error("transaction reverted", "receipt", receipt)
+		err := errors.New("transaction reverted")
+		res <- SimulateAnchorTxResponse{
+			Err: NewCommitError(err),
+		}
+		return
+	}
+
+	blockEnv.hashReceipts[tx.Hash().Hex()] = receipt
+	blockEnv.receipts = append(blockEnv.receipts, receipt)
+	// set env
+	newStateId := rand.Uint64()
+	g.envMap[newStateId] = blockEnv.copy()
+	g.preconfState.SetPendingPreconfBlock(blockEnv.copy())
+	res <- SimulateAnchorTxResponse{
+		Err:     nil,
+		StateId: newStateId,
 	}
 }
 

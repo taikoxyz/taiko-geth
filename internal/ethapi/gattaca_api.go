@@ -30,6 +30,10 @@ type Reason struct {
 	Reason string `json:"reason"`
 }
 
+func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, env common.BlockEnv) {
+	resCh := make(chan miner.SimulateAnchorTx)
+}
+
 func (s *TransactionAPI) SimulateAnchorAtState(ctx context.Context,
 	input hexutil.Bytes,
 	timestamp uint64,
