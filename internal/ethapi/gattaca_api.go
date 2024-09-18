@@ -30,15 +30,7 @@ type Reason struct {
 	Reason string `json:"reason"`
 }
 
-func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, env common.BlockEnv) {
-	resCh := make(chan miner.SimulateAnchorTx)
-}
-
-func (s *TransactionAPI) SimulateAnchorAtState(ctx context.Context,
-	input hexutil.Bytes,
-	timestamp uint64,
-	baseFee uint64,
-	mixHash common.Hash) (map[string]interface{}, error) {
+func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, mixDigest common.Hash, env common.BlockEnv) (map[string]interface{}, error) {
 	tx := new(types.Transaction)
 	if err := tx.UnmarshalBinary(input); err != nil {
 		log.Warn("PRECONF: unmarshalBinary failed, trying RLP decode", "error", err)
@@ -50,15 +42,22 @@ func (s *TransactionAPI) SimulateAnchorAtState(ctx context.Context,
 			return nil, err
 		}
 	}
-	resCh := make(chan miner.SimulationResponse, 1)
+
+	resCh := make(chan miner.SimulateAnchorTxResponse)
 	miner.SimAnchorTx <- miner.SimulateAnchorTx{
 		Tx:        tx,
-		Timestamp: timestamp,
-		BaseFee:   baseFee,
-		MixHash:   mixHash,
+		BlockEnv:  env,
+		MixDigest: mixDigest,
 		SimRes:    resCh,
 	}
-	return handleResponse(resCh)
+	res := <-resCh
+	retMap := make(map[string]interface{})
+	if res.Err != nil {
+		retMap["error"] = res.Err.Error()
+	} else {
+		retMap["stateId"] = res.StateId
+	}
+	return retMap, nil
 }
 
 func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint32) (map[string]interface{}, error) {
@@ -83,7 +82,7 @@ func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.By
 	return handleResponse(resCh)
 }
 
-func (s *TransactionAPI) CommitState(ctx context.Context, stateId uint32) (map[string]interface{}, error) {
+func (s *TransactionAPI) CommitState(ctx context.Context, stateId uint64) (map[string]interface{}, error) {
 	resCh := make(chan miner.CommitStateResponse, 1)
 	miner.CommitCh <- miner.ReqCommitState{
 		StateId: stateId,
@@ -115,7 +114,7 @@ func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}
 	res := <-resCh
 
 	// Helper function to create execution result wrapper
-	createExecutionResult := func(resultType string, data map[string]string, stateId uint32) map[string]interface{} {
+	createExecutionResult := func(resultType string, data map[string]string, stateId uint64) map[string]interface{} {
 		return map[string]interface{}{
 			"state_id": stateId,
 			"execution_result": map[string]interface{}{

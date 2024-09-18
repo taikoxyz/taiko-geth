@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"math/rand"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/log"
@@ -25,7 +27,7 @@ type PreconfState struct {
 	// It is nil if there is no pending pre-conf block.
 	pendingPreconfBlock *environment
 	// stateIdMap maps all state IDs to their corresponding environments.
-	stateIdMap map[uint32]*environment
+	stateIdMap map[uint64]*environment
 	// chain represents the current canonical blockchain.
 	chain *core.BlockChain
 	// commitMutex ensures that operations modifying the pendingPreconfBlock are thread-safe.
@@ -35,9 +37,28 @@ type PreconfState struct {
 // NewPreconfState initializes a new PreconfState with empty sealed and pending preconf blocks.
 // It requires a reference to the canonical blockchain.
 func NewPreconfState(chain *core.BlockChain) *PreconfState {
+	rand.Seed(time.Now().UnixNano())
 	return &PreconfState{
 		chain: chain,
 	}
+}
+
+// addSimulatedPreconfEnv add an environment to the internal stateIdMap and return the stateId
+// in order to retrieve it later on.
+
+func (state *PreconfState) addSimulatedPreconfEnv(env *environment) uint64 {
+	newStateId := rand.Uint64()
+	state.stateIdMap[newStateId] = env.copy()
+	return newStateId
+}
+
+// setPendingPreconfBlock set the pendingPreconfBlock with the input environment.
+// If the pendingPreconfBlock is not nil, a log.Warn is printed and the pendingPreconfBlock is overwritten.
+func (state *PreconfState) setPendingPreconfBlock(pendingPreconfBlock *environment) {
+	if state.pendingPreconfBlock != nil {
+		log.Warn("current block is not sealed, overwrite pending block environment")
+	}
+	state.pendingPreconfBlock = pendingPreconfBlock
 }
 
 // sealPendingPreconfBlock moves the current pending preconf block to the sealedPreconfBlocks list.
@@ -56,7 +77,7 @@ func (state *PreconfState) sealPendingPreconfBlock() error {
 	log.Info("Pending preconf block sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
 
 	state.pendingPreconfBlock = nil
-	state.stateIdMap = make(map[uint32]*environment)
+	state.stateIdMap = make(map[uint64]*environment)
 	return nil
 }
 
@@ -129,7 +150,7 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 
 // commitStateIDToPendingBlock takes a state ID from the map and adds the changes from that state ID
 // to the pending preconf block. Returns the cumulative gas used and builderPayment of the new pendingPreconfBlock.
-func (state *PreconfState) commitStateIDToPendingBlock(stateId uint32) (uint64, string, error) {
+func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, string, error) {
 	state.commitMutex.Lock()
 	defer state.commitMutex.Unlock()
 
@@ -178,6 +199,6 @@ func (state *PreconfState) currentBlockNumber() *big.Int {
 	return state.chain.CurrentBlock().Number
 }
 
-func (state *PreconfState) envAtId(stateId uint32) *environment {
+func (state *PreconfState) envAtId(stateId uint64) *environment {
 	return state.stateIdMap[stateId]
 }
