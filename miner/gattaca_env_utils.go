@@ -162,33 +162,21 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 }
 
 func (g *GattacaWorker) retrieveEnv(stateId uint32) (*environment, error) {
-	var env *environment
-	var err error
 	if stateId == 1 {
-		env, err = g.envFromHead()
-		if err != nil {
-			log.Error("Failed  envFromHead", "err", err)
-			return nil, err
+		// stateId 1 fetches the latest sealed env, if present, or the latest chain head env
+		latestSealedEnv := g.preconfState.latestSealedPreconfEnv()
+		if latestSealedEnv != nil {
+			return latestSealedEnv, nil
 		}
-	} else if stateId == 2 {
-		if g.preconfHead != nil {
-			env = g.preconfHead
-		} else {
-			log.Warn("nothing committed yet, retrieving env from chain head")
-			env, err = g.envFromHead()
-			if err != nil {
-				log.Error("Failed  envFromHead", "err", err)
-				return nil, err
-			}
-		}
+
+		return g.envFromHead()
 	} else {
-		var exists bool
-		env, exists = g.envMap[stateId]
+		env, exists := g.preconfState.stateIdMap[stateId]
 		if !exists {
 			return nil, errors.New(fmt.Sprintf("state not found for id %d", stateId))
 		}
+		return env, nil
 	}
-	return env, err
 }
 
 type OverrideAccount struct {
