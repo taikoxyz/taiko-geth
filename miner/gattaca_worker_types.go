@@ -4,7 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/log"
 	"math/big"
+	"sync"
 )
 
 // PreconfState holds all information about any blocks that have been pre-confirmed
@@ -15,8 +17,12 @@ type PreconfState struct {
 	// pendingPreconfBlock is the current pre-confirmed block that is being built but not yet sealed.
 	// It is nil if there is no pending pre-conf block.
 	pendingPreconfBlock *environment
+	// stateIdMap maps all state IDs to their corresponding environments.
+	stateIdMap map[uint32]*environment
 	// chain represents the current canonical blockchain.
 	chain *core.BlockChain
+	// commitMutex ensures that operations modifying the pendingPreconfBlock are thread-safe.
+	commitMutex sync.Mutex
 }
 
 // NewPreconfState initializes a new PreconfState with empty sealed and pending preconf blocks.
@@ -27,28 +33,31 @@ func NewPreconfState(chain *core.BlockChain) *PreconfState {
 	}
 }
 
-// SealPendingPreconfBlock moves the current pending preconf block to the sealedPreconfBlocks list.
+// sealPendingPreconfBlock moves the current pending preconf block to the sealedPreconfBlocks list.
 // It clears the pendingPreconfBlock after sealing.
 //
 // Returns an error if there is no pending preconf block to seal.
-func (state *PreconfState) SealPendingPreconfBlock() error {
+func (state *PreconfState) sealPendingPreconfBlock() error {
 	if state.pendingPreconfBlock == nil {
 		return errors.New("no pending preconf block to seal")
 	}
+	log.Info("Sealing pending preconf block", "blockNumber", state.pendingPreconfBlock.header.Number.Uint64())
 
 	state.sealedPreconfBlocks = append(state.sealedPreconfBlocks, state.pendingPreconfBlock)
-	state.pendingPreconfBlock = nil
+	log.Info("Pending preconf block sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
 
+	state.pendingPreconfBlock = nil
 	return nil
 }
 
-// OnNewChainHeadEvent processes a new chain head event by clearing any sealed preconf blocks
+// onNewChainHeadEvent processes a new chain head event by clearing any sealed preconf blocks
 // that have been incorporated into the canonical chain. It verifies that the hashes of
 // the sealed preconf blocks match those in the canonical chain.
 //
 // Returns an error if there is a hash mismatch or if a pending preconf block becomes stale.
-func (state *PreconfState) OnNewChainHeadEvent(event *core.ChainHeadEvent) error {
+func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error {
 	eventBlockNumber := event.Block.NumberU64()
+	log.Info("Processing new chain head event", "eventBlockNumber", eventBlockNumber)
 
 	// If there are no sealed preconf blocks, perform a sanity check on the pending preconf block.
 	if len(state.sealedPreconfBlocks) == 0 {
@@ -99,19 +108,55 @@ func (state *PreconfState) OnNewChainHeadEvent(event *core.ChainHeadEvent) error
 		case preconfBlockNumber > eventBlockNumber:
 			// Truncate the sealedPreconfBlocks slice to remove blocks beyond the current event block number.
 			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
+			log.Info("Sealed preconf blocks truncated", "remainingSealedBlocks", len(state.sealedPreconfBlocks))
 			break
 		}
 	}
 
+	log.Info("Finished processing sealed preconf blocks against new chain head")
 	return nil
+}
+
+// commitStateIDToPendingBlock takes a state ID from the map and adds the changes from that state ID
+// to the pending preconf block. Returns the cumulative gas used and builderPayment of the new pendingPreconfBlock.
+func (state *PreconfState) commitStateIDToPendingBlock(stateId uint32) (uint64, string, error) {
+	state.commitMutex.Lock()
+	defer state.commitMutex.Unlock()
+
+	if state.pendingPreconfBlock == nil {
+		return 0, "", fmt.Errorf("attempted to commit state ID to a non-existent pending preconf block. stateId: %d", stateId)
+	}
+
+	envToCommit, exists := state.stateIdMap[stateId]
+	if !exists {
+		return 0, "", fmt.Errorf("state for id %d does not exist", stateId)
+	}
+
+	log.Info("Committing state ID to pending preconf block", "stateId", stateId, "blockNumber", envToCommit.header.Number.Uint64())
+
+	// Add the environment corresponding to the state ID to the pending preconf block.
+	state.pendingPreconfBlock = envToCommit
+	log.Info("Pending preconf block updated with committed state", "newPendingBlockNumber", envToCommit.header.Number.Uint64())
+
+	total := uint64(0)
+	for _, receipt := range state.pendingPreconfBlock.receipts {
+		total += receipt.GasUsed
+	}
+
+	formattedBuilderPayment := fmt.Sprintf("0x%x", state.pendingPreconfBlock.cumulativeBuilderPayment)
+	return total, formattedBuilderPayment, nil
 }
 
 // CurrentBlockNumber retrieves the latest known block number. It prioritises the last sealed preconf block
 // if available, otherwise, it falls back to the canonical chain head.
-func (state *PreconfState) CurrentBlockNumber() *big.Int {
+func (state *PreconfState) currentBlockNumber() *big.Int {
 	numSealedPreconfBlocks := len(state.sealedPreconfBlocks)
 	if numSealedPreconfBlocks > 0 {
 		return state.sealedPreconfBlocks[numSealedPreconfBlocks-1].header.Number
 	}
 	return state.chain.CurrentBlock().Number
+}
+
+func (state *PreconfState) getPendingPreconfBlock() *environment {
+	return state.pendingPreconfBlock
 }

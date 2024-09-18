@@ -151,6 +151,8 @@ type GattacaWorker struct {
 
 	preconfHead *environment
 	builtBlocks []inMemoryStore
+
+	preconfState *PreconfState
 }
 
 func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
@@ -421,6 +423,15 @@ func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res ch
 }
 
 func (g *GattacaWorker) commitEnvToPreconf(stateId uint32, simRes chan CommitStateResponse) {
+	cumGasUsed, builderPayment, err := g.preconfState.commitStateIDToPendingBlock(stateId)
+	simRes <- CommitStateResponse{
+		error:                    err,
+		cumulativeGasUsed:        cumGasUsed,
+		cumulativeBuilderPayment: builderPayment,
+	}
+}
+
+func (g *GattacaWorker) commitEnvToPreconfLegacy(stateId uint32, simRes chan CommitStateResponse) {
 	g.commitMutex.Lock()
 	defer g.commitMutex.Unlock()
 	env, exists := g.envMap[stateId]
