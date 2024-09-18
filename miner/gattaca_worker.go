@@ -485,13 +485,13 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	chainHeadNo := chainHead.header.Number.Uint64()
 
 	// Update preconf head env to match chain head env if it's ahead.
-	if chainHeadNo >= initialPreconfHead {
+	if chainHeadNo > initialPreconfHead {
 		log.Info("sealBlock chain head >= preconf head. Resetting preconf head data to chain head", "preconf head header", g.preconfHead.header, "chainHead header", chainHead.header)
 		g.preconfHead = chainHead.copy()
 	}
 
 	// Increment preconf head number
-	g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
+	log.Info("sealBlock", "chainHead", chainHeadNo, "preconfHead", initialPreconfHead)
 	//if len(g.builtBlocks) > 0 {
 	//	lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
 	//	if lastBlockNumber > chainHeadNo {
@@ -554,6 +554,8 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 
 	g.preconfHead.parentHash = block.Hash()
 	g.preconfHead.reset()
+	g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
+	g.preconfHead.header.ParentHash = block.Hash()
 
 	req.Response <- SealBlockResponse{
 		block:                    block,
