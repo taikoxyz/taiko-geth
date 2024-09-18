@@ -137,18 +137,20 @@ type GattacaWorker struct {
 	extra            []byte
 	lock             sync.RWMutex
 	commitMutex      sync.Mutex
-	envMap           map[uint32]*environment
-	envBuilder       map[uint32][]uint32
-	preconfHead      *environment
 	halt             bool
 	haltReason       string
-	builtBlocks      []inMemoryStore
 	startBlockNumber uint64
 	sequencing       int32
 	mapBlockNumber   map[int64]inMemoryStore
 	mapBlockHash     map[string]inMemoryStore
 
 	mixHash common.Hash
+
+	envMap     map[uint32]*environment
+	envBuilder map[uint32][]uint32
+
+	preconfHead *environment
+	builtBlocks []inMemoryStore
 }
 
 func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
