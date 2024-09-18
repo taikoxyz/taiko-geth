@@ -36,6 +36,8 @@ func NewPreconfState(chain *core.BlockChain) *PreconfState {
 // sealPendingPreconfBlock moves the current pending preconf block to the sealedPreconfBlocks list.
 // It clears the pendingPreconfBlock after sealing.
 //
+// sealPendingPreconfBlock will also clear the stateIdMap. TBC if we want to keep this logic.
+//
 // Returns an error if there is no pending preconf block to seal.
 func (state *PreconfState) sealPendingPreconfBlock() error {
 	if state.pendingPreconfBlock == nil {
@@ -47,6 +49,7 @@ func (state *PreconfState) sealPendingPreconfBlock() error {
 	log.Info("Pending preconf block sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
 
 	state.pendingPreconfBlock = nil
+	state.stateIdMap = make(map[uint32]*environment)
 	return nil
 }
 
@@ -147,6 +150,17 @@ func (state *PreconfState) commitStateIDToPendingBlock(stateId uint32) (uint64, 
 	return total, formattedBuilderPayment, nil
 }
 
+// getLatestSealedBlock returns the latest block from sealedPreconfBlocks if there are items in the array.
+// Otherwise, it returns nil.
+func (state *PreconfState) latestSealedPreconfEnv() *environment {
+	numPreconfBlocks := len(state.sealedPreconfBlocks)
+	if numPreconfBlocks > 0 {
+		return state.sealedPreconfBlocks[numPreconfBlocks-1]
+	}
+
+	return nil
+}
+
 // CurrentBlockNumber retrieves the latest known block number. It prioritises the last sealed preconf block
 // if available, otherwise, it falls back to the canonical chain head.
 func (state *PreconfState) currentBlockNumber() *big.Int {
@@ -157,6 +171,6 @@ func (state *PreconfState) currentBlockNumber() *big.Int {
 	return state.chain.CurrentBlock().Number
 }
 
-func (state *PreconfState) getPendingPreconfBlock() *environment {
-	return state.pendingPreconfBlock
+func (state *PreconfState) envAtId(stateId uint32) *environment {
+	return state.stateIdMap[stateId]
 }

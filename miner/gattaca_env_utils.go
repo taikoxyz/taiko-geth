@@ -162,6 +162,24 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 }
 
 func (g *GattacaWorker) retrieveEnv(stateId uint32) (*environment, error) {
+	if stateId == 1 {
+		// stateId 1 fetches the latest sealed env, if present, or the latest chain head env
+		latestSealedEnv := g.preconfState.latestSealedPreconfEnv()
+		if latestSealedEnv != nil {
+			return latestSealedEnv, nil
+		}
+
+		return g.envFromHead()
+	} else {
+		env, exists := g.preconfState.stateIdMap[stateId]
+		if !exists {
+			return nil, errors.New(fmt.Sprintf("state not found for id %d", stateId))
+		}
+		return env, nil
+	}
+}
+
+func (g *GattacaWorker) retrieveEnvLegacy(stateId uint32) (*environment, error) {
 	var env *environment
 	var err error
 	if stateId == 1 {

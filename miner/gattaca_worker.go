@@ -175,6 +175,7 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 			builtBlocks:    make([]inMemoryStore, 0),
 			mapBlockNumber: make(map[int64]inMemoryStore),
 			mapBlockHash:   make(map[string]inMemoryStore),
+			preconfState:   NewPreconfState(chain),
 		}
 		env, err := singletonGattaca.retrieveEnv(1)
 		if err != nil {
