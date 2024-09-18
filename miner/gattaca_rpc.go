@@ -8,7 +8,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"math/big"
@@ -38,66 +37,6 @@ type RPCTransaction struct {
 	R                   *hexutil.Big      `json:"r"`
 	S                   *hexutil.Big      `json:"s"`
 	YParity             *hexutil.Uint64   `json:"yParity,omitempty"`
-}
-
-// GetTransactionReceipt returns the transaction receipt for the given transaction hash.
-func (g *GattacaWorker) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
-	if receipt, ok := g.preconfHead.hashReceipts[hash.Hex()]; ok {
-		var entry inMemoryStore
-		var transaction *types.Transaction
-		var txIdx int
-		for _, block := range g.builtBlocks {
-			for idx, tx := range block.block.Transactions() {
-				if tx.Hash().Hex() == hash.Hex() {
-					entry = block
-					transaction = tx
-					txIdx = idx
-					break
-				}
-			}
-			if transaction != nil {
-				break
-			}
-		}
-		if transaction != nil {
-			signer := types.MakeSigner(g.chain.Config(), entry.block.Number(), entry.block.Time())
-			receipt := marshalReceipt(receipt, common.Hash{}, 0, signer, transaction, txIdx)
-			return receipt, nil
-		}
-	}
-	log.Info("no receipt found for ", "hash", hash.Hex())
-	found, tx, blockHash, blockNumber, index, err := g.getTransaction(ctx, hash)
-
-	if !found {
-		return nil, nil // transaction is not existent or reachable
-	}
-	header, err := g.headerByHash(ctx, blockHash)
-	if err != nil {
-		return nil, err
-	}
-	receipts, err := g.getReceipts(ctx, blockHash)
-	if err != nil {
-		return nil, err
-	}
-	if uint64(len(receipts)) <= index {
-		return nil, nil
-	}
-	receipt := receipts[index]
-
-	// Derive the sender.
-	signer := types.MakeSigner(g.chain.Config(), header.Number, header.Time)
-	return marshalReceipt(receipt, blockHash, blockNumber, signer, tx, int(index)), nil
-}
-
-func (g *GattacaWorker) getTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
-	lookup, tx, err := g.chain.GetTransactionLookup(txHash)
-	if err != nil {
-		return false, nil, common.Hash{}, 0, 0, err
-	}
-	if lookup == nil || tx == nil {
-		return false, nil, common.Hash{}, 0, 0, nil
-	}
-	return true, tx, lookup.BlockHash, lookup.BlockIndex, lookup.Index, nil
 }
 
 func (g *GattacaWorker) headerByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
@@ -150,9 +89,6 @@ func (g *GattacaWorker) getTd(ctx context.Context, hash common.Hash) *big.Int {
 		return g.chain.GetTd(hash, header.Number.Uint64())
 	}
 	return nil
-}
-func (g *GattacaWorker) getPoolNonce(ctx context.Context, addr common.Address) (uint64, error) {
-	return g.preconfHead.state.GetNonce(addr), nil
 }
 
 func (g *GattacaWorker) stateAndHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*state.StateDB, *types.Header, error) {

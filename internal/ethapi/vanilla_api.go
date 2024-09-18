@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/rpc"
 	"strconv"
 )
@@ -52,6 +51,7 @@ func NewVanillaTransactionAPI(b Backend, nonceLock *AddrLocker) *TransactionAPI 
 
 // GetBlockTransactionCountByNumber returns the number of transactions in the block with the given block number.
 func (s *VanillaTransactionAPI) GetBlockTransactionCountByNumber(ctx context.Context, blockNr rpc.BlockNumber) *hexutil.Uint {
+
 	if block, _ := s.b.BlockByNumber(ctx, blockNr); block != nil {
 		n := hexutil.Uint(len(block.Transactions()))
 		return &n
@@ -175,17 +175,8 @@ func (api *VanillaBlockChainAPI) ChainId() *hexutil.Big {
 //   - When fullTx is true all transactions in the block are returned, otherwise
 //     only the transaction hash is returned.
 func (s *VanillaBlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
-	worker := miner.GetWorker(5)
-	var block *types.Block
-	var err error
-	if worker != nil {
-		block, err = worker.GetBlockByNumber(ctx, number)
-		if block == nil {
-			block, err = s.b.BlockByNumber(ctx, number)
-		}
-	} else {
-		block, err = s.b.BlockByNumber(ctx, number)
-	}
+	log.Info("Calling VanillaTransactionAPI.GetBlockByNumber", "number", number, "fullTx", fullTx)
+	block, err := s.b.BlockByNumber(ctx, number)
 	if block != nil && err == nil {
 		response, err := s.rpcMarshalBlock(ctx, block, true, fullTx)
 		if err == nil && number == rpc.PendingBlockNumber {
@@ -195,6 +186,17 @@ func (s *VanillaBlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.
 			}
 		}
 		return response, err
+	} else {
+		// change(taiko): check to see if it exists from the preconfer.
+		// Check if PreconfirmationForwardingURL is set
+		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+			log.Info("forwarding getBlockByNumber", "number", number.Int64(), "numberStr", number.String())
+			// Forward the raw transaction to the specified URL
+			b, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number.String(), fullTx})
+			if err == nil && b != nil {
+				return *b, nil
+			}
+		}
 	}
 	return nil, err
 }
@@ -212,19 +214,19 @@ func (s *VanillaBlockChainAPI) rpcMarshalBlock(ctx context.Context, b *types.Blo
 // GetBlockByHash returns the requested block. When fullTx is true all transactions in the block are returned in full
 // detail, otherwise only the transaction hash is returned.
 func (s *VanillaBlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fullTx bool) (map[string]interface{}, error) {
-	var block *types.Block
-	var err error
-	worker := miner.GetWorker(5)
-	if worker != nil {
-		block = worker.GetBlockByHash(ctx, hash, fullTx)
-		if block == nil {
-			block, err = s.b.BlockByHash(ctx, hash)
-		}
-	} else {
-		block, err = s.b.BlockByHash(ctx, hash)
-	}
+	block, err := s.b.BlockByHash(ctx, hash)
 	if block != nil {
 		return s.rpcMarshalBlock(ctx, block, true, fullTx)
+	} else {
+		// change(taiko): check to see if it exists from the preconfer.
+		// Check if PreconfirmationForwardingURL is set
+		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+			log.Info("forwarding getBlockByHash", "hash", hash.Hex())
+			m, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByHash", []interface{}{hash.Hex(), fullTx})
+			if err == nil && m != nil {
+				return *m, nil
+			}
+		}
 	}
 	return nil, err
 }

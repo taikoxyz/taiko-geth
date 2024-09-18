@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/miner"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
@@ -467,10 +468,6 @@ func (s *PersonalAccountAPI) signTransaction(ctx context.Context, args *Transact
 // tries to sign it with the key associated with args.From. If the given
 // passwd isn't able to decrypt the key it fails.
 func (s *PersonalAccountAPI) SendTransaction(ctx context.Context, args TransactionArgs, passwd string) (common.Hash, error) {
-	worker := miner.GetWorker(1)
-	if worker != nil {
-		return common.Hash{}, errors.New("cannot send transaction if gattaca worker is running")
-	}
 	if args.Nonce == nil {
 		// Hold the mutex around signing to prevent concurrent assignment of
 		// the same nonce to multiple accounts.
@@ -644,16 +641,27 @@ func (api *BlockChainAPI) ChainId() *hexutil.Big {
 
 // BlockNumber returns the block number of the chain head.
 func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
+	// change(taiko): check to see if it exists from the preconfer.
+	// Check if PreconfirmationForwardingURL is set
 	worker := miner.GetWorker(5)
 	if worker != nil {
-		blNumber := worker.BlockNumber()
-		header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber)
-		if blNumber > header.Number.Uint64() {
-			return hexutil.Uint64(blNumber)
-		}
-		return hexutil.Uint64(header.Number.Uint64())
-
+		return hexutil.Uint64(worker.BlockNumber())
 	}
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding blockNumber request")
+
+		// Forward the raw transaction to the specified URL
+		res, err := forward[string](forwardURL, "eth_blockNumber", nil)
+
+		if err == nil && res != nil {
+			log.Info("forwarded block number request", "res", res)
+			i, _ := strconv.ParseUint(*res, 0, 64)
+
+			log.Info("parsed block number", "bn", hexutil.Uint64(i))
+			return hexutil.Uint64(i)
+		}
+	}
+
 	header, _ := s.b.HeaderByNumber(context.Background(), rpc.LatestBlockNumber) // latest header should always be available
 	return hexutil.Uint64(header.Number.Uint64())
 }
@@ -662,17 +670,28 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 // given block number. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta
 // block numbers are also allowed.
 func (s *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Big, error) {
-	worker := miner.GetWorker(5)
-	var state *state.StateDB
-	var err error
-	if worker != nil {
-		state, _, err = worker.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
-		if state == nil {
-			state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	// change(taiko): check to see if it exists from the preconfer.
+	// Check if PreconfirmationForwardingURL is set
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding balance request", "addr", address.Hex())
+		if blockNr, ok := blockNrOrHash.Number(); ok {
+			log.Info("forwarding balance request", "blockNr", blockNr.String())
+			bal, err := forward[string](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockNr.String()})
+			if err == nil && bal != nil {
+				return (*hexutil.Big)(hexutil.MustDecodeBig(*bal)), nil
+			}
 		}
-	} else {
-		state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+
+		if blockHash, ok := blockNrOrHash.Hash(); ok {
+			log.Info("forwarding balance request", "blockNr", blockHash.Hex())
+			bal, err := forward[string](forwardURL, "eth_getBalance", []interface{}{address.Hex(), blockHash.Hex()})
+			if err == nil && bal != nil {
+				return (*hexutil.Big)(hexutil.MustDecodeBig(*bal)), nil
+			}
+		}
 	}
+
+	state, _, err := s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -844,16 +863,21 @@ func (s *BlockChainAPI) GetHeaderByHash(ctx context.Context, hash common.Hash) m
 //     only the transaction hash is returned.
 func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNumber, fullTx bool) (map[string]interface{}, error) {
 	worker := miner.GetWorker(5)
-	var block *types.Block
-	var err error
 	if worker != nil {
-		block, err = worker.GetBlockByNumber(ctx, number)
-		if block == nil {
-			block, err = s.b.BlockByNumber(ctx, number)
+		block, err := s.b.BlockByNumber(ctx, rpc.LatestBlockNumber)
+		block, err = worker.BlockByNumber(ctx, number, block)
+		if block != nil && err == nil {
+			response, err := s.rpcMarshalBlock(ctx, block, true, fullTx)
+			if err == nil && number == rpc.PendingBlockNumber {
+				// Pending blocks need to nil out a few fields
+				for _, field := range []string{"hash", "nonce", "miner"} {
+					response[field] = nil
+				}
+			}
+			return response, err
 		}
-	} else {
-		block, err = s.b.BlockByNumber(ctx, number)
 	}
+	block, err := s.b.BlockByNumber(ctx, number)
 	if block != nil && err == nil {
 		response, err := s.rpcMarshalBlock(ctx, block, true, fullTx)
 		if err == nil && number == rpc.PendingBlockNumber {
@@ -863,6 +887,17 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 			}
 		}
 		return response, err
+	} else {
+		// change(taiko): check to see if it exists from the preconfer.
+		// Check if PreconfirmationForwardingURL is set
+		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+			log.Info("forwarding getBlockByNumber", "number", number.Int64(), "numberStr", number.String())
+			// Forward the raw transaction to the specified URL
+			b, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByNumber", []interface{}{number.String(), fullTx})
+			if err == nil && b != nil {
+				return *b, nil
+			}
+		}
 	}
 	return nil, err
 }
@@ -874,15 +909,21 @@ func (s *BlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fu
 	var err error
 	worker := miner.GetWorker(5)
 	if worker != nil {
-		block = worker.GetBlockByHash(ctx, hash, fullTx)
-		if block == nil {
-			block, err = s.b.BlockByHash(ctx, hash)
-		}
-	} else {
-		block, err = s.b.BlockByHash(ctx, hash)
+		block, err = worker.BlockByHash(ctx, hash)
 	}
+	block, err = s.b.BlockByHash(ctx, hash)
 	if block != nil {
 		return s.rpcMarshalBlock(ctx, block, true, fullTx)
+	} else {
+		// change(taiko): check to see if it exists from the preconfer.
+		// Check if PreconfirmationForwardingURL is set
+		if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+			log.Info("forwarding getBlockByHash", "hash", hash.Hex())
+			m, err := forward[map[string]interface{}](forwardURL, "eth_getBlockByHash", []interface{}{hash.Hex(), fullTx})
+			if err == nil && m != nil {
+				return *m, nil
+			}
+		}
 	}
 	return nil, err
 }
@@ -1213,20 +1254,11 @@ func (s *BlockChainAPI) Call(ctx context.Context, args TransactionArgs, blockNrO
 // non-zero) and `gasCap` (if non-zero).
 func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride, gasCap uint64) (hexutil.Uint64, error) {
 	// Retrieve the base state and mutate it with any overrides
-	worker := miner.GetWorker(1)
-	var state *state.StateDB
-	var header *types.Header
-	var err error
-	if worker != nil {
-		log.Info("DoEstimateGas state & header override")
-		state, header = worker.GetStateAndHeader()
-	} else {
-		state, header, err = b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
-		if state == nil || err != nil {
-			return 0, err
-		}
+	state, header, err := b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	if state == nil || err != nil {
+		return 0, err
 	}
-	if err := overrides.Apply(state); err != nil {
+	if err = overrides.Apply(state); err != nil {
 		return 0, err
 	}
 	// Construct the gas estimator option from the user input
@@ -1597,7 +1629,7 @@ type TransactionAPI struct {
 	signer    types.Signer
 }
 
-// NewTransactionApi creates a new RPC service with methods for interacting with transactions.
+// NewTransactionAPI creates a new RPC service with methods for interacting with transactions.
 func NewTransactionAPI(b Backend, nonceLock *AddrLocker) *TransactionAPI {
 	// The signer used by the API should always be the 'latest' known one because we expect
 	// signers to be backwards-compatible with old transactions.
@@ -1657,38 +1689,54 @@ func (s *TransactionAPI) GetRawTransactionByBlockHashAndIndex(ctx context.Contex
 
 // GetTransactionCount returns the number of transactions the given address has sent for the given block number
 func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
-	// Ask transaction pool for the nonce which includes pending transactions
+	// change(taiko): check to see if it exists from the preconfer.
+	// Check if PreconfirmationForwardingURL is set
+	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
+		log.Info("forwarding getTransactionCount", "addr", address.Hex())
 
-	worker := miner.GetWorker(5)
-	log.Info("GetTransactionCount", "worker status", worker != nil)
-	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
-		log.Info("getting pending nonce from pending block ", "workerStatus", worker != nil)
-		if worker != nil {
-			nonce := worker.GetPendingPoolNonce(address)
-			return (*hexutil.Uint64)(&nonce), nil
-		} else {
-			nonce, err := s.b.GetPoolNonce(ctx, address)
-			if err != nil {
-				return nil, err
+		if blockNr, ok := blockNrOrHash.Number(); ok {
+			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockNr.String()})
+			if err == nil && txCount != nil {
+				return txCount, nil
 			}
-			return (*hexutil.Uint64)(&nonce), nil
 		}
+
+		if blockHash, ok := blockNrOrHash.Hash(); ok {
+			txCount, err := forward[hexutil.Uint64](forwardURL, "eth_getTransactionCount", []interface{}{address.Hex(), blockHash.Hex()})
+			if err == nil && txCount != nil {
+				return txCount, nil
+			}
+		}
+	}
+	worker := miner.GetWorker(5)
+	// Ask transaction pool for the nonce which includes pending transactions
+	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
+		var simulatedNonce uint64
+		if worker != nil {
+			simulatedNonce = worker.GetPoolNonce(ctx, address)
+		}
+		nonce, err := s.b.GetPoolNonce(ctx, address)
+		if err != nil {
+			return nil, err
+		}
+		if simulatedNonce > nonce {
+			nonce = simulatedNonce
+		}
+		return (*hexutil.Uint64)(&nonce), nil
 	}
 	// Resolve block number and use its state to ask for the nonce
 	var state *state.StateDB
 	var err error
 	if worker != nil {
-		state, _, err = worker.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+		state, _, err = worker.StateAndHeaderByNumberOrHash(blockNrOrHash)
 		if err != nil {
-			// NOTE: this has been temporarily removed
-			//panic(err.Error())
-		}
-		if state == nil {
+			log.Warn("error retrieving state from preconf sim. Fallback to chaindata", "err", err.Error())
 			state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 		}
 	} else {
 		state, _, err = s.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
 	}
+
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -1737,7 +1785,11 @@ func (s *TransactionAPI) GetRawTransactionByHash(ctx context.Context, hash commo
 func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.Hash) (map[string]interface{}, error) {
 	worker := miner.GetWorker(5)
 	if worker != nil {
-		return worker.GetTransactionReceipt(ctx, hash)
+		log.Debug("override get transaction receipt")
+		ret := worker.GetTransactionReceipt(ctx, hash)
+		if ret != nil {
+			return ret, nil
+		}
 	}
 	found, tx, blockHash, blockNumber, index, err := s.b.GetTransaction(ctx, hash)
 	if err != nil || !found {
@@ -1868,10 +1920,6 @@ func SubmitTransaction(ctx context.Context, b Backend, tx *types.Transaction) (c
 // transaction pool.
 func (s *TransactionAPI) SendTransaction(ctx context.Context, args TransactionArgs) (common.Hash, error) {
 	// Look up the wallet containing the requested signer
-	worker := miner.GetWorker(1)
-	if worker != nil {
-		return common.Hash{}, errors.New("cannot send transaction if gattaca worker is running")
-	}
 	account := accounts.Account{Address: args.from()}
 
 	wallet, err := s.b.AccountManager().Find(account)
@@ -1928,10 +1976,6 @@ func (s *TransactionAPI) FillTransaction(ctx context.Context, args TransactionAr
 // The sender is responsible for signing the transaction and using the correct nonce.
 func (s *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil.Bytes) (common.Hash, error) {
 	// Check if PreconfirmationForwardingURL is set
-	worker := miner.GetWorker(1)
-	if worker != nil {
-		return common.Hash{}, errors.New("cannot send transaction if gattaca worker is running")
-	}
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		log.Info("forwarding send raw tx", "url", forwardURL)
 		// Forward the raw transaction to the specified URL
