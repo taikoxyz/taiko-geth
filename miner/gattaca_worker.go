@@ -221,39 +221,40 @@ func (g *GattacaWorker) runLoop() {
 }
 
 func (g *GattacaWorker) newHeadEventSubscriber() {
-	/*g.lock.Lock()
-	defer g.lock.Unlock()
 	newBlockCh := make(chan core.ChainHeadEvent, 10)
 	sub := g.chain.SubscribeChainHeadEvent(newBlockCh)
 	defer sub.Unsubscribe()
 	for {
 		select {
 		case ev := <-newBlockCh:
+			g.lock.Lock()
 			block := ev.Block
-			var entry inMemoryStore
-			found := false
-			var idx int
-			for idx, entry = range g.builtBlocks {
-				if entry.block.NumberU64() == block.NumberU64() {
-					found = true
-					break
+			idx := -1
+			if len(g.builtBlocks) > 0 && block != nil {
+				for i, entry := range g.builtBlocks {
+					if block.NumberU64() == entry.block.NumberU64() {
+						idx = i
+						if block.Hash().Hex() == entry.block.Hash().Hex() {
+						} else {
+							log.Warn("block hash mismatch, most likely the preconfHead is different from chain head, resetting it.")
+							env, _ := g.retrieveEnv(1)
+							g.preconfHead = env
+						}
+						break
+					}
+				}
+				if idx != -1 {
+					g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
+				}
+				// we need to check if the block number received is equal or greater than the current preconfHead.
+				if block.NumberU64() >= g.preconfHead.header.Number.Uint64() {
+					log.Warn("preconfhead number is equal or lower to the received block, resetting it.")
+					g.preconfHead, _ = g.retrieveEnv(1)
 				}
 			}
-			if found {
-				if len(entry.block.Hash().Hex()) != len(block.Hash().Hex()) {
-					log.Crit("blocks txs length differ between in memory block and block received")
-				}
-				delete(g.mapBlockNumber, int64(block.NumberU64()))
-				delete(g.mapBlockHash, block.Hash().Hex())
-				g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
-			}
-		case err := <-sub.Err():
-			if err != nil {
-				log.Error("Error in block subscription", "err", err)
-			}
-			break
+			g.lock.Unlock()
 		}
-	}*/
+	}
 }
 
 func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64, baseFee uint64, mixHash common.Hash, res chan SimulationResponse) {
