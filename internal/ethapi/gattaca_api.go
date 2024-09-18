@@ -60,7 +60,7 @@ func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Byt
 	return retMap, nil
 }
 
-func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint32) (map[string]interface{}, error) {
+func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint64) (map[string]interface{}, error) {
 	tx := new(types.Transaction)
 	if err := tx.UnmarshalBinary(input); err != nil {
 		log.Warn("PRECONF: unmarshalBinary failed, trying RLP decode", "error", err)

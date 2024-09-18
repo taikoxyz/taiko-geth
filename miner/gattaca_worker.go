@@ -38,7 +38,7 @@ var (
 
 type SimulateTxRequest struct {
 	RawTx   []byte                  `json:"tx"`
-	StateId uint32                  `json:"stateId"`
+	StateId uint64                  `json:"stateId"`
 	Tx      *types.Transaction      `json:"-"`
 	SimRes  chan SimulationResponse `json:"-"`
 }
@@ -333,7 +333,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, env common.Block
 	}
 }
 
-func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res chan SimulationResponse) {
+func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res chan SimulationResponse) {
 	g.lock.RLock()
 	defer g.lock.RUnlock()
 
