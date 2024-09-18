@@ -9,6 +9,12 @@ import (
 	"sync"
 )
 
+type StateId uint32
+
+const (
+	LatestSealedId StateId = iota
+)
+
 // PreconfState holds all information about any blocks that have been pre-confirmed
 // and any pending changes that are going to be pre-confirmed.
 type PreconfState struct {

@@ -262,10 +262,11 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 	}
 }
 
+// TODO: we need to make sure we set all the correct preconfState.pendingPreconfBlock environment fields correctly. A lot of stuff was set in sealBlock and has been removed.
 func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64, baseFee uint64, mixHash common.Hash, res chan SimulationResponse) {
 	log.Info("simulateAnchorTx params", "timestamp", timestamp, "baseFee", baseFee, "mixHash", mixHash)
 
-	env, err := g.retrieveEnv(2)
+	env, err := g.retrieveEnv(uint32(LatestSealedId))
 	if err != nil {
 		res <- SimulationResponse{
 			stateId:        0,
@@ -432,149 +433,79 @@ func (g *GattacaWorker) commitEnvToPreconf(stateId uint32, simRes chan CommitSta
 	}
 }
 
-func (g *GattacaWorker) commitEnvToPreconfLegacy(stateId uint32, simRes chan CommitStateResponse) {
-	g.commitMutex.Lock()
-	defer g.commitMutex.Unlock()
-	env, exists := g.envMap[stateId]
-	if !exists {
-		simRes <- CommitStateResponse{
-			error: errors.New(fmt.Sprintf("cache for id %d does not exists", stateId)),
-		}
-		return
-	}
-	if g.preconfHead == nil {
-		var err error
-		headEnv, err := g.envFromHead()
-		if err != nil {
-			simRes <- CommitStateResponse{
-				error: err,
-			}
-			return
-		}
-		g.preconfHead = headEnv.copy()
-	}
-	var cumulativeGasUsed uint64
-	for _, tx := range env.txs {
-		if _, in := g.preconfHead.txHashSet[tx.Hash().Hex()]; !in {
-			receipt, _, _, err := g.commitTx(g.preconfHead, tx)
-			if err != nil {
-				log.Error("error committing transaction to head ", "hash", tx.Hash().Hex(), "error", err)
-				simRes <- CommitStateResponse{
-					error: err,
-				}
-				return
-			}
-			g.preconfHead.receipts = append(g.preconfHead.receipts, receipt)
-			g.preconfHead.hashReceipts[tx.Hash().Hex()] = receipt
-			g.preconfHead.txHashSet[tx.Hash().Hex()] = struct{}{}
-			cumulativeGasUsed += receipt.GasUsed
-		}
-	}
-
-	simRes <- CommitStateResponse{
-		cumulativeGasUsed:        cumulativeGasUsed,
-		cumulativeBuilderPayment: fmt.Sprintf("0x%x", g.preconfHead.cumulativeBuilderPayment),
-	}
-}
-
+// sealBlock seals the current pending pre-confirmed block.
+// It finalizes, assembles, and seals the block, then updates the preconf state.
 func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
 
-	chainHead, err := g.retrieveEnv(1)
-	if err != nil {
-		log.Crit("error getting chain head")
-		req.Response <- SealBlockResponse{
-			block:                    nil,
-			cumulativeBuilderPayment: "",
-			err:                      err,
-		}
+	// Retrieve the pending pre-confirmed block from the preconf state.
+	pendingPreconfBlock := g.preconfState.pendingPreconfBlock
+	if pendingPreconfBlock == nil {
+		req.Response <- SealBlockResponse{err: errors.New("no pending preconf block to seal")}
 		return
 	}
-	var empty common.Hash
-	if g.preconfHead.parentHash.Hex() != empty.Hex() {
-		g.preconfHead.header.ParentHash = g.preconfHead.parentHash
-	}
 
-	initialPreconfHead := g.preconfHead.header.Number.Uint64()
-	chainHeadNo := chainHead.header.Number.Uint64()
+	log.Info("Starting block sealing process",
+		"pendingPreconfBlockNumber", pendingPreconfBlock.header.Number.Uint64(),
+	)
 
-	// Update preconf head env to match chain head env if it's ahead.
-	if chainHeadNo > initialPreconfHead {
-		log.Info("sealBlock chain head >= preconf head. Resetting preconf head data to chain head", "preconf head header", g.preconfHead.header, "chainHead header", chainHead.header)
-		g.preconfHead = chainHead.copy()
-	}
-
-	// Increment preconf head number
-	log.Info("sealBlock", "chainHead", chainHeadNo, "preconfHead", initialPreconfHead)
-	//if len(g.builtBlocks) > 0 {
-	//	lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
-	//	if lastBlockNumber > chainHeadNo {
-	//		g.preconfHead.header.Number = big.NewInt(int64(lastBlockNumber))
-	//		log.Info("sealBlock setting to lastBlockNumber")
-	//	} else {
-	//		g.preconfHead.header.Number = big.NewInt(int64(chainHeadNo))
-	//		log.Info("sealBlock setting to chainNo")
-	//	}
-	//} else {
-	//	if chainNo > headerNo {
-	//		g.preconfHead.header.Number = big.NewInt(int64(chainNo))
-	//		log.Info("sealBlock setting to chainNo")
-	//	}
-	//}
-
-	log.Info("sealBlock", "initialHeaderNo", initialPreconfHead, "newHeaderNo", g.preconfHead.header.Number)
-
-	prevDigest := g.preconfHead.header.MixDigest
-	g.preconfHead.header.MixDigest = g.mixHash
-	g.preconfHead.header.Extra = make([]byte, 32)
-	log.Info("Header extra data is", "extra-data", len(g.preconfHead.header.Extra), "content", g.preconfHead.header.Extra)
-	transactionGas := uint64(0)
-	for _, tx := range g.preconfHead.txs {
-		transactionGas += g.preconfHead.hashReceipts[tx.Hash().Hex()].GasUsed
-	}
-	log.Info("number of transaction per block", "blockNo", g.preconfHead.header.Number.Uint64(), "transaction count", len(g.preconfHead.txs), "txGas", transactionGas)
-	block, err := g.engine.FinalizeAndAssemble(g.chain, g.preconfHead.header, g.preconfHead.state, g.preconfHead.txs, nil, g.preconfHead.receipts, make([]*types.Withdrawal, 0))
-	if err != nil {
-
-		req.Response <- SealBlockResponse{
-			block:                    nil,
-			cumulativeBuilderPayment: "",
-			err:                      err,
+	// Calculate total gas used by transactions in the pending block.
+	var transactionGas uint64
+	for _, tx := range pendingPreconfBlock.txs {
+		receipt, exists := pendingPreconfBlock.hashReceipts[tx.Hash().Hex()]
+		if !exists {
+			req.Response <- SealBlockResponse{
+				err: fmt.Errorf("missing receipt for transaction %s", tx.Hash().Hex()),
+			}
+			return
 		}
+		transactionGas += receipt.GasUsed
+	}
+
+	log.Info("Transactions in block",
+		"blockNumber", pendingPreconfBlock.header.Number.Uint64(),
+		"transactionCount", len(pendingPreconfBlock.txs),
+		"totalGasUsed", transactionGas,
+	)
+
+	block, err := g.engine.FinalizeAndAssemble(
+		g.chain,
+		pendingPreconfBlock.header,
+		pendingPreconfBlock.state,
+		pendingPreconfBlock.txs,
+		nil, // Uncles (always nil for Taiko)
+		pendingPreconfBlock.receipts,
+		nil, // Withdrawals (always nil for Taiko)
+	)
+	if err != nil {
+		// Error finalizing and assembling block; send error response.
+		req.Response <- SealBlockResponse{err: err}
 		return
 	}
 
 	results := make(chan *types.Block, 1)
 	if err := g.engine.Seal(g.chain, block, results, nil); err != nil {
-		req.Response <- SealBlockResponse{
-			block:                    nil,
-			cumulativeBuilderPayment: "",
-			err:                      err,
-		}
+		req.Response <- SealBlockResponse{err: err}
 		return
 	}
-	block = <-results
-	g.preconfHead.header.MixDigest = prevDigest
+	sealedBlock := <-results
+	log.Info("Block sealed", "sealedBlockHash", sealedBlock.Hash().Hex())
 
-	entry := inMemoryStore{
-		block: block,
-		env:   g.preconfHead.copy(),
+	err = g.preconfState.sealPendingPreconfBlock()
+	if err != nil {
+		req.Response <- SealBlockResponse{err: err}
 	}
 
-	g.builtBlocks = append(g.builtBlocks, entry)
-	g.mapBlockNumber[int64(block.NumberU64())] = entry
-	g.mapBlockHash[block.Hash().Hex()] = entry
-	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment
-
-	g.preconfHead.parentHash = block.Hash()
-	g.preconfHead.reset()
-	g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
-	g.preconfHead.header.ParentHash = block.Hash()
-
+	// Send the successful seal block response.
+	log.Info("Sending seal block response",
+		"sealedBlockNumber", sealedBlock.Number().Uint64(),
+		"sealedBlockHash", sealedBlock.Hash().Hex(),
+	)
+	cumulativeBuilderPaymentHex := fmt.Sprintf("0x%x", pendingPreconfBlock.cumulativeBuilderPayment)
 	req.Response <- SealBlockResponse{
-		block:                    block,
-		cumulativeBuilderPayment: fmt.Sprintf("0x%x", cumulativeBuilderPayment),
+		block:                    sealedBlock,
+		cumulativeBuilderPayment: cumulativeBuilderPaymentHex,
 		err:                      nil,
 	}
 }

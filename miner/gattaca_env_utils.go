@@ -179,36 +179,6 @@ func (g *GattacaWorker) retrieveEnv(stateId uint32) (*environment, error) {
 	}
 }
 
-func (g *GattacaWorker) retrieveEnvLegacy(stateId uint32) (*environment, error) {
-	var env *environment
-	var err error
-	if stateId == 1 {
-		env, err = g.envFromHead()
-		if err != nil {
-			log.Error("Failed  envFromHead", "err", err)
-			return nil, err
-		}
-	} else if stateId == 2 {
-		if g.preconfHead != nil {
-			env = g.preconfHead
-		} else {
-			log.Warn("nothing committed yet, retrieving env from chain head")
-			env, err = g.envFromHead()
-			if err != nil {
-				log.Error("Failed  envFromHead", "err", err)
-				return nil, err
-			}
-		}
-	} else {
-		var exists bool
-		env, exists = g.envMap[stateId]
-		if !exists {
-			return nil, errors.New(fmt.Sprintf("state not found for id %d", stateId))
-		}
-	}
-	return env, err
-}
-
 type OverrideAccount struct {
 	Nonce     *hexutil.Uint64              `json:"nonce"`
 	Code      *hexutil.Bytes               `json:"code"`
