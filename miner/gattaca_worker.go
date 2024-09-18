@@ -247,7 +247,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 					g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
 				}
 				// we need to check if the block number received is equal or greater than the current preconfHead.
-				if block.NumberU64() >= g.preconfHead.header.Number.Uint64() {
+				if block.NumberU64() > g.preconfHead.header.Number.Uint64() {
 					log.Warn("preconfhead number is equal or lower to the received block, resetting it.")
 					g.preconfHead, _ = g.retrieveEnv(1)
 				}
