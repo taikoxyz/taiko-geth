@@ -148,6 +148,22 @@ func (env *environment) reset() {
 	env.header.GasUsed = 0
 }
 
+// copy creates a deep copy of environment.
+// resets all params that are updated when we add txs and sets the new header
+// params to match the new environment we are sent
+func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv) *environment {
+	newEnv := env.copy()
+	newEnv.reset()
+
+	// Set new env params in header
+	newEnv.header.Number = newEnvParams.Number.ToInt()
+	newEnv.header.Coinbase = newEnvParams.Coinbase
+	newEnv.header.MixDigest = *newEnvParams.PrevRandao
+	newEnv.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
+	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
+	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
+}
+
 // discard terminates the background prefetcher go-routine. It should
 // always be called for all created environment instances otherwise
 // the go-routine leak can happen.

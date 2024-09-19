@@ -25,10 +25,7 @@ type BlockEnv struct {
 	///Unused after the Paris (AKA the merge) upgrade, and replaced by `prevrandao`.
 	Difficulty *hexutil.Big `json:"difficulty"`
 
-	// The output of the randomness beacon provided by the beacon chain.
-	// Replaces `difficulty` after the Paris (AKA the merge) upgrade with [EIP-4399].
-	// NOTE: `prevrandao` can be found in a block in place of `mix_hash`.
-	// [EIP-4399]: https://eips.ethereum.org/EIPS/eip-4399
+	// Gattaca Change: this value is MixDigest. We just use PrevRandao to not change the struct
 	PrevRandao *Hash `json:"prevrandao,omitempty"`
 
 	///Excess blob gas and blob gasprice.
