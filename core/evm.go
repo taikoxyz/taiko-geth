@@ -131,7 +131,7 @@ func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash
 		}
 
 		// GATTACA CHANGE: always check preconf cache first
-		if header := chain.GetPreConfirmedHeader(ref.Number.Uint64()); header != nil {
+		if header := chain.GetPreConfirmedHeader(ref.Number.Uint64() - 1); header != nil {
 			log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. Fetched hash from our new cache! Should work now...?")
 			return header.Hash()
 		}
