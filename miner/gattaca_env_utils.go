@@ -162,7 +162,7 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 }
 
 func (g *GattacaWorker) retrieveEnv(stateId uint64) (*environment, error) {
-	if stateId == 1 {
+	if stateId == uint64(LatestSealedId) {
 		// stateId 1 fetches the latest sealed env, if present, or the latest chain head env
 		latestSealedEnv := g.preconfState.latestSealedPreconfEnv()
 		if latestSealedEnv != nil {
