@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-type StateId uint32
+type StateId uint64
 
 const (
 	LatestSealedId StateId = iota

@@ -29,6 +29,8 @@ var (
 	SealBlock         = make(chan SealBlockRequest, 1)
 	taikoMinTip       = big.NewInt(0)
 	maxBytesPerTxList = ckzg4844.BytesPerBlob
+
+	GoldenTouchAddress = common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
 )
 
 var (
@@ -262,74 +264,89 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 	}
 }
 
-// TODO: we need to make sure we set all the correct preconfState.pendingPreconfBlock environment fields correctly. A lot of stuff was set in sealBlock and has been removed.
-func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, env common.BlockEnv, mixDigest common.Hash, res chan SimulateAnchorTxResponse) {
-	blockEnv, err := g.retrieveEnv(1)
+// simulateAnchorTx simulates the execution of an anchor transaction in a new environment
+// based on the latest sealed state. It commits the transaction to the state, checks for errors,
+// and returns the simulation result via the provided channel.
+func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams common.BlockEnv, mixDigest common.Hash, res chan SimulationResponse) {
+	// Log the input parameters for the simulation.
+	log.Info(
+		"Starting simulateAnchorTx",
+		"newEnvParams", newEnvParams,
+		"txHash", tx.Hash().Hex(),
+	)
+
+	// Fetch the latest sealed env.
+	env, err := g.retrieveEnv(uint64(LatestSealedId))
 	if err != nil {
-		panic(err)
-	}
-	blockNumber := big.NewInt(0)
-	// as per alloy spec
-	// The number of ancestor blocks of this block (block height).
-	// So we need to increment by 1 to get the current block.
-	blockEnv.header.Number = blockNumber.Add(env.Number.ToInt(), big.NewInt(1))
-	blockEnv.header.Coinbase = env.Coinbase
-	blockEnv.header.MixDigest = mixDigest
-	blockEnv.header.GasLimit = env.GasLimit.ToInt().Uint64()
-	blockEnv.header.BaseFee = env.BaseFee.ToInt()
-	blockEnv.header.Time = env.Timestamp.ToInt().Uint64()
-	// simulate tx
-	signer := types.MakeSigner(g.chainConfig, blockEnv.header.Number, blockEnv.header.Time)
-	from, err := types.Sender(signer, tx)
-	if err != nil {
-		log.Error("error retrieving sender address from transaction", "err", err.Error())
-		res <- SimulateAnchorTxResponse{
-			Err:     errors.New("failed to retrieve sender address from transaction"),
-			StateId: 0,
+		res <- SimulationResponse{
+			error:          fmt.Errorf("failed to retrieve environment. err: %s", err.Error()),
+			builderPayment: "0x0",
 		}
 		return
 	}
-	if from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
-		log.Error("first transaction must come from GoldenTouchAccount", "from", from.Hex())
-		res <- SimulateAnchorTxResponse{
-			Err: errors.New("first transaction must come from GoldenTouchAccount"),
+	log.Info("Retrieved latest sealed environment", "blockNumber", env.header.Number)
+
+	// Copy the environment from the latest sealed state and set the params for the new block.
+	simEnv := env.copy()
+	simEnv.resetAtNewEnv(newEnvParams, mixDigest)
+
+	// Set the new tx signer in the env.
+	simEnv.signer = types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
+	from, err := types.Sender(simEnv.signer, tx)
+	if err != nil {
+		log.Error("error retrieving sender address from anchor transaction", "err", err.Error())
+		res <- SimulationResponse{
+			error:          errors.New("failed to retrieve sender address from transaction"),
+			builderPayment: "0x0",
 		}
 		return
 	}
 
-	receipt, _, _, err := g.commitTx(blockEnv, tx)
-	log.Debug("Anchor tx receipt", "receipt", receipt)
-
-	if err != nil {
-		var gasUsed uint64
-		var commitError CommitError
-		if errors.As(err, &commitError) {
-			gasUsed = blockEnv.gasPool.Gas()
-		}
-		log.Error("Failed to simulate transaction", "err", err)
-		res <- SimulateAnchorTxResponse{
-			Err:     NewCommitError(err),
-			GasUsed: gasUsed,
+	// Anchor txs must be signed by GoldenTouchAddress
+	if from != GoldenTouchAddress {
+		log.Error("first transaction must come from GoldenTouchAccount")
+		res <- SimulationResponse{
+			error:          errors.New("first transaction must come from GoldenTouchAccount"),
+			builderPayment: "0x0",
 		}
 		return
-	} else if receipt.Status == 0 {
+	}
+
+	// Commit the anchor to the state
+	receipt, _, _, err := g.commitTx(simEnv, tx)
+	log.Info("Simulated Anchor Tx", "receipt", receipt)
+
+	// Verify the tx didn't fail. e.g., nonce issues.
+	if err != nil {
+		res <- SimulationResponse{
+			error: NewCommitError(err),
+		}
+		return
+	}
+
+	// Verify the tx didn't revert.
+	if receipt.Status == types.ReceiptStatusFailed {
 		log.Error("transaction reverted", "receipt", receipt)
 		err := errors.New("transaction reverted")
-		res <- SimulateAnchorTxResponse{
-			Err: NewCommitError(err),
+		res <- SimulationResponse{
+			error:   NewCommitError(err),
+			gasUsed: receipt.GasUsed,
 		}
 		return
 	}
+	log.Info("Anchor transaction executed successfully", "gasUsed", receipt.GasUsed)
 
-	blockEnv.hashReceipts[tx.Hash().Hex()] = receipt
-	blockEnv.receipts = append(blockEnv.receipts, receipt)
-	// set env
+	// Finalise the simulation environment and add it to the stateIdMap.
 	newStateId := rand.Uint64()
-	g.envMap[newStateId] = blockEnv.copy()
-	g.preconfState.setPendingPreconfBlock(blockEnv.copy())
-	res <- SimulateAnchorTxResponse{
-		Err:     nil,
-		StateId: newStateId,
+	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
+	simEnv.receipts = append(simEnv.receipts, receipt)
+	g.preconfState.stateIdMap[newStateId] = simEnv
+	log.Info("Added simulation environment to stateIdMap", "stateId", newStateId)
+
+	res <- SimulationResponse{
+		gasUsed:        receipt.GasUsed,
+		stateId:        newStateId,
+		builderPayment: "0x0",
 	}
 }
 

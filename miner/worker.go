@@ -148,6 +148,27 @@ func (env *environment) reset() {
 	env.header.GasUsed = 0
 }
 
+// resetAtNewEnv resets all params that are updated when we add txs and sets the new header
+// params to match the new environment we are sent
+func (env *environment) resetAtNewEnv(newEnvParams common.BlockEnv, mixDigest common.Hash) {
+	env.txs = make([]*types.Transaction, 0)
+	env.receipts = make([]*types.Receipt, 0)
+	env.sidecars = make([]*types.BlobTxSidecar, 0)
+	env.blobs = 0
+	env.tcount = 0
+	env.gasPool = new(core.GasPool).AddGas(30_000_000)
+	env.header.GasLimit = 240_250_000
+	env.header.GasUsed = 0
+
+	// Set new env params in header
+	env.header.Number = newEnvParams.Number.ToInt()
+	env.header.Coinbase = newEnvParams.Coinbase
+	env.header.MixDigest = mixDigest
+	env.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
+	env.header.BaseFee = newEnvParams.BaseFee.ToInt()
+	env.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
+}
+
 // discard terminates the background prefetcher go-routine. It should
 // always be called for all created environment instances otherwise
 // the go-routine leak can happen.
