@@ -44,10 +44,9 @@ type SimulateTxRequest struct {
 }
 
 type SimulateAnchorTx struct {
-	Tx        *types.Transaction            `json:"-"`
-	BlockEnv  common.BlockEnv               `json:"-"`
-	MixDigest common.Hash                   `json:"-"`
-	SimRes    chan SimulateAnchorTxResponse `json:"-"`
+	Tx       *types.Transaction            `json:"-"`
+	BlockEnv common.BlockEnv               `json:"-"`
+	SimRes   chan SimulateAnchorTxResponse `json:"-"`
 }
 
 type SimulateAnchorTxResponse struct {
@@ -220,7 +219,7 @@ func (g *GattacaWorker) runLoop() {
 			log.Info("run seal block ", "stateId", req.StateId)
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
-			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.MixDigest, req.SimRes)
+			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.SimRes)
 		}
 	}
 }
@@ -263,7 +262,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 }
 
 // TODO: we need to make sure we set all the correct preconfState.pendingPreconfBlock environment fields correctly. A lot of stuff was set in sealBlock and has been removed.
-func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, env common.BlockEnv, mixDigest common.Hash, res chan SimulateAnchorTxResponse) {
+func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, env common.BlockEnv, res chan SimulateAnchorTxResponse) {
 	blockEnv, err := g.retrieveEnv(1)
 	if err != nil {
 		panic(err)
@@ -274,7 +273,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, env common.Block
 	// So we need to increment by 1 to get the current block.
 	blockEnv.header.Number = blockNumber.Add(env.Number.ToInt(), big.NewInt(1))
 	blockEnv.header.Coinbase = env.Coinbase
-	blockEnv.header.MixDigest = mixDigest
+	blockEnv.header.MixDigest = *env.PrevRandao
 	blockEnv.header.GasLimit = env.GasLimit.ToInt().Uint64()
 	blockEnv.header.BaseFee = env.BaseFee.ToInt()
 	blockEnv.header.Time = env.Timestamp.ToInt().Uint64()

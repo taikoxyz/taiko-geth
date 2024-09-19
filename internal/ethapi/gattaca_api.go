@@ -30,7 +30,7 @@ type Reason struct {
 	Reason string `json:"reason"`
 }
 
-func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, mixDigest common.Hash, env common.BlockEnv) (map[string]interface{}, error) {
+func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, env common.BlockEnv) (map[string]interface{}, error) {
 	tx := new(types.Transaction)
 	if err := tx.UnmarshalBinary(input); err != nil {
 		log.Warn("PRECONF: unmarshalBinary failed, trying RLP decode", "error", err)
@@ -45,10 +45,9 @@ func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Byt
 
 	resCh := make(chan miner.SimulateAnchorTxResponse)
 	miner.SimAnchorTx <- miner.SimulateAnchorTx{
-		Tx:        tx,
-		BlockEnv:  env,
-		MixDigest: mixDigest,
-		SimRes:    resCh,
+		Tx:       tx,
+		BlockEnv: env,
+		SimRes:   resCh,
 	}
 	res := <-resCh
 	retMap := make(map[string]interface{})
