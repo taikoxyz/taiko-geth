@@ -348,11 +348,19 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	err = g.preconfState.sealPendingPreconfBlock()
 	if err != nil {
 		req.Response <- SealBlockResponse{err: err}
+		return
 	}
 
 	// Add the new header to the header chain cache so the new block hash can be fetched from the
 	// `BLOCKHASH` EVM opcoode.
-	g.chain.InsertNewPreconfHeader(sealedBlock.Header())
+	//g.chain.InsertNewPreconfHeader(sealedBlock.Header())
+
+	// Note: might change the actual chain. Will this have side effects?
+	_, err = g.chain.InsertChain(types.Blocks{sealedBlock})
+	if err != nil {
+		req.Response <- SealBlockResponse{err: err}
+		return
+	}
 
 	// Send the successful seal block response.
 	log.Info("Sending seal block response",
