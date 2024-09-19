@@ -42,7 +42,9 @@ type PreconfState struct {
 func NewPreconfState(chain *core.BlockChain) *PreconfState {
 	rand.Seed(time.Now().UnixNano())
 	return &PreconfState{
-		chain: chain,
+		chain:               chain,
+		stateIdMap:          make(map[uint64]*environment),
+		sealedPreconfBlocks: make([]*environment, 0),
 	}
 }
 
