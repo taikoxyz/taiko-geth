@@ -184,7 +184,7 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 
 	// Iterate over sealed preconf blocks to verify their inclusion in the canonical chain.
 	for index, preconfBlock := range state.sealedPreconfBlocks {
-		preconfBlockNumber := preconfBlock.header.Number.Uint64()
+		preconfBlockNumber := preconfBlock.sealedBlock.Number().Uint64()
 
 		switch {
 		case preconfBlockNumber < eventBlockNumber:
@@ -196,10 +196,10 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 					preconfBlockNumber,
 				)
 			}
-			if chainBlock.Hash() != preconfBlock.header.Hash() {
+			if chainBlock.Hash() != preconfBlock.sealedBlock.Hash() {
 				return fmt.Errorf(
 					"sealed preconf block hash mismatch: expected %s, got %s for block number %d",
-					preconfBlock.header.Hash(),
+					preconfBlock.sealedBlock.Hash(),
 					chainBlock.Hash(),
 					preconfBlockNumber,
 				)
@@ -207,10 +207,10 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 
 		case preconfBlockNumber == eventBlockNumber:
 			// Verify that the event block's hash matches the preconf block's hash.
-			if event.Block.Hash() != preconfBlock.header.Hash() {
+			if event.Block.Hash() != preconfBlock.sealedBlock.Hash() {
 				return fmt.Errorf(
 					"sealed preconf block hash mismatch: expected %s, got %s for block number %d",
-					preconfBlock.header.Hash(),
+					preconfBlock.sealedBlock.Hash(),
 					event.Block.Hash(),
 					preconfBlockNumber,
 				)
