@@ -148,25 +148,20 @@ func (env *environment) reset() {
 	env.header.GasUsed = 0
 }
 
-// resetAtNewEnv resets all params that are updated when we add txs and sets the new header
+// copy creates a deep copy of environment.
+// resets all params that are updated when we add txs and sets the new header
 // params to match the new environment we are sent
-func (env *environment) resetAtNewEnv(newEnvParams common.BlockEnv) {
-	env.txs = make([]*types.Transaction, 0)
-	env.receipts = make([]*types.Receipt, 0)
-	env.sidecars = make([]*types.BlobTxSidecar, 0)
-	env.blobs = 0
-	env.tcount = 0
-	env.gasPool = new(core.GasPool).AddGas(30_000_000)
-	env.header.GasLimit = 240_250_000
-	env.header.GasUsed = 0
+func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv) *environment {
+	newEnv := env.copy()
+	newEnv.reset()
 
 	// Set new env params in header
-	env.header.Number = newEnvParams.Number.ToInt()
-	env.header.Coinbase = newEnvParams.Coinbase
-	env.header.MixDigest = *newEnvParams.PrevRandao
-	env.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
-	env.header.BaseFee = newEnvParams.BaseFee.ToInt()
-	env.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
+	newEnv.header.Number = newEnvParams.Number.ToInt()
+	newEnv.header.Coinbase = newEnvParams.Coinbase
+	newEnv.header.MixDigest = *newEnvParams.PrevRandao
+	newEnv.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
+	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
+	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
 }
 
 // discard terminates the background prefetcher go-routine. It should

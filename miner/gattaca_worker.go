@@ -287,8 +287,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	log.Info("Retrieved latest sealed environment", "blockNumber", env.header.Number)
 
 	// Copy the environment from the latest sealed state and set the params for the new block.
-	simEnv := env.copy()
-	simEnv.resetAtNewEnv(newEnvParams)
+	simEnv := env.copyAtNewEnvironment(newEnvParams)
 
 	// Set the new tx signer in the env.
 	simEnv.signer = types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
