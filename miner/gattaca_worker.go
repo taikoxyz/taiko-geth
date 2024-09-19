@@ -171,7 +171,6 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 			config:         config,
 			engine:         engine,
 			extra:          config.ExtraData,
-			envMap:         make(map[uint64]*environment),
 			preconfHead:    nil,
 			halt:           false,
 			haltReason:     "",
@@ -331,52 +330,54 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	g.lock.RLock()
 	defer g.lock.RUnlock()
 
+	// Check for halt message
 	if g.halt {
 		res <- SimulationResponse{
 			error: NewHaltError(errors.New(g.haltReason)),
 		}
 		return
 	}
+
+	// Fetch state ID
 	env, err := g.retrieveEnv(stateId)
 	if err != nil {
-		res <- SimulationResponse{
-			error:   NewRetrieveEnError(err),
-			gasUsed: 0,
-		}
+		res <- SimulationResponse{error: NewRetrieveEnError(err)}
 		return
 	}
-	simEnv := env.copy()
-	if len(simEnv.txs) == 0 {
+
+	// Anchor tx must always be applied first
+	if len(env.txs) == 0 {
 		res <- SimulationResponse{
-			stateId:        0,
-			error:          errors.New(fmt.Sprintf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId)),
-			gasUsed:        0,
+			error:          fmt.Errorf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId),
 			builderPayment: "0x0",
 		}
 		return
 	}
+
+	// Copy environment and simulate tx.
+	simEnv := env.copy()
+
 	startBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	if err != nil {
-		var gasUsed uint64
-		var commitError CommitError
-		if errors.As(err, &commitError) {
-			gasUsed = simEnv.gasPool.Gas()
-		}
 		log.Error("Failed to simulate transaction", "err", err)
 		res <- SimulationResponse{
-			error:   NewCommitError(err),
-			gasUsed: gasUsed,
+			error: NewCommitError(err),
 		}
 		return
 	}
 	endBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
-	newStateId := rand.Uint64()
-	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	builderPayment := endBalance - startBalance
+
+	// Tx simulation worked so save result to new env.
+	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.cumulativeBuilderPayment += builderPayment
-	g.envMap[newStateId] = simEnv
 	simEnv.receipts = append(simEnv.receipts, receipt)
+
+	// Add env to state id map
+	newStateId := rand.Uint64()
+	g.preconfState.stateIdMap[newStateId] = simEnv
+
 	res <- SimulationResponse{
 		error:          nil,
 		gasUsed:        receipt.GasUsed,
