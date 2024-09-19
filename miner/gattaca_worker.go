@@ -234,32 +234,10 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 	for {
 		select {
 		case ev := <-newBlockCh:
-			g.lock.Lock()
-			block := ev.Block
-			idx := -1
-			if len(g.builtBlocks) > 0 && block != nil {
-				for i, entry := range g.builtBlocks {
-					if block.NumberU64() == entry.block.NumberU64() {
-						idx = i
-						if block.Hash().Hex() == entry.block.Hash().Hex() {
-						} else {
-							log.Warn("block hash mismatch, most likely the preconfHead is different from chain head, resetting it.")
-							env, _ := g.retrieveEnv(1)
-							g.preconfHead = env
-						}
-						break
-					}
-				}
-				if idx != -1 {
-					g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
-				}
-				// we need to check if the block number received is equal or greater than the current preconfHead.
-				if block.NumberU64() >= g.preconfHead.header.Number.Uint64() {
-					log.Warn("preconfhead number is equal or lower to the received block, resetting it.")
-					g.preconfHead, _ = g.retrieveEnv(1)
-				}
+			err := g.preconfState.onNewChainHeadEvent(&ev)
+			if err != nil {
+				log.Error(err.Error())
 			}
-			g.lock.Unlock()
 		}
 	}
 }
