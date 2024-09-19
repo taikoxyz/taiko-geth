@@ -106,11 +106,6 @@ func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash
 			return common.Hash{}
 		}
 
-		// GATTACA CHANGE: always check preconf cache first
-		if header := chain.GetPreConfirmedHeader(ref.Number.Uint64()); header != nil {
-			return header.Hash()
-		}
-
 		// If there's no hash cache yet, make one
 		if len(cache) == 0 {
 			cache = append(cache, ref.ParentHash)
@@ -133,6 +128,12 @@ func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash
 			if n == lastKnownNumber {
 				return lastKnownHash
 			}
+		}
+
+		// GATTACA CHANGE: always check preconf cache first
+		if header := chain.GetPreConfirmedHeader(ref.Number.Uint64()); header != nil {
+			log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. Fetched hash from our new cache! Should work now...?")
+			return header.Hash()
 		}
 
 		log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. Missing block hash!", "hash", ref.Number)
