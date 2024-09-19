@@ -158,6 +158,8 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 	env.startBalance.Set(env.state.GetBalance(env.coinbase))
 	var empty common.Hash
 	env.parentHash = empty
+	env.header.Extra = make([]byte, 32)
+
 	return env, nil
 }
 
