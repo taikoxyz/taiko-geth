@@ -1161,6 +1161,11 @@ func (context *ChainContext) GetHeader(hash common.Hash, number uint64) *types.H
 	return header
 }
 
+// GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
+func (context *ChainContext) GetPreConfirmedHeader(number uint64) *types.Header {
+	return nil
+}
+
 func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.StateDB, header *types.Header, overrides *StateOverride, blockOverrides *BlockOverrides, timeout time.Duration, globalGasCap uint64) (*core.ExecutionResult, error) {
 	if err := overrides.Apply(state); err != nil {
 		return nil, err

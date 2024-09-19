@@ -350,6 +350,10 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		req.Response <- SealBlockResponse{err: err}
 	}
 
+	// Add the new header to the header chain cache so the new block hash can be fetched from the
+	// `BLOCKHASH` EVM opcoode.
+	g.chain.InsertNewPreconfHeader(sealedBlock.Header())
+
 	// Send the successful seal block response.
 	log.Info("Sending seal block response",
 		"sealedBlockNumber", sealedBlock.Number().Uint64(),

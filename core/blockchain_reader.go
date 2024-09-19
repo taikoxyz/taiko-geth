@@ -75,6 +75,11 @@ func (bc *BlockChain) GetHeader(hash common.Hash, number uint64) *types.Header {
 	return bc.hc.GetHeader(hash, number)
 }
 
+// GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
+func (bc *BlockChain) GetPreConfirmedHeader(number uint64) *types.Header {
+	return bc.hc.GetPreConfirmedHeader(number)
+}
+
 // GetHeaderByHash retrieves a block header from the database by hash, caching it if
 // found.
 func (bc *BlockChain) GetHeaderByHash(hash common.Hash) *types.Header {

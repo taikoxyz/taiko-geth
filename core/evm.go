@@ -36,6 +36,9 @@ type ChainContext interface {
 
 	// GetHeader returns the header corresponding to the hash/number argument pair.
 	GetHeader(common.Hash, uint64) *types.Header
+
+	// GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
+	GetPreConfirmedHeader(uint64) *types.Header
 }
 
 // NewEVMBlockContext creates a new context for use in the EVM.
@@ -102,6 +105,12 @@ func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash
 			// block overrides.
 			return common.Hash{}
 		}
+
+		// GATTACA CHANGE: always check preconf cache first
+		if header := chain.GetPreConfirmedHeader(ref.Number.Uint64()); header != nil {
+			return header.Hash()
+		}
+
 		// If there's no hash cache yet, make one
 		if len(cache) == 0 {
 			cache = append(cache, ref.ParentHash)
