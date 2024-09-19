@@ -38,104 +38,6 @@ var (
 	singletonLock                   = &sync.Mutex{}
 )
 
-type SimulateTxRequest struct {
-	RawTx   []byte                  `json:"tx"`
-	StateId uint64                  `json:"stateId"`
-	Tx      *types.Transaction      `json:"-"`
-	SimRes  chan SimulationResponse `json:"-"`
-}
-
-type SimulateAnchorTx struct {
-	Tx        *types.Transaction      `json:"-"`
-	BlockEnv  common.BlockEnv         `json:"-"`
-	MixDigest common.Hash             `json:"-"`
-	SimRes    chan SimulationResponse `json:"-"`
-}
-
-type SimulateAnchorTxResponse struct {
-	StateId uint64 `json:"stateId"`
-	Err     error  `json:"err"`
-	GasUsed uint64 `json:"gasUsed"`
-}
-
-type SealBlockResponse struct {
-	block                    *types.Block
-	cumulativeBuilderPayment string
-	err                      error
-}
-
-func (s SealBlockResponse) Block() *types.Block {
-	return s.block
-}
-
-func (s SealBlockResponse) CumulativeBuilderPayment() string {
-	return s.cumulativeBuilderPayment
-}
-
-func (s SealBlockResponse) Err() error {
-	return s.err
-}
-
-type SealBlockRequest struct {
-	Response chan SealBlockResponse
-}
-
-type ReqCommitState struct {
-	StateId uint64                   `json:"stateId"`
-	SimRes  chan CommitStateResponse `json:"-"`
-}
-
-type InnerCommitState struct {
-	StateId   uint32
-	commitRes chan SimulationResponse
-}
-
-type SimulationResponse struct {
-	stateId        uint64
-	error          error
-	gasUsed        uint64
-	builderPayment *hexutil.U256
-}
-
-type CommitStateResponse struct {
-	cumulativeGasUsed        uint64
-	cumulativeBuilderPayment *hexutil.U256
-	error                    error
-}
-
-type inMemoryStore struct {
-	block *types.Block
-	env   *environment
-}
-
-func (c CommitStateResponse) CumulativeGasUsed() uint64 {
-	return c.cumulativeGasUsed
-}
-
-func (c CommitStateResponse) CumulativeBuilderPayment() *hexutil.U256 {
-	return c.cumulativeBuilderPayment
-}
-
-func (c CommitStateResponse) Error() error {
-	return c.error
-}
-
-func (s SimulationResponse) Error() error {
-	return s.error
-}
-
-func (s SimulationResponse) StateId() uint64 {
-	return s.stateId
-}
-
-func (s SimulationResponse) GasUsed() uint64 {
-	return s.gasUsed
-}
-
-func (s SimulationResponse) BuilderPayment() *hexutil.U256 {
-	return s.builderPayment
-}
-
 type GattacaWorker struct {
 	chainConfig *params.ChainConfig
 	chain       *core.BlockChain
@@ -347,7 +249,13 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 		return
 	}
 	endBalance := simEnv.state.GetBalance(env.coinbase)
-	builderPayment := new(uint256.Int).Sub(endBalance, startBalance)
+
+	var builderPayment *uint256.Int
+	if endBalance.Cmp(startBalance) <= 0 {
+		builderPayment = uint256.NewInt(0)
+	} else {
+		builderPayment = new(uint256.Int).Sub(endBalance, startBalance)
+	}
 
 	// Tx simulation worked so save result to new env.
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
