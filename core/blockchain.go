@@ -2459,9 +2459,3 @@ func (bc *BlockChain) SetTrieFlushInterval(interval time.Duration) {
 func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
 }
-
-// InsertNewPreconfHeader adds a new pre-confirmed header to the preconfHeaderCache.
-// These are used to fetch pre-confirmed block hashes for the `BLOCKHASH` evm call.
-func (bc *BlockChain) InsertNewPreconfHeader(header *types.Header) {
-	bc.hc.InsertNewPreconfHeader(header)
-}

@@ -17,7 +17,6 @@
 package core
 
 import (
-	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -36,9 +35,6 @@ type ChainContext interface {
 
 	// GetHeader returns the header corresponding to the hash/number argument pair.
 	GetHeader(common.Hash, uint64) *types.Header
-
-	// GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
-	GetPreConfirmedHeader(uint64) *types.Header
 }
 
 // NewEVMBlockContext creates a new context for use in the EVM.
@@ -130,13 +126,6 @@ func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash
 			}
 		}
 
-		// GATTACA CHANGE: always check preconf cache first
-		if header := chain.GetPreConfirmedHeader(ref.Number.Uint64() - 1); header != nil {
-			log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. Fetched hash from our new cache! Should work now...?", "hash", header.Hash())
-			return header.Hash()
-		}
-
-		log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. Missing block hash!", "hash", ref.Number)
 		return common.Hash{}
 	}
 }

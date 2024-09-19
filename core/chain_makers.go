@@ -565,11 +565,6 @@ func (cm *chainMaker) GetHeader(hash common.Hash, number uint64) *types.Header {
 	return cm.GetHeaderByNumber(number)
 }
 
-// GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
-func (cm *chainMaker) GetPreConfirmedHeader(number uint64) *types.Header {
-	return cm.GetHeader(common.Hash{}, number)
-}
-
 func (cm *chainMaker) GetBlock(hash common.Hash, number uint64) *types.Block {
 	return cm.blockByNumber(number)
 }

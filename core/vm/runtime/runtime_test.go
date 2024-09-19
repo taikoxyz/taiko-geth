@@ -248,11 +248,6 @@ func (d *dummyChain) GetHeader(h common.Hash, n uint64) *types.Header {
 	return fakeHeader(n, parentHash)
 }
 
-// GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
-func (d *dummyChain) GetPreConfirmedHeader(number uint64) *types.Header {
-	return d.GetHeader(common.Hash{}, number)
-}
-
 // TestBlockhash tests the blockhash operation. It's a bit special, since it internally
 // requires access to a chain reader.
 func TestBlockhash(t *testing.T) {

@@ -147,12 +147,22 @@ func (state *PreconfState) setPendingPreconfBlock(pendingPreconfBlock *environme
 // sealPendingPreconfBlock will also clear the stateIdMap. TBC if we want to keep this logic.
 //
 // Returns an error if there is no pending preconf block to seal.
-func (state *PreconfState) sealPendingPreconfBlock() error {
+func (state *PreconfState) sealPendingPreconfBlock(sealedBlockHash common.Hash) error {
 	if state.pendingPreconfBlock == nil {
 		return errors.New("no pending preconf block to seal")
 	}
 	log.Info("Sealing pending preconf block", "blockNumber", state.pendingPreconfBlock.header.Number.Uint64())
 
+	// Update the block hash in all receipts for the pendingPreconfBlock. We don't know the hash until sealing so can
+	// only do this now.
+	for _, receipt := range state.pendingPreconfBlock.receipts {
+		receipt.BlockHash = sealedBlockHash
+	}
+	for _, receipt := range state.pendingPreconfBlock.hashReceipts {
+		receipt.BlockHash = sealedBlockHash
+	}
+
+	// Add the pending preconf block to our sealed blocks.
 	state.sealedPreconfBlocks = append(state.sealedPreconfBlocks, state.pendingPreconfBlock)
 	log.Info("Pending preconf block sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
 

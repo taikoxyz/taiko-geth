@@ -131,7 +131,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		h, ok := pre.Env.BlockHashes[math.HexOrDecimal64(num)]
 		if !ok {
 			hashError = fmt.Errorf("getHash(%d) invoked, blockhash for that block not provided", num)
-			log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. Missing block hash!", "num", num)
 		}
 		return h
 	}
