@@ -77,7 +77,6 @@ func (s SealBlockResponse) Err() error {
 }
 
 type SealBlockRequest struct {
-	StateId  uint32 `json:"stateId"`
 	Response chan SealBlockResponse
 }
 
@@ -218,7 +217,7 @@ func (g *GattacaWorker) runLoop() {
 			log.Debug("run commit state ", req.StateId)
 			go g.commitEnvToPreconf(req.StateId, req.SimRes)
 		case req := <-SealBlock:
-			log.Info("run seal block ", "stateId", req.StateId)
+			log.Info("run seal block ")
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
 			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.SimRes)

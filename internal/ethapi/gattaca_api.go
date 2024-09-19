@@ -87,10 +87,9 @@ func (s *TransactionAPI) CommitState(ctx context.Context, stateId uint64) (map[s
 	return ret, res.Error()
 }
 
-func (s *TransactionAPI) SealBlock(ctx context.Context, stateId uint32) (map[string]interface{}, error) {
+func (s *TransactionAPI) SealBlock(ctx context.Context) (map[string]interface{}, error) {
 	resCh := make(chan miner.SealBlockResponse, 1)
 	miner.SealBlock <- miner.SealBlockRequest{
-		StateId:  stateId,
 		Response: resCh,
 	}
 	res := <-resCh
