@@ -299,8 +299,9 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	log.Info("Added simulation environment to stateIdMap", "stateId", newStateId)
 
 	res <- SimulationResponse{
-		gasUsed: receipt.GasUsed,
-		stateId: newStateId,
+		gasUsed:        receipt.GasUsed,
+		stateId:        newStateId,
+		builderPayment: &hexutil.U256{0, 0, 0, 0},
 	}
 }
 
