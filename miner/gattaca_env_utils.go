@@ -138,6 +138,7 @@ func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coin
 
 func (g *GattacaWorker) envFromHead() (*environment, error) {
 	currentHead := g.chain.CurrentBlock()
+	sealedBlock := g.chain.GetBlockByNumber(currentHead.Number.Uint64())
 	envParams := &generateParams{
 		timestamp:     uint64(time.Now().Unix()),
 		forceTime:     true,
@@ -159,6 +160,7 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 	var empty common.Hash
 	env.parentHash = empty
 	env.header.Extra = make([]byte, 32)
+	env.sealedBlock = sealedBlock
 
 	return env, nil
 }
