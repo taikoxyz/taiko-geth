@@ -455,6 +455,8 @@ func (hc *HeaderChain) GetHeader(hash common.Hash, number uint64) *types.Header 
 
 // GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
 func (hc *HeaderChain) GetPreConfirmedHeader(number uint64) *types.Header {
+	log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. in GetPreConfirmedHeader", "num items in cache", hc.preconfHeaderCache.Len())
+
 	if header, ok := hc.preconfHeaderCache.Get(number); ok {
 		return header
 	}
