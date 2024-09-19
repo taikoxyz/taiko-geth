@@ -127,17 +127,18 @@ func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coin
 		header:                   header,
 		startBalance:             *state.GetBalance(coinbase),
 		hashReceipts:             make(map[string]*types.Receipt),
-		cumulativeBuilderPayment: 0,
+		cumulativeBuilderPayment: new(uint256.Int).SetUint64(0),
 		txHashSet:                make(map[string]struct{}),
 		txs:                      make([]*types.Transaction, 0),
 	}
-	// Keep track of transactions which return errors so they can be removed
+	// Keep track of transactions which return errors, so they can be removed
 	env.tcount = 0
 	return env, nil
 }
 
 func (g *GattacaWorker) envFromHead() (*environment, error) {
 	currentHead := g.chain.CurrentBlock()
+	sealedBlock := g.chain.GetBlockByNumber(currentHead.Number.Uint64())
 	envParams := &generateParams{
 		timestamp:     uint64(time.Now().Unix()),
 		forceTime:     true,
@@ -158,37 +159,28 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 	env.startBalance.Set(env.state.GetBalance(env.coinbase))
 	var empty common.Hash
 	env.parentHash = empty
+	env.header.Extra = make([]byte, 32)
+	env.sealedBlock = sealedBlock
+
 	return env, nil
 }
 
-func (g *GattacaWorker) retrieveEnv(stateId uint32) (*environment, error) {
-	var env *environment
-	var err error
-	if stateId == 1 {
-		env, err = g.envFromHead()
-		if err != nil {
-			log.Error("Failed  envFromHead", "err", err)
-			return nil, err
+func (g *GattacaWorker) retrieveEnv(stateId uint64) (*environment, error) {
+	if stateId == uint64(LatestSealedId) {
+		// stateId 1 fetches the latest sealed env, if present, or the latest chain head env
+		latestSealedEnv := g.preconfState.latestSealedPreconfEnv()
+		if latestSealedEnv != nil {
+			return latestSealedEnv, nil
 		}
-	} else if stateId == 2 {
-		if g.preconfHead != nil {
-			env = g.preconfHead
-		} else {
-			log.Warn("nothing committed yet, retrieving env from chain head")
-			env, err = g.envFromHead()
-			if err != nil {
-				log.Error("Failed  envFromHead", "err", err)
-				return nil, err
-			}
-		}
+
+		return g.envFromHead()
 	} else {
-		var exists bool
-		env, exists = g.envMap[stateId]
+		env, exists := g.preconfState.stateIdMap[stateId]
 		if !exists {
 			return nil, errors.New(fmt.Sprintf("state not found for id %d", stateId))
 		}
+		return env, nil
 	}
-	return env, err
 }
 
 type OverrideAccount struct {

@@ -4,21 +4,23 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
+	"math/rand"
+	"os"
+	"sync"
+	"time"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
+
 	ckzg4844 "github.com/ethereum/c-kzg-4844/bindings/go"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/google/uuid"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
-	"math/big"
-	"os"
-	"sync"
-	"time"
 )
 
 var (
@@ -28,6 +30,8 @@ var (
 	SealBlock         = make(chan SealBlockRequest, 1)
 	taikoMinTip       = big.NewInt(0)
 	maxBytesPerTxList = ckzg4844.BytesPerBlob
+
+	GoldenTouchAddress = common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
 )
 
 var (
@@ -35,150 +39,36 @@ var (
 	singletonLock                   = &sync.Mutex{}
 )
 
-type SimulateTxRequest struct {
-	RawTx   []byte                  `json:"tx"`
-	StateId uint32                  `json:"stateId"`
-	Tx      *types.Transaction      `json:"-"`
-	SimRes  chan SimulationResponse `json:"-"`
-}
-
-type SimulateAnchorTx struct {
-	Tx        *types.Transaction `json:"-"`
-	Timestamp uint64
-	BaseFee   uint64
-	MixHash   common.Hash
-	SimRes    chan SimulationResponse `json:"-"`
-}
-
-type SealBlockResponse struct {
-	block                    *types.Block
-	cumulativeBuilderPayment string
-	err                      error
-}
-
-func (s SealBlockResponse) Block() *types.Block {
-	return s.block
-}
-
-func (s SealBlockResponse) CumulativeBuilderPayment() string {
-	return s.cumulativeBuilderPayment
-}
-
-func (s SealBlockResponse) Err() error {
-	return s.err
-}
-
-type SealBlockRequest struct {
-	StateId  uint32 `json:"stateId"`
-	Response chan SealBlockResponse
-}
-
-type ReqCommitState struct {
-	StateId uint32                   `json:"stateId"`
-	SimRes  chan CommitStateResponse `json:"-"`
-}
-
-type InnerCommitState struct {
-	StateId   uint32
-	commitRes chan SimulationResponse
-}
-
-type SimulationResponse struct {
-	stateId        uint32
-	error          error
-	gasUsed        uint64
-	builderPayment string
-}
-
-type CommitStateResponse struct {
-	cumulativeGasUsed        uint64
-	cumulativeBuilderPayment string
-	error                    error
-}
-
-type inMemoryStore struct {
-	block *types.Block
-	env   *environment
-}
-
-func (c CommitStateResponse) CumulativeGasUsed() uint64 {
-	return c.cumulativeGasUsed
-}
-
-func (c CommitStateResponse) CumulativeBuilderPayment() string {
-	return c.cumulativeBuilderPayment
-}
-
-func (c CommitStateResponse) Error() error {
-	return c.error
-}
-
-func (s SimulationResponse) Error() error {
-	return s.error
-}
-
-func (s SimulationResponse) StateId() uint32 {
-	return s.stateId
-}
-
-func (s SimulationResponse) GasUsed() uint64 {
-	return s.gasUsed
-}
-
-func (s SimulationResponse) BuilderPayment() string {
-	return s.builderPayment
-}
-
 type GattacaWorker struct {
-	chainConfig      *params.ChainConfig
-	chain            *core.BlockChain
-	config           *Config
-	engine           consensus.Engine
-	extra            []byte
-	lock             sync.RWMutex
-	commitMutex      sync.Mutex
-	envMap           map[uint32]*environment
-	envBuilder       map[uint32][]uint32
-	preconfHead      *environment
-	halt             bool
-	haltReason       string
-	builtBlocks      []inMemoryStore
-	startBlockNumber uint64
-	sequencing       int32
-	mapBlockNumber   map[int64]inMemoryStore
-	mapBlockHash     map[string]inMemoryStore
+	chainConfig *params.ChainConfig
+	chain       *core.BlockChain
+	config      *Config
+	engine      consensus.Engine
+	extra       []byte
+	lock        sync.RWMutex
+	halt        bool
+	haltReason  string
 
-	mixHash common.Hash
+	preconfState *PreconfState
 }
 
 func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
+
 	singletonLock.Lock()
 	defer singletonLock.Unlock()
 	if singletonGattaca == nil {
 
 		singletonGattaca = &GattacaWorker{
-			chainConfig:    chainConfig,
-			chain:          chain,
-			config:         config,
-			engine:         engine,
-			extra:          config.ExtraData,
-			envMap:         make(map[uint32]*environment),
-			envBuilder:     make(map[uint32][]uint32),
-			preconfHead:    nil,
-			halt:           false,
-			haltReason:     "",
-			commitMutex:    sync.Mutex{},
-			builtBlocks:    make([]inMemoryStore, 0),
-			mapBlockNumber: make(map[int64]inMemoryStore),
-			mapBlockHash:   make(map[string]inMemoryStore),
+			chainConfig:  chainConfig,
+			chain:        chain,
+			config:       config,
+			engine:       engine,
+			extra:        config.ExtraData,
+			halt:         false,
+			haltReason:   "",
+			preconfState: NewPreconfState(chain),
 		}
-		env, err := singletonGattaca.retrieveEnv(1)
-		if err != nil {
-			log.Error("Failed to retrieve environment", "err", err)
-			return nil, err
-		}
-		singletonGattaca.preconfHead = env
-		singletonGattaca.startBlockNumber = singletonGattaca.chain.CurrentBlock().Number.Uint64()
+
 		go singletonGattaca.runLoop()
 		go singletonGattaca.newHeadEventSubscriber()
 	}
@@ -212,10 +102,10 @@ func (g *GattacaWorker) runLoop() {
 			log.Debug("run commit state ", req.StateId)
 			go g.commitEnvToPreconf(req.StateId, req.SimRes)
 		case req := <-SealBlock:
-			log.Info("run seal block ", "stateId", req.StateId)
+			log.Info("run seal block ")
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
-			go g.simulateAnchorTx(req.Tx, req.Timestamp, req.BaseFee, req.MixHash, req.SimRes)
+			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.SimRes)
 		}
 	}
 }
@@ -227,106 +117,72 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 	for {
 		select {
 		case ev := <-newBlockCh:
-			g.lock.Lock()
-			block := ev.Block
-			idx := -1
-			if len(g.builtBlocks) > 0 && block != nil {
-				for i, entry := range g.builtBlocks {
-					if block.NumberU64() == entry.block.NumberU64() {
-						idx = i
-						if block.Hash().Hex() == entry.block.Hash().Hex() {
-						} else {
-							log.Warn("block hash mismatch, most likely the preconfHead is different from chain head, resetting it.")
-							env, _ := g.retrieveEnv(1)
-							g.preconfHead = env
-						}
-						break
-					}
-				}
-				if idx != -1 {
-					g.builtBlocks = append(g.builtBlocks[:idx], g.builtBlocks[idx+1:]...)
-				}
-				// we need to check if the block number received is equal or greater than the current preconfHead.
-				if block.NumberU64() > g.preconfHead.header.Number.Uint64() {
-					log.Warn("preconfhead number is equal or lower to the received block, resetting it.")
-					g.preconfHead, _ = g.retrieveEnv(1)
-				}
+			err := g.preconfState.onNewChainHeadEvent(&ev)
+			if err != nil {
+				log.Error(err.Error())
 			}
-			g.lock.Unlock()
 		}
 	}
 }
 
-func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64, baseFee uint64, mixHash common.Hash, res chan SimulationResponse) {
-	log.Info("simulateAnchorTx params", "timestamp", timestamp, "baseFee", baseFee, "mixHash", mixHash)
+// simulateAnchorTx simulates the execution of an anchor transaction in a new environment
+// based on the latest sealed state. It commits the transaction to the state, checks for errors,
+// and returns the simulation result via the provided channel.
+func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams common.BlockEnv, res chan SimulationResponse) {
+	// Log the input parameters for the simulation.
+	log.Info(
+		"Starting simulateAnchorTx",
+		"newEnvParams", newEnvParams,
+		"txHash", tx.Hash(),
+	)
 
-	env, err := g.retrieveEnv(2)
+	// Fetch the latest sealed env.
+	env, err := g.retrieveEnv(uint64(LatestSealedId))
 	if err != nil {
 		res <- SimulationResponse{
-			stateId:        0,
-			error:          errors.New(fmt.Sprintf("failed to retrieve environment. err: %s", err.Error())),
-			gasUsed:        0,
-			builderPayment: "0x0",
+			error: fmt.Errorf("failed to retrieve environment. err: %s", err.Error()),
 		}
 		return
 	}
-	simEnv := env.copy()
-	simEnv.header.Time = timestamp
-	simEnv.header.BaseFee = big.NewInt(int64(baseFee))
+	log.Info("Retrieved latest sealed environment", "blockNumber", env.header.Number)
 
-	// Hacky - shouldn't need
-	env.header.Time = timestamp
-	env.header.BaseFee = big.NewInt(int64(baseFee))
+	// Copy the environment from the latest sealed state and set the params for the new block.
+	simEnv := env.copyAtNewEnvironment(newEnvParams)
 
-	signer := types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
-	from, err := types.Sender(signer, tx)
+	// Set the new tx signer in the env.
+	simEnv.signer = types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
+	from, err := types.Sender(simEnv.signer, tx)
 	if err != nil {
-		log.Error("error retrieving sender address from transaction", "err", err.Error())
+		log.Error("error retrieving sender address from anchor transaction", "err", err.Error())
 		res <- SimulationResponse{
-			stateId:        0,
-			error:          errors.New("failed to retrieve sender address from transaction"),
-			gasUsed:        0,
-			builderPayment: "0x0",
+			error: errors.New("failed to retrieve sender address from transaction"),
 		}
 		return
 	}
-	if len(simEnv.txs) > 0 {
-		log.Error("anchor tx needs to be the first committed transaction")
-		res <- SimulationResponse{
-			stateId:        0,
-			error:          errors.New("anchor tx needs to be the first committed transaction"),
-			gasUsed:        0,
-			builderPayment: "0x0",
-		}
-		return
-	}
-	if from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
+
+	// Anchor txs must be signed by GoldenTouchAddress
+	if from != GoldenTouchAddress {
 		log.Error("first transaction must come from GoldenTouchAccount")
 		res <- SimulationResponse{
-			stateId:        0,
-			error:          errors.New("first transaction must come from GoldenTouchAccount"),
-			gasUsed:        0,
-			builderPayment: "0x0",
+			error: errors.New("first transaction must come from GoldenTouchAccount"),
 		}
 		return
 	}
 
+	// Commit the anchor to the state
 	receipt, _, _, err := g.commitTx(simEnv, tx)
-	log.Info("Anchor tx receipt: %+v", receipt)
+	log.Info("Simulated Anchor Tx", "receipt", receipt)
 
+	// Verify the tx didn't fail. e.g., nonce issues.
 	if err != nil {
-		var gasUsed uint64
-		var commitError CommitError
-		if errors.As(err, &commitError) {
-			gasUsed = simEnv.gasPool.Gas()
-		}
-		log.Error("Failed to simulate transaction", "err", err)
 		res <- SimulationResponse{
-			error:   NewCommitError(err),
-			gasUsed: gasUsed,
+			error: NewCommitError(err),
 		}
 		return
-	} else if receipt.Status == 0 {
+	}
+
+	// Verify the tx didn't revert.
+	if receipt.Status == types.ReceiptStatusFailed {
 		log.Error("transaction reverted", "receipt", receipt)
 		err := errors.New("transaction reverted")
 		res <- SimulationResponse{
@@ -335,232 +191,187 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, timestamp uint64
 		}
 		return
 	}
+	log.Info("Anchor transaction executed successfully", "gasUsed", receipt.GasUsed)
 
-	var newStateId uint32
-	newStateId = uuid.New().ID()
-
+	// Finalise the simulation environment and add it to the stateIdMap.
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.receipts = append(simEnv.receipts, receipt)
-	g.envMap[newStateId] = simEnv
-	g.envBuilder[newStateId] = make([]uint32, 0)
-	g.mixHash = mixHash
+
+	newStateId := rand.Uint64()
+	g.preconfState.stateIdMap[newStateId] = simEnv
+	log.Info("Added simulation environment to stateIdMap", "stateId", newStateId)
 
 	res <- SimulationResponse{
-		error:          nil,
 		gasUsed:        receipt.GasUsed,
 		stateId:        newStateId,
-		builderPayment: "0x0",
+		builderPayment: &hexutil.U256{0, 0, 0, 0},
 	}
 }
 
-func (g *GattacaWorker) simulateTx(stateId uint32, tx *types.Transaction, res chan SimulationResponse) {
+// simulateTx fetches the environment at stateId. It then clones this environment and simulates/commits the tx request
+// to this cloned environment. A new stateId is then generated and the cloned environment is saved.
+func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res chan SimulationResponse) {
 	g.lock.RLock()
 	defer g.lock.RUnlock()
 
+	// Check for halt message
 	if g.halt {
 		res <- SimulationResponse{
 			error: NewHaltError(errors.New(g.haltReason)),
 		}
 		return
 	}
+
+	// Fetch state ID
 	env, err := g.retrieveEnv(stateId)
 	if err != nil {
+		res <- SimulationResponse{error: NewRetrieveEnError(err)}
+		return
+	}
+
+	// Anchor tx must always be applied first
+	if len(env.txs) == 0 {
 		res <- SimulationResponse{
-			error:   NewRetrieveEnError(err),
-			gasUsed: 0,
+			error: fmt.Errorf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId),
 		}
 		return
 	}
+
+	// Copy environment and simulate tx.
 	simEnv := env.copy()
-	if len(simEnv.txs) == 0 {
-		res <- SimulationResponse{
-			stateId:        0,
-			error:          errors.New(fmt.Sprintf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId)),
-			gasUsed:        0,
-			builderPayment: "0x0",
-		}
-		return
-	}
-	startBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
+
+	startBalance := simEnv.state.GetBalance(env.coinbase)
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	if err != nil {
-		var gasUsed uint64
-		var commitError CommitError
-		if errors.As(err, &commitError) {
-			gasUsed = simEnv.gasPool.Gas()
-		}
 		log.Error("Failed to simulate transaction", "err", err)
 		res <- SimulationResponse{
-			error:   NewCommitError(err),
-			gasUsed: gasUsed,
+			error: NewCommitError(err),
 		}
 		return
 	}
-	endBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
-	var newStateId uint32
-	newStateId = uuid.New().ID()
-	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
-	builderPayment := endBalance - startBalance
-	simEnv.cumulativeBuilderPayment += builderPayment
-	g.envMap[newStateId] = simEnv
-	simEnv.receipts = append(simEnv.receipts, receipt)
-	if stateId < 100 {
-		g.envBuilder[newStateId] = make([]uint32, 0)
+	endBalance := simEnv.state.GetBalance(env.coinbase)
+
+	var builderPayment *uint256.Int
+	if endBalance.Cmp(startBalance) <= 0 {
+		builderPayment = uint256.NewInt(0)
 	} else {
-		prevBuild := g.envBuilder[stateId]
-		g.envBuilder[newStateId] = append(prevBuild, newStateId)
+		builderPayment = new(uint256.Int).Sub(endBalance, startBalance)
 	}
+
+	// Tx simulation worked so save result to new env.
+	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
+	simEnv.cumulativeBuilderPayment = new(uint256.Int).Add(simEnv.cumulativeBuilderPayment, builderPayment)
+	simEnv.receipts = append(simEnv.receipts, receipt)
+
+	// Add env to state id map
+	newStateId := rand.Uint64()
+	g.preconfState.stateIdMap[newStateId] = simEnv
+
 	res <- SimulationResponse{
 		error:          nil,
 		gasUsed:        receipt.GasUsed,
 		stateId:        newStateId,
-		builderPayment: fmt.Sprintf("0x%x", builderPayment),
+		builderPayment: (*hexutil.U256)(builderPayment),
 	}
 }
 
-func (g *GattacaWorker) commitEnvToPreconf(stateId uint32, simRes chan CommitStateResponse) {
-	g.commitMutex.Lock()
-	defer g.commitMutex.Unlock()
-	env, exists := g.envMap[stateId]
-	if !exists {
-		simRes <- CommitStateResponse{
-			error: errors.New(fmt.Sprintf("cache for id %d does not exists", stateId)),
-		}
-		return
-	}
-	if g.preconfHead == nil {
-		var err error
-		headEnv, err := g.envFromHead()
-		if err != nil {
-			simRes <- CommitStateResponse{
-				error: err,
-			}
-			return
-		}
-		g.preconfHead = headEnv.copy()
-	}
-	var cumulativeGasUsed uint64
-	for _, tx := range env.txs {
-		if _, in := g.preconfHead.txHashSet[tx.Hash().Hex()]; !in {
-			receipt, _, _, err := g.commitTx(g.preconfHead, tx)
-			if err != nil {
-				log.Error("error committing transaction to head ", "hash", tx.Hash().Hex(), "error", err)
-				simRes <- CommitStateResponse{
-					error: err,
-				}
-				return
-			}
-			g.preconfHead.receipts = append(g.preconfHead.receipts, receipt)
-			g.preconfHead.hashReceipts[tx.Hash().Hex()] = receipt
-			g.preconfHead.txHashSet[tx.Hash().Hex()] = struct{}{}
-			cumulativeGasUsed += receipt.GasUsed
-		}
-	}
-
+// commitEnvToPreconf commits a stateId to the current preconf head.
+func (g *GattacaWorker) commitEnvToPreconf(stateId uint64, simRes chan CommitStateResponse) {
+	cumGasUsed, builderPayment, err := g.preconfState.commitStateIDToPendingBlock(stateId)
 	simRes <- CommitStateResponse{
-		cumulativeGasUsed:        cumulativeGasUsed,
-		cumulativeBuilderPayment: fmt.Sprintf("0x%x", g.preconfHead.cumulativeBuilderPayment),
+		error:                    err,
+		cumulativeGasUsed:        cumGasUsed,
+		cumulativeBuilderPayment: (*hexutil.U256)(builderPayment),
 	}
 }
 
+// sealBlock seals the current pending pre-confirmed block.
+// It finalizes, assembles, and seals the block, then updates the preconf state.
 func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
 
-	chainHead, err := g.retrieveEnv(1)
-	if err != nil {
-		log.Crit("error getting chain head")
-		req.Response <- SealBlockResponse{
-			block:                    nil,
-			cumulativeBuilderPayment: "",
-			err:                      err,
-		}
+	// Retrieve the pending pre-confirmed block from the preconf state.
+	pendingPreconfBlock := g.preconfState.pendingPreconfBlock
+	if pendingPreconfBlock == nil {
+		req.Response <- SealBlockResponse{err: errors.New("no pending preconf block to seal")}
 		return
 	}
-	var empty common.Hash
-	if g.preconfHead.parentHash.Hex() != empty.Hex() {
-		g.preconfHead.header.ParentHash = g.preconfHead.parentHash
-	}
 
-	initialPreconfHead := g.preconfHead.header.Number.Uint64()
-	chainHeadNo := chainHead.header.Number.Uint64()
+	log.Info("Starting block sealing process",
+		"pendingPreconfBlockNumber", pendingPreconfBlock.header.Number.Uint64(),
+	)
 
-	// Update preconf head env to match chain head env if it's ahead.
-	if chainHeadNo > initialPreconfHead {
-		log.Info("sealBlock chain head >= preconf head. Resetting preconf head data to chain head", "preconf head header", g.preconfHead.header, "chainHead header", chainHead.header)
-		g.preconfHead = chainHead.copy()
-	}
-
-	// Increment preconf head number
-	log.Info("sealBlock", "chainHead", chainHeadNo, "preconfHead", initialPreconfHead)
-	//if len(g.builtBlocks) > 0 {
-	//	lastBlockNumber := g.builtBlocks[len(g.builtBlocks)-1].block.NumberU64() + 1
-	//	if lastBlockNumber > chainHeadNo {
-	//		g.preconfHead.header.Number = big.NewInt(int64(lastBlockNumber))
-	//		log.Info("sealBlock setting to lastBlockNumber")
-	//	} else {
-	//		g.preconfHead.header.Number = big.NewInt(int64(chainHeadNo))
-	//		log.Info("sealBlock setting to chainNo")
-	//	}
-	//} else {
-	//	if chainNo > headerNo {
-	//		g.preconfHead.header.Number = big.NewInt(int64(chainNo))
-	//		log.Info("sealBlock setting to chainNo")
-	//	}
-	//}
-
-	log.Info("sealBlock", "initialHeaderNo", initialPreconfHead, "newHeaderNo", g.preconfHead.header.Number)
-
-	prevDigest := g.preconfHead.header.MixDigest
-	g.preconfHead.header.MixDigest = g.mixHash
-	g.preconfHead.header.Extra = make([]byte, 32)
-	log.Info("Header extra data is", "extra-data", len(g.preconfHead.header.Extra), "content", g.preconfHead.header.Extra)
-	transactionGas := uint64(0)
-	for _, tx := range g.preconfHead.txs {
-		transactionGas += g.preconfHead.hashReceipts[tx.Hash().Hex()].GasUsed
-	}
-	log.Info("number of transaction per block", "blockNo", g.preconfHead.header.Number.Uint64(), "transaction count", len(g.preconfHead.txs), "txGas", transactionGas)
-	block, err := g.engine.FinalizeAndAssemble(g.chain, g.preconfHead.header, g.preconfHead.state, g.preconfHead.txs, nil, g.preconfHead.receipts, make([]*types.Withdrawal, 0))
-	if err != nil {
-
-		req.Response <- SealBlockResponse{
-			block:                    nil,
-			cumulativeBuilderPayment: "",
-			err:                      err,
+	// Calculate total gas used by transactions in the pending block.
+	var transactionGas uint64
+	for _, tx := range pendingPreconfBlock.txs {
+		receipt, exists := pendingPreconfBlock.hashReceipts[tx.Hash().Hex()]
+		if !exists {
+			req.Response <- SealBlockResponse{
+				err: fmt.Errorf("missing receipt for transaction %s", tx.Hash().Hex()),
+			}
+			return
 		}
+		transactionGas += receipt.GasUsed
+	}
+
+	log.Info("Transactions in block",
+		"blockNumber", pendingPreconfBlock.header.Number.Uint64(),
+		"transactionCount", len(pendingPreconfBlock.txs),
+		"totalGasUsed", transactionGas,
+	)
+
+	block, err := g.engine.FinalizeAndAssemble(
+		g.chain,
+		pendingPreconfBlock.header,
+		pendingPreconfBlock.state,
+		pendingPreconfBlock.txs,
+		nil, // Uncles (always nil for Taiko)
+		pendingPreconfBlock.receipts,
+		nil, // Withdrawals (always nil for Taiko)
+	)
+	if err != nil {
+		// Error finalizing and assembling block; send error response.
+		req.Response <- SealBlockResponse{err: err}
 		return
 	}
 
 	results := make(chan *types.Block, 1)
 	if err := g.engine.Seal(g.chain, block, results, nil); err != nil {
-		req.Response <- SealBlockResponse{
-			block:                    nil,
-			cumulativeBuilderPayment: "",
-			err:                      err,
-		}
+		req.Response <- SealBlockResponse{err: err}
 		return
 	}
-	block = <-results
-	g.preconfHead.header.MixDigest = prevDigest
+	sealedBlock := <-results
+	log.Info("Block sealed", "sealedBlockHash", sealedBlock.Hash().Hex())
 
-	entry := inMemoryStore{
-		block: block,
-		env:   g.preconfHead.copy(),
+	//before sealing it, set the block to the env
+	pendingPreconfBlock.sealedBlock = sealedBlock
+	err = g.preconfState.sealPendingPreconfBlock()
+	if err != nil {
+		req.Response <- SealBlockResponse{err: err}
+		return
 	}
 
-	g.builtBlocks = append(g.builtBlocks, entry)
-	g.mapBlockNumber[int64(block.NumberU64())] = entry
-	g.mapBlockHash[block.Hash().Hex()] = entry
-	cumulativeBuilderPayment := g.preconfHead.cumulativeBuilderPayment
+	// Add the new header to the header chain cache so the new block hash can be fetched from the
+	// `BLOCKHASH` EVM opcoode.
+	//g.chain.InsertNewPreconfHeader(sealedBlock.Header())
 
-	g.preconfHead.parentHash = block.Hash()
-	g.preconfHead.reset()
-	g.preconfHead.header.Number = big.NewInt(0).Add(g.preconfHead.header.Number, big.NewInt(1))
-	g.preconfHead.header.ParentHash = block.Hash()
+	// Note: might change the actual chain. Will this have side effects?
+	_, err = g.chain.InsertChain(types.Blocks{sealedBlock})
+	if err != nil {
+		req.Response <- SealBlockResponse{err: err}
+		return
+	}
 
+	// Send the successful seal block response.
+	log.Info("Sending seal block response",
+		"sealedBlockNumber", sealedBlock.Number().Uint64(),
+		"sealedBlockHash", sealedBlock.Hash().Hex(),
+	)
+	cumulativeBuilderPaymentHex := fmt.Sprintf("0x%x", pendingPreconfBlock.cumulativeBuilderPayment)
 	req.Response <- SealBlockResponse{
-		block:                    block,
-		cumulativeBuilderPayment: fmt.Sprintf("0x%x", cumulativeBuilderPayment),
+		block:                    sealedBlock,
+		cumulativeBuilderPayment: cumulativeBuilderPaymentHex,
 		err:                      nil,
 	}
 }
@@ -607,7 +418,7 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 		return nil, nil, 0, err
 	}
 	if len(env.txs) == 0 {
-		if from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
+		if from != GoldenTouchAddress {
 			log.Error("first transaction must come from GoldenTouchAccount")
 			//return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
 		} else {
@@ -687,8 +498,8 @@ func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction
 	return receipt, err
 }
 
-func (g *GattacaWorker) GetStateAndHeader() (*state.StateDB, *types.Header) {
-	return g.preconfHead.state.Copy(), g.preconfHead.header
+func (g *GattacaWorker) PreconfState() *PreconfState {
+	return g.preconfState
 }
 
 func genMixHash(blockNumber uint64) common.Hash {

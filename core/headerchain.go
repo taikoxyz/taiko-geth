@@ -72,6 +72,9 @@ type HeaderChain struct {
 
 	rand   *mrand.Rand
 	engine consensus.Engine
+
+	// TODO: This seems hacky - should fix. Also not sure how this will do with
+	preconfHeaderCache *lru.Cache[uint64, *types.Header]
 }
 
 // NewHeaderChain creates a new HeaderChain structure. ProcInterrupt points
@@ -83,14 +86,15 @@ func NewHeaderChain(chainDb ethdb.Database, config *params.ChainConfig, engine c
 		return nil, err
 	}
 	hc := &HeaderChain{
-		config:        config,
-		chainDb:       chainDb,
-		headerCache:   lru.NewCache[common.Hash, *types.Header](headerCacheLimit),
-		tdCache:       lru.NewCache[common.Hash, *big.Int](tdCacheLimit),
-		numberCache:   lru.NewCache[common.Hash, uint64](numberCacheLimit),
-		procInterrupt: procInterrupt,
-		rand:          mrand.New(mrand.NewSource(seed.Int64())),
-		engine:        engine,
+		config:             config,
+		chainDb:            chainDb,
+		headerCache:        lru.NewCache[common.Hash, *types.Header](headerCacheLimit),
+		tdCache:            lru.NewCache[common.Hash, *big.Int](tdCacheLimit),
+		numberCache:        lru.NewCache[common.Hash, uint64](numberCacheLimit),
+		procInterrupt:      procInterrupt,
+		rand:               mrand.New(mrand.NewSource(seed.Int64())),
+		engine:             engine,
+		preconfHeaderCache: lru.NewCache[uint64, *types.Header](headerCacheLimit),
 	}
 	hc.genesisHeader = hc.GetHeaderByNumber(0)
 	if hc.genesisHeader == nil {
@@ -449,6 +453,16 @@ func (hc *HeaderChain) GetHeader(hash common.Hash, number uint64) *types.Header 
 	return header
 }
 
+// GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
+func (hc *HeaderChain) GetPreConfirmedHeader(number uint64) *types.Header {
+	log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. in GetPreConfirmedHeader", "num items in cache", hc.preconfHeaderCache.Len())
+
+	if header, ok := hc.preconfHeaderCache.Get(number); ok {
+		return header
+	}
+	return nil
+}
+
 // GetHeaderByHash retrieves a block header from the database by hash, caching it if
 // found.
 func (hc *HeaderChain) GetHeaderByHash(hash common.Hash) *types.Header {
@@ -658,6 +672,13 @@ func (hc *HeaderChain) setHead(headBlock uint64, headTime uint64, updateFn Updat
 	hc.headerCache.Purge()
 	hc.tdCache.Purge()
 	hc.numberCache.Purge()
+}
+
+// InsertNewPreconfHeader adds a new pre-confirmed header to the preconfHeaderCache.
+// These are used to fetch pre-confirmed block hashes for the `BLOCKHASH` evm call.
+func (hc *HeaderChain) InsertNewPreconfHeader(header *types.Header) {
+	number := header.Number.Uint64()
+	hc.preconfHeaderCache.Add(number, header)
 }
 
 // SetGenesis sets a new genesis block header for the chain

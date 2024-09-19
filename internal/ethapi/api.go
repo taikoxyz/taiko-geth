@@ -645,7 +645,7 @@ func (s *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 	// Check if PreconfirmationForwardingURL is set
 	worker := miner.GetWorker(5)
 	if worker != nil {
-		return hexutil.Uint64(worker.BlockNumber())
+		return hexutil.Uint64(worker.PreconfState().BlockNumber())
 	}
 	if forwardURL := s.b.GetPreconfirmationForwardingURL(); forwardURL != "" {
 		log.Info("forwarding blockNumber request")
@@ -865,7 +865,7 @@ func (s *BlockChainAPI) GetBlockByNumber(ctx context.Context, number rpc.BlockNu
 	worker := miner.GetWorker(5)
 	if worker != nil {
 		block, err := s.b.BlockByNumber(ctx, rpc.LatestBlockNumber)
-		block, err = worker.BlockByNumber(ctx, number, block)
+		block, err = worker.PreconfState().BlockByNumber(number)
 		if block != nil && err == nil {
 			response, err := s.rpcMarshalBlock(ctx, block, true, fullTx)
 			if err == nil && number == rpc.PendingBlockNumber {
@@ -909,9 +909,8 @@ func (s *BlockChainAPI) GetBlockByHash(ctx context.Context, hash common.Hash, fu
 	var err error
 	worker := miner.GetWorker(5)
 	if worker != nil {
-		block, err = worker.BlockByHash(ctx, hash)
+		block, err = worker.PreconfState().BlockByHash(hash)
 	}
-	block, err = s.b.BlockByHash(ctx, hash)
 	if block != nil {
 		return s.rpcMarshalBlock(ctx, block, true, fullTx)
 	} else {
@@ -1160,6 +1159,11 @@ func (context *ChainContext) GetHeader(hash common.Hash, number uint64) *types.H
 		return nil
 	}
 	return header
+}
+
+// GetPreConfirmedHeader returns the pre-confirmed header corresponding to the hash/number argument pair.
+func (context *ChainContext) GetPreConfirmedHeader(number uint64) *types.Header {
+	return nil
 }
 
 func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.StateDB, header *types.Header, overrides *StateOverride, blockOverrides *BlockOverrides, timeout time.Duration, globalGasCap uint64) (*core.ExecutionResult, error) {
@@ -1713,7 +1717,7 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
 		var simulatedNonce uint64
 		if worker != nil {
-			simulatedNonce = worker.GetPoolNonce(ctx, address)
+			simulatedNonce = worker.PreconfState().GetPoolNonce(address)
 		}
 		nonce, err := s.b.GetPoolNonce(ctx, address)
 		if err != nil {

@@ -7,5 +7,9 @@ import (
 
 func (g *GattacaWorker) GetPendingPoolNonce(address common.Address) uint64 {
 	log.Info("getting pending pool nonce")
-	return g.preconfHead.state.GetNonce(address)
+	env := g.preconfState.getLatestPreconfBlock()
+	if env != nil {
+		return env.state.GetNonce(address)
+	}
+	return 0
 }

@@ -7,32 +7,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-// RPCTransaction represents a transaction that will serialize to the RPC representation of a transaction
-type RPCTransaction struct {
-	BlockHash           *common.Hash      `json:"blockHash"`
-	BlockNumber         *hexutil.Big      `json:"blockNumber"`
-	From                common.Address    `json:"from"`
-	Gas                 hexutil.Uint64    `json:"gas"`
-	GasPrice            *hexutil.Big      `json:"gasPrice"`
-	GasFeeCap           *hexutil.Big      `json:"maxFeePerGas,omitempty"`
-	GasTipCap           *hexutil.Big      `json:"maxPriorityFeePerGas,omitempty"`
-	MaxFeePerBlobGas    *hexutil.Big      `json:"maxFeePerBlobGas,omitempty"`
-	Hash                common.Hash       `json:"hash"`
-	Input               hexutil.Bytes     `json:"input"`
-	Nonce               hexutil.Uint64    `json:"nonce"`
-	To                  *common.Address   `json:"to"`
-	TransactionIndex    *hexutil.Uint64   `json:"transactionIndex"`
-	Value               *hexutil.Big      `json:"value"`
-	Type                hexutil.Uint64    `json:"type"`
-	Accesses            *types.AccessList `json:"accessList,omitempty"`
-	ChainID             *hexutil.Big      `json:"chainId,omitempty"`
-	BlobVersionedHashes []common.Hash     `json:"blobVersionedHashes,omitempty"`
-	V                   *hexutil.Big      `json:"v"`
-	R                   *hexutil.Big      `json:"r"`
-	S                   *hexutil.Big      `json:"s"`
-	YParity             *hexutil.Uint64   `json:"yParity,omitempty"`
-}
-
 // marshalReceipt marshals a transaction receipt into a JSON object.
 func marshalReceipt(receipt *types.Receipt, blockHash common.Hash, blockNumber uint64, signer types.Signer, tx *types.Transaction, txIndex int) map[string]interface{} {
 	from, _ := types.Sender(signer, tx)
@@ -72,42 +46,4 @@ func marshalReceipt(receipt *types.Receipt, blockHash common.Hash, blockNumber u
 		fields["contractAddress"] = receipt.ContractAddress
 	}
 	return fields
-}
-
-// RPCMarshalHeader converts the given header to the RPC output .
-func RPCMarshalHeader(head *types.Header) map[string]interface{} {
-	result := map[string]interface{}{
-		"number":           (*hexutil.Big)(head.Number),
-		"hash":             head.Hash(),
-		"parentHash":       head.ParentHash,
-		"nonce":            head.Nonce,
-		"mixHash":          head.MixDigest,
-		"sha3Uncles":       head.UncleHash,
-		"logsBloom":        head.Bloom,
-		"stateRoot":        head.Root,
-		"miner":            head.Coinbase,
-		"difficulty":       (*hexutil.Big)(head.Difficulty),
-		"extraData":        hexutil.Bytes(head.Extra),
-		"gasLimit":         hexutil.Uint64(head.GasLimit),
-		"gasUsed":          hexutil.Uint64(head.GasUsed),
-		"timestamp":        hexutil.Uint64(head.Time),
-		"transactionsRoot": head.TxHash,
-		"receiptsRoot":     head.ReceiptHash,
-	}
-	if head.BaseFee != nil {
-		result["baseFeePerGas"] = (*hexutil.Big)(head.BaseFee)
-	}
-	if head.WithdrawalsHash != nil {
-		result["withdrawalsRoot"] = head.WithdrawalsHash
-	}
-	if head.BlobGasUsed != nil {
-		result["blobGasUsed"] = hexutil.Uint64(*head.BlobGasUsed)
-	}
-	if head.ExcessBlobGas != nil {
-		result["excessBlobGas"] = hexutil.Uint64(*head.ExcessBlobGas)
-	}
-	if head.ParentBeaconRoot != nil {
-		result["parentBeaconBlockRoot"] = head.ParentBeaconRoot
-	}
-	return result
 }
