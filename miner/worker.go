@@ -101,6 +101,7 @@ type environment struct {
 	cumulativeBuilderPayment uint64
 	txHashSet                map[string]struct{}
 	parentHash               common.Hash
+	sealedBlock              *types.Block
 }
 
 // copy creates a deep copy of environment.

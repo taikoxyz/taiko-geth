@@ -61,41 +61,6 @@ func (g *GattacaWorker) getTransaction(ctx context.Context, hash common.Hash) (b
 	return tx != nil, tx, receipt, txIdx, blockNumber, blockHash, header
 }
 
-func (g *GattacaWorker) BlockNumber() uint64 {
-	env, _ := g.retrieveEnv(1)
-	if env.header.Number.Uint64() > g.preconfHead.header.Number.Uint64() {
-		return env.header.Number.Uint64()
-	}
-	return g.preconfHead.header.Number.Uint64()
-}
-
-func (g *GattacaWorker) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
-	if entry, in := g.mapBlockHash[hash.Hex()]; in {
-		return entry.block, nil
-	}
-	return nil, errors.New(fmt.Sprintf("block hash %s not found", hash.Hex()))
-}
-
-func (g *GattacaWorker) BlockByNumber(ctx context.Context, number rpc.BlockNumber, latestChainBlock *types.Block) (*types.Block, error) {
-	if number == rpc.LatestBlockNumber {
-		if len(g.builtBlocks) > 0 {
-			block := g.builtBlocks[len(g.builtBlocks)-1].block
-			if latestChainBlock == nil || block.NumberU64() > latestChainBlock.NumberU64() {
-				return block, nil
-			}
-			return latestChainBlock, nil
-		}
-	}
-	if entry, in := g.mapBlockNumber[number.Int64()]; in {
-		return entry.block, nil
-	}
-	return nil, errors.New(fmt.Sprintf("block number %d not found", number.Int64()))
-}
-
-func (g *GattacaWorker) GetPoolNonce(ctx context.Context, addr common.Address) uint64 {
-	return g.preconfHead.state.GetNonce(addr)
-}
-
 func (g *GattacaWorker) StateAndHeaderByNumberOrHash(blockNrOrHash rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error) {
 	if number, ok := blockNrOrHash.Number(); ok {
 		if number == rpc.LatestBlockNumber {

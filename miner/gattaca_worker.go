@@ -459,6 +459,8 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	sealedBlock := <-results
 	log.Info("Block sealed", "sealedBlockHash", sealedBlock.Hash().Hex())
 
+	//before sealing it, set the block to the env
+	pendingPreconfBlock.sealedBlock = sealedBlock
 	err = g.preconfState.sealPendingPreconfBlock()
 	if err != nil {
 		req.Response <- SealBlockResponse{err: err}
@@ -601,6 +603,10 @@ func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction
 
 func (g *GattacaWorker) GetStateAndHeader() (*state.StateDB, *types.Header) {
 	return g.preconfHead.state.Copy(), g.preconfHead.header
+}
+
+func (g *GattacaWorker) PreconfState() *PreconfState {
+	return g.preconfState
 }
 
 func genMixHash(blockNumber uint64) common.Hash {

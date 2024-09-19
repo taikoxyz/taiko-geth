@@ -3,6 +3,9 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
 	"math/big"
 	"math/rand"
 	"sync"
@@ -41,6 +44,60 @@ func NewPreconfState(chain *core.BlockChain) *PreconfState {
 	return &PreconfState{
 		chain: chain,
 	}
+}
+
+// BlockNumber returns the latest block number of the preconf state.
+func (state *PreconfState) BlockNumber() uint64 {
+	chainHead := state.chain.CurrentHeader().Number.Uint64()
+	if len(state.sealedPreconfBlocks) > 0 {
+		lastSealedBlock := state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1]
+		if lastSealedBlock.header.Number.Uint64() > chainHead {
+			chainHead = lastSealedBlock.header.Number.Uint64()
+		}
+	}
+	return chainHead
+}
+
+func (state *PreconfState) BlockByNumber(number rpc.BlockNumber) (*types.Block, error) {
+	header := state.chain.CurrentBlock()
+	latestChainBlock := state.chain.GetBlock(header.Hash(), header.Number.Uint64())
+	if number == rpc.LatestBlockNumber {
+		if len(state.sealedPreconfBlocks) > 0 {
+			block := state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1].sealedBlock
+			if latestChainBlock == nil || block.NumberU64() > latestChainBlock.NumberU64() {
+				return block, nil
+			}
+			return latestChainBlock, nil
+		}
+	}
+	for _, sealedPreconfBlock := range state.sealedPreconfBlocks {
+		if sealedPreconfBlock.sealedBlock.NumberU64() == uint64(number) {
+			return sealedPreconfBlock.sealedBlock, nil
+		}
+	}
+	return state.chain.GetBlockByNumber(uint64(number)), nil
+
+}
+
+func (state *PreconfState) BlockByHash(hash common.Hash) (*types.Block, error) {
+	for _, sealedPreconfBlock := range state.sealedPreconfBlocks {
+		for _, tx := range sealedPreconfBlock.txs {
+			if tx.Hash() == hash {
+				return sealedPreconfBlock.sealedBlock, nil
+			}
+		}
+	}
+	return state.chain.GetBlockByHash(hash), nil
+}
+
+func (state *PreconfState) GetPoolNonce(addr common.Address) uint64 {
+	if state.pendingPreconfBlock != nil {
+		return state.pendingPreconfBlock.state.GetNonce(addr)
+	}
+	if len(state.sealedPreconfBlocks) > 0 {
+		return state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1].state.GetNonce(addr)
+	}
+	return 0
 }
 
 // addSimulatedPreconfEnv add an environment to the internal stateIdMap and return the stateId
