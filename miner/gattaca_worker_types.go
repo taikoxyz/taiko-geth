@@ -213,10 +213,6 @@ func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, 
 	state.commitMutex.Lock()
 	defer state.commitMutex.Unlock()
 
-	if state.pendingPreconfBlock == nil {
-		return 0, "", fmt.Errorf("attempted to commit state ID to a non-existent pending preconf block. stateId: %d", stateId)
-	}
-
 	envToCommit, exists := state.stateIdMap[stateId]
 	if !exists {
 		return 0, "", fmt.Errorf("state for id %d does not exist", stateId)
