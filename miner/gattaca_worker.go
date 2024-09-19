@@ -76,7 +76,6 @@ func (s SealBlockResponse) Err() error {
 }
 
 type SealBlockRequest struct {
-	StateId  uint32 `json:"stateId"`
 	Response chan SealBlockResponse
 }
 
@@ -146,10 +145,6 @@ type GattacaWorker struct {
 	halt        bool
 	haltReason  string
 
-	mixHash common.Hash
-
-	envMap map[uint64]*environment
-
 	preconfState *PreconfState
 }
 
@@ -165,7 +160,6 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 			config:       config,
 			engine:       engine,
 			extra:        config.ExtraData,
-			envMap:       make(map[uint64]*environment),
 			halt:         false,
 			haltReason:   "",
 			preconfState: NewPreconfState(chain),
@@ -204,7 +198,7 @@ func (g *GattacaWorker) runLoop() {
 			log.Debug("run commit state ", req.StateId)
 			go g.commitEnvToPreconf(req.StateId, req.SimRes)
 		case req := <-SealBlock:
-			log.Info("run seal block ", "stateId", req.StateId)
+			log.Info("run seal block ")
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
 			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.SimRes)
@@ -235,7 +229,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	log.Info(
 		"Starting simulateAnchorTx",
 		"newEnvParams", newEnvParams,
-		"txHash", tx.Hash().Hex(),
+		"txHash", tx.Hash(),
 	)
 
 	// Fetch the latest sealed env.
@@ -299,9 +293,10 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	log.Info("Anchor transaction executed successfully", "gasUsed", receipt.GasUsed)
 
 	// Finalise the simulation environment and add it to the stateIdMap.
-	newStateId := rand.Uint64()
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.receipts = append(simEnv.receipts, receipt)
+
+	newStateId := rand.Uint64()
 	g.preconfState.stateIdMap[newStateId] = simEnv
 	log.Info("Added simulation environment to stateIdMap", "stateId", newStateId)
 
@@ -312,56 +307,60 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	}
 }
 
+// simulateTx fetches the environment at stateId. It then clones this environment and simulates/commits the tx request
+// to this cloned environment. A new stateId is then generated and the cloned environment is saved.
 func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res chan SimulationResponse) {
 	g.lock.RLock()
 	defer g.lock.RUnlock()
 
+	// Check for halt message
 	if g.halt {
 		res <- SimulationResponse{
 			error: NewHaltError(errors.New(g.haltReason)),
 		}
 		return
 	}
+
+	// Fetch state ID
 	env, err := g.retrieveEnv(stateId)
 	if err != nil {
-		res <- SimulationResponse{
-			error:   NewRetrieveEnError(err),
-			gasUsed: 0,
-		}
+		res <- SimulationResponse{error: NewRetrieveEnError(err)}
 		return
 	}
-	simEnv := env.copy()
-	if len(simEnv.txs) == 0 {
+
+	// Anchor tx must always be applied first
+	if len(env.txs) == 0 {
 		res <- SimulationResponse{
-			stateId:        0,
-			error:          errors.New(fmt.Sprintf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId)),
-			gasUsed:        0,
+			error:          fmt.Errorf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId),
 			builderPayment: "0x0",
 		}
 		return
 	}
-	startBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
+
+	// Copy environment and simulate tx.
+	simEnv := env.copy()
+
+	startBalance := simEnv.state.GetBalance(env.coinbase)
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	if err != nil {
-		var gasUsed uint64
-		var commitError CommitError
-		if errors.As(err, &commitError) {
-			gasUsed = simEnv.gasPool.Gas()
-		}
 		log.Error("Failed to simulate transaction", "err", err)
 		res <- SimulationResponse{
-			error:   NewCommitError(err),
-			gasUsed: gasUsed,
+			error: NewCommitError(err),
 		}
 		return
 	}
-	endBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
-	newStateId := rand.Uint64()
+	endBalance := simEnv.state.GetBalance(env.coinbase)
+	builderPayment := new(uint256.Int).Sub(endBalance, startBalance)
+
+	// Tx simulation worked so save result to new env.
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
-	builderPayment := endBalance - startBalance
-	simEnv.cumulativeBuilderPayment += builderPayment
-	g.envMap[newStateId] = simEnv
+	simEnv.cumulativeBuilderPayment = new(uint256.Int).Add(simEnv.cumulativeBuilderPayment, builderPayment)
 	simEnv.receipts = append(simEnv.receipts, receipt)
+
+	// Add env to state id map
+	newStateId := rand.Uint64()
+	g.preconfState.stateIdMap[newStateId] = simEnv
+
 	res <- SimulationResponse{
 		error:          nil,
 		gasUsed:        receipt.GasUsed,
@@ -370,6 +369,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	}
 }
 
+// commitEnvToPreconf commits a stateId to the current preconf head.
 func (g *GattacaWorker) commitEnvToPreconf(stateId uint64, simRes chan CommitStateResponse) {
 	cumGasUsed, builderPayment, err := g.preconfState.commitStateIDToPendingBlock(stateId)
 	simRes <- CommitStateResponse{
@@ -500,7 +500,7 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 		return nil, nil, 0, err
 	}
 	if len(env.txs) == 0 {
-		if from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
+		if from != GoldenTouchAddress {
 			log.Error("first transaction must come from GoldenTouchAccount")
 			//return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
 		} else {

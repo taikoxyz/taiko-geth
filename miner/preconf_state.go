@@ -4,21 +4,19 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"math/big"
 	"math/rand"
 	"sync"
-	"time"
-
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 type StateId uint64
 
 const (
-	LatestSealedId StateId = iota
+	LatestSealedId StateId = 1
 )
 
 // PreconfState holds all information about any blocks that have been pre-confirmed
@@ -40,9 +38,10 @@ type PreconfState struct {
 // NewPreconfState initializes a new PreconfState with empty sealed and pending preconf blocks.
 // It requires a reference to the canonical blockchain.
 func NewPreconfState(chain *core.BlockChain) *PreconfState {
-	rand.Seed(time.Now().UnixNano())
 	return &PreconfState{
-		chain: chain,
+		chain:               chain,
+		stateIdMap:          make(map[uint64]*environment),
+		sealedPreconfBlocks: make([]*environment, 0),
 	}
 }
 
@@ -234,10 +233,6 @@ func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, 
 	state.commitMutex.Lock()
 	defer state.commitMutex.Unlock()
 
-	if state.pendingPreconfBlock == nil {
-		return 0, "", fmt.Errorf("attempted to commit state ID to a non-existent pending preconf block. stateId: %d", stateId)
-	}
-
 	envToCommit, exists := state.stateIdMap[stateId]
 	if !exists {
 		return 0, "", fmt.Errorf("state for id %d does not exist", stateId)
@@ -249,13 +244,13 @@ func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, 
 	state.pendingPreconfBlock = envToCommit
 	log.Info("Pending preconf block updated with committed state", "newPendingBlockNumber", envToCommit.header.Number.Uint64())
 
-	total := uint64(0)
+	totalGas := uint64(0)
 	for _, receipt := range state.pendingPreconfBlock.receipts {
-		total += receipt.GasUsed
+		totalGas += receipt.GasUsed
 	}
 
 	formattedBuilderPayment := fmt.Sprintf("0x%x", state.pendingPreconfBlock.cumulativeBuilderPayment)
-	return total, formattedBuilderPayment, nil
+	return totalGas, formattedBuilderPayment, nil
 }
 
 // getLatestSealedBlock returns the latest block from sealedPreconfBlocks if there are items in the array.
