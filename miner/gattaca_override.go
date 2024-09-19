@@ -29,27 +29,31 @@ func (g *GattacaWorker) getTransaction(ctx context.Context, hash common.Hash) (b
 	var blockNumber uint64
 	var blockHash common.Hash
 	var header *types.Header
-	for idx, tempTx := range g.preconfHead.txs {
-		if tempTx.Hash().Hex() == hash.Hex() {
-			tx = tempTx
-			receipt = g.preconfHead.receipts[idx]
-			txIdx = idx
-			blockNumber = g.preconfHead.header.Number.Uint64()
-			blockHash = g.preconfHead.header.Hash()
-			header = g.preconfHead.header
-			break
+	pendingPreconfBlock, err := g.preconfState.getPendingPreconfBlock()
+	if err == nil {
+		for idx, tempTx := range pendingPreconfBlock.txs {
+			if tempTx.Hash().Hex() == hash.Hex() {
+				tx = tempTx
+				receipt = pendingPreconfBlock.receipts[idx]
+				txIdx = idx
+				blockNumber = pendingPreconfBlock.header.Number.Uint64()
+				blockHash = pendingPreconfBlock.header.Hash()
+				header = pendingPreconfBlock.header
+				break
+			}
 		}
 	}
-	if tx == nil {
-		for _, entry := range g.builtBlocks {
-			for idx, tempTx := range entry.block.Transactions() {
+
+	if tx == nil || err != nil {
+		for _, envBlocks := range g.PreconfState().getSealedPreconfBlock() {
+			for idx, tempTx := range envBlocks.txs {
 				if tempTx.Hash().Hex() == hash.Hex() {
 					tx = tempTx
-					receipt = entry.env.receipts[idx]
+					receipt = envBlocks.receipts[idx]
 					txIdx = idx
-					blockNumber = entry.block.NumberU64()
-					blockHash = entry.block.Hash()
-					header = entry.env.header
+					blockNumber = envBlocks.sealedBlock.NumberU64()
+					blockHash = envBlocks.sealedBlock.Hash()
+					header = envBlocks.header
 					break
 				}
 			}
@@ -65,23 +69,44 @@ func (g *GattacaWorker) StateAndHeaderByNumberOrHash(blockNrOrHash rpc.BlockNumb
 	if number, ok := blockNrOrHash.Number(); ok {
 		if number == rpc.LatestBlockNumber {
 			env, _ := g.retrieveEnv(1)
-			if g.preconfHead.header.Number.Uint64() > env.header.Number.Uint64() {
-				return env.state, env.header, nil
-			} else {
-				return nil, nil, errors.New(fmt.Sprintf("preconf head is older than chain head"))
+			preconfEnv, err := g.preconfState.getPendingPreconfBlock()
+			if err == nil {
+				if preconfEnv.header.Number.Uint64() > env.header.Number.Uint64() {
+					return env.state, env.header, nil
+				} else {
+					return nil, nil, errors.New(fmt.Sprintf("preconf head is older than chain head"))
+				}
 			}
 		}
-		if entry, in := g.mapBlockNumber[number.Int64()]; in {
-			return entry.env.state, entry.env.header, nil
+		if env := findBlockByNumber(g.preconfState.getSealedPreconfBlock(), uint64(number)); env != nil {
+			return env.state, env.header, nil
 		}
 		return nil, nil, errors.New(fmt.Sprintf("block number %d not found", number.Int64()))
 	}
 	if hash, ok := blockNrOrHash.Hash(); ok {
 		log.Info("hash", "hash", hash.Hex())
-		if entry, in := g.mapBlockHash[hash.Hex()]; in {
-			return entry.env.state, entry.env.header, nil
+		if env := findBlockByHash(g.preconfState.getSealedPreconfBlock(), hash); env != nil {
+			return env.state, env.header, nil
 		}
 		return nil, nil, errors.New(fmt.Sprintf("block hash %s not found", hash.Hex()))
 	}
 	return nil, nil, nil
+}
+
+func findBlockByNumber(envs []*environment, number uint64) *environment {
+	for _, env := range envs {
+		if env.sealedBlock.NumberU64() == number {
+			return env
+		}
+	}
+	return nil
+}
+
+func findBlockByHash(envs []*environment, hash common.Hash) *environment {
+	for _, env := range envs {
+		if env.sealedBlock.Hash().Hex() == hash.Hex() {
+			return env
+		}
+	}
+	return nil
 }

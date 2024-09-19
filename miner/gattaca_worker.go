@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -138,23 +137,18 @@ func (s SimulationResponse) BuilderPayment() string {
 }
 
 type GattacaWorker struct {
-	chainConfig    *params.ChainConfig
-	chain          *core.BlockChain
-	config         *Config
-	engine         consensus.Engine
-	extra          []byte
-	lock           sync.RWMutex
-	halt           bool
-	haltReason     string
-	mapBlockNumber map[int64]inMemoryStore
-	mapBlockHash   map[string]inMemoryStore
+	chainConfig *params.ChainConfig
+	chain       *core.BlockChain
+	config      *Config
+	engine      consensus.Engine
+	extra       []byte
+	lock        sync.RWMutex
+	halt        bool
+	haltReason  string
 
 	mixHash common.Hash
 
 	envMap map[uint64]*environment
-
-	preconfHead *environment
-	builtBlocks []inMemoryStore
 
 	preconfState *PreconfState
 }
@@ -166,26 +160,17 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 	if singletonGattaca == nil {
 
 		singletonGattaca = &GattacaWorker{
-			chainConfig:    chainConfig,
-			chain:          chain,
-			config:         config,
-			engine:         engine,
-			extra:          config.ExtraData,
-			envMap:         make(map[uint64]*environment),
-			preconfHead:    nil,
-			halt:           false,
-			haltReason:     "",
-			builtBlocks:    make([]inMemoryStore, 0),
-			mapBlockNumber: make(map[int64]inMemoryStore),
-			mapBlockHash:   make(map[string]inMemoryStore),
-			preconfState:   NewPreconfState(chain),
+			chainConfig:  chainConfig,
+			chain:        chain,
+			config:       config,
+			engine:       engine,
+			extra:        config.ExtraData,
+			envMap:       make(map[uint64]*environment),
+			halt:         false,
+			haltReason:   "",
+			preconfState: NewPreconfState(chain),
 		}
-		env, err := singletonGattaca.retrieveEnv(1)
-		if err != nil {
-			log.Error("Failed to retrieve environment", "err", err)
-			return nil, err
-		}
-		singletonGattaca.preconfHead = env
+
 		go singletonGattaca.runLoop()
 		go singletonGattaca.newHeadEventSubscriber()
 	}
@@ -593,10 +578,6 @@ func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction
 		err = NewRevertCommitError(err)
 	}
 	return receipt, err
-}
-
-func (g *GattacaWorker) GetStateAndHeader() (*state.StateDB, *types.Header) {
-	return g.preconfHead.state.Copy(), g.preconfHead.header
 }
 
 func (g *GattacaWorker) PreconfState() *PreconfState {

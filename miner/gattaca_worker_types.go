@@ -46,6 +46,29 @@ func NewPreconfState(chain *core.BlockChain) *PreconfState {
 	}
 }
 
+func (state *PreconfState) getPendingPreconfBlock() (*environment, error) {
+	if state.pendingPreconfBlock == nil {
+		return nil, errors.New("no pending preconf block found")
+	}
+	return state.pendingPreconfBlock, nil
+}
+
+// getLatestPreconfBlock return the last available preconf block.
+// pendingPreconfBlock is preferred over the sealed blocks
+func (state *PreconfState) getLatestPreconfBlock() *environment {
+	if state.pendingPreconfBlock != nil {
+		return state.pendingPreconfBlock
+	}
+	if len(state.sealedPreconfBlocks) > 0 {
+		return state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1]
+	}
+	return nil
+}
+
+func (state *PreconfState) getSealedPreconfBlock() []*environment {
+	return state.sealedPreconfBlocks
+}
+
 // BlockNumber returns the latest block number of the preconf state.
 func (state *PreconfState) BlockNumber() uint64 {
 	chainHead := state.chain.CurrentHeader().Number.Uint64()
