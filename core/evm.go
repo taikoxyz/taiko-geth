@@ -17,6 +17,7 @@
 package core
 
 import (
+	"github.com/ethereum/go-ethereum/log"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -124,6 +125,8 @@ func GetHashFn(ref *types.Header, chain ChainContext) func(n uint64) common.Hash
 				return lastKnownHash
 			}
 		}
+
+		log.Info("BLOCK HASH DEBUG - REMEMBER TO REMOVE. Missing block hash!", "hash", ref.Number)
 		return common.Hash{}
 	}
 }
