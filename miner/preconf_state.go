@@ -4,15 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"math/big"
 	"math/rand"
 	"sync"
-	"time"
-
-	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/log"
 )
 
 type StateId uint64
@@ -40,7 +38,6 @@ type PreconfState struct {
 // NewPreconfState initializes a new PreconfState with empty sealed and pending preconf blocks.
 // It requires a reference to the canonical blockchain.
 func NewPreconfState(chain *core.BlockChain) *PreconfState {
-	rand.Seed(time.Now().UnixNano())
 	return &PreconfState{
 		chain:               chain,
 		stateIdMap:          make(map[uint64]*environment),
