@@ -18,7 +18,7 @@ import (
 type StateId uint64
 
 const (
-	LatestSealedId StateId = iota
+	LatestSealedId StateId = 1
 )
 
 // PreconfState holds all information about any blocks that have been pre-confirmed
