@@ -46,10 +46,10 @@ type SimulateTxRequest struct {
 }
 
 type SimulateAnchorTx struct {
-	Tx        *types.Transaction            `json:"-"`
-	BlockEnv  common.BlockEnv               `json:"-"`
-	MixDigest common.Hash                   `json:"-"`
-	SimRes    chan SimulateAnchorTxResponse `json:"-"`
+	Tx        *types.Transaction      `json:"-"`
+	BlockEnv  common.BlockEnv         `json:"-"`
+	MixDigest common.Hash             `json:"-"`
+	SimRes    chan SimulationResponse `json:"-"`
 }
 
 type SimulateAnchorTxResponse struct {

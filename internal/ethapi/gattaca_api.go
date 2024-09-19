@@ -43,20 +43,13 @@ func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Byt
 		}
 	}
 
-	resCh := make(chan miner.SimulateAnchorTxResponse)
+	resCh := make(chan miner.SimulationResponse)
 	miner.SimAnchorTx <- miner.SimulateAnchorTx{
 		Tx:       tx,
 		BlockEnv: env,
 		SimRes:   resCh,
 	}
-	res := <-resCh
-	retMap := make(map[string]interface{})
-	if res.Err != nil {
-		retMap["error"] = res.Err.Error()
-	} else {
-		retMap["stateId"] = res.StateId
-	}
-	return retMap, nil
+	return handleResponse(resCh)
 }
 
 func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint64) (map[string]interface{}, error) {
