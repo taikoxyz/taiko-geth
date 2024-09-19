@@ -150,7 +150,7 @@ func (env *environment) reset() {
 
 // resetAtNewEnv resets all params that are updated when we add txs and sets the new header
 // params to match the new environment we are sent
-func (env *environment) resetAtNewEnv(newEnvParams common.BlockEnv, mixDigest common.Hash) {
+func (env *environment) resetAtNewEnv(newEnvParams common.BlockEnv) {
 	env.txs = make([]*types.Transaction, 0)
 	env.receipts = make([]*types.Receipt, 0)
 	env.sidecars = make([]*types.BlobTxSidecar, 0)
@@ -163,7 +163,7 @@ func (env *environment) resetAtNewEnv(newEnvParams common.BlockEnv, mixDigest co
 	// Set new env params in header
 	env.header.Number = newEnvParams.Number.ToInt()
 	env.header.Coinbase = newEnvParams.Coinbase
-	env.header.MixDigest = mixDigest
+	env.header.MixDigest = *newEnvParams.PrevRandao
 	env.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
 	env.header.BaseFee = newEnvParams.BaseFee.ToInt()
 	env.header.Time = newEnvParams.Timestamp.ToInt().Uint64()

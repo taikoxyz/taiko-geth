@@ -222,7 +222,7 @@ func (g *GattacaWorker) runLoop() {
 			log.Info("run seal block ", "stateId", req.StateId)
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
-			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.MixDigest, req.SimRes)
+			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.SimRes)
 		}
 	}
 }
@@ -267,7 +267,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 // simulateAnchorTx simulates the execution of an anchor transaction in a new environment
 // based on the latest sealed state. It commits the transaction to the state, checks for errors,
 // and returns the simulation result via the provided channel.
-func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams common.BlockEnv, mixDigest common.Hash, res chan SimulationResponse) {
+func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams common.BlockEnv, res chan SimulationResponse) {
 	// Log the input parameters for the simulation.
 	log.Info(
 		"Starting simulateAnchorTx",
@@ -288,7 +288,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 
 	// Copy the environment from the latest sealed state and set the params for the new block.
 	simEnv := env.copy()
-	simEnv.resetAtNewEnv(newEnvParams, mixDigest)
+	simEnv.resetAtNewEnv(newEnvParams)
 
 	// Set the new tx signer in the env.
 	simEnv.signer = types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
