@@ -313,9 +313,10 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	log.Info("Anchor transaction executed successfully", "gasUsed", receipt.GasUsed)
 
 	// Finalise the simulation environment and add it to the stateIdMap.
-	newStateId := rand.Uint64()
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.receipts = append(simEnv.receipts, receipt)
+
+	newStateId := rand.Uint64()
 	g.preconfState.stateIdMap[newStateId] = simEnv
 	log.Info("Added simulation environment to stateIdMap", "stateId", newStateId)
 
