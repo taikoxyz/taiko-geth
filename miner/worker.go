@@ -162,6 +162,7 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv) *envi
 	newEnv.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
 	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
 	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
+	newEnv.header.ParentHash = env.sealedBlock.Hash()
 	return newEnv
 }
 

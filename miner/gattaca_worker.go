@@ -248,7 +248,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	log.Info(
 		"Starting simulateAnchorTx",
 		"newEnvParams", newEnvParams,
-		"txHash", tx.Hash().Hex(),
+		"txHash", tx.Hash(),
 	)
 
 	// Fetch the latest sealed env.
