@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/holiman/uint256"
 	"math/big"
 	"math/rand"
 	"sync"
@@ -229,13 +230,13 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 
 // commitStateIDToPendingBlock takes a state ID from the map and adds the changes from that state ID
 // to the pending preconf block. Returns the cumulative gas used and builderPayment of the new pendingPreconfBlock.
-func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, string, error) {
+func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, *uint256.Int, error) {
 	state.commitMutex.Lock()
 	defer state.commitMutex.Unlock()
 
 	envToCommit, exists := state.stateIdMap[stateId]
 	if !exists {
-		return 0, "", fmt.Errorf("state for id %d does not exist", stateId)
+		return 0, nil, fmt.Errorf("state for id %d does not exist", stateId)
 	}
 
 	log.Info("Committing state ID to pending preconf block", "stateId", stateId, "blockNumber", envToCommit.header.Number.Uint64())
@@ -249,8 +250,7 @@ func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, 
 		totalGas += receipt.GasUsed
 	}
 
-	formattedBuilderPayment := fmt.Sprintf("0x%x", state.pendingPreconfBlock.cumulativeBuilderPayment)
-	return totalGas, formattedBuilderPayment, nil
+	return totalGas, state.pendingPreconfBlock.cumulativeBuilderPayment, nil
 }
 
 // getLatestSealedBlock returns the latest block from sealedPreconfBlocks if there are items in the array.

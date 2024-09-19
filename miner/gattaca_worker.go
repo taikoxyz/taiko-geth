@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"math/big"
 	"math/rand"
 	"os"
@@ -93,12 +94,12 @@ type SimulationResponse struct {
 	stateId        uint64
 	error          error
 	gasUsed        uint64
-	builderPayment string
+	builderPayment *hexutil.U256
 }
 
 type CommitStateResponse struct {
 	cumulativeGasUsed        uint64
-	cumulativeBuilderPayment string
+	cumulativeBuilderPayment *hexutil.U256
 	error                    error
 }
 
@@ -111,7 +112,7 @@ func (c CommitStateResponse) CumulativeGasUsed() uint64 {
 	return c.cumulativeGasUsed
 }
 
-func (c CommitStateResponse) CumulativeBuilderPayment() string {
+func (c CommitStateResponse) CumulativeBuilderPayment() *hexutil.U256 {
 	return c.cumulativeBuilderPayment
 }
 
@@ -131,7 +132,7 @@ func (s SimulationResponse) GasUsed() uint64 {
 	return s.gasUsed
 }
 
-func (s SimulationResponse) BuilderPayment() string {
+func (s SimulationResponse) BuilderPayment() *hexutil.U256 {
 	return s.builderPayment
 }
 
@@ -236,8 +237,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	env, err := g.retrieveEnv(uint64(LatestSealedId))
 	if err != nil {
 		res <- SimulationResponse{
-			error:          fmt.Errorf("failed to retrieve environment. err: %s", err.Error()),
-			builderPayment: "0x0",
+			error: fmt.Errorf("failed to retrieve environment. err: %s", err.Error()),
 		}
 		return
 	}
@@ -252,8 +252,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	if err != nil {
 		log.Error("error retrieving sender address from anchor transaction", "err", err.Error())
 		res <- SimulationResponse{
-			error:          errors.New("failed to retrieve sender address from transaction"),
-			builderPayment: "0x0",
+			error: errors.New("failed to retrieve sender address from transaction"),
 		}
 		return
 	}
@@ -262,8 +261,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	if from != GoldenTouchAddress {
 		log.Error("first transaction must come from GoldenTouchAccount")
 		res <- SimulationResponse{
-			error:          errors.New("first transaction must come from GoldenTouchAccount"),
-			builderPayment: "0x0",
+			error: errors.New("first transaction must come from GoldenTouchAccount"),
 		}
 		return
 	}
@@ -301,9 +299,8 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	log.Info("Added simulation environment to stateIdMap", "stateId", newStateId)
 
 	res <- SimulationResponse{
-		gasUsed:        receipt.GasUsed,
-		stateId:        newStateId,
-		builderPayment: "0x0",
+		gasUsed: receipt.GasUsed,
+		stateId: newStateId,
 	}
 }
 
@@ -331,8 +328,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	// Anchor tx must always be applied first
 	if len(env.txs) == 0 {
 		res <- SimulationResponse{
-			error:          fmt.Errorf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId),
-			builderPayment: "0x0",
+			error: fmt.Errorf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId),
 		}
 		return
 	}
@@ -365,7 +361,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 		error:          nil,
 		gasUsed:        receipt.GasUsed,
 		stateId:        newStateId,
-		builderPayment: fmt.Sprintf("0x%x", builderPayment),
+		builderPayment: (*hexutil.U256)(builderPayment),
 	}
 }
 
@@ -375,7 +371,7 @@ func (g *GattacaWorker) commitEnvToPreconf(stateId uint64, simRes chan CommitSta
 	simRes <- CommitStateResponse{
 		error:                    err,
 		cumulativeGasUsed:        cumGasUsed,
-		cumulativeBuilderPayment: builderPayment,
+		cumulativeBuilderPayment: (*hexutil.U256)(builderPayment),
 	}
 }
 
