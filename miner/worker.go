@@ -148,6 +148,18 @@ func (env *environment) reset() {
 	env.header.GasUsed = 0
 }
 
+// applyEnv return a copy of the current environment with the applied
+func (env *environment) applyEnv(e common.BlockEnv) *environment {
+	copyEnv := env.copy()
+	copyEnv.header.Number = e.Number.ToInt()
+	copyEnv.header.Coinbase = e.Coinbase
+	copyEnv.header.MixDigest = *e.PrevRandao
+	copyEnv.header.GasLimit = e.GasLimit.ToInt().Uint64()
+	copyEnv.header.BaseFee = e.BaseFee.ToInt()
+	copyEnv.header.Time = e.Timestamp.ToInt().Uint64()
+	return copyEnv
+}
+
 // discard terminates the background prefetcher go-routine. It should
 // always be called for all created environment instances otherwise
 // the go-routine leak can happen.
