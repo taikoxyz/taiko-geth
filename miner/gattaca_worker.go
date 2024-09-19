@@ -359,7 +359,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	// Copy environment and simulate tx.
 	simEnv := env.copy()
 
-	startBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
+	startBalance := simEnv.state.GetBalance(env.coinbase)
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	if err != nil {
 		log.Error("Failed to simulate transaction", "err", err)
@@ -368,12 +368,12 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 		}
 		return
 	}
-	endBalance := simEnv.state.GetBalance(env.coinbase).Uint64()
-	builderPayment := endBalance - startBalance
+	endBalance := simEnv.state.GetBalance(env.coinbase)
+	builderPayment := new(uint256.Int).Sub(endBalance, startBalance)
 
 	// Tx simulation worked so save result to new env.
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
-	simEnv.cumulativeBuilderPayment += builderPayment
+	simEnv.cumulativeBuilderPayment = new(uint256.Int).Add(simEnv.cumulativeBuilderPayment, builderPayment)
 	simEnv.receipts = append(simEnv.receipts, receipt)
 
 	// Add env to state id map

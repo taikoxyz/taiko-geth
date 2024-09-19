@@ -221,13 +221,13 @@ func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, 
 	state.pendingPreconfBlock = envToCommit
 	log.Info("Pending preconf block updated with committed state", "newPendingBlockNumber", envToCommit.header.Number.Uint64())
 
-	total := uint64(0)
+	totalGas := uint64(0)
 	for _, receipt := range state.pendingPreconfBlock.receipts {
-		total += receipt.GasUsed
+		totalGas += receipt.GasUsed
 	}
 
 	formattedBuilderPayment := fmt.Sprintf("0x%x", state.pendingPreconfBlock.cumulativeBuilderPayment)
-	return total, formattedBuilderPayment, nil
+	return totalGas, formattedBuilderPayment, nil
 }
 
 // getLatestSealedBlock returns the latest block from sealedPreconfBlocks if there are items in the array.

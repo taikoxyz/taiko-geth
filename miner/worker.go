@@ -98,7 +98,7 @@ type environment struct {
 	//gattaca
 	startBalance             uint256.Int
 	hashReceipts             map[string]*types.Receipt
-	cumulativeBuilderPayment uint64
+	cumulativeBuilderPayment *uint256.Int
 	txHashSet                map[string]struct{}
 	parentHash               common.Hash
 	sealedBlock              *types.Block
@@ -146,6 +146,7 @@ func (env *environment) reset() {
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
 	env.header.GasUsed = 0
+	env.cumulativeBuilderPayment = new(uint256.Int).SetUint64(0)
 }
 
 // copy creates a deep copy of environment.
