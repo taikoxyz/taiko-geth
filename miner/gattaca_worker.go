@@ -326,6 +326,8 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	}
 }
 
+// simulateTx fetches the environment at stateId. It then clones this environment and simulates/commits the tx request
+// to this cloned environment. A new stateId is then generated and the cloned environment is saved.
 func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res chan SimulationResponse) {
 	g.lock.RLock()
 	defer g.lock.RUnlock()
@@ -386,6 +388,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	}
 }
 
+// commitEnvToPreconf commits a stateId to the current preconf head.
 func (g *GattacaWorker) commitEnvToPreconf(stateId uint64, simRes chan CommitStateResponse) {
 	cumGasUsed, builderPayment, err := g.preconfState.commitStateIDToPendingBlock(stateId)
 	simRes <- CommitStateResponse{
@@ -516,7 +519,7 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 		return nil, nil, 0, err
 	}
 	if len(env.txs) == 0 {
-		if from.Hex() != "0x0000777735367b36bC9B61C50022d9D0700dB4Ec" {
+		if from != GoldenTouchAddress {
 			log.Error("first transaction must come from GoldenTouchAccount")
 			//return nil, nil, 0, errors.New("first transaction must come from GoldenTouchAccount")
 		} else {
