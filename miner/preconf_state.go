@@ -53,8 +53,13 @@ func NewPreconfState(chain *core.BlockChain) *PreconfState {
 // Returns:
 //   - *types.Header: The header of the latest sealed preconfigured block, or nil if none exist.
 func (state *PreconfState) CurrentBlock() *types.Header {
+	headChain := state.chain.CurrentBlock()
 	if len(state.sealedPreconfBlocks) > 0 {
-		return state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1].header
+		latestSelaedBlock := state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1].header
+		if latestSelaedBlock.Number.Uint64() > headChain.Number.Uint64() {
+			return latestSelaedBlock
+		}
+		return headChain
 	}
 	return nil
 }
