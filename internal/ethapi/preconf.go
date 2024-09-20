@@ -7,8 +7,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type rpcRequest struct {
@@ -19,9 +18,9 @@ type rpcRequest struct {
 }
 
 type rpcResponse struct {
-	Jsonrpc string      `json:"jsonrpc"`
-	ID      int         `json:"id"`
-	Result  interface{} `json:"result"`
+	Jsonrpc string           `json:"jsonrpc"`
+	ID      int              `json:"id"`
+	Result  *json.RawMessage `json:"result"`
 	Error   *struct {
 		Code    int    `json:"code"`
 		Message string `json:"message"`
@@ -30,61 +29,11 @@ type rpcResponse struct {
 }
 
 // change(taiko)
-func forwardRawTransaction(forwardURL string, input hexutil.Bytes) (common.Hash, error) {
+func forward[T any](forwardURL string, method string, params []interface{}) (*T, error) {
 	rpcReq := rpcRequest{
 		Jsonrpc: "2.0",
-		Method:  "eth_sendRawTransaction",
-		Params:  []interface{}{input.String()},
-		ID:      1,
-	}
-
-	jsonData, err := json.Marshal(rpcReq)
-	if err != nil {
-		return common.Hash{}, err
-	}
-
-	req, err := http.NewRequest("POST", forwardURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return common.Hash{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		return common.Hash{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return common.Hash{}, fmt.Errorf("failed to forward transaction, status code: %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return common.Hash{}, err
-	}
-
-	var rpcResp rpcResponse
-
-	// Unmarshal the response into the struct
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return common.Hash{}, err
-	}
-
-	// Check for errors in the response
-	if rpcResp.Error != nil {
-		return common.Hash{}, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
-	}
-
-	return common.HexToHash(rpcResp.Result.(string)), nil
-}
-
-func forwardGetTransactionReceipt(forwardURL string, hash common.Hash) (map[string]interface{}, error) {
-	rpcReq := rpcRequest{
-		Jsonrpc: "2.0",
-		Method:  "eth_getTransactionReceipt",
-		Params:  []interface{}{hash.Hex()},
+		Method:  method,
+		Params:  params,
 		ID:      1,
 	}
 
@@ -116,6 +65,7 @@ func forwardGetTransactionReceipt(forwardURL string, hash common.Hash) (map[stri
 	}
 
 	var rpcResp rpcResponse
+
 	// Unmarshal the response into the struct
 	if err := json.Unmarshal(body, &rpcResp); err != nil {
 		return nil, err
@@ -123,8 +73,23 @@ func forwardGetTransactionReceipt(forwardURL string, hash common.Hash) (map[stri
 
 	// Check for errors in the response
 	if rpcResp.Error != nil {
+		err := fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
+
+		log.Error("forwarded request error", "err", err, "method", method, "params", params)
+
 		return nil, fmt.Errorf("RPC error %d: %s", rpcResp.Error.Code, rpcResp.Error.Message)
 	}
 
-	return rpcResp.Result.(map[string]interface{}), nil
+	if rpcResp.Result == nil {
+		log.Info("forwarded request result is nil", "method", method)
+		return nil, nil
+	}
+
+	// Unmarshal the Result into the desired type
+	var result T
+	if err := json.Unmarshal(*rpcResp.Result, &result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
 }
