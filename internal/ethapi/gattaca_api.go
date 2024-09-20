@@ -32,13 +32,11 @@ type Reason struct {
 
 func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, env common.BlockEnv) (map[string]interface{}, error) {
 	tx := new(types.Transaction)
-	if err := tx.UnmarshalBinary(input); err != nil {
-		log.Warn("PRECONF: unmarshalBinary failed, trying RLP decode", "error", err)
-
-		// Try to decode using RLP
-		err = rlp.DecodeBytes(input, &tx)
+	if err := rlp.DecodeBytes(input, &tx); err != nil {
+		log.Warn("PRECONF: RLP decodin failed, trying unmarshalBinary", "error", err)
+		err = tx.UnmarshalBinary(input)
 		if err != nil {
-			log.Error("PRECONF: RLP decoding also failed. call failure", "error", err)
+			log.Error("PRECONF: unmarshalBinary also failed. call failure", "error", err)
 			return nil, err
 		}
 	}
@@ -54,13 +52,11 @@ func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Byt
 
 func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint64) (map[string]interface{}, error) {
 	tx := new(types.Transaction)
-	if err := tx.UnmarshalBinary(input); err != nil {
-		log.Warn("PRECONF: unmarshalBinary failed, trying RLP decode", "error", err)
-
-		// Try to decode using RLP
-		err = rlp.DecodeBytes(input, &tx)
+	if err := rlp.DecodeBytes(input, &tx); err != nil {
+		log.Warn("PRECONF: RLP decodin failed, trying unmarshalBinary", "error", err)
+		err = tx.UnmarshalBinary(input)
 		if err != nil {
-			log.Error("PRECONF: RLP decoding also failed. call failure", "error", err)
+			log.Error("PRECONF: unmarshalBinary also failed. call failure", "error", err)
 			return nil, err
 		}
 	}
