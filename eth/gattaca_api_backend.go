@@ -43,7 +43,7 @@ import (
 )
 
 // EthAPIBackend implements ethapi.Backend and tracers.Backend for full nodes
-type GattacaAPIBackend struct {
+type GattacaEthAPIBackend struct {
 	extRPCEnabled       bool
 	allowUnprotectedTxs bool
 	eth                 *Ethereum
@@ -53,28 +53,33 @@ type GattacaAPIBackend struct {
 }
 
 // GetPreconfirmationForwardingURL
-func (b *GattacaAPIBackend) GetPreconfirmationForwardingURL() string {
+func (b *GattacaEthAPIBackend) GetPreconfirmationForwardingURL() string {
 	return b.preconfirmationURL
 }
 
 // ChainConfig returns the active chain configuration.
-func (b *GattacaAPIBackend) ChainConfig() *params.ChainConfig {
+func (b *GattacaEthAPIBackend) ChainConfig() *params.ChainConfig {
 	return b.eth.blockchain.Config()
 }
 
-func (b *GattacaAPIBackend) CurrentBlock() *types.Header {
-
+func (b *GattacaEthAPIBackend) CurrentBlock() *types.Header {
+	if header := b.preconfState.CurrentBlock(); header != nil {
+		return header
+	}
 	return b.eth.blockchain.CurrentBlock()
 }
 
-func (b *GattacaAPIBackend) SetHead(number uint64) {
+func (b *GattacaEthAPIBackend) SetHead(number uint64) {
 	b.eth.handler.downloader.Cancel()
 	b.eth.blockchain.SetHead(number)
 }
 
-func (b *GattacaAPIBackend) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
+func (b *GattacaEthAPIBackend) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
 	// Pending block is only known by the miner
 	if number == rpc.PendingBlockNumber {
+		if header := b.preconfState.GetPendingBlock(); header != nil {
+			return header, nil
+		}
 		block := b.eth.miner.PendingBlock()
 		if block == nil {
 			return nil, errors.New("pending block is not available")
@@ -83,7 +88,7 @@ func (b *GattacaAPIBackend) HeaderByNumber(ctx context.Context, number rpc.Block
 	}
 	// Otherwise resolve and return the block
 	if number == rpc.LatestBlockNumber {
-		return b.eth.blockchain.CurrentBlock(), nil
+		return b.CurrentBlock(), nil
 	}
 	if number == rpc.FinalizedBlockNumber {
 		block := b.eth.blockchain.CurrentFinalBlock()
@@ -99,14 +104,20 @@ func (b *GattacaAPIBackend) HeaderByNumber(ctx context.Context, number rpc.Block
 		}
 		return block, nil
 	}
+	if header := b.preconfState.GetHeaderByNumber(uint64(number)); header != nil {
+		return header, nil
+	}
 	return b.eth.blockchain.GetHeaderByNumber(uint64(number)), nil
 }
 
-func (b *GattacaAPIBackend) HeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*types.Header, error) {
+func (b *GattacaEthAPIBackend) HeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*types.Header, error) {
 	if blockNr, ok := blockNrOrHash.Number(); ok {
 		return b.HeaderByNumber(ctx, blockNr)
 	}
 	if hash, ok := blockNrOrHash.Hash(); ok {
+		if header := b.preconfState.GetHeaderByHash(hash); header != nil {
+			return header, nil
+		}
 		header := b.eth.blockchain.GetHeaderByHash(hash)
 		if header == nil {
 			return nil, errors.New("header for hash not found")
@@ -119,11 +130,18 @@ func (b *GattacaAPIBackend) HeaderByNumberOrHash(ctx context.Context, blockNrOrH
 	return nil, errors.New("invalid arguments; neither block nor hash specified")
 }
 
-func (b *GattacaAPIBackend) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
+func (b *GattacaEthAPIBackend) HeaderByHash(ctx context.Context, hash common.Hash) (*types.Header, error) {
+	if header := b.preconfState.GetHeaderByHash(hash); header != nil {
+		return header, nil
+	}
 	return b.eth.blockchain.GetHeaderByHash(hash), nil
 }
 
-func (b *GattacaAPIBackend) BlockByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Block, error) {
+func (b *GattacaEthAPIBackend) BlockByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Block, error) {
+
+	if block, err := b.preconfState.BlockByNumber(number); block != nil && err == nil {
+		return block, nil
+	}
 	// Pending block is only known by the miner
 	if number == rpc.PendingBlockNumber {
 		block := b.eth.miner.PendingBlock()
@@ -154,12 +172,15 @@ func (b *GattacaAPIBackend) BlockByNumber(ctx context.Context, number rpc.BlockN
 	return b.eth.blockchain.GetBlockByNumber(uint64(number)), nil
 }
 
-func (b *GattacaAPIBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
+func (b *GattacaEthAPIBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {
+	if block, err := b.preconfState.BlockByHash(hash); block != nil && err == nil {
+		return block, nil
+	}
 	return b.eth.blockchain.GetBlockByHash(hash), nil
 }
 
 // GetBody returns body of a block. It does not resolve special block numbers.
-func (b *GattacaAPIBackend) GetBody(ctx context.Context, hash common.Hash, number rpc.BlockNumber) (*types.Body, error) {
+func (b *GattacaEthAPIBackend) GetBody(ctx context.Context, hash common.Hash, number rpc.BlockNumber) (*types.Body, error) {
 	if number < 0 || hash == (common.Hash{}) {
 		return nil, errors.New("invalid arguments; expect hash and no special block numbers")
 	}
@@ -169,11 +190,14 @@ func (b *GattacaAPIBackend) GetBody(ctx context.Context, hash common.Hash, numbe
 	return nil, errors.New("block body not found")
 }
 
-func (b *GattacaAPIBackend) BlockByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*types.Block, error) {
+func (b *GattacaEthAPIBackend) BlockByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*types.Block, error) {
 	if blockNr, ok := blockNrOrHash.Number(); ok {
 		return b.BlockByNumber(ctx, blockNr)
 	}
 	if hash, ok := blockNrOrHash.Hash(); ok {
+		if block, err := b.preconfState.BlockByHash(hash); block != nil && err == nil {
+			return block, nil
+		}
 		header := b.eth.blockchain.GetHeaderByHash(hash)
 		if header == nil {
 			return nil, errors.New("header for hash not found")
@@ -190,11 +214,14 @@ func (b *GattacaAPIBackend) BlockByNumberOrHash(ctx context.Context, blockNrOrHa
 	return nil, errors.New("invalid arguments; neither block nor hash specified")
 }
 
-func (b *GattacaAPIBackend) PendingBlockAndReceipts() (*types.Block, types.Receipts) {
+func (b *GattacaEthAPIBackend) PendingBlockAndReceipts() (*types.Block, types.Receipts) {
 	return b.eth.miner.PendingBlockAndReceipts()
 }
 
-func (b *GattacaAPIBackend) StateAndHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*state.StateDB, *types.Header, error) {
+func (b *GattacaEthAPIBackend) StateAndHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*state.StateDB, *types.Header, error) {
+	if stateDB, header, err := b.preconfState.StateAndHeaderByNumber(number); err == nil {
+		return stateDB, header, nil
+	}
 	// Pending state is only known by the miner
 	if number == rpc.PendingBlockNumber {
 		block, state := b.eth.miner.Pending()
@@ -218,11 +245,14 @@ func (b *GattacaAPIBackend) StateAndHeaderByNumber(ctx context.Context, number r
 	return stateDb, header, nil
 }
 
-func (b *GattacaAPIBackend) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error) {
+func (b *GattacaEthAPIBackend) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error) {
 	if blockNr, ok := blockNrOrHash.Number(); ok {
 		return b.StateAndHeaderByNumber(ctx, blockNr)
 	}
 	if hash, ok := blockNrOrHash.Hash(); ok {
+		if stateDB, header, err := b.StateAndHeaderByNumber(ctx, rpc.PendingBlockNumber); err == nil {
+			return stateDB, header, nil
+		}
 		header, err := b.HeaderByHash(ctx, hash)
 		if err != nil {
 			return nil, nil, err
@@ -242,22 +272,25 @@ func (b *GattacaAPIBackend) StateAndHeaderByNumberOrHash(ctx context.Context, bl
 	return nil, nil, errors.New("invalid arguments; neither block nor hash specified")
 }
 
-func (b *GattacaAPIBackend) GetReceipts(ctx context.Context, hash common.Hash) (types.Receipts, error) {
+func (b *GattacaEthAPIBackend) GetReceipts(ctx context.Context, hash common.Hash) (types.Receipts, error) {
+	if receipts, err := b.preconfState.GetReceipts(hash); err == nil {
+		return receipts, nil
+	}
 	return b.eth.blockchain.GetReceiptsByHash(hash), nil
 }
 
-func (b *GattacaAPIBackend) GetLogs(ctx context.Context, hash common.Hash, number uint64) ([][]*types.Log, error) {
+func (b *GattacaEthAPIBackend) GetLogs(ctx context.Context, hash common.Hash, number uint64) ([][]*types.Log, error) {
 	return rawdb.ReadLogs(b.eth.chainDb, hash, number), nil
 }
 
-func (b *GattacaAPIBackend) GetTd(ctx context.Context, hash common.Hash) *big.Int {
+func (b *GattacaEthAPIBackend) GetTd(ctx context.Context, hash common.Hash) *big.Int {
 	if header := b.eth.blockchain.GetHeaderByHash(hash); header != nil {
 		return b.eth.blockchain.GetTd(hash, header.Number.Uint64())
 	}
 	return nil
 }
 
-func (b *GattacaAPIBackend) GetEVM(ctx context.Context, msg *core.Message, state *state.StateDB, header *types.Header, vmConfig *vm.Config, blockCtx *vm.BlockContext) *vm.EVM {
+func (b *GattacaEthAPIBackend) GetEVM(ctx context.Context, msg *core.Message, state *state.StateDB, header *types.Header, vmConfig *vm.Config, blockCtx *vm.BlockContext) *vm.EVM {
 	if vmConfig == nil {
 		vmConfig = b.eth.blockchain.GetVMConfig()
 	}
@@ -271,35 +304,35 @@ func (b *GattacaAPIBackend) GetEVM(ctx context.Context, msg *core.Message, state
 	return vm.NewEVM(context, txContext, state, b.ChainConfig(), *vmConfig)
 }
 
-func (b *GattacaAPIBackend) SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEvent) event.Subscription {
+func (b *GattacaEthAPIBackend) SubscribeRemovedLogsEvent(ch chan<- core.RemovedLogsEvent) event.Subscription {
 	return b.eth.BlockChain().SubscribeRemovedLogsEvent(ch)
 }
 
-func (b *GattacaAPIBackend) SubscribePendingLogsEvent(ch chan<- []*types.Log) event.Subscription {
+func (b *GattacaEthAPIBackend) SubscribePendingLogsEvent(ch chan<- []*types.Log) event.Subscription {
 	return b.eth.miner.SubscribePendingLogs(ch)
 }
 
-func (b *GattacaAPIBackend) SubscribeChainEvent(ch chan<- core.ChainEvent) event.Subscription {
+func (b *GattacaEthAPIBackend) SubscribeChainEvent(ch chan<- core.ChainEvent) event.Subscription {
 	return b.eth.BlockChain().SubscribeChainEvent(ch)
 }
 
-func (b *GattacaAPIBackend) SubscribeChainHeadEvent(ch chan<- core.ChainHeadEvent) event.Subscription {
+func (b *GattacaEthAPIBackend) SubscribeChainHeadEvent(ch chan<- core.ChainHeadEvent) event.Subscription {
 	return b.eth.BlockChain().SubscribeChainHeadEvent(ch)
 }
 
-func (b *GattacaAPIBackend) SubscribeChainSideEvent(ch chan<- core.ChainSideEvent) event.Subscription {
+func (b *GattacaEthAPIBackend) SubscribeChainSideEvent(ch chan<- core.ChainSideEvent) event.Subscription {
 	return b.eth.BlockChain().SubscribeChainSideEvent(ch)
 }
 
-func (b *GattacaAPIBackend) SubscribeLogsEvent(ch chan<- []*types.Log) event.Subscription {
+func (b *GattacaEthAPIBackend) SubscribeLogsEvent(ch chan<- []*types.Log) event.Subscription {
 	return b.eth.BlockChain().SubscribeLogsEvent(ch)
 }
 
-func (b *GattacaAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction) error {
+func (b *GattacaEthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction) error {
 	return b.eth.txPool.Add([]*types.Transaction{signedTx}, true, false)[0]
 }
 
-func (b *GattacaAPIBackend) GetPoolTransactions() (types.Transactions, error) {
+func (b *GattacaEthAPIBackend) GetPoolTransactions() (types.Transactions, error) {
 	pending := b.eth.txPool.Pending(txpool.PendingFilter{})
 	var txs types.Transactions
 	for _, batch := range pending {
@@ -312,7 +345,7 @@ func (b *GattacaAPIBackend) GetPoolTransactions() (types.Transactions, error) {
 	return txs, nil
 }
 
-func (b *GattacaAPIBackend) GetPoolTransaction(hash common.Hash) *types.Transaction {
+func (b *GattacaEthAPIBackend) GetPoolTransaction(hash common.Hash) *types.Transaction {
 	return b.eth.txPool.Get(hash)
 }
 
@@ -326,7 +359,11 @@ func (b *GattacaAPIBackend) GetPoolTransaction(hash common.Hash) *types.Transact
 // A null will be returned in the transaction is not found and background transaction
 // indexing is already finished. The transaction is not existent from the perspective
 // of node.
-func (b *GattacaAPIBackend) GetTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
+func (b *GattacaEthAPIBackend) GetTransaction(ctx context.Context, txHash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
+	found, tx, blockHash, blockIndex, txIndex, err := b.preconfState.GetTransaction(txHash)
+	if found {
+		return found, tx, blockHash, blockIndex, txIndex, err
+	}
 	lookup, tx, err := b.eth.blockchain.GetTransactionLookup(txHash)
 	if err != nil {
 		return false, nil, common.Hash{}, 0, 0, err
@@ -337,31 +374,34 @@ func (b *GattacaAPIBackend) GetTransaction(ctx context.Context, txHash common.Ha
 	return true, tx, lookup.BlockHash, lookup.BlockIndex, lookup.Index, nil
 }
 
-func (b *GattacaAPIBackend) GetPoolNonce(ctx context.Context, addr common.Address) (uint64, error) {
+func (b *GattacaEthAPIBackend) GetPoolNonce(ctx context.Context, addr common.Address) (uint64, error) {
+	if nonce := b.preconfState.GetPoolNonce(addr); nonce != 0 {
+		return nonce, nil
+	}
 	return b.eth.txPool.Nonce(addr), nil
 }
 
-func (b *GattacaAPIBackend) Stats() (runnable int, blocked int) {
+func (b *GattacaEthAPIBackend) Stats() (runnable int, blocked int) {
 	return b.eth.txPool.Stats()
 }
 
-func (b *GattacaAPIBackend) TxPoolContent() (map[common.Address][]*types.Transaction, map[common.Address][]*types.Transaction) {
+func (b *GattacaEthAPIBackend) TxPoolContent() (map[common.Address][]*types.Transaction, map[common.Address][]*types.Transaction) {
 	return b.eth.txPool.Content()
 }
 
-func (b *GattacaAPIBackend) TxPoolContentFrom(addr common.Address) ([]*types.Transaction, []*types.Transaction) {
+func (b *GattacaEthAPIBackend) TxPoolContentFrom(addr common.Address) ([]*types.Transaction, []*types.Transaction) {
 	return b.eth.txPool.ContentFrom(addr)
 }
 
-func (b *GattacaAPIBackend) TxPool() *txpool.TxPool {
+func (b *GattacaEthAPIBackend) TxPool() *txpool.TxPool {
 	return b.eth.txPool
 }
 
-func (b *GattacaAPIBackend) SubscribeNewTxsEvent(ch chan<- core.NewTxsEvent) event.Subscription {
+func (b *GattacaEthAPIBackend) SubscribeNewTxsEvent(ch chan<- core.NewTxsEvent) event.Subscription {
 	return b.eth.txPool.SubscribeTransactions(ch, true)
 }
 
-func (b *GattacaAPIBackend) SyncProgress() ethereum.SyncProgress {
+func (b *GattacaEthAPIBackend) SyncProgress() ethereum.SyncProgress {
 	prog := b.eth.Downloader().Progress()
 	if txProg, err := b.eth.blockchain.TxIndexProgress(); err == nil {
 		prog.TxIndexFinishedBlocks = txProg.Indexed
@@ -370,77 +410,77 @@ func (b *GattacaAPIBackend) SyncProgress() ethereum.SyncProgress {
 	return prog
 }
 
-func (b *GattacaAPIBackend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+func (b *GattacaEthAPIBackend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
 	return b.gpo.SuggestTipCap(ctx)
 }
 
-func (b *GattacaAPIBackend) FeeHistory(ctx context.Context, blockCount uint64, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (firstBlock *big.Int, reward [][]*big.Int, baseFee []*big.Int, gasUsedRatio []float64, err error) {
+func (b *GattacaEthAPIBackend) FeeHistory(ctx context.Context, blockCount uint64, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (firstBlock *big.Int, reward [][]*big.Int, baseFee []*big.Int, gasUsedRatio []float64, err error) {
 	return b.gpo.FeeHistory(ctx, blockCount, lastBlock, rewardPercentiles)
 }
 
-func (b *GattacaAPIBackend) ChainDb() ethdb.Database {
+func (b *GattacaEthAPIBackend) ChainDb() ethdb.Database {
 	return b.eth.ChainDb()
 }
 
-func (b *GattacaAPIBackend) EventMux() *event.TypeMux {
+func (b *GattacaEthAPIBackend) EventMux() *event.TypeMux {
 	return b.eth.EventMux()
 }
 
-func (b *GattacaAPIBackend) AccountManager() *accounts.Manager {
+func (b *GattacaEthAPIBackend) AccountManager() *accounts.Manager {
 	return b.eth.AccountManager()
 }
 
-func (b *GattacaAPIBackend) ExtRPCEnabled() bool {
+func (b *GattacaEthAPIBackend) ExtRPCEnabled() bool {
 	return b.extRPCEnabled
 }
 
-func (b *GattacaAPIBackend) UnprotectedAllowed() bool {
+func (b *GattacaEthAPIBackend) UnprotectedAllowed() bool {
 	return b.allowUnprotectedTxs
 }
 
-func (b *GattacaAPIBackend) RPCGasCap() uint64 {
+func (b *GattacaEthAPIBackend) RPCGasCap() uint64 {
 	return b.eth.config.RPCGasCap
 }
 
-func (b *GattacaAPIBackend) RPCEVMTimeout() time.Duration {
+func (b *GattacaEthAPIBackend) RPCEVMTimeout() time.Duration {
 	return b.eth.config.RPCEVMTimeout
 }
 
-func (b *GattacaAPIBackend) RPCTxFeeCap() float64 {
+func (b *GattacaEthAPIBackend) RPCTxFeeCap() float64 {
 	return b.eth.config.RPCTxFeeCap
 }
 
-func (b *GattacaAPIBackend) BloomStatus() (uint64, uint64) {
+func (b *GattacaEthAPIBackend) BloomStatus() (uint64, uint64) {
 	sections, _, _ := b.eth.bloomIndexer.Sections()
 	return params.BloomBitsBlocks, sections
 }
 
-func (b *GattacaAPIBackend) ServiceFilter(ctx context.Context, session *bloombits.MatcherSession) {
+func (b *GattacaEthAPIBackend) ServiceFilter(ctx context.Context, session *bloombits.MatcherSession) {
 	for i := 0; i < bloomFilterThreads; i++ {
 		go session.Multiplex(bloomRetrievalBatch, bloomRetrievalWait, b.eth.bloomRequests)
 	}
 }
 
-func (b *GattacaAPIBackend) Engine() consensus.Engine {
+func (b *GattacaEthAPIBackend) Engine() consensus.Engine {
 	return b.eth.engine
 }
 
-func (b *GattacaAPIBackend) CurrentHeader() *types.Header {
+func (b *GattacaEthAPIBackend) CurrentHeader() *types.Header {
 	return b.eth.blockchain.CurrentHeader()
 }
 
-func (b *GattacaAPIBackend) Miner() *miner.Miner {
+func (b *GattacaEthAPIBackend) Miner() *miner.Miner {
 	return b.eth.Miner()
 }
 
-func (b *GattacaAPIBackend) StartMining() error {
+func (b *GattacaEthAPIBackend) StartMining() error {
 	return b.eth.StartMining()
 }
 
-func (b *GattacaAPIBackend) StateAtBlock(ctx context.Context, block *types.Block, reexec uint64, base *state.StateDB, readOnly bool, preferDisk bool) (*state.StateDB, tracers.StateReleaseFunc, error) {
+func (b *GattacaEthAPIBackend) StateAtBlock(ctx context.Context, block *types.Block, reexec uint64, base *state.StateDB, readOnly bool, preferDisk bool) (*state.StateDB, tracers.StateReleaseFunc, error) {
 	return b.eth.stateAtBlock(ctx, block, reexec, base, readOnly, preferDisk)
 }
 
-func (b *GattacaAPIBackend) StateAtTransaction(ctx context.Context, block *types.Block, txIndex int, reexec uint64) (*core.Message, vm.BlockContext, *state.StateDB, tracers.StateReleaseFunc, error) {
+func (b *GattacaEthAPIBackend) StateAtTransaction(ctx context.Context, block *types.Block, txIndex int, reexec uint64) (*core.Message, vm.BlockContext, *state.StateDB, tracers.StateReleaseFunc, error) {
 	return b.eth.stateAtTransaction(ctx, block, txIndex, reexec)
 }

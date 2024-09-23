@@ -125,10 +125,8 @@ func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coin
 		state:                    state,
 		coinbase:                 coinbase,
 		header:                   header,
-		startBalance:             *state.GetBalance(coinbase),
 		hashReceipts:             make(map[string]*types.Receipt),
 		cumulativeBuilderPayment: new(uint256.Int).SetUint64(0),
-		txHashSet:                make(map[string]struct{}),
 		txs:                      make([]*types.Transaction, 0),
 	}
 	// Keep track of transactions which return errors, so they can be removed
@@ -156,9 +154,6 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 	}
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
-	env.startBalance.Set(env.state.GetBalance(env.coinbase))
-	var empty common.Hash
-	env.parentHash = empty
 	env.header.Extra = make([]byte, 32)
 	env.sealedBlock = sealedBlock
 

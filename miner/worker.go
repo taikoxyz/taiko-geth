@@ -96,11 +96,8 @@ type environment struct {
 	blobs    int
 
 	//gattaca
-	startBalance             uint256.Int
 	hashReceipts             map[string]*types.Receipt
 	cumulativeBuilderPayment *uint256.Int
-	txHashSet                map[string]struct{}
-	parentHash               common.Hash
 	sealedBlock              *types.Block
 }
 
@@ -114,7 +111,6 @@ func (env *environment) copy() *environment {
 		header:                   types.CopyHeader(env.header),
 		receipts:                 copyReceipts(env.receipts),
 		cumulativeBuilderPayment: env.cumulativeBuilderPayment,
-		parentHash:               env.parentHash,
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool
@@ -128,10 +124,6 @@ func (env *environment) copy() *environment {
 	cpy.hashReceipts = make(map[string]*types.Receipt, len(env.hashReceipts))
 	for k, v := range env.hashReceipts {
 		cpy.hashReceipts[k] = v
-	}
-	cpy.txHashSet = make(map[string]struct{}, len(env.txHashSet))
-	for k, v := range env.txHashSet {
-		cpy.txHashSet[k] = v
 	}
 
 	return cpy
