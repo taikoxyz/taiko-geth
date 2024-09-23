@@ -1,9 +1,5 @@
 package miner
 
-var (
-	_haltError error = HaltError{}
-)
-
 type HaltError struct {
 	err error
 }
