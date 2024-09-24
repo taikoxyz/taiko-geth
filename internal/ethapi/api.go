@@ -1685,13 +1685,9 @@ func (s *TransactionAPI) GetTransactionCount(ctx context.Context, address common
 
 	// Ask transaction pool for the nonce which includes pending transactions
 	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
-		var simulatedNonce uint64
 		nonce, err := s.b.GetPoolNonce(ctx, address)
 		if err != nil {
 			return nil, err
-		}
-		if simulatedNonce > nonce {
-			nonce = simulatedNonce
 		}
 		return (*hexutil.Uint64)(&nonce), nil
 	}
