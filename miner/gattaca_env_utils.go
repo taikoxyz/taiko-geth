@@ -4,11 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -160,15 +158,28 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 	return env, nil
 }
 
+// retrieveEnv retrieves the environment associated with the given stateId.
+// If stateId equals LatestSealedId, it attempts to fetch the latest sealed environment.
+//   - If the latest sealed environment exists and its block number is higher than
+//     the current head environment, it returns the sealed environment.
+//   - Otherwise, it returns the head environment.
+//
+// For any other stateId, it looks up the corresponding environment in the stateIdMap.
+// If the stateId is not found in the map, it returns an error indicating that the
+// stateId is not present.
 func (g *GattacaWorker) retrieveEnv(stateId uint64) (*environment, error) {
 	if stateId == uint64(LatestSealedId) {
 		// stateId 1 fetches the latest sealed env, if present, or the latest chain head env
+		env, err := g.envFromHead()
+		if err != nil {
+			return nil, err
+		}
 		latestSealedEnv := g.preconfState.latestSealedPreconfEnv()
-		if latestSealedEnv != nil {
+		if latestSealedEnv != nil && latestSealedEnv.header.Number.Uint64() > env.header.Number.Uint64() {
 			return latestSealedEnv, nil
 		}
 
-		return g.envFromHead()
+		return env, nil
 	} else {
 		env, exists := g.preconfState.stateIdMap[stateId]
 		if !exists {
@@ -176,55 +187,4 @@ func (g *GattacaWorker) retrieveEnv(stateId uint64) (*environment, error) {
 		}
 		return env, nil
 	}
-}
-
-type OverrideAccount struct {
-	Nonce     *hexutil.Uint64              `json:"nonce"`
-	Code      *hexutil.Bytes               `json:"code"`
-	Balance   **hexutil.Big                `json:"balance"`
-	State     *map[common.Hash]common.Hash `json:"state"`
-	StateDiff *map[common.Hash]common.Hash `json:"stateDiff"`
-}
-
-// StateOverride is the collection of overridden accounts.
-type StateOverride map[common.Address]OverrideAccount
-
-// Apply overrides the fields of specified accounts into the given state.
-func (diff *StateOverride) Apply(state *state.StateDB) error {
-	if diff == nil {
-		return nil
-	}
-	for addr, account := range *diff {
-		// Override account nonce.
-		if account.Nonce != nil {
-			state.SetNonce(addr, uint64(*account.Nonce))
-		}
-		// Override account(contract) code.
-		if account.Code != nil {
-			state.SetCode(addr, *account.Code)
-		}
-		// Override account balance.
-		if account.Balance != nil {
-			u256Balance, _ := uint256.FromBig((*big.Int)(*account.Balance))
-			state.SetBalance(addr, u256Balance)
-		}
-		if account.State != nil && account.StateDiff != nil {
-			return fmt.Errorf("account %s has both 'state' and 'stateDiff'", addr.Hex())
-		}
-		// Replace entire state if caller requires.
-		if account.State != nil {
-			state.SetStorage(addr, *account.State)
-		}
-		// Apply state diff into specified accounts.
-		if account.StateDiff != nil {
-			for key, value := range *account.StateDiff {
-				state.SetState(addr, key, value)
-			}
-		}
-	}
-	// Now finalize the changes. Finalize is normally performed between transactions.
-	// By using finalize, the overrides are semantically behaving as
-	// if they were created in a transaction just before the tracing occur.
-	state.Finalise(false)
-	return nil
 }
