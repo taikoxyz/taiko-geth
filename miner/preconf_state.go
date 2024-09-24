@@ -321,6 +321,7 @@ func (state *PreconfState) sealPendingPreconfBlock(sealedBlockHash common.Hash) 
 // onNewChainHeadEvent processes a new chain head event by clearing any sealed preconf blocks
 // that have been incorporated into the canonical chain. It verifies that the hashes of
 // the sealed preconf blocks match those in the canonical chain.
+// It also clears the pending preconf block if there is one, and it's out of date.
 //
 // Returns an error if there is a hash mismatch or if a pending preconf block becomes stale.
 func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error {
@@ -378,9 +379,20 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 			if index < len(state.sealedPreconfBlocks) {
 				state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
 				log.Info("Sealed preconf blocks truncated", "remainingSealedBlocks", len(state.sealedPreconfBlocks))
-				break
+			} else {
+				state.sealedPreconfBlocks = make([]*environment, 0)
+				log.Info("All sealed preconf blocks cleared")
 			}
-			log.Error("index out of bounds: attempted to slice from index %d with length %d", index, len(state.sealedPreconfBlocks))
+
+			break
+		}
+	}
+
+	// If we have one, check that the pending preconf block isn't out of date as well.
+	if state.pendingPreconfBlock != nil {
+		if state.pendingPreconfBlock.header.Number.Uint64() <= eventBlockNumber {
+			log.Error("Pending preconf block is now stale. This should not happen and may cause a panic as we will clear the pending preconf block!")
+			// state.pendingPreconfBlock = nil  // TODO: do we want to clear here?
 		}
 	}
 
