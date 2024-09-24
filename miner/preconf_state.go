@@ -228,9 +228,12 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 
 		case preconfBlockNumber > eventBlockNumber:
 			// Truncate the sealedPreconfBlocks slice to remove blocks beyond the current event block number.
-			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
-			log.Info("Sealed preconf blocks truncated", "remainingSealedBlocks", len(state.sealedPreconfBlocks))
-			break
+			if index < len(state.sealedPreconfBlocks) {
+				state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
+				log.Info("Sealed preconf blocks truncated", "remainingSealedBlocks", len(state.sealedPreconfBlocks))
+				break
+			}
+			log.Error("index out of bounds: attempted to slice from index %d with length %d", index, len(state.sealedPreconfBlocks))
 		}
 	}
 
