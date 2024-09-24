@@ -1,7 +1,6 @@
 package miner
 
 import (
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
@@ -20,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
-	"golang.org/x/crypto/sha3"
 )
 
 var (
@@ -95,14 +93,11 @@ func (g *GattacaWorker) runLoop() {
 	for {
 		select {
 		case req := <-SimCh:
-			log.Debug("run simulation for tx hash ", req.Tx.Hash().String())
 			go g.simulateTx(req.StateId, req.Tx, req.SimRes)
 			break
 		case req := <-CommitCh:
-			log.Debug("run commit state ", req.StateId)
 			go g.commitEnvToPreconf(req.StateId, req.SimRes)
 		case req := <-SealBlock:
-			log.Info("run seal block ")
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
 			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.SimRes)
@@ -496,23 +491,4 @@ func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction
 
 func (g *GattacaWorker) PreconfState() *PreconfState {
 	return g.preconfState
-}
-
-func genMixHash(blockNumber uint64) common.Hash {
-	taikoDifficulty := []byte("TAIKO_DIFFICULTY")
-
-	// ABI encoding equivalent: combine "TAIKO_DIFFICULTY" with numBlocks
-	encoded := append(taikoDifficulty, uint64ToBytes(blockNumber)...)
-
-	// Perform keccak256 hashing (Keccak-256 is sha3.NewLegacyKeccak256)
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write(encoded)
-	result := hash.Sum(nil)
-	return common.HexToHash(fmt.Sprintf("0x%x", result))
-}
-
-func uint64ToBytes(num uint64) []byte {
-	buf := make([]byte, 8)
-	binary.BigEndian.PutUint64(buf, num)
-	return buf
 }
