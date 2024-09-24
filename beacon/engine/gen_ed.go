@@ -36,9 +36,9 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
 		Deposits         types.Deposits          `json:"depositRequests"`
 		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
-		TxHash          common.Hash         `json:"txHash"`
-		WithdrawalsHash common.Hash         `json:"withdrawalsHash"`
-		TaikoBlock      bool
+		TxHash           common.Hash             `json:"txHash"`
+		WithdrawalsHash  common.Hash             `json:"withdrawalsHash"`
+		TaikoBlock       bool
 	}
 	var enc ExecutableData
 	enc.ParentHash = e.ParentHash
@@ -93,9 +93,9 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
 		Deposits         *types.Deposits         `json:"depositRequests"`
 		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
-		TxHash          *common.Hash        `json:"txHash"`
-		WithdrawalsHash *common.Hash        `json:"withdrawalsHash"`
-		TaikoBlock      *bool
+		TxHash           *common.Hash            `json:"txHash"`
+		WithdrawalsHash  *common.Hash            `json:"withdrawalsHash"`
+		TaikoBlock       *bool
 	}
 	var dec ExecutableData
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -153,11 +153,12 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'blockHash' for ExecutableData")
 	}
 	e.BlockHash = *dec.BlockHash
-	if dec.Transactions != nil {
-		e.Transactions = make([][]byte, len(dec.Transactions))
-		for k, v := range dec.Transactions {
-			e.Transactions[k] = v
-		}
+	if dec.Transactions == nil {
+		return errors.New("missing required field 'transactions' for ExecutableData")
+	}
+	e.Transactions = make([][]byte, len(dec.Transactions))
+	for k, v := range dec.Transactions {
+		e.Transactions[k] = v
 	}
 	if dec.Withdrawals != nil {
 		e.Withdrawals = dec.Withdrawals

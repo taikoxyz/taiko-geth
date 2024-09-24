@@ -244,6 +244,11 @@ const (
 	// account within the same tx (captured at end of tx).
 	// Note it doesn't account for a self-destruct which appoints itself as recipient.
 	BalanceDecreaseSelfdestructBurn BalanceChangeReason = 14
+
+	// CHANGE(taiko)
+	// BalanceIncreaseDaoContract is ether sent to the DAO refund contract.
+	BalanceIncreaseTreasury       BalanceChangeReason = 99
+	BalanceIncreaseBaseFeeSharing BalanceChangeReason = 100
 )
 
 // GasChangeReason is used to indicate the reason for a gas change, useful

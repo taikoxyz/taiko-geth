@@ -240,7 +240,7 @@ func (miner *Miner) buildPayload(args *BuildPayloadArgs) (*Payload, error) {
 			select {
 			case <-timer.C:
 				// CHANGE(taiko): do not update payload.
-				if w.chainConfig.Taiko {
+				if miner.chainConfig.Taiko {
 					continue
 				}
 				start := time.Now()

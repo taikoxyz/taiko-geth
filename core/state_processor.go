@@ -86,7 +86,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		// CHANGE(taiko): mark the first transaction as anchor transaction.
 		if i == 0 && p.config.Taiko {
 			if err := tx.MarkAsAnchor(); err != nil {
-				return nil, nil, 0, err
+				return nil, err
 			}
 		}
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)

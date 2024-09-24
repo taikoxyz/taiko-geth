@@ -85,6 +85,8 @@ type generateParams struct {
 	withdrawals types.Withdrawals // List of withdrawals to include in block (shanghai field)
 	beaconRoot  *common.Hash      // The beacon root (cancun field).
 	noTxs       bool              // Flag whether an empty block without any transaction is expected
+	// CHANGE(taiko): The base fee per gas for the next block, used by the legacy Taiko blocks.
+	baseFeePerGas *big.Int
 }
 
 // generateWork generates a sealing block based on the given parameters.
@@ -175,10 +177,14 @@ func (miner *Miner) prepareWork(genParams *generateParams) (*environment, error)
 	}
 	// Set baseFee and GasLimit if we are on an EIP-1559 chain
 	if miner.chainConfig.IsLondon(header.Number) {
-		header.BaseFee = eip1559.CalcBaseFee(miner.chainConfig, parent)
-		if !miner.chainConfig.IsLondon(parent.Number) {
-			parentGasLimit := parent.GasLimit * miner.chainConfig.ElasticityMultiplier()
-			header.GasLimit = core.CalcGasLimit(parentGasLimit, miner.config.GasCeil)
+		if miner.chainConfig.Taiko && genParams.baseFeePerGas != nil {
+			header.BaseFee = genParams.baseFeePerGas
+		} else {
+			header.BaseFee = eip1559.CalcBaseFee(miner.chainConfig, parent)
+			if !miner.chainConfig.IsLondon(parent.Number) {
+				parentGasLimit := parent.GasLimit * miner.chainConfig.ElasticityMultiplier()
+				header.GasLimit = core.CalcGasLimit(parentGasLimit, miner.config.GasCeil)
+			}
 		}
 	}
 	// Run the consensus preparation with the default or customized consensus engine.

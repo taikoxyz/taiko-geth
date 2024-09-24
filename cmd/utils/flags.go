@@ -1500,10 +1500,6 @@ func setGPO(ctx *cli.Context, cfg *gasprice.Config) {
 	if ctx.IsSet(GpoIgnoreGasPriceFlag.Name) {
 		cfg.IgnorePrice = big.NewInt(ctx.Int64(GpoIgnoreGasPriceFlag.Name))
 	}
-	// CHANGE(taiko): use flag
-	if ctx.IsSet(GpoDefaultGasPriceFlag.Name) {
-		cfg.Default = big.NewInt(ctx.Int64(GpoDefaultGasPriceFlag.Name))
-	}
 }
 
 func setTxPool(ctx *cli.Context, cfg *legacypool.Config) {
