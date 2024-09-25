@@ -77,6 +77,13 @@ func (state *PreconfState) GetPendingBlock() *types.Header {
 	return nil
 }
 
+func (state *PreconfState) GetLatestSealedBlock() *types.Header {
+	if len(state.sealedPreconfBlocks) > 0 {
+		return state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1].header
+	}
+	return nil
+}
+
 // GetHeaderByNumber returns the header of a sealed pre-confirmed block by its block number.
 // If no such block exists, it returns nil.
 func (state *PreconfState) GetHeaderByNumber(number uint64) *types.Header {
@@ -238,7 +245,6 @@ func (state *PreconfState) GetTransaction(hash common.Hash) (bool, *types.Transa
 
 func (state *PreconfState) getTransactionInEnv(env *environment, hash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
 	for idx, tx := range env.txs {
-		log.Info("hashes", "toSearch", hash.Hex(), "storedTx", tx.Hash().Hex())
 		if tx.Hash() == hash {
 			hash := common.Hash{}
 			if env.sealedBlock == nil {
@@ -349,7 +355,7 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 	}
 
 	// Iterate over sealed preconf blocks to verify their inclusion in the canonical chain.
-	for index, preconfBlock := range state.sealedPreconfBlocks {
+	for _, preconfBlock := range state.sealedPreconfBlocks {
 		preconfBlockNumber := preconfBlock.sealedBlock.Number().Uint64()
 
 		switch {
@@ -381,13 +387,6 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 					preconfBlockNumber,
 				)
 			}
-
-		case preconfBlockNumber > eventBlockNumber:
-			// Truncate the sealedPreconfBlocks slice to remove blocks beyond the current event block number.
-			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
-			log.Info("Sealed preconf blocks truncated", "remainingSealedBlocks", len(state.sealedPreconfBlocks))
-
-			break
 		}
 	}
 

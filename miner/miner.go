@@ -84,8 +84,8 @@ type Miner struct {
 	wg sync.WaitGroup
 }
 
-func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *event.TypeMux, engine consensus.Engine, isLocalBlock func(header *types.Header) bool) *Miner {
-	gattacaWorker, err := NewGattacaWorker(chainConfig, eth.BlockChain(), config, engine)
+func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *event.TypeMux, engine consensus.Engine, isLocalBlock func(header *types.Header) bool, preconfState *PreconfState) *Miner {
+	gattacaWorker, err := NewGattacaWorker(chainConfig, eth.BlockChain(), config, engine, preconfState)
 	if err != nil {
 		panic(err)
 	}

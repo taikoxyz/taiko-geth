@@ -47,7 +47,7 @@ type GattacaWorker struct {
 	preconfState *PreconfState
 }
 
-func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
+func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine, preconfState *PreconfState) (*GattacaWorker, error) {
 
 	singletonLock.Lock()
 	defer singletonLock.Unlock()
@@ -61,7 +61,7 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 			extra:        config.ExtraData,
 			halt:         false,
 			haltReason:   "",
-			preconfState: NewPreconfState(chain),
+			preconfState: preconfState,
 		}
 
 		go singletonGattaca.runLoop()

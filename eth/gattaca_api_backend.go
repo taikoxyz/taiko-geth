@@ -42,7 +42,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-// EthAPIBackend implements ethapi.Backend and tracers.Backend for full nodes
+// GattacaEthAPIBackend implements ethapi.Backend and tracers.Backend for full nodes
 type GattacaEthAPIBackend struct {
 	extRPCEnabled       bool
 	allowUnprotectedTxs bool
@@ -65,6 +65,14 @@ func (b *GattacaEthAPIBackend) ChainConfig() *params.ChainConfig {
 func (b *GattacaEthAPIBackend) CurrentBlock() *types.Header {
 	if header := b.preconfState.CurrentBlock(); header != nil {
 		return header
+	}
+	// if header is nil we may want to check
+	chainBlock := b.eth.blockchain.CurrentBlock()
+	if latestSealedBlock := b.preconfState.GetLatestSealedBlock(); latestSealedBlock != nil {
+		if latestSealedBlock.Number.Uint64() > chainBlock.Number.Uint64() {
+			return latestSealedBlock
+		}
+
 	}
 	return b.eth.blockchain.CurrentBlock()
 }
