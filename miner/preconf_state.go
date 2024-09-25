@@ -229,13 +229,13 @@ func (state *PreconfState) GetPoolNonce(addr common.Address) uint64 {
 
 func (state *PreconfState) GetTransaction(hash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
 	if state.pendingPreconfBlock != nil {
-		found, tx, blockHash, blockIndex, txIndex, err := state.getTransactionInEnv(state.pendingPreconfBlock, hash)
+		found, tx, blockHash, blockIndex, txIndex, err := state.getTransactionFromEnv(state.pendingPreconfBlock, hash)
 		if found {
 			return found, tx, blockHash, blockIndex, txIndex, err
 		}
 	}
 	for _, sealedPreconfBlock := range state.sealedPreconfBlocks {
-		found, tx, blockHash, blockIndex, txIndex, err := state.getTransactionInEnv(sealedPreconfBlock, hash)
+		found, tx, blockHash, blockIndex, txIndex, err := state.getTransactionFromEnv(sealedPreconfBlock, hash)
 		if found {
 			return found, tx, blockHash, blockIndex, txIndex, err
 		}
@@ -243,12 +243,14 @@ func (state *PreconfState) GetTransaction(hash common.Hash) (bool, *types.Transa
 	return false, nil, common.Hash{}, 0, 0, nil
 }
 
-func (state *PreconfState) getTransactionInEnv(env *environment, hash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
+func (state *PreconfState) getTransactionFromEnv(env *environment, hash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
 	for idx, tx := range env.txs {
-		if tx.Hash() == hash {
+		if tx.Hash().Hex() == hash.Hex() {
 			hash := common.Hash{}
 			if env.sealedBlock == nil {
 				hash = env.header.Hash()
+			} else {
+				hash = env.sealedBlock.Hash()
 			}
 			return true, tx, hash, env.header.Number.Uint64(), uint64(idx), nil
 		}
