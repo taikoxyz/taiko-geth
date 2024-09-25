@@ -111,24 +111,24 @@ func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}
 
 	// Handle response error or success
 	if err := res.Error(); err != nil {
-		errData := make(map[string]string)
+		errData := make(map[string]interface{})
 		var revertError miner.RevertCommitError
 
 		switch {
 		case errors.As(err, &revertError):
 			errData["gas_used"] = hexutils.BytesToHex([]byte(strconv.FormatUint(res.GasUsed(), 10)))
 			errData["builder_payment"] = res.BuilderPayment().String()
-			errData["state_id"] = fmt.Sprintf("%d", res.StateId())
+			errData["state_id"] = res.StateId()
 			retMap = createExecutionResult("revert", errData, res.StateId())
 		default:
 			errData["reason"] = err.Error()
 			retMap = createExecutionResult("invalid", errData, res.StateId())
 		}
 	} else {
-		successData := map[string]string{
+		successData := map[string]interface{}{
 			"gas_used":        fmt.Sprintf("0x%x", res.GasUsed()),
 			"builder_payment": res.BuilderPayment().String(),
-			"state_id":        fmt.Sprintf("%d", res.StateId()),
+			"state_id":        res.StateId(),
 		}
 		retMap = createExecutionResult("success", successData, res.StateId())
 	}
