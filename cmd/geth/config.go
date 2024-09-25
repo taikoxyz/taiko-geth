@@ -184,19 +184,6 @@ func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 
 	backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
 
-	//CHANGE(Gattaca): register vanilla api
-	vanillaStack, err := node.New(&node.Config{
-		WSHost: "0.0.0.0",
-		WSPort: 9546,
-	})
-	if err != nil {
-		log.Crit("Failed to create the protocol stack", "err", err)
-	}
-	err = utils.RegisterVanillaTransactionApi(vanillaStack, eth, &cfg.Eth)
-	if err != nil {
-		log.Crit("Failed to register vanilla transaction api", "err", err)
-	}
-
 	// CHANGE(TAIKO): register Taiko RPC APIs.
 	utils.RegisterTaikoAPIs(stack, &cfg.Eth, eth)
 
