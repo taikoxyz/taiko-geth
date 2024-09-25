@@ -245,7 +245,7 @@ func (state *PreconfState) GetTransaction(hash common.Hash) (bool, *types.Transa
 
 func (state *PreconfState) getTransactionFromEnv(env *environment, hash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
 	for idx, tx := range env.txs {
-		if tx.Hash().Hex() == hash.Hex() {
+		if tx.Hash() == hash {
 			hash := common.Hash{}
 			if env.sealedBlock == nil {
 				hash = env.header.Hash()
