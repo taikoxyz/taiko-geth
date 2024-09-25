@@ -103,34 +103,32 @@ func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}
 	// Helper function to create execution result wrapper
 	createExecutionResult := func(resultType string, data map[string]string, stateId uint64) map[string]interface{} {
 		return map[string]interface{}{
-			"state_id": stateId,
 			"execution_result": map[string]interface{}{
 				resultType: data,
 			},
-			"builder_payment": res.BuilderPayment(),
 		}
 	}
 
 	// Handle response error or success
 	if err := res.Error(); err != nil {
 		errData := make(map[string]string)
-		var haltError miner.HaltError
 		var revertError miner.RevertCommitError
 
 		switch {
 		case errors.As(err, &revertError):
 			errData["gas_used"] = hexutils.BytesToHex([]byte(strconv.FormatUint(res.GasUsed(), 10)))
+			errData["builder_payment"] = res.BuilderPayment().String()
+			errData["state_id"] = fmt.Sprintf("%d", res.StateId())
 			retMap = createExecutionResult("revert", errData, res.StateId())
-		case errors.As(err, &haltError):
-			errData["reason"] = err.Error()
-			retMap = createExecutionResult("halt", errData, res.StateId())
 		default:
 			errData["reason"] = err.Error()
 			retMap = createExecutionResult("invalid", errData, res.StateId())
 		}
 	} else {
 		successData := map[string]string{
-			"gas_used": fmt.Sprintf("0x%x", res.GasUsed()),
+			"gas_used":        fmt.Sprintf("0x%x", res.GasUsed()),
+			"builder_payment": res.BuilderPayment().String(),
+			"state_id":        fmt.Sprintf("%d", res.StateId()),
 		}
 		retMap = createExecutionResult("success", successData, res.StateId())
 	}

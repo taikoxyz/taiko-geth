@@ -3,13 +3,10 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"math/big"
 	"math/rand"
-	"os"
 	"sync"
-	"time"
-
-	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	ckzg4844 "github.com/ethereum/c-kzg-4844/bindings/go"
 	"github.com/ethereum/go-ethereum/common"
@@ -71,22 +68,6 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 		go singletonGattaca.newHeadEventSubscriber()
 	}
 	return singletonGattaca, nil
-}
-
-func GetWorker(maxRetry uint) *GattacaWorker {
-	if os.Getenv("GATTACA_OVERRIDE") == "" {
-		return nil
-	}
-	for i := uint(0); i < maxRetry; i++ {
-		singletonLock.Lock()
-		if singletonGattaca != nil {
-			singletonLock.Unlock()
-			return singletonGattaca
-		}
-		singletonLock.Unlock()
-		time.Sleep(500 * time.Millisecond)
-	}
-	return nil
 }
 
 func (g *GattacaWorker) runLoop() {
