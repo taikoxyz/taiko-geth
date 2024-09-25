@@ -1773,7 +1773,10 @@ func (s *TransactionAPI) GetTransactionReceipt(ctx context.Context, hash common.
 		return nil, nil
 	}
 	receipt := receipts[index]
-
+	//TODO hack for deserialization, rollback asap.
+	if receipt.EffectiveGasPrice == nil {
+		receipt.EffectiveGasPrice = big.NewInt(1)
+	}
 	// Derive the sender.
 	signer := types.MakeSigner(s.b.ChainConfig(), header.Number, header.Time)
 	return marshalReceipt(receipt, blockHash, blockNumber, signer, tx, int(index)), nil
