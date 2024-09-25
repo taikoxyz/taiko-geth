@@ -101,7 +101,7 @@ func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}
 	res := <-resCh
 
 	// Helper function to create execution result wrapper
-	createExecutionResult := func(resultType string, data map[string]string, stateId uint64) map[string]interface{} {
+	createExecutionResult := func(resultType string, data map[string]interface{}, stateId uint64) map[string]interface{} {
 		return map[string]interface{}{
 			"execution_result": map[string]interface{}{
 				resultType: data,
