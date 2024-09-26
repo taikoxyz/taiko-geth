@@ -30,7 +30,7 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		ExtraData        hexutil.Bytes           `json:"extraData"     gencodec:"required"`
 		BaseFeePerGas    *hexutil.Big            `json:"baseFeePerGas" gencodec:"required"`
 		BlockHash        common.Hash             `json:"blockHash"     gencodec:"required"`
-		Transactions     []hexutil.Bytes         `json:"transactions"  gencodec:"required"`
+		Transactions     []hexutil.Bytes         `json:"transactions"`
 		Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
@@ -87,7 +87,7 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		ExtraData        *hexutil.Bytes          `json:"extraData"     gencodec:"required"`
 		BaseFeePerGas    *hexutil.Big            `json:"baseFeePerGas" gencodec:"required"`
 		BlockHash        *common.Hash            `json:"blockHash"     gencodec:"required"`
-		Transactions     []hexutil.Bytes         `json:"transactions"  gencodec:"required"`
+		Transactions     []hexutil.Bytes         `json:"transactions"`
 		Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
@@ -153,12 +153,11 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'blockHash' for ExecutableData")
 	}
 	e.BlockHash = *dec.BlockHash
-	if dec.Transactions == nil {
-		return errors.New("missing required field 'transactions' for ExecutableData")
-	}
-	e.Transactions = make([][]byte, len(dec.Transactions))
-	for k, v := range dec.Transactions {
-		e.Transactions[k] = v
+	if dec.Transactions != nil {
+		e.Transactions = make([][]byte, len(dec.Transactions))
+		for k, v := range dec.Transactions {
+			e.Transactions[k] = v
+		}
 	}
 	if dec.Withdrawals != nil {
 		e.Withdrawals = dec.Withdrawals
