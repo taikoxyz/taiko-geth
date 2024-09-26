@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
@@ -346,19 +347,39 @@ func encodeAndCompressTxList(txs types.Transactions) ([]byte, error) {
 	return compress(b)
 }
 
+type zliber struct {
+	b bytes.Buffer
+	w *zlib.Writer
+}
+
+func (z *zliber) reset() {
+	z.b.Reset()
+	z.w.Reset(&z.b)
+}
+
+var zlibPool = sync.Pool{
+	New: func() interface{} {
+		z := &zliber{b: bytes.Buffer{}}
+		z.w = zlib.NewWriter(&z.b)
+		return z
+	},
+}
+
 // compress compresses the given txList bytes using zlib.
 func compress(txListBytes []byte) ([]byte, error) {
-	var b bytes.Buffer
-	w := zlib.NewWriter(&b)
-	defer w.Close()
+	z := zlibPool.Get().(zliber)
+	defer func() {
+		z.reset()
+		zlibPool.Put(z)
+	}()
 
-	if _, err := w.Write(txListBytes); err != nil {
+	if _, err := z.w.Write(txListBytes); err != nil {
 		return nil, err
 	}
 
-	if err := w.Flush(); err != nil {
+	if err := z.w.Flush(); err != nil {
 		return nil, err
 	}
 
-	return b.Bytes(), nil
+	return z.b.Bytes(), nil
 }
