@@ -47,7 +47,7 @@ type GattacaWorker struct {
 	preconfState *PreconfState
 }
 
-func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine) (*GattacaWorker, error) {
+func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, config *Config, engine consensus.Engine, preconfState *PreconfState) (*GattacaWorker, error) {
 
 	singletonLock.Lock()
 	defer singletonLock.Unlock()
@@ -61,7 +61,7 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 			extra:        config.ExtraData,
 			halt:         false,
 			haltReason:   "",
-			preconfState: NewPreconfState(chain),
+			preconfState: preconfState,
 		}
 
 		go singletonGattaca.runLoop()
@@ -327,6 +327,9 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		req.Response <- SealBlockResponse{err: err}
 		return
 	}
+
+	// Set preconf tag in block
+	sealedBlock.PreconfBlock = true
 
 	// Note: might change the actual chain. Will this have side effects?
 	_, err = g.chain.InsertChain(types.Blocks{sealedBlock})
