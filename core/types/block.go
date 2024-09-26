@@ -205,6 +205,10 @@ type Block struct {
 	// inter-peer block relay.
 	ReceivedAt   time.Time
 	ReceivedFrom interface{}
+
+	// Custom tag set by gattaca preconfer.
+	// Ignore any chain head updates with this set
+	PreconfBlock bool
 }
 
 // "external" block encoding. used for eth protocol, etc.
