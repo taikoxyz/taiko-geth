@@ -4,10 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/lru"
+	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/holiman/uint256"
 	"math/big"
@@ -38,6 +41,8 @@ type PreconfState struct {
 	// sealedBlockMutex is held by any fn that modifies the sealedPreconfBlocks array.
 	// TODO: we should make this a RwLock and read lock when fetching sealedPreconfBlocks state
 	sealedBlockMutex sync.Mutex
+	// receiptsCache stores the derived receipts in order to not compute them twice
+	receiptsCache *lru.Cache[common.Hash, []*types.Receipt]
 }
 
 // NewPreconfState initializes a new PreconfState with empty sealed and pending preconf blocks.
@@ -47,6 +52,8 @@ func NewPreconfState(chain *core.BlockChain) *PreconfState {
 		chain:               chain,
 		stateIdMap:          make(map[uint64]*environment),
 		sealedPreconfBlocks: make([]*environment, 0),
+		// create an lru cache limited to 32 elements
+		receiptsCache: lru.NewCache[common.Hash, []*types.Receipt](32),
 	}
 }
 
@@ -163,15 +170,57 @@ func (state *PreconfState) StateAndHeaderByhash(hash common.Hash) (*state.StateD
 // If the block is found, it returns its receipts.
 // If no such block exists, it returns an error.
 func (state *PreconfState) GetReceipts(hash common.Hash) (types.Receipts, error) {
-	if state.pendingPreconfBlock != nil && state.pendingPreconfBlock.header.Hash() == hash {
-		return state.pendingPreconfBlock.receipts, nil
+	if receipts, ok := state.receiptsCache.Get(hash); ok {
+		return receipts, nil
 	}
-	for _, env := range state.sealedPreconfBlocks {
-		if env.sealedBlock.Hash() == hash {
-			return env.receipts, nil
+	var receipts types.Receipts
+	var err error
+	if state.pendingPreconfBlock != nil && state.pendingPreconfBlock.header.Hash() == hash {
+		receipts, err = deriveReceipts(state.pendingPreconfBlock.receipts,
+			state.chain.Config(),
+			hash,
+			state.pendingPreconfBlock.header,
+			state.pendingPreconfBlock.txs,
+		)
+	}
+	if len(receipts) == 0 {
+		for _, env := range state.sealedPreconfBlocks {
+			if env.sealedBlock.Hash() == hash {
+				receipts, err = deriveReceipts(
+					env.receipts,
+					state.chain.Config(),
+					hash,
+					env.header,
+					env.txs)
+				break
+			}
 		}
 	}
-	return nil, nil
+	if len(receipts) > 0 {
+		state.receiptsCache.Add(hash, receipts)
+		return receipts, err
+	}
+	return nil, err
+}
+
+func deriveReceipts(receipts types.Receipts,
+	config *params.ChainConfig,
+	blockHash common.Hash,
+	header *types.Header,
+	txs []*types.Transaction) (types.Receipts, error) {
+	var baseFee *big.Int
+	if header == nil {
+		baseFee = big.NewInt(0)
+	} else {
+		baseFee = header.BaseFee
+	}
+	// Compute effective blob gas price.
+	var blobGasPrice *big.Int
+	if header != nil && header.ExcessBlobGas != nil {
+		blobGasPrice = eip4844.CalcBlobFee(*header.ExcessBlobGas)
+	}
+	err := receipts.DeriveFields(config, blockHash, header.Number.Uint64(), header.Time, baseFee, blobGasPrice, txs)
+	return receipts, err
 }
 
 // BlockByNumber returns the block specified by number.
