@@ -2,7 +2,7 @@ name: "Push docker image to GAR"
 
 on:
   push:
-    branches: [ main ]
+    branches: [ merge_docker_build ]
     tags:
       - "v*"
 
