@@ -391,7 +391,12 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 	defer state.sealedBlockMutex.Unlock()
 
 	eventBlockNumber := event.Block.NumberU64()
-	log.Info("Processing new chain head event", "eventBlockNumber", eventBlockNumber)
+	log.Info("Processing new chain head event", "eventBlockNumber", eventBlockNumber, "Num sealed preconf blocks", len(state.sealedPreconfBlocks))
+
+	log.Info("These are the sealed preconf blocks we have:")
+	for _, sealedPreconfBlock := range state.sealedPreconfBlocks {
+		log.Info("Number", sealedPreconfBlock.header.Number, "Hash", sealedPreconfBlock.sealedBlock.Hash())
+	}
 
 	// If there are no sealed preconf blocks, perform a sanity check on the pending preconf block.
 	if len(state.sealedPreconfBlocks) == 0 {
@@ -406,7 +411,7 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 	}
 
 	// Iterate over sealed preconf blocks to verify their inclusion in the canonical chain.
-	for _, preconfBlock := range state.sealedPreconfBlocks {
+	for index, preconfBlock := range state.sealedPreconfBlocks {
 		preconfBlockNumber := preconfBlock.sealedBlock.Number().Uint64()
 
 		switch {
@@ -438,6 +443,17 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 					preconfBlockNumber,
 				)
 			}
+			// Truncate the sealedPreconfBlocks slice to remove blocks beyond the current event block number.
+			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
+			log.Info("Sealed preconf blocks truncated as preconf block matches event block", "Index", index, "remainingSealedBlocks", len(state.sealedPreconfBlocks))
+
+			break
+		case preconfBlockNumber > eventBlockNumber:
+			// Truncate the sealedPreconfBlocks slice to remove blocks beyond the current event block number.
+			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
+			log.Info("Sealed preconf blocks truncated as event block greater than preconf block", "Index", index, "remainingSealedBlocks", len(state.sealedPreconfBlocks))
+
+			break
 		}
 	}
 
