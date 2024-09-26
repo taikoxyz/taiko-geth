@@ -416,6 +416,7 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 	}
 
 	// Iterate over sealed preconf blocks to verify their inclusion in the canonical chain.
+loop:
 	for index, preconfBlock := range state.sealedPreconfBlocks {
 		preconfBlockNumber := preconfBlock.sealedBlock.Number().Uint64()
 
@@ -452,13 +453,13 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
 			log.Info("Sealed preconf blocks truncated as preconf block matches event block", "Index", index, "remainingSealedBlocks", len(state.sealedPreconfBlocks))
 
-			break
+			break loop
 		case preconfBlockNumber > eventBlockNumber:
 			// Truncate the sealedPreconfBlocks slice to remove blocks beyond the current event block number.
 			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
 			log.Info("Sealed preconf blocks truncated as event block greater than preconf block", "Index", index, "remainingSealedBlocks", len(state.sealedPreconfBlocks))
 
-			break
+			break loop
 		}
 	}
 
