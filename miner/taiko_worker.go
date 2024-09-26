@@ -367,7 +367,7 @@ var zlibPool = sync.Pool{
 
 // compress compresses the given txList bytes using zlib.
 func compress(txListBytes []byte) ([]byte, error) {
-	z := zlibPool.Get().(zliber)
+	z := zlibPool.Get().(*zliber)
 	defer func() {
 		z.reset()
 		zlibPool.Put(z)
