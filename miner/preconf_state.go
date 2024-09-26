@@ -387,6 +387,11 @@ func (state *PreconfState) sealPendingPreconfBlock(sealedBlockHash common.Hash) 
 //
 // Returns an error if there is a hash mismatch or if a pending preconf block becomes stale.
 func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error {
+	if event.Block.PreconfBlock {
+		log.Info("Ignoring chain event update from preconf block", "eventBlockNumber", event.Block.NumberU64())
+		return nil
+	}
+
 	state.sealedBlockMutex.Lock()
 	defer state.sealedBlockMutex.Unlock()
 

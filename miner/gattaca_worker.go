@@ -328,8 +328,11 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		return
 	}
 
+	// Set preconf tag in block
+	sealedBlock.PreconfBlock = true
+
 	// Note: might change the actual chain. Will this have side effects?
-	_, err = g.chain.InsertChainWithoutSettingHead(types.Blocks{sealedBlock})
+	_, err = g.chain.InsertChain(types.Blocks{sealedBlock})
 	if err != nil {
 		req.Response <- SealBlockResponse{err: err}
 		return
