@@ -155,7 +155,13 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv) *envi
 	newEnv.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
 	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
 	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
-	newEnv.header.ParentHash = env.sealedBlock.Hash()
+
+	// If we took the env from the head (no sealed block) then we can take the hash from the header.
+	if env.sealedBlock == nil {
+		newEnv.header.ParentHash = env.header.Hash()
+	} else {
+		newEnv.header.ParentHash = env.sealedBlock.Hash()
+	}
 	return newEnv
 }
 
