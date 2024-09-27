@@ -301,6 +301,7 @@ loop:
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 
+		gasPool := env.gasPool.Gas()
 		_, err := w.commitTransaction(env, tx)
 		switch {
 		case errors.Is(err, core.ErrNonceTooLow):
@@ -323,6 +324,7 @@ loop:
 			if len(b) > int(maxBytesPerTxList) {
 				lastTransaction = env.txs[env.tcount-1]
 				env.txs = env.txs[0 : env.tcount-1]
+				env.gasPool.SetGas(gasPool)
 				break loop
 			}
 		default:
