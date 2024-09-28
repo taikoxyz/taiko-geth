@@ -5,7 +5,6 @@ import (
 	"compress/zlib"
 	"errors"
 	"fmt"
-	"golang.org/x/exp/maps"
 	"math/big"
 	"time"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
+	"golang.org/x/exp/maps"
 )
 
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given conditions
