@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/taikoxyz/taiko-geth/actions/workflows/ci.yml/badge.svg)](https://github.com/taikoxyz/taiko-geth/actions/workflows/ci.yml)
 
-The codebase is based on [go-ethereum v1.13.15](https://github.com/ethereum/go-ethereum/releases/tag/v1.13.15).
+The codebase is based on [go-ethereum v1.14.10](https://github.com/ethereum/go-ethereum/releases/tag/v1.14.10).
 
 ## Tracing changes
 
@@ -116,7 +116,7 @@ useful on the testnet too.
 
 Specifying the `--holesky` flag, however, will reconfigure your `geth` instance a bit:
 
- * Instead of connecting to the main Ethereum network, the client will connect to the Holesky 
+ * Instead of connecting to the main Ethereum network, the client will connect to the Holesky
    test network, which uses different P2P bootnodes, different network IDs and genesis
    states.
  * Instead of using the default data directory (`~/.ethereum` on Linux for example), `geth`

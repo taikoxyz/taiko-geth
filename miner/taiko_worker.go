@@ -58,7 +58,7 @@ func (w *Miner) buildTransactionsLists(
 		baseFeePerGas: baseFee,
 	}
 
-	env, err := w.prepareWork(params)
+	env, err := w.prepareWork(params, false)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +161,7 @@ func (w *Miner) sealBlockWith(
 	// Set extraData
 	w.SetExtra(blkMeta.ExtraData)
 
-	env, err := w.prepareWork(params)
+	env, err := w.prepareWork(params, false)
 	if err != nil {
 		return nil, err
 	}
