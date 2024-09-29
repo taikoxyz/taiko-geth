@@ -1,12 +1,13 @@
 package miner
 
 import (
+	"testing"
+
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func testGenerateWorker(t *testing.T, txCount int) *worker {
