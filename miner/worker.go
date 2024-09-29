@@ -159,10 +159,17 @@ func (miner *Miner) prepareWork(genParams *generateParams, witness bool) (*envir
 	// to parent+1 if the mutation is allowed.
 	timestamp := genParams.timestamp
 	if parent.Time >= timestamp {
-		if genParams.forceTime {
-			return nil, fmt.Errorf("invalid timestamp, parent %d given %d", parent.Time, timestamp)
+		// CHANGE(taiko): block.timestamp == parent.timestamp is allowed in Taiko protocol.
+		if !miner.chainConfig.Taiko {
+			if genParams.forceTime {
+				return nil, fmt.Errorf("invalid timestamp, parent %d given %d", parent.Time, timestamp)
+			}
+			timestamp = parent.Time + 1
+		} else {
+			if parent.Time > timestamp {
+				return nil, fmt.Errorf("invalid timestamp, parent %d given %d", parent.Time, timestamp)
+			}
 		}
-		timestamp = parent.Time + 1
 	}
 	// Construct the sealing block header.
 	header := &types.Header{
