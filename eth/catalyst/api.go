@@ -470,7 +470,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				Version:      payloadVersion,
 			}
 			id := args.Id()
-			payload, err := api.eth.Miner().BuildPayload(args)
+			payload, err := api.eth.Miner().BuildPayload(args, false)
 			if err != nil {
 				log.Error("Failed to build payload", "err", err)
 				return valid(nil), engine.InvalidPayloadAttributes.With(err)
