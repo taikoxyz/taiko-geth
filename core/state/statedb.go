@@ -786,8 +786,7 @@ func (s *StateDB) Copy() *StateDB {
 	return state
 }
 
-// CHANGE(taiko)
-// RevisionId return the latest snapshot id.
+// CHANGE(taiko): RevisionId returns the latest snapshot id.
 func (s *StateDB) RevisionId() int {
 	return s.nextRevisionId
 }
