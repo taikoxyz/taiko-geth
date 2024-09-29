@@ -290,14 +290,15 @@ func opBlobBaseFee(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 }
 
 // enable4844 applies EIP-4844 (BLOBHASH opcode)
-func enable4844(jt *JumpTable) {
+// CHANGE(TAIKO): disable enable4844
+/*func enable4844(jt *JumpTable) {
 	jt[BLOBHASH] = &operation{
 		execute:     opBlobHash,
 		constantGas: GasFastestStep,
 		minStack:    minStack(1, 1),
 		maxStack:    maxStack(1, 1),
 	}
-}
+}*/
 
 // enable7516 applies EIP-7516 (BLOBBASEFEE opcode)
 func enable7516(jt *JumpTable) {

@@ -935,7 +935,8 @@ func TestCall(t *testing.T) {
 			expectErr: core.ErrBlobTxCreate,
 		},
 		// BLOBHASH opcode
-		{
+		// CHANGE(TAIKO): disable cancun test case.
+		/*{
 			blockNumber: rpc.LatestBlockNumber,
 			call: TransactionArgs{
 				From:       &accounts[1].addr,
@@ -949,7 +950,7 @@ func TestCall(t *testing.T) {
 				},
 			},
 			want: "0x0122000000000000000000000000000000000000000000000000000000000000",
-		},
+		},*/
 	}
 	for i, tc := range testSuite {
 		result, err := api.Call(context.Background(), tc.call, &rpc.BlockNumberOrHash{BlockNumber: &tc.blockNumber}, &tc.overrides, &tc.blockOverrides)
