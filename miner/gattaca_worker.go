@@ -39,7 +39,6 @@ type GattacaWorker struct {
 	chain       *core.BlockChain
 	config      *Config
 	engine      consensus.Engine
-	extra       []byte
 	lock        sync.RWMutex
 	halt        bool
 	haltReason  string
@@ -58,7 +57,6 @@ func NewGattacaWorker(chainConfig *params.ChainConfig, chain *core.BlockChain, c
 			chain:        chain,
 			config:       config,
 			engine:       engine,
-			extra:        config.ExtraData,
 			halt:         false,
 			haltReason:   "",
 			preconfState: preconfState,
@@ -81,7 +79,7 @@ func (g *GattacaWorker) runLoop() {
 		case req := <-SealBlock:
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
-			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.SimRes)
+			go g.simulateAnchorTx(req.Tx, req.BlockEnv, req.SimRes, req.ExtraData)
 		}
 	}
 }
@@ -104,7 +102,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 // simulateAnchorTx simulates the execution of an anchor transaction in a new environment
 // based on the latest sealed state. It commits the transaction to the state, checks for errors,
 // and returns the simulation result via the provided channel.
-func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams common.BlockEnv, res chan SimulationResponse) {
+func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams common.BlockEnv, res chan SimulationResponse, extraData string) {
 	// Log the input parameters for the simulation.
 	log.Info(
 		"Starting simulateAnchorTx",
@@ -120,6 +118,15 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 		}
 		return
 	}
+	bbExtraData, err := hexutil.Decode(extraData)
+	if err != nil {
+		log.Error("Failed to decode extra data", "extraData", extraData, "err", err)
+		res <- SimulationResponse{
+			error: fmt.Errorf("failed to decode extra data extraData %v, err %s", extraData, err.Error()),
+		}
+		return
+	}
+	env.header.Extra = bbExtraData
 	log.Info("Retrieved latest sealed environment", "blockNumber", env.header.Number)
 
 	// Copy the environment from the latest sealed state and set the params for the new block.

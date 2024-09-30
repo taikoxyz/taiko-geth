@@ -53,10 +53,6 @@ func (g *GattacaWorker) prepareWork(genParams *generateParams) (*environment, er
 		// gtc
 		Root: parent.Root,
 	}
-	// Set the extra field.
-	if len(g.extra) != 0 {
-		header.Extra = g.extra
-	}
 	// Set the randomness field from the beacon chain if it's available.
 	if genParams.random != (common.Hash{}) {
 		header.MixDigest = genParams.random
@@ -152,7 +148,6 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 	}
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
-	env.header.Extra = make([]byte, 32)
 	env.sealedBlock = sealedBlock
 
 	return env, nil
