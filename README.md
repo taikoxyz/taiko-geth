@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/taikoxyz/taiko-geth/actions/workflows/ci.yml/badge.svg)](https://github.com/taikoxyz/taiko-geth/actions/workflows/ci.yml)
 
-The codebase is based on [go-ethereum v1.14.10](https://github.com/ethereum/go-ethereum/releases/tag/v1.14.10).
+The codebase is based on [go-ethereum v1.14.11](https://github.com/ethereum/go-ethereum/releases/tag/v1.14.11).
 
 ## Tracing changes
 
