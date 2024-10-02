@@ -271,6 +271,7 @@ func (st *StateTransition) buyGas() error {
 	if overflow {
 		return fmt.Errorf("%w: address %v required balance exceeds 256 bits", ErrInsufficientFunds, st.msg.From.Hex())
 	}
+	// CHANGE(taiko): if the transaction is an anchor transaction, the balance check is skipped.
 	if st.msg.IsAnchor {
 		balanceCheckU256 = common.U2560
 		mgval = common.Big0
@@ -524,6 +525,7 @@ func (st *StateTransition) refundGas(refundQuotient uint64) uint64 {
 	}
 
 	st.gasRemaining += refund
+	// CHANGE(taiko): do not change the balance in anchor transactions.
 	if !st.msg.IsAnchor {
 		// Return ETH for remaining gas, exchanged at the original rate.
 		remaining := uint256.NewInt(st.gasRemaining)

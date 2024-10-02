@@ -862,7 +862,7 @@ var (
 		Value:    ethconfig.Defaults.GPO.IgnorePrice.Int64(),
 		Category: flags.GasPriceCategory,
 	}
-	// CHANGE(taiko): use default gas price flag
+	// CHANGE(taiko): add `--gpo.defaultprice` flag.
 	GpoDefaultGasPriceFlag = &cli.Int64Flag{
 		Name:     "gpo.defaultprice",
 		Usage:    "Default gas price",
@@ -1794,7 +1794,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	}
 	// Override any default configs for hard coded networks.
 	switch {
-	// CHANGE(taiko): when --taiko flag is set, use the Taiko genesis.
+	// CHANGE(taiko): when `--taiko` flag is set, use the Taiko genesis.
 	case ctx.IsSet(TaikoFlag.Name):
 		cfg.Genesis = core.TaikoGenesisBlock(cfg.NetworkId)
 	case ctx.Bool(MainnetFlag.Name):

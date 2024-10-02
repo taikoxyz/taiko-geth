@@ -387,7 +387,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		}
 	}
 
-	// CHANGE(taiko): check whether --taiko flag is set.
+	// CHANGE(taiko): check whether `--taiko` flag is set.
 	isTaiko := api.eth.BlockChain().Config().Taiko
 
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {
