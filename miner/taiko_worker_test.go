@@ -2,7 +2,6 @@ package miner
 
 import (
 	"math/big"
-	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -55,7 +54,6 @@ func testGenerateWorker(t *testing.T, txCount int) *Miner {
 }
 
 func TestBuildTransactionsLists(t *testing.T) {
-	os.Setenv("TAIKO_TEST", "true")
 	w := testGenerateWorker(t, 1000)
 
 	maxBytesPerTxList := (params.BlobTxBytesPerFieldElement - 1) * params.BlobTxFieldElementsPerBlob
