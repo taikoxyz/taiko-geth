@@ -25,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 const (
@@ -122,13 +121,15 @@ func (f *chainFreezer) readFinalizedNumber(db ethdb.KeyValueReader) uint64 {
 // by formula: max(finality, HEAD-params.FullImmutabilityThreshold).
 func (f *chainFreezer) freezeThreshold(db ethdb.KeyValueReader) (uint64, error) {
 	var (
-		head      = f.readHeadNumber(db)
+		// CHANGE(taiko): Just use finalized number
+		//head      = f.readHeadNumber(db)
 		final     = f.readFinalizedNumber(db)
 		headLimit uint64
 	)
-	if head > params.FullImmutabilityThreshold {
-		headLimit = head - params.FullImmutabilityThreshold
-	}
+	// CHANGE(taiko): Just use finalized number
+	//if head > params.FullImmutabilityThreshold {
+	//	headLimit = head - params.FullImmutabilityThreshold
+	//}
 	if final == 0 && headLimit == 0 {
 		return 0, errors.New("freezing threshold is not available")
 	}
