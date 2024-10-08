@@ -37,7 +37,6 @@ var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	PreconfsNetworkID:          TaikoChainConfig,
 	MainnetChainConfig.ChainID: MainnetChainConfig,
 	SepoliaChainConfig.ChainID: SepoliaChainConfig,
-	GoerliChainConfig.ChainID:  GoerliChainConfig,
 	TestChainConfig.ChainID:    TestChainConfig,
 	NonActivatedConfig.ChainID: NonActivatedConfig,
 }

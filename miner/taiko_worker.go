@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
+	"golang.org/x/exp/maps"
 )
 
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given conditions
@@ -25,7 +26,7 @@ import (
 // 2. The total gas used should not exceed the given blockMaxGasLimit
 // 3. The total bytes used should not exceed the given maxBytesPerTxList
 // 4. The total number of transactions lists should not exceed the given maxTransactionsLists
-func (w *worker) BuildTransactionsLists(
+func (w *Miner) buildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
 	blockMaxGasLimit uint64,
@@ -44,7 +45,7 @@ func (w *worker) BuildTransactionsLists(
 	}
 
 	// Check if tx pool is empty at first.
-	if len(w.eth.TxPool().Pending(txpool.PendingFilter{MinTip: uint256.NewInt(minTip), BaseFee: uint256.MustFromBig(baseFee), OnlyPlainTxs: true})) == 0 {
+	if len(w.txpool.Pending(txpool.PendingFilter{MinTip: uint256.NewInt(minTip), BaseFee: uint256.MustFromBig(baseFee), OnlyPlainTxs: true})) == 0 {
 		return txsLists, nil
 	}
 
@@ -58,11 +59,10 @@ func (w *worker) BuildTransactionsLists(
 		baseFeePerGas: baseFee,
 	}
 
-	env, err := w.prepareWork(params)
+	env, err := w.prepareWork(params, false)
 	if err != nil {
 		return nil, err
 	}
-	defer env.discard()
 
 	var (
 		signer = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
@@ -71,51 +71,35 @@ func (w *worker) BuildTransactionsLists(
 		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee)
 	)
 
-	commitTxs := func(firstTransaction *types.Transaction) (*types.Transaction, *PreBuiltTxList, error) {
+	commitTxs := func() (*PreBuiltTxList, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
-		var (
-			locals  = make(map[common.Address][]*txpool.LazyTransaction)
-			remotes = make(map[common.Address][]*txpool.LazyTransaction)
-		)
-
-		for address, txs := range localTxs {
-			locals[address] = txs
-		}
-		for address, txs := range remoteTxs {
-			remotes[address] = txs
-		}
-
-		lastTransaction := w.commitL2Transactions(
+		w.commitL2Transactions(
 			env,
-			firstTransaction,
-			newTransactionsByPriceAndNonce(signer, locals, baseFee),
-			newTransactionsByPriceAndNonce(signer, remotes, baseFee),
+			newTransactionsByPriceAndNonce(signer, maps.Clone(localTxs), baseFee),
+			newTransactionsByPriceAndNonce(signer, maps.Clone(remoteTxs), baseFee),
 			maxBytesPerTxList,
 			minTip,
 		)
 
 		b, err := encodeAndCompressTxList(env.txs)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
-		return lastTransaction, &PreBuiltTxList{
+		return &PreBuiltTxList{
 			TxList:           env.txs,
 			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
 			BytesLength:      uint64(len(b)),
 		}, nil
 	}
 
-	var (
-		lastTx *types.Transaction
-		res    *PreBuiltTxList
-	)
 	for i := 0; i < int(maxTransactionsLists); i++ {
-		if lastTx, res, err = commitTxs(lastTx); err != nil {
+		res, err := commitTxs()
+		if err != nil {
 			return nil, err
 		}
 
@@ -130,7 +114,7 @@ func (w *worker) BuildTransactionsLists(
 }
 
 // sealBlockWith mines and seals a block with the given block metadata.
-func (w *worker) sealBlockWith(
+func (w *Miner) sealBlockWith(
 	parent common.Hash,
 	timestamp uint64,
 	blkMeta *engine.BlockMetadata,
@@ -160,13 +144,12 @@ func (w *worker) sealBlockWith(
 	}
 
 	// Set extraData
-	w.extra = blkMeta.ExtraData
+	w.SetExtra(blkMeta.ExtraData)
 
-	env, err := w.prepareWork(params)
+	env, err := w.prepareWork(params, false)
 	if err != nil {
 		return nil, err
 	}
-	defer env.discard()
 
 	env.header.GasLimit = blkMeta.GasLimit
 
@@ -195,14 +178,20 @@ func (w *worker) sealBlockWith(
 
 		env.state.Prepare(rules, sender, blkMeta.Beneficiary, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
 		env.state.SetTxContext(tx.Hash(), env.tcount)
-		if _, err := w.commitTransaction(env, tx); err != nil {
+		if err := w.commitTransaction(env, tx); err != nil {
 			log.Debug("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			continue
 		}
 		env.tcount++
 	}
 
-	block, err := w.engine.FinalizeAndAssemble(w.chain, env.header, env.state, env.txs, nil, env.receipts, withdrawals)
+	block, err := w.engine.FinalizeAndAssemble(
+		w.chain,
+		env.header,
+		env.state,
+		&types.Body{Transactions: env.txs, Withdrawals: withdrawals},
+		env.receipts,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -217,11 +206,11 @@ func (w *worker) sealBlockWith(
 }
 
 // getPendingTxs fetches the pending transactions from tx pool.
-func (w *worker) getPendingTxs(localAccounts []string, baseFee *big.Int) (
+func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 	map[common.Address][]*txpool.LazyTransaction,
 	map[common.Address][]*txpool.LazyTransaction,
 ) {
-	pending := w.eth.TxPool().Pending(txpool.PendingFilter{OnlyPlainTxs: true, BaseFee: uint256.MustFromBig(baseFee)})
+	pending := w.txpool.Pending(txpool.PendingFilter{OnlyPlainTxs: true, BaseFee: uint256.MustFromBig(baseFee)})
 	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
 
 	for _, local := range localAccounts {
@@ -236,23 +225,17 @@ func (w *worker) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 }
 
 // commitL2Transactions tries to commit the transactions into the given state.
-func (w *worker) commitL2Transactions(
+func (w *Miner) commitL2Transactions(
 	env *environment,
-	firstTransaction *types.Transaction,
 	txsLocal *transactionsByPriceAndNonce,
 	txsRemote *transactionsByPriceAndNonce,
 	maxBytesPerTxList uint64,
 	minTip uint64,
-) *types.Transaction {
+) {
 	var (
-		txs             = txsLocal
-		isLocal         = true
-		lastTransaction *types.Transaction
+		txs     = txsLocal
+		isLocal = true
 	)
-
-	if firstTransaction != nil {
-		env.txs = append(env.txs, firstTransaction)
-	}
 
 loop:
 	for {
@@ -301,7 +284,9 @@ loop:
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 
-		_, err := w.commitTransaction(env, tx)
+		snap := env.state.RevisionId()
+		gasPool := env.gasPool.Gas()
+		err := w.commitTransaction(env, tx)
 		switch {
 		case errors.Is(err, core.ErrNonceTooLow):
 			// New head notification data race between the transaction pool and miner, shift
@@ -313,18 +298,29 @@ loop:
 			env.tcount++
 			txs.Shift()
 
-			// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
-			b, err := encodeAndCompressTxList(env.txs)
+			data, err := rlp.EncodeToBytes(env.txs)
 			if err != nil {
-				log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
+				log.Trace("Failed to rlp encode the pending transaction %s: %w", tx.Hash(), err)
 				txs.Pop()
 				continue
 			}
-			if len(b) > int(maxBytesPerTxList) {
-				lastTransaction = env.txs[env.tcount-1]
-				env.txs = env.txs[0 : env.tcount-1]
-				break loop
+
+			if len(data) >= int(maxBytesPerTxList) {
+				// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
+				b, err := compress(data)
+				if err != nil {
+					log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
+					txs.Pop()
+					continue
+				}
+				if len(b) > int(maxBytesPerTxList) {
+					env.txs = env.txs[0 : env.tcount-1]
+					env.state.RevertToSnapshot(snap)
+					env.gasPool.SetGas(gasPool)
+					break loop
+				}
 			}
+
 		default:
 			// Transaction is regarded as invalid, drop all consecutive transactions from
 			// the same sender because of `nonce-too-high` clause.
@@ -332,8 +328,6 @@ loop:
 			txs.Pop()
 		}
 	}
-
-	return lastTransaction
 }
 
 // encodeAndCompressTxList encodes and compresses the given transactions list.
