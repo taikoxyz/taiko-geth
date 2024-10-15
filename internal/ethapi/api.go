@@ -2075,8 +2075,11 @@ func (api *TransactionAPI) SendRawTransaction(ctx context.Context, input hexutil
 		h, err := forward[string](forwardURL, "eth_sendRawTransaction", []interface{}{input.String()})
 		if err == nil && h != nil {
 			return common.HexToHash(*h), nil
+		} else {
+			return common.Hash{}, err
 		}
 	}
+
 	tx := new(types.Transaction)
 	if err := tx.UnmarshalBinary(input); err != nil {
 		return common.Hash{}, err

@@ -1,7 +1,7 @@
 ./build/bin/geth \
   --gcmode archive \
   --syncmode full \
-  --datadir ~/taiko-helder-geth \
+  --datadir ~/taikoheldergeth \
   --metrics \
   --metrics.expensive \
   --metrics.addr "0.0.0.0" \
@@ -17,7 +17,7 @@
   --authrpc.addr "0.0.0.0" \
   --authrpc.port "8551" \
   --authrpc.vhosts "*" \
-  --authrpc.jwtsecret ~/taiko-helder-geth/geth/jwtsecret \
+  --authrpc.jwtsecret ~/taikoheldergeth/geth/jwtsecret \
   --allow-insecure-unlock \
   --ws.api eth,net,web3,txpool,miner,taiko \
   --taiko \
