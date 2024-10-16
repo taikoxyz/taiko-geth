@@ -425,6 +425,7 @@ func (c *BoundContract) transact(opts *TransactOpts, contract *common.Address, i
 	if opts.NoSend {
 		return signedTx, nil
 	}
+	// change(taiko): slot and sig
 	if err := c.transactor.SendTransaction(ensureContext(opts.Context), signedTx); err != nil {
 		return nil, err
 	}

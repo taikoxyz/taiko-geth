@@ -313,6 +313,11 @@ func (b *backendMock) setFork(fork string) error {
 	return nil
 }
 
+// change(taiko)
+func (b *backendMock) GetPreconfirmationForwardingURL() string {
+	return ""
+}
+
 func (b *backendMock) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
 	return big.NewInt(42), nil
 }

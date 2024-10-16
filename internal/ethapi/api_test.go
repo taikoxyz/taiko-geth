@@ -470,6 +470,10 @@ func (b *testBackend) setPendingBlock(block *types.Block) {
 	b.pending = block
 }
 
+// change(taiko): get preconf url
+func (b testBackend) GetPreconfirmationForwardingURL() string {
+	return ""
+}
 func (b testBackend) SyncProgress() ethereum.SyncProgress { return ethereum.SyncProgress{} }
 func (b testBackend) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
 	return big.NewInt(0), nil

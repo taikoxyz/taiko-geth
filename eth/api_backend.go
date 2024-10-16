@@ -48,6 +48,12 @@ type EthAPIBackend struct {
 	allowUnprotectedTxs bool
 	eth                 *Ethereum
 	gpo                 *gasprice.Oracle
+	preconfirmationURL  string // change(taiko)
+}
+
+// GetPreconfirmationForwardingURL
+func (b *EthAPIBackend) GetPreconfirmationForwardingURL() string {
+	return b.preconfirmationURL
 }
 
 // ChainConfig returns the active chain configuration.

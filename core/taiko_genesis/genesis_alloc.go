@@ -33,3 +33,6 @@ var HeklaGenesisAllocJSON []byte
 
 //go:embed mainnet.json
 var MainnetGenesisAllocJSON []byte
+
+//go:embed preconfs.json
+var PreconfsGenesisAllocJSON []byte

@@ -190,6 +190,7 @@ var (
 		utils.AllowUnprotectedTxs,
 		utils.BatchRequestLimit,
 		utils.BatchResponseMaxSize,
+		utils.PreconfirmationForwardingURLFlag,
 	}
 
 	metricsFlags = []cli.Flag{
