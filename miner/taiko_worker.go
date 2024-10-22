@@ -294,6 +294,8 @@ loop:
 			txs.Shift()
 
 		case errors.Is(err, nil):
+			txs.Shift()
+
 			data, err := rlp.EncodeToBytes(env.txs)
 			if err != nil {
 				log.Trace("Failed to rlp encode the pending transaction %s: %w", tx.Hash(), err)
@@ -319,7 +321,6 @@ loop:
 
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			env.tcount++
-			txs.Shift()
 
 		default:
 			// Transaction is regarded as invalid, drop all consecutive transactions from
