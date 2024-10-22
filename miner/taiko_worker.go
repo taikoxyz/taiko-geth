@@ -72,15 +72,14 @@ func (w *Miner) buildTransactionsLists(
 		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee)
 	)
 
-	commitTxs := func(firstTransaction *types.Transaction) (*types.Transaction, *PreBuiltTxList, error) {
+	commitTxs := func() (*PreBuiltTxList, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
-		lastTransaction := w.commitL2Transactions(
+		w.commitL2Transactions(
 			env,
-			firstTransaction,
 			newTransactionsByPriceAndNonce(signer, maps.Clone(localTxs), baseFee),
 			newTransactionsByPriceAndNonce(signer, maps.Clone(remoteTxs), baseFee),
 			maxBytesPerTxList,
@@ -89,22 +88,19 @@ func (w *Miner) buildTransactionsLists(
 
 		b, err := encodeAndCompressTxList(env.txs)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 
-		return lastTransaction, &PreBuiltTxList{
+		return &PreBuiltTxList{
 			TxList:           env.txs,
 			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
 			BytesLength:      uint64(len(b)),
 		}, nil
 	}
 
-	var (
-		lastTx *types.Transaction
-		res    *PreBuiltTxList
-	)
 	for i := 0; i < int(maxTransactionsLists); i++ {
-		if lastTx, res, err = commitTxs(lastTx); err != nil {
+		res, err := commitTxs()
+		if err != nil {
 			return nil, err
 		}
 
@@ -232,21 +228,15 @@ func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 // commitL2Transactions tries to commit the transactions into the given state.
 func (w *Miner) commitL2Transactions(
 	env *environment,
-	firstTransaction *types.Transaction,
 	txsLocal *transactionsByPriceAndNonce,
 	txsRemote *transactionsByPriceAndNonce,
 	maxBytesPerTxList uint64,
 	minTip uint64,
-) *types.Transaction {
+) {
 	var (
-		txs             = txsLocal
-		isLocal         = true
-		lastTransaction *types.Transaction
+		txs     = txsLocal
+		isLocal = true
 	)
-
-	if firstTransaction != nil {
-		env.txs = append(env.txs, firstTransaction)
-	}
 
 loop:
 	for {
@@ -295,6 +285,21 @@ loop:
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 
+		if data, err := rlp.EncodeToBytes(append(env.txs, tx)); err != nil {
+			log.Warn("Failed to rlp encode the pending transaction", "err", err)
+			continue
+		} else if len(data) >= int(maxBytesPerTxList) {
+			// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
+			b, err := compress(data)
+			if err != nil {
+				log.Warn("Failed to rlp encode and compress the pending transaction", "err", err)
+				continue
+			}
+			if len(b) > int(maxBytesPerTxList) {
+				break loop
+			}
+		}
+
 		err := w.commitTransaction(env, tx)
 		switch {
 		case errors.Is(err, core.ErrNonceTooLow):
@@ -306,27 +311,6 @@ loop:
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			txs.Shift()
 
-			data, err := rlp.EncodeToBytes(env.txs)
-			if err != nil {
-				log.Trace("Failed to rlp encode the pending transaction %s: %w", tx.Hash(), err)
-				txs.Pop()
-				continue
-			}
-			if len(data) >= int(maxBytesPerTxList) {
-				// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
-				b, err := compress(data)
-				if err != nil {
-					log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
-					txs.Pop()
-					continue
-				}
-				if len(b) > int(maxBytesPerTxList) {
-					lastTransaction = env.txs[env.tcount-1]
-					env.txs = env.txs[0 : env.tcount-1]
-					break loop
-				}
-			}
-
 		default:
 			// Transaction is regarded as invalid, drop all consecutive transactions from
 			// the same sender because of `nonce-too-high` clause.
@@ -334,8 +318,6 @@ loop:
 			txs.Pop()
 		}
 	}
-
-	return lastTransaction
 }
 
 // encodeAndCompressTxList encodes and compresses the given transactions list.
