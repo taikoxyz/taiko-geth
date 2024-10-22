@@ -287,12 +287,14 @@ loop:
 
 		if data, err := rlp.EncodeToBytes(append(env.txs, tx)); err != nil {
 			log.Warn("Failed to rlp encode the pending transaction", "err", err)
+			txs.Pop()
 			continue
 		} else if len(data) >= int(maxBytesPerTxList) {
 			// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
 			b, err := compress(data)
 			if err != nil {
 				log.Warn("Failed to rlp encode and compress the pending transaction", "err", err)
+				txs.Pop()
 				continue
 			}
 			if len(b) > int(maxBytesPerTxList) {
