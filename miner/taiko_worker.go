@@ -314,9 +314,10 @@ loop:
 					continue
 				}
 				if len(b) > int(maxBytesPerTxList) {
-					env.txs = env.txs[0 : env.tcount-1]
+					env.txs = env.txs[0 : len(env.txs)-1]
 					env.state.RevertToSnapshot(snap)
 					env.gasPool.SetGas(gasPool)
+					env.tcount--
 					break loop
 				}
 			}
