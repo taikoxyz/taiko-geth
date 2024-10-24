@@ -211,6 +211,9 @@ type Config struct {
 	EnablePersonal bool `toml:"-"`
 
 	DBEngine string `toml:",omitempty"`
+
+	// CHANGE(taiko): preconf url
+	PreconfirmationForwardingURL string `json:"preconfirmationforwardingurl,omitempty"`
 }
 
 // IPCEndpoint resolves an IPC endpoint based on a configured value, taking into

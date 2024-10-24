@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -277,6 +278,8 @@ func (st *StateTransition) buyGas() error {
 		mgval = common.Big0
 	}
 	if have, want := st.state.GetBalance(st.msg.From), balanceCheckU256; have.Cmp(want) < 0 {
+		log.Info("failed to get balance", "have", have, "want", want, "isAnchor", st.msg.IsAnchor)
+
 		return fmt.Errorf("%w: address %v have %v want %v", ErrInsufficientFunds, st.msg.From.Hex(), have, want)
 	}
 	if err := st.gp.SubGas(st.msg.GasLimit); err != nil {
@@ -478,6 +481,8 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		effectiveTip = cmath.BigMin(msg.GasTipCap, new(big.Int).Sub(msg.GasFeeCap, st.evm.Context.BaseFee))
 	}
 	effectiveTipU256, _ := uint256.FromBig(effectiveTip)
+
+	log.Info("executed transaction", "from", msg.From, "to", msg.To, "gas", st.gasUsed(), "gasPrice", msg.GasPrice, "effectiveTip", effectiveTip, "value", msg.Value, "isAnchor", msg.IsAnchor)
 
 	if st.evm.Config.NoBaseFee && msg.GasFeeCap.Sign() == 0 && msg.GasTipCap.Sign() == 0 {
 		// Skip fee payment when NoBaseFee is set and the fee fields

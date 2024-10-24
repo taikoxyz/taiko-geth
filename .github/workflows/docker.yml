@@ -5,6 +5,8 @@ on:
     branches: [ taiko ]
     tags:
       - "v*"
+  pull_request:
+    branches: [ taiko ]
 
 env:
   REGISTRY_IMAGE: us-docker.pkg.dev/evmchain/images/taiko-geth
