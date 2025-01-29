@@ -10,10 +10,10 @@ import (
 )
 
 var (
-	InternalDevnetOntakeBlock = new(big.Int).SetUint64(2)
+	InternalDevnetOntakeBlock = new(big.Int).SetUint64(0)
+	PreconfDevnetOntakeBlock  = common.Big0
 	HeklaOntakeBlock          = new(big.Int).SetUint64(840_512)
-	// TODO: update this value when mainnet fork height is decided
-	MainnetOntakeBlock = new(big.Int).SetUint64(9_000_000)
+	MainnetOntakeBlock        = new(big.Int).SetUint64(538_304)
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
@@ -55,10 +55,10 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.ChainID = params.HeklaNetworkID
 		chainConfig.OntakeBlock = HeklaOntakeBlock
 		allocJSON = taikoGenesis.HeklaGenesisAllocJSON
-	case params.PreconfsNetworkID.Uint64():
-		chainConfig.OntakeBlock = new(big.Int).SetUint64(0)
-		chainConfig.ChainID = params.PreconfsNetworkID
-		allocJSON = taikoGenesis.PreconfsGenesisAllocJSON
+	case params.PreconfDevnetNetworkID.Uint64():
+		chainConfig.ChainID = params.PreconfDevnetNetworkID
+		chainConfig.OntakeBlock = PreconfDevnetOntakeBlock
+		allocJSON = taikoGenesis.PreconfDevnetGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoInternalL2ANetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock

@@ -62,6 +62,11 @@ func TestNetworkIDToChainConfigOrDefault(t *testing.T) {
 			TaikoChainConfig,
 		},
 		{
+			"preconfDevnetNetworkID",
+			PreconfDevnetNetworkID,
+			TaikoChainConfig,
+		},
+		{
 			"mainnet",
 			MainnetChainConfig.ChainID,
 			MainnetChainConfig,
@@ -70,11 +75,6 @@ func TestNetworkIDToChainConfigOrDefault(t *testing.T) {
 			"sepolia",
 			SepoliaChainConfig.ChainID,
 			SepoliaChainConfig,
-		},
-		{
-			"goerli",
-			GoerliChainConfig.ChainID,
-			GoerliChainConfig,
 		},
 		{
 			"doesntExist",

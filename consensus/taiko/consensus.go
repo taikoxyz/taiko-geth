@@ -10,9 +10,12 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -33,6 +36,9 @@ var (
 	AnchorV2Selector     = crypto.Keccak256(
 		[]byte("anchorV2(uint64,bytes32,uint32,(uint8,uint8,uint32,uint64,uint32))"),
 	)[:4]
+	AnchorV3Selector = crypto.Keccak256(
+		[]byte("anchorV3(uint64,bytes32,bytes32,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
+	)[:4]
 	AnchorGasLimit = uint64(250_000)
 )
 
@@ -40,11 +46,12 @@ var (
 type Taiko struct {
 	chainConfig    *params.ChainConfig
 	taikoL2Address common.Address
+	chainDB        ethdb.Database
 }
 
 var _ = new(Taiko)
 
-func New(chainConfig *params.ChainConfig) *Taiko {
+func New(chainConfig *params.ChainConfig, chainDB ethdb.Database) *Taiko {
 	taikoL2AddressPrefix := strings.TrimPrefix(chainConfig.ChainID.String(), "0")
 
 	return &Taiko{
@@ -55,6 +62,7 @@ func New(chainConfig *params.ChainConfig) *Taiko {
 				strings.Repeat("0", common.AddressLength*2-len(taikoL2AddressPrefix)-len(TaikoL2AddressSuffix)) +
 				TaikoL2AddressSuffix,
 		),
+		chainDB: chainDB,
 	}
 }
 
@@ -81,7 +89,7 @@ func (t *Taiko) VerifyHeader(chain consensus.ChainHeaderReader, header *types.He
 		return consensus.ErrUnknownAncestor
 	}
 	// Sanity checks passed, do a proper verification
-	return t.verifyHeader(chain, header, parent, time.Now().Unix())
+	return t.verifyHeader(header, parent, time.Now().Unix())
 }
 
 // VerifyHeaders is similar to VerifyHeader, but verifies a batch of headers
@@ -108,7 +116,7 @@ func (t *Taiko) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*type
 			if parent == nil {
 				err = consensus.ErrUnknownAncestor
 			} else {
-				err = t.verifyHeader(chain, header, parent, unixNow)
+				err = t.verifyHeader(header, parent, unixNow)
 			}
 			select {
 			case <-abort:
@@ -120,11 +128,7 @@ func (t *Taiko) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*type
 	return abort, results
 }
 
-func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *types.Header, unixNow int64) error {
-	if header.Time > uint64(unixNow) {
-		return consensus.ErrFutureBlock
-	}
-
+func (t *Taiko) verifyHeader(header, parent *types.Header, unixNow int64) error {
 	// Ensure that the header's extra-data section is of a reasonable size (<= 32 bytes)
 	if uint64(len(header.Extra)) > params.MaximumExtraDataSize {
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), params.MaximumExtraDataSize)
@@ -170,6 +174,16 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return ErrEmptyWithdrawalsHash
 	}
 
+	l1Origin, err := rawdb.ReadL1Origin(t.chainDB, header.Number)
+	if err != nil {
+		return err
+	}
+
+	// If the current block is not a preconfirmation block, then check the timestamp.
+	if l1Origin != nil && !l1Origin.IsPreconfBlock() && header.Time > uint64(unixNow) {
+		return consensus.ErrFutureBlock
+	}
+
 	return nil
 }
 
@@ -201,13 +215,17 @@ func (t *Taiko) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 //
 // Note: The block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
-func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body) {
 	// no block rewards in l2
 	header.UncleHash = types.CalcUncleHash(nil)
 	header.Difficulty = common.Big0
 	// Withdrawals processing.
-	for _, w := range withdrawals {
-		state.AddBalance(w.Address, uint256.MustFromBig(new(big.Int).SetUint64(w.Amount)))
+	for _, w := range body.Withdrawals {
+		state.AddBalance(
+			w.Address,
+			uint256.MustFromBig(new(big.Int).SetUint64(w.Amount)),
+			tracing.BalanceIncreaseWithdrawal,
+		)
 	}
 	header.Root = state.IntermediateRoot(true)
 }
@@ -217,17 +235,14 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 //
 // Note: The block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
-func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
-	if withdrawals == nil {
-		withdrawals = make([]*types.Withdrawal, 0)
+func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
+	if body.Withdrawals == nil {
+		body.Withdrawals = make([]*types.Withdrawal, 0)
 	}
 
 	// Verify anchor transaction
-	if len(txs) != 0 { // Transactions list might be empty when building empty payload.
-		isAnchor, err := t.ValidateAnchorTx(txs[0], header)
-
-		log.Info("ValidatorAnchorTx", "isAnchor", isAnchor, "err", err)
-
+	if len(body.Transactions) != 0 { // Transactions list might be empty when building empty payload.
+		isAnchor, err := t.ValidateAnchorTx(body.Transactions[0], header)
 		if err != nil {
 			return nil, err
 		}
@@ -237,10 +252,8 @@ func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 	}
 
 	// Finalize block
-	t.Finalize(chain, header, state, txs, uncles, withdrawals)
-	return types.NewBlockWithWithdrawals(
-		header, txs, nil /* ignore uncles */, receipts, withdrawals, trie.NewStackTrie(nil),
-	), nil
+	t.Finalize(chain, header, state, body)
+	return types.NewBlock(header, body, receipts, trie.NewStackTrie(nil)), nil
 }
 
 // Seal generates a new sealing request for the given input block and pushes
@@ -290,7 +303,9 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 		return false, nil
 	}
 
-	if !bytes.HasPrefix(tx.Data(), AnchorSelector) && !bytes.HasPrefix(tx.Data(), AnchorV2Selector) {
+	if !bytes.HasPrefix(tx.Data(), AnchorSelector) &&
+		!bytes.HasPrefix(tx.Data(), AnchorV2Selector) &&
+		!bytes.HasPrefix(tx.Data(), AnchorV3Selector) {
 		return false, nil
 	}
 
