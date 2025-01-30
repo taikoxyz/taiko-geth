@@ -73,17 +73,25 @@ type Miner struct {
 	chain       *core.BlockChain
 	pending     *pending
 	pendingMu   sync.Mutex // Lock protects the pending block
+
+	// gattacaWorker: worker state manager and api override provider
+	gattacaWorker *GattacaWorker
 }
 
 // New creates a new miner with provided config.
-func New(eth Backend, config Config, engine consensus.Engine) *Miner {
+func New(eth Backend, config Config, chainConfig *params.ChainConfig, engine consensus.Engine, preconfState *PreconfState) *Miner {
+	gattacaWorker, err := NewGattacaWorker(chainConfig, eth.BlockChain(), &config, engine, preconfState)
+	if err != nil {
+		panic(err)
+	}
 	return &Miner{
-		config:      &config,
-		chainConfig: eth.BlockChain().Config(),
-		engine:      engine,
-		txpool:      eth.TxPool(),
-		chain:       eth.BlockChain(),
-		pending:     &pending{},
+		config:        &config,
+		chainConfig:   eth.BlockChain().Config(),
+		engine:        engine,
+		txpool:        eth.TxPool(),
+		chain:         eth.BlockChain(),
+		pending:       &pending{},
+		gattacaWorker: gattacaWorker,
 	}
 }
 

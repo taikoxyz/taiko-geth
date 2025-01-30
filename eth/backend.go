@@ -254,10 +254,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 
-	eth.miner = miner.New(eth, config.Miner, eth.engine)
-	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
+	preconfState := miner.NewPreconfState(eth.blockchain)
 
-	eth.miner = miner.New(eth, &config.Miner, eth.blockchain.Config(), eth.EventMux(), eth.engine, eth.isLocalBlock, preconfState)
+	eth.miner = miner.New(eth, config.Miner, eth.blockchain.Config(), eth.engine, preconfState)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
 	// change(TAIKO): preconfirmation URL
 	eth.APIBackend = &GattacaEthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil, config.PreconfirmationForwardingURL, preconfState}

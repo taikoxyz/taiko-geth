@@ -2219,7 +2219,7 @@ func TestSignTransaction(t *testing.T) {
 	b := newTestBackend(t, 1, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
 		b.SetPoS()
 	})
-	api := NewTransactionApi(b, nil)
+	api := NewTransactionAPI(b, nil)
 	res, err := api.FillTransaction(context.Background(), TransactionArgs{
 		From:  &b.acc.Address,
 		To:    &to,
@@ -2257,7 +2257,7 @@ func TestSignBlobTransaction(t *testing.T) {
 	b := newTestBackend(t, 1, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
 		b.SetPoS()
 	})
-	api := NewTransactionApi(b, nil)
+	api := NewTransactionAPI(b, nil)
 	res, err := api.FillTransaction(context.Background(), TransactionArgs{
 		From:       &b.acc.Address,
 		To:         &to,
@@ -2288,7 +2288,7 @@ func TestSendBlobTransaction(t *testing.T) {
 	b := newTestBackend(t, 1, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
 		b.SetPoS()
 	})
-	api := NewTransactionApi(b, nil)
+	api := NewTransactionAPI(b, nil)
 	res, err := api.FillTransaction(context.Background(), TransactionArgs{
 		From:       &b.acc.Address,
 		To:         &to,
@@ -2326,7 +2326,7 @@ func TestFillBlobTransaction(t *testing.T) {
 	b := newTestBackend(t, 1, genesis, beacon.New(ethash.NewFaker()), func(i int, b *core.BlockGen) {
 		b.SetPoS()
 	})
-	api := NewTransactionApi(b, nil)
+	api := NewTransactionAPI(b, nil)
 	type result struct {
 		Hashes  []common.Hash
 		Sidecar *types.BlobTxSidecar
@@ -3132,7 +3132,7 @@ func TestRPCGetTransactionReceipt(t *testing.T) {
 
 	var (
 		backend, txHashes = setupReceiptBackend(t, 6)
-		api               = NewTransactionApi(backend, new(AddrLocker))
+		api               = NewTransactionAPI(backend, new(AddrLocker))
 	)
 
 	var testSuite = []struct {

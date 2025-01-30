@@ -3,16 +3,18 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/holiman/uint256"
-	"math/big"
-	"time"
 )
 
 func (g *GattacaWorker) prepareWork(genParams *generateParams) (*environment, error) {
@@ -90,7 +92,7 @@ func (g *GattacaWorker) prepareWork(genParams *generateParams) (*environment, er
 	// Could potentially happen if starting to mine in an odd state.
 	// Note genParams.coinbase can be different with header.Coinbase
 	// since clique algorithm can modify the coinbase field in header.
-	env, err := g.makeEnv(parent, header, genParams.coinbase)
+	env, err := g.makeEnv(parent, header, genParams.coinbase, false)
 	if err != nil {
 		log.Error("Failed to create sealing context", "err", err)
 		return nil, err
@@ -103,29 +105,33 @@ func (g *GattacaWorker) prepareWork(genParams *generateParams) (*environment, er
 	return env, nil
 }
 
-// makeEnv creates a new Environment for the sealing block.
-func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address) (*environment, error) {
-	// Retrieve the parent state to execute on top and start a prefetcher for
-	// the miner to speed block sealing up a bit.
+// makeEnv creates a new environment for the sealing block.
+func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address, witness bool) (*environment, error) {
+	// Retrieve the parent state to execute on top.
 	state, err := g.chain.StateAt(parent.Root)
 	if err != nil {
 		return nil, err
 	}
-	state.StartPrefetcher("miner")
+	if witness {
+		bundle, err := stateless.NewWitness(header, g.chain)
+		if err != nil {
+			return nil, err
+		}
+		state.StartPrefetcher("miner", bundle)
+	}
 	// Note the passed coinbase may be different with header.Coinbase.
-	log.Info("current gasUsed", "gasUsed", header.GasUsed)
-	env := &environment{
-		signer:                   types.MakeSigner(g.chainConfig, header.Number, header.Time),
-		state:                    state,
-		coinbase:                 coinbase,
-		header:                   header,
+	return &environment{
+		signer:   types.MakeSigner(g.chainConfig, header.Number, header.Time),
+		state:    state,
+		coinbase: coinbase,
+		header:   header,
+		witness:  state.Witness(),
+
+		//gattaca
 		hashReceipts:             make(map[string]*types.Receipt),
 		cumulativeBuilderPayment: new(uint256.Int).SetUint64(0),
 		txs:                      make([]*types.Transaction, 0),
-	}
-	// Keep track of transactions which return errors, so they can be removed
-	env.tcount = 0
-	return env, nil
+	}, nil
 }
 
 func (g *GattacaWorker) envFromHead() (*environment, error) {

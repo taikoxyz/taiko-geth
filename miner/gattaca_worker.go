@@ -3,10 +3,11 @@ package miner
 import (
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"math/big"
 	"math/rand"
 	"sync"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
 
 	ckzg4844 "github.com/ethereum/c-kzg-4844/bindings/go"
 	"github.com/ethereum/go-ethereum/common"
@@ -308,10 +309,8 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		g.chain,
 		pendingPreconfBlock.header,
 		pendingPreconfBlock.state,
-		pendingPreconfBlock.txs,
-		nil, // Uncles (always nil for Taiko)
+		&types.Body{Transactions: pendingPreconfBlock.txs, Withdrawals: nil},
 		pendingPreconfBlock.receipts,
-		nil, // Withdrawals (always nil for Taiko)
 	)
 	if err != nil {
 		// Error finalizing and assembling block; send error response.

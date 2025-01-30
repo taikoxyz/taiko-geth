@@ -99,6 +99,9 @@ type Backend interface {
 
 	// change(taiko)
 	GetPreconfirmationForwardingURL() string
+
+	// GTC: Add GetTd method to the Backend interface
+	GetTd(ctx context.Context, hash common.Hash) *big.Int
 }
 
 func GetAPIs(apiBackend Backend) []rpc.API {

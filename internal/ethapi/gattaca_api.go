@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -11,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/status-im/keycard-go/hexutils"
-	"strconv"
 )
 
 type SimulateTxResponse struct {
@@ -97,8 +98,6 @@ func (s *TransactionAPI) SealBlock(ctx context.Context) (map[string]interface{},
 }
 
 func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}, error) {
-	// Initialize result map and get response from channel
-	retMap := make(map[string]interface{})
 	res := <-resCh
 
 	// Helper function to create execution result wrapper
@@ -120,10 +119,12 @@ func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}
 			errData["gas_used"] = hexutils.BytesToHex([]byte(strconv.FormatUint(res.GasUsed(), 10)))
 			errData["builder_payment"] = res.BuilderPayment().String()
 			errData["state_id"] = res.StateId()
-			retMap = createExecutionResult("revert", errData, res.StateId())
+			retMap := createExecutionResult("revert", errData, res.StateId())
+			return retMap, nil
 		default:
 			errData["reason"] = err.Error()
-			retMap = createExecutionResult("invalid", errData, res.StateId())
+			retMap := createExecutionResult("invalid", errData, res.StateId())
+			return retMap, nil
 		}
 	} else {
 		successData := map[string]interface{}{
@@ -131,7 +132,7 @@ func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}
 			"builder_payment": res.BuilderPayment().String(),
 			"state_id":        res.StateId(),
 		}
-		retMap = createExecutionResult("success", successData, res.StateId())
+		retMap := createExecutionResult("success", successData, res.StateId())
+		return retMap, nil
 	}
-	return retMap, nil
 }
