@@ -1,4 +1,4 @@
-  ./build/bin/geth \
+./build/bin/geth \
     --gcmode archive \
     --syncmode snap \
     --datadir ~/taiko/taiko_datadir \
@@ -7,7 +7,7 @@
     --port 31303 \
     --networkid 167010 \
     --http \
-    --http.port 18545 \
+    --http.port 8545 \
     --http.addr "0.0.0.0" \
     --http.vhosts "*" \
     --http.corsdomain "*" \
