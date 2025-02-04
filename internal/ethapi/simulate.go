@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
+	"runtime/debug"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -34,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
@@ -206,6 +208,7 @@ func (sim *simulator) processBlock(ctx context.Context, block *simBlock, header,
 		// EoA check is always skipped, even in validation mode.
 		msg := call.ToMessage(header.BaseFee, !sim.validate, true)
 		evm.Reset(core.NewEVMTxContext(msg), sim.state)
+		log.Info("ETH-API: ApplyMessage in processBlock", "callstack", string(debug.Stack()))
 		result, err := applyMessageWithEVM(ctx, evm, msg, sim.state, timeout, sim.gp)
 		if err != nil {
 			txErr := txValidationError(err)

@@ -1160,6 +1160,7 @@ func (context *ChainContext) GetHeader(hash common.Hash, number uint64) *types.H
 }
 
 func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.StateDB, header *types.Header, overrides *StateOverride, blockOverrides *BlockOverrides, timeout time.Duration, globalGasCap uint64) (*core.ExecutionResult, error) {
+	log.Info("ETH-API: doCall")
 	blockCtx := core.NewEVMBlockContext(header, NewChainContext(ctx, b), nil)
 	if blockOverrides != nil {
 		blockOverrides.Apply(&blockCtx)
@@ -1195,6 +1196,8 @@ func applyMessage(ctx context.Context, b Backend, args TransactionArgs, state *s
 	if err := args.CallDefaults(gp.Gas(), blockContext.BaseFee, b.ChainConfig().ChainID); err != nil {
 		return nil, err
 	}
+	log.Info("ETH-API: applyMessage")
+
 	msg := args.ToMessage(header.BaseFee, skipChecks, skipChecks)
 	// Lower the basefee to 0 to avoid breaking EVM
 	// invariants (basefee < feecap).
@@ -1219,6 +1222,8 @@ func applyMessageWithEVM(ctx context.Context, evm *vm.EVM, msg *core.Message, st
 		<-ctx.Done()
 		evm.Cancel()
 	}()
+
+	log.Info("ETH-API: ApplyMessage in doCall")
 
 	// Execute the message.
 	result, err := core.ApplyMessage(evm, msg, gp)
@@ -1254,6 +1259,8 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 // Note, this function doesn't make and changes in the state/blockchain and is
 // useful to execute and retrieve values.
 func (api *BlockChainAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, overrides *StateOverride, blockOverrides *BlockOverrides) (hexutil.Bytes, error) {
+	log.Info("ETH-API: Call", "args", args)
+	//lets print the backend, it could be our custom backend
 	if blockNrOrHash == nil {
 		latest := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 		blockNrOrHash = &latest
@@ -1765,6 +1772,9 @@ func (api *TransactionAPI) GetTransactionCount(ctx context.Context, address comm
 		return nil, err
 	}
 	nonce := state.GetNonce(address)
+
+	log.Info("GetTransactionCount", "address", address, "nonce", nonce, "blockNrOrHash", blockNrOrHash, "error", state.Error())
+
 	return (*hexutil.Uint64)(&nonce), state.Error()
 }
 

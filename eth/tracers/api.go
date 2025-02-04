@@ -1052,6 +1052,9 @@ func (api *API) traceTx(ctx context.Context, tx *types.Transaction, message *cor
 		timeout = defaultTraceTimeout
 		usedGas uint64
 	)
+
+	log.Info("TraceTx", "tx", tx.Hash().Hex(), "from", message.From, "to", message.To, "nonce", message.Nonce, "stateNonce", statedb.GetNonce(message.From), "isAnchor", message.IsAnchor)
+
 	if config == nil {
 		config = &TraceConfig{}
 	}

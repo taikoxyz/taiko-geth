@@ -22,6 +22,8 @@ import (
 	"math/big"
 	"strings"
 
+	"encoding/hex"
+
 	"github.com/ethereum/go-ethereum/common"
 	cmath "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -196,6 +198,7 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 // indicates a core error meaning that the message would always fail for that particular
 // state and would never be accepted within a block.
 func ApplyMessage(evm *vm.EVM, msg *Message, gp *GasPool) (*ExecutionResult, error) {
+	log.Info("ApplyMessage before transitioning")
 	return NewStateTransition(evm, msg, gp).TransitionDb()
 }
 
@@ -397,18 +400,17 @@ func (st *StateTransition) preCheck() error {
 // However if any consensus issue encountered, return the error directly with
 // nil evm execution result.
 func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
-	// First check this message satisfies all consensus rules before
-	// applying the message. The rules include these clauses
-	//
-	// 1. the nonce of the message caller is correct
-	// 2. caller has enough balance to cover transaction fee(gaslimit * gasprice)
-	// 3. the amount of gas required is available in the block
-	// 4. the purchased gas is enough to cover intrinsic usage
-	// 5. there is no overflow when calculating intrinsic gas
-	// 6. caller has enough balance to cover asset transfer for **topmost** call
+	// Add initial logging
+	log.Info("Starting transaction transition",
+		"from", st.msg.From,
+		"to", st.msg.To,
+		"value", st.msg.Value,
+		"gasLimit", st.msg.GasLimit,
+		"isAnchor", st.msg.IsAnchor)
 
 	// Check clauses 1-3, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
+		log.Error("Transaction pre-check failed", "error", err)
 		return nil, err
 	}
 
@@ -419,12 +421,22 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		contractCreation = msg.To == nil
 	)
 
+	log.Info("StateTransition details:", "sender", sender.Address(), "to", msg.To)
+
+	// log transactioncount for address 0x0000777735367b36bC9B61C50022d9D0700dB4Ec here
+	address := common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
+	nonce := st.state.GetNonce(address)
+	log.Info("TransactionCount for address 0x0000777735367b36bC9B61C50022d9D0700dB4Ec", "nonce", nonce)
 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
 	gas, err := IntrinsicGas(msg.Data, msg.AccessList, contractCreation, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai)
 	if err != nil {
+		log.Error("Intrinsic gas calculation failed", "error", err)
 		return nil, err
 	}
 	if st.gasRemaining < gas {
+		log.Error("Insufficient gas remaining for intrinsic gas",
+			"gasRemaining", st.gasRemaining,
+			"intrinsicGas", gas)
 		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining, gas)
 	}
 	if t := st.evm.Config.Tracer; t != nil && t.OnGasChange != nil {
@@ -461,14 +473,31 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 
 	var (
 		ret   []byte
-		vmerr error // vm errors do not effect consensus and are therefore not assigned to err
+		vmerr error
 	)
 	if contractCreation {
+		log.Info("Executing contract creation")
 		ret, _, st.gasRemaining, vmerr = st.evm.Create(sender, msg.Data, st.gasRemaining, value)
+		if vmerr != nil {
+			log.Error("Contract creation failed",
+				"error", vmerr,
+				"gasRemaining", st.gasRemaining,
+				"returnData", hex.EncodeToString(ret))
+		}
 	} else {
-		// Increment the nonce for the next transaction
+		log.Info("Executing message call",
+			"from", msg.From,
+			"to", st.to(),
+			"input", hex.EncodeToString(msg.Data[:min(len(msg.Data), 100)]), // First 100 bytes of input
+			"value", value)
 		st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1)
 		ret, st.gasRemaining, vmerr = st.evm.Call(sender, st.to(), msg.Data, st.gasRemaining, value)
+		if vmerr != nil {
+			log.Error("Message call failed",
+				"error", vmerr,
+				"gasRemaining", st.gasRemaining,
+				"returnData", hex.EncodeToString(ret))
+		}
 	}
 
 	var gasRefund uint64
@@ -485,7 +514,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	}
 	effectiveTipU256, _ := uint256.FromBig(effectiveTip)
 
-	log.Info("executed transaction", "from", msg.From, "to", msg.To, "gas", st.gasUsed(), "gasPrice", msg.GasPrice, "effectiveTip", effectiveTip, "value", msg.Value, "isAnchor", msg.IsAnchor)
+	log.Info("executed transaction", "vmerr", vmerr, "from", msg.From, "to", msg.To, "gas", st.gasUsed(), "gasPrice", msg.GasPrice, "effectiveTip", effectiveTip, "value", msg.Value, "isAnchor", msg.IsAnchor)
 
 	if st.evm.Config.NoBaseFee && msg.GasFeeCap.Sign() == 0 && msg.GasTipCap.Sign() == 0 {
 		// Skip fee payment when NoBaseFee is set and the fee fields
@@ -512,6 +541,10 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			st.evm.AccessEvents.AddAccount(st.evm.Context.Coinbase, true)
 		}
 	}
+
+	address = common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
+	nonce = st.state.GetNonce(address)
+	log.Info("TransactionCount after transition for address 0x0000777735367b36bC9B61C50022d9D0700dB4Ec", "nonce", nonce)
 
 	return &ExecutionResult{
 		UsedGas:     st.gasUsed(),
@@ -579,4 +612,12 @@ func (st *StateTransition) getTreasuryAddress() common.Address {
 // the corresponding enocding function in protocol is `LibProposing._encodeGasConfigs`.
 func DecodeOntakeExtraData(extradata []byte) uint8 {
 	return uint8(new(big.Int).SetBytes(extradata).Uint64())
+}
+
+// Helper function to avoid slice bounds panic
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

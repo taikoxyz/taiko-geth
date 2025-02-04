@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -233,6 +234,7 @@ func (b *GattacaEthAPIBackend) Pending() (*types.Block, types.Receipts, *state.S
 }
 
 func (b *GattacaEthAPIBackend) StateAndHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*state.StateDB, *types.Header, error) {
+	log.Info("GTC-API: StateAndHeaderByNumber")
 	if stateDB, header, err := b.preconfState.StateAndHeaderByNumber(number); err == nil {
 		return stateDB, header, nil
 	}
@@ -260,6 +262,11 @@ func (b *GattacaEthAPIBackend) StateAndHeaderByNumber(ctx context.Context, numbe
 }
 
 func (b *GattacaEthAPIBackend) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOrHash rpc.BlockNumberOrHash) (*state.StateDB, *types.Header, error) {
+	temp := "GattacaEthAPIBackend"
+	temp = temp + "StateAndHeaderByNumberOrHash"
+
+	log.Info("GTC-API: StateAndHeaderByNumberOrHash")
+
 	if blockNr, ok := blockNrOrHash.Number(); ok {
 		return b.StateAndHeaderByNumber(ctx, blockNr)
 	}

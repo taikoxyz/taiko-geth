@@ -181,6 +181,7 @@ func (c *callback) makeArgTypes() {
 
 // call invokes the callback.
 func (c *callback) call(ctx context.Context, method string, args []reflect.Value) (res interface{}, errRes error) {
+	log.Info("RPC: call", "method", method)
 	// Create the argument slice.
 	fullargs := make([]reflect.Value, 0, 2+len(args))
 	if c.rcvr.IsValid() {

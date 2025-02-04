@@ -18,8 +18,9 @@ package core
 
 import (
 	"fmt"
-	"github.com/ethereum/go-ethereum/log"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc"
@@ -64,6 +65,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		allLogs     []*types.Log
 		gp          = new(GasPool).AddGas(block.GasLimit())
 	)
+
+	log.Info("StateProcessor: Process", "block", block.Hash().Hex())
 
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
@@ -130,6 +133,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 // and uses the input parameters for its environment similar to ApplyTransaction. However,
 // this method takes an already created EVM instance as input.
 func ApplyTransactionWithEVM(msg *Message, config *params.ChainConfig, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (receipt *types.Receipt, err error) {
+	log.Info("ApplyTransactionWithEVM", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
 	if evm.Config.Tracer != nil && evm.Config.Tracer.OnTxStart != nil {
 		evm.Config.Tracer.OnTxStart(evm.GetVMContext(), tx, msg.From)
 		if evm.Config.Tracer.OnTxEnd != nil {
@@ -158,6 +162,8 @@ func ApplyTransactionWithEVM(msg *Message, config *params.ChainConfig, gp *GasPo
 		root = statedb.IntermediateRoot(config.IsEIP158(blockNumber)).Bytes()
 	}
 	*usedGas += result.UsedGas
+
+	log.Info("ApplyTransactionWithEVM", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
 
 	return MakeReceipt(evm, result, statedb, blockNumber, blockHash, tx, *usedGas, root), nil
 }
@@ -205,10 +211,15 @@ func MakeReceipt(evm *vm.EVM, result *ExecutionResult, statedb *state.StateDB, b
 // for the transaction, gas used and an error if the transaction failed,
 // indicating the block was invalid.
 func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *common.Address, gp *GasPool, statedb *state.StateDB, header *types.Header, tx *types.Transaction, usedGas *uint64, cfg vm.Config) (*types.Receipt, error) {
+
 	msg, err := TransactionToMessage(tx, types.MakeSigner(config, header.Number, header.Time), header.BaseFee)
 	if err != nil {
+		log.Error("ApplyTransaction in TransactionToMessage", "error", err)
 		return nil, err
 	}
+
+	log.Info("ApplyTransaction", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
+
 	// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 	// add it to the Message, if its an ontake block.
 	if config.IsOntake(header.Number) {
