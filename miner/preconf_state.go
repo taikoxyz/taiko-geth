@@ -22,7 +22,7 @@ import (
 type StateId uint64
 
 const (
-	LatestSealedId StateId = 1
+	LatestSealedId StateId = 0
 )
 
 // PreconfState holds all information about any blocks that have been pre-confirmed

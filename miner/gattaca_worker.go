@@ -31,7 +31,7 @@ var (
 var (
 	singletonGattaca   *GattacaWorker = nil
 	singletonLock                     = &sync.Mutex{}
-	stateIdToStartFrom                = uint64(0)
+	stateIdToStartFrom                = uint64(1) // 0 is reserved for latest sealed state
 )
 
 type GattacaWorker struct {
@@ -160,6 +160,14 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 		log.Error("first transaction must come from GoldenTouchAccount")
 		res <- SimulationResponse{
 			error: errors.New("first transaction must come from GoldenTouchAccount"),
+		}
+		return
+	}
+
+	// Ensure anchor tx nonce matches parent block number
+	if err := g.validateAnchorNonce(tx, simEnv); err != nil {
+		res <- SimulationResponse{
+			error: fmt.Errorf("invalid anchor nonce: %w", err),
 		}
 		return
 	}
@@ -485,4 +493,14 @@ func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction
 
 func (g *GattacaWorker) PreconfState() *PreconfState {
 	return g.preconfState
+}
+
+func (g *GattacaWorker) validateAnchorNonce(tx *types.Transaction, env *environment) error {
+	// Ensure anchor tx nonce matches parent block number
+	parentNumber := env.header.Number.Uint64() - 1
+	if tx.Nonce() != parentNumber {
+		return fmt.Errorf("anchor nonce %d does not match parent block number %d",
+			tx.Nonce(), parentNumber)
+	}
+	return nil
 }
