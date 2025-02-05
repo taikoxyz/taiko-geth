@@ -98,10 +98,7 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 	for {
 		select {
 		case ev := <-newBlockCh:
-			err := g.preconfState.onNewChainHeadEvent(&ev)
-			if err != nil {
-				log.Error(err.Error())
-			}
+			g.preconfState.onNewChainHeadEvent(&ev)
 		}
 	}
 }

@@ -29,6 +29,7 @@ const (
 // and any pending changes that are going to be pre-confirmed.
 type PreconfState struct {
 	// sealedPreconfBlocks holds an ordered list of pre-confirmed blocks that are ahead of the canonical chain head.
+	// The blocks are guaranteed to be ordered by block number in ascending order.
 	sealedPreconfBlocks []*environment
 	// stateIdMap maps all state IDs to their corresponding environments.
 	stateIdMap map[uint64]*environment
@@ -295,7 +296,13 @@ func (state *PreconfState) sealPreconfBlock(stateId uint64, sealedBlockHash comm
 	if !exists {
 		return fmt.Errorf("no environment found for stateId %d", stateId)
 	}
-	log.Info("Sealing environment to preconf block", "blockNumber", envToSeal.header.Number.Uint64())
+	log.Info("GATTACA (sealPreconfBlock): Sealing environment to preconf block", "blockNumber", envToSeal.header.Number.Uint64())
+
+	// Add the environment to our sealed blocks.
+	err := state.addSealedBlock(envToSeal, stateId)
+	if err != nil {
+		return err
+	}
 
 	// Update the block hash in all receipts. We don't know the hash until sealing so can
 	// only do this now.
@@ -306,91 +313,102 @@ func (state *PreconfState) sealPreconfBlock(stateId uint64, sealedBlockHash comm
 		receipt.BlockHash = sealedBlockHash
 	}
 
-	// Add the environment to our sealed blocks.
-	state.sealedPreconfBlocks = append(state.sealedPreconfBlocks, envToSeal)
-	log.Info("Environment sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
+	log.Info("GATTACA (sealPreconfBlock): Environment sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
 
 	// Clear the stateIdMap
 	state.stateIdMap = make(map[uint64]*environment)
 	return nil
 }
 
-// onNewChainHeadEvent processes a new chain head event by clearing any sealed preconf blocks
-// that have been incorporated into the canonical chain. It verifies that the hashes of
-// the sealed preconf blocks match those in the canonical chain.
-//
-// Returns an error if there is a hash mismatch or if a pending preconf block becomes stale.
-func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error {
-	if event.Block.PreconfBlock {
-		log.Info("Ignoring chain event update from preconf block", "eventBlockNumber", event.Block.NumberU64())
-		return nil
-	}
-
+// handleReorg processes potential chain reorganizations by comparing sealed preconf blocks
+// with the canonical chain and cleaning up any divergent blocks.
+func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
 	state.sealedBlockMutex.Lock()
 	defer state.sealedBlockMutex.Unlock()
 
-	eventBlockNumber := event.Block.NumberU64()
-	log.Info("Processing new chain head event", "eventBlockNumber", eventBlockNumber, "Num sealed preconf blocks", len(state.sealedPreconfBlocks))
-
-	log.Info("These are the sealed preconf blocks we have:")
+	// Early return if no sealed blocks
 	if len(state.sealedPreconfBlocks) == 0 {
-		log.Info("No sealed preconf blocks")
-	} else {
-		for _, sealedPreconfBlock := range state.sealedPreconfBlocks {
-			log.Info("Number", sealedPreconfBlock.header.Number, "Hash", sealedPreconfBlock.sealedBlock.Hash())
+		return
+	}
+
+	// Find the first divergence point by comparing with canonical chain
+	divergenceIdx := -1
+	divergenceCanonicalHash := common.Hash{}
+	divergencePreconfHash := common.Hash{}
+	divergenceNumber := uint64(0)
+	numPreconfBlocksBeforeDivergence := len(state.sealedPreconfBlocks)
+	for i, preconfBlock := range state.sealedPreconfBlocks {
+		preconfBlockNum := preconfBlock.header.Number.Uint64()
+
+		// Skip if this block number is beyond current canonical chain
+		if preconfBlockNum > canonicalBlock.NumberU64() {
+			continue
+		}
+
+		// Get canonical hash either from the new block or chain state
+		var canonicalHash common.Hash
+		if preconfBlockNum == canonicalBlock.NumberU64() {
+			canonicalHash = canonicalBlock.Hash()
+		} else {
+			canonicalHash = state.chain.GetCanonicalHash(preconfBlockNum)
+		}
+
+		if canonicalHash != preconfBlock.sealedBlock.Hash() {
+			divergenceIdx = i
+			divergenceCanonicalHash = canonicalHash
+			divergencePreconfHash = preconfBlock.sealedBlock.Hash()
+			divergenceNumber = preconfBlockNum
+			log.Info("Found chain divergence",
+				"blockNumber", preconfBlockNum,
+				"preconfHash", preconfBlock.sealedBlock.Hash(),
+				"canonicalHash", canonicalHash)
+			break
 		}
 	}
 
-	// Iterate over sealed preconf blocks to verify their inclusion in the canonical chain.
-loop:
-	for index, preconfBlock := range state.sealedPreconfBlocks {
-		preconfBlockNumber := preconfBlock.sealedBlock.Number().Uint64()
+	// If we found a divergence point, clean up from there
+	if divergenceIdx >= 0 {
+		// Clear all blocks from divergence point onwards
+		state.sealedPreconfBlocks = state.sealedPreconfBlocks[:divergenceIdx]
 
-		switch {
-		case preconfBlockNumber < eventBlockNumber:
-			// Verify that the preconf block exists in the canonical chain and hashes match.
-			chainBlock := state.chain.GetBlockByNumber(preconfBlockNumber)
-			if chainBlock == nil {
-				return fmt.Errorf(
-					"canonical chain missing block number %d referenced by preconf block",
-					preconfBlockNumber,
-				)
-			}
-			if chainBlock.Hash() != preconfBlock.sealedBlock.Hash() {
-				return fmt.Errorf(
-					"sealed preconf block hash mismatch: expected %s, got %s for block number %d",
-					preconfBlock.sealedBlock.Hash(),
-					chainBlock.Hash(),
-					preconfBlockNumber,
-				)
-			}
+		// Reset state map since it might contain invalid states
+		state.stateIdMap = make(map[uint64]*environment)
 
-		case preconfBlockNumber == eventBlockNumber:
-			// Verify that the event block's hash matches the preconf block's hash.
-			if event.Block.Hash() != preconfBlock.sealedBlock.Hash() {
-				return fmt.Errorf(
-					"sealed preconf block hash mismatch: expected %s, got %s for block number %d",
-					preconfBlock.sealedBlock.Hash(),
-					event.Block.Hash(),
-					preconfBlockNumber,
-				)
-			}
-			// Truncate the sealedPreconfBlocks slice to remove blocks beyond the current event block number.
-			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
-			log.Info("Sealed preconf blocks truncated as preconf block matches event block", "Index", index, "remainingSealedBlocks", len(state.sealedPreconfBlocks))
+		// Clear receipts cache for reorged blocks
+		state.receiptsCache = lru.NewCache[common.Hash, []*types.Receipt](32)
 
-			break loop
-		case preconfBlockNumber > eventBlockNumber:
-			// Truncate the sealedPreconfBlocks slice to remove blocks beyond the current event block number.
-			state.sealedPreconfBlocks = state.sealedPreconfBlocks[index:]
-			log.Info("Sealed preconf blocks truncated as event block greater than preconf block", "Index", index, "remainingSealedBlocks", len(state.sealedPreconfBlocks))
+		log.Warn("GATTACA (handleReorg): Detected divergence between canonical chain and sealed preconf blocks. Cleaned up divergent blocks",
+			"fromIndex", divergenceIdx,
+			"remainingBlocks", len(state.sealedPreconfBlocks),
+			"canonicalHash", divergenceCanonicalHash,
+			"preconfHash", divergencePreconfHash,
+			"canonicalNumber", divergenceNumber,
+			"numPreconfBlocksBeforeDivergence", numPreconfBlocksBeforeDivergence,
+			"numPreconfBlocksAfterDivergence", len(state.sealedPreconfBlocks)-numPreconfBlocksBeforeDivergence)
+	}
+}
 
-			break loop
-		}
+// onNewChainHeadEvent processes new chain head events and handles potential chain reorganizations.
+// It ignores events from preconfirmed blocks to avoid circular processing.
+// The function ensures that sealed preconfirmed blocks remain consistent with the canonical chain
+// by cleaning up any divergent blocks through handleReorg.
+//
+// Parameters:
+//   - event: The chain head event containing information about the new block
+//
+// Returns:
+//   - error: Returns nil as handleReorg handles all cleanup internally
+func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) {
+	if event.Block.PreconfBlock {
+		log.Info("GATTACA (onNewChainHeadEvent): Ignoring chain event update from preconf block",
+			"eventBlockNumber", event.Block.NumberU64())
+		return
 	}
 
-	log.Info("Finished processing sealed preconf blocks against new chain head")
-	return nil
+	// Handle any potential reorgs
+	state.handleReorg(event.Block)
+
+	log.Info("GATTACA (onNewChainHeadEvent): Finished processing sealed preconf blocks against new chain head")
 }
 
 // calculateStateMetrics returns the cumulative gas used and builder payment for a given state ID.
@@ -436,4 +454,24 @@ func (state *PreconfState) currentBlockNumber() *big.Int {
 
 func (state *PreconfState) envAtId(stateId uint64) *environment {
 	return state.stateIdMap[stateId]
+}
+
+// Add this helper to ensure blocks are always added in order
+func (state *PreconfState) addSealedBlock(env *environment, stateId uint64) error {
+	state.sealedBlockMutex.Lock()
+	defer state.sealedBlockMutex.Unlock()
+
+	newBlockNum := env.header.Number.Uint64()
+
+	// If we have existing blocks, ensure we're adding in order
+	if len(state.sealedPreconfBlocks) > 0 {
+		lastBlock := state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1]
+		if newBlockNum <= lastBlock.header.Number.Uint64() {
+			return fmt.Errorf("GATTACA (addSealedBlock): attempting to add block %d out of order, last block was %d, stateId %d",
+				newBlockNum, lastBlock.header.Number.Uint64(), stateId)
+		}
+	}
+
+	state.sealedPreconfBlocks = append(state.sealedPreconfBlocks, env)
+	return nil
 }
