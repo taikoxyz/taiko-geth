@@ -3,6 +3,7 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 
@@ -106,6 +107,12 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 func (g *GattacaWorker) getNextStateId() uint64 {
 	g.lock.Lock()
 	defer g.lock.Unlock()
+
+	// Check for overflow - if we're at max uint64, reset to starting point
+	if g.currentStateId == math.MaxUint64 {
+		g.currentStateId = stateIdToStartFrom
+	}
+
 	current := g.currentStateId
 	g.currentStateId++
 	return current
