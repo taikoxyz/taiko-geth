@@ -89,29 +89,17 @@ func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.By
 	return handleResponse(resCh)
 }
 
-func (s *TransactionAPI) CommitState(ctx context.Context, stateId uint64) (map[string]interface{}, error) {
-	log.Info("GTC-API: CommitState", "stateId", stateId)
-	resCh := make(chan miner.CommitStateResponse, 1)
-	miner.CommitCh <- miner.ReqCommitState{
-		StateId: stateId,
-		SimRes:  resCh,
-	}
-	res := <-resCh
-	ret := make(map[string]interface{})
-	ret["cumulative_builder_payment"] = res.CumulativeBuilderPayment()
-	ret["cumulative_gas_used"] = res.CumulativeGasUsed()
-	return ret, res.Error()
-}
-
-func (s *TransactionAPI) SealBlock(ctx context.Context) (map[string]interface{}, error) {
-	log.Info("GTC-API: SealBlock")
+func (s *TransactionAPI) SealBlock(ctx context.Context, stateId uint64) (map[string]interface{}, error) {
+	log.Info("GTC-API: SealBlock", "stateId", stateId)
 	resCh := make(chan miner.SealBlockResponse, 1)
 	miner.SealBlock <- miner.SealBlockRequest{
+		StateId:  stateId,
 		Response: resCh,
 	}
 	res := <-resCh
 	retMap := make(map[string]interface{})
 	retMap["cumulative_builder_payment"] = res.CumulativeBuilderPayment()
+	retMap["cumulative_gas_used"] = res.CumulativeGasUsed()
 	retMap["built_block"] = RPCMarshalBlock(res.Block(), true, true, s.b.ChainConfig())
 	return retMap, res.Err()
 }

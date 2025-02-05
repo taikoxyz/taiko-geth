@@ -21,7 +21,6 @@ import (
 var (
 	SimCh             = make(chan SimulateTxRequest, 1000)
 	SimAnchorTx       = make(chan SimulateAnchorTx, 1000)
-	CommitCh          = make(chan ReqCommitState, 1000)
 	SealBlock         = make(chan SealBlockRequest, 1)
 	taikoMinTip       = big.NewInt(0)
 	maxBytesPerTxList = ckzg4844.BytesPerBlob
@@ -84,8 +83,6 @@ func (g *GattacaWorker) runLoop() {
 		case req := <-SimCh:
 			go g.simulateTx(req.StateId, req.Tx, req.SimRes)
 			break
-		case req := <-CommitCh:
-			go g.commitEnvToPreconf(req.StateId, req.SimRes)
 		case req := <-SealBlock:
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
@@ -284,60 +281,37 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	}
 }
 
-// commitEnvToPreconf commits a stateId to the current preconf head.
-func (g *GattacaWorker) commitEnvToPreconf(stateId uint64, simRes chan CommitStateResponse) {
-	cumGasUsed, builderPayment, err := g.preconfState.commitStateIDToPendingBlock(stateId)
-	simRes <- CommitStateResponse{
-		error:                    err,
-		cumulativeGasUsed:        cumGasUsed,
-		cumulativeBuilderPayment: (*hexutil.U256)(builderPayment),
-	}
-}
-
-// sealBlock seals the current pending pre-confirmed block.
-// It finalizes, assembles, and seals the block, then updates the preconf state.
+// sealBlock seals the block at the given stateId
 func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
 
-	log.Info("GTC-WORKER: PRECONF: sealBlock", "req", req)
+	log.Info("GTC-WORKER: PRECONF: sealBlock", "stateId", req.StateId)
 
-	// Retrieve the pending pre-confirmed block from the preconf state.
-	pendingPreconfBlock := g.preconfState.pendingPreconfBlock
-	if pendingPreconfBlock == nil {
-		req.Response <- SealBlockResponse{err: errors.New("no pending preconf block to seal")}
+	// First commit the state
+	cumGasUsed, builderPayment, err := g.preconfState.calculateStateMetrics(req.StateId)
+	if err != nil {
+		req.Response <- SealBlockResponse{err: err}
+		return
+	}
+
+	// Get the environment to seal
+	env, exists := g.preconfState.stateIdMap[req.StateId]
+	if !exists {
+		req.Response <- SealBlockResponse{err: errors.New("state id not found")}
 		return
 	}
 
 	log.Info("Starting block sealing process",
-		"pendingPreconfBlockNumber", pendingPreconfBlock.header.Number.Uint64(),
-	)
-
-	// Calculate total gas used by transactions in the pending block.
-	var transactionGas uint64
-	for _, tx := range pendingPreconfBlock.txs {
-		receipt, exists := pendingPreconfBlock.hashReceipts[tx.Hash().Hex()]
-		if !exists {
-			req.Response <- SealBlockResponse{
-				err: fmt.Errorf("missing receipt for transaction %s", tx.Hash().Hex()),
-			}
-			return
-		}
-		transactionGas += receipt.GasUsed
-	}
-
-	log.Info("Transactions in block",
-		"blockNumber", pendingPreconfBlock.header.Number.Uint64(),
-		"transactionCount", len(pendingPreconfBlock.txs),
-		"totalGasUsed", transactionGas,
+		"blockNumber", env.header.Number.Uint64(),
 	)
 
 	block, err := g.engine.FinalizeAndAssemble(
 		g.chain,
-		pendingPreconfBlock.header,
-		pendingPreconfBlock.state,
-		&types.Body{Transactions: pendingPreconfBlock.txs, Withdrawals: nil},
-		pendingPreconfBlock.receipts,
+		env.header,
+		env.state,
+		&types.Body{Transactions: env.txs, Withdrawals: nil},
+		env.receipts,
 	)
 	if err != nil {
 		// Error finalizing and assembling block; send error response.
@@ -354,8 +328,8 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	log.Info("Block sealed", "sealedBlockHash", sealedBlock.Hash().Hex())
 
 	//before sealing it, set the block to the env
-	pendingPreconfBlock.sealedBlock = sealedBlock
-	err = g.preconfState.sealPendingPreconfBlock(sealedBlock.Hash())
+	env.sealedBlock = sealedBlock
+	err = g.preconfState.sealPreconfBlock(req.StateId, sealedBlock.Hash())
 	if err != nil {
 		req.Response <- SealBlockResponse{err: err}
 		return
@@ -376,10 +350,11 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		"sealedBlockNumber", sealedBlock.Number().Uint64(),
 		"sealedBlockHash", sealedBlock.Hash().Hex(),
 	)
-	cumulativeBuilderPaymentHex := fmt.Sprintf("0x%x", pendingPreconfBlock.cumulativeBuilderPayment)
+	cumulativeBuilderPaymentHex := fmt.Sprintf("0x%x", builderPayment)
 	req.Response <- SealBlockResponse{
 		block:                    sealedBlock,
 		cumulativeBuilderPayment: cumulativeBuilderPaymentHex,
+		cumulativeGasUsed:        cumGasUsed,
 		err:                      nil,
 	}
 }

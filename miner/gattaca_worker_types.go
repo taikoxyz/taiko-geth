@@ -29,6 +29,7 @@ type SimulateAnchorTxResponse struct {
 type SealBlockResponse struct {
 	block                    *types.Block
 	cumulativeBuilderPayment string
+	cumulativeGasUsed        uint64
 	err                      error
 }
 
@@ -40,11 +41,16 @@ func (s SealBlockResponse) CumulativeBuilderPayment() string {
 	return s.cumulativeBuilderPayment
 }
 
+func (s SealBlockResponse) CumulativeGasUsed() uint64 {
+	return s.cumulativeGasUsed
+}
+
 func (s SealBlockResponse) Err() error {
 	return s.err
 }
 
 type SealBlockRequest struct {
+	StateId  uint64
 	Response chan SealBlockResponse
 }
 

@@ -85,9 +85,9 @@ func (b *GattacaEthAPIBackend) SetHead(number uint64) {
 }
 
 func (b *GattacaEthAPIBackend) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
-	// Pending block is only known by the miner
+	// We need to check if the pending block is available as a sealed preconf block
 	if number == rpc.PendingBlockNumber {
-		if header := b.preconfState.GetPendingBlock(); header != nil {
+		if header := b.preconfState.GetHeaderByNumber(uint64(number)); header != nil {
 			return header, nil
 		}
 		block, _, _ := b.eth.miner.Pending()

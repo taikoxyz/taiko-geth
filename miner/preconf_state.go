@@ -3,6 +3,10 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"math/big"
+	"math/rand"
+	"sync"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -13,9 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/holiman/uint256"
-	"math/big"
-	"math/rand"
-	"sync"
 )
 
 type StateId uint64
@@ -29,15 +30,10 @@ const (
 type PreconfState struct {
 	// sealedPreconfBlocks holds an ordered list of pre-confirmed blocks that are ahead of the canonical chain head.
 	sealedPreconfBlocks []*environment
-	// pendingPreconfBlock is the current pre-confirmed block that is being built but not yet sealed.
-	// It is nil if there is no pending pre-conf block.
-	pendingPreconfBlock *environment
 	// stateIdMap maps all state IDs to their corresponding environments.
 	stateIdMap map[uint64]*environment
 	// chain represents the current canonical blockchain.
 	chain *core.BlockChain
-	// commitMutex ensures that operations modifying the pendingPreconfBlock are thread-safe.
-	commitMutex sync.Mutex
 	// sealedBlockMutex is held by any fn that modifies the sealedPreconfBlocks array.
 	// TODO: we should make this a RwLock and read lock when fetching sealedPreconfBlocks state
 	sealedBlockMutex sync.Mutex
@@ -75,15 +71,6 @@ func (state *PreconfState) CurrentBlock() *types.Header {
 	return nil
 }
 
-// GetPendingBlock returns the header of the current pending pre-confirmed block.
-// If there is no pending block, it returns nil.
-func (state *PreconfState) GetPendingBlock() *types.Header {
-	if state.pendingPreconfBlock != nil {
-		return state.pendingPreconfBlock.header
-	}
-	return nil
-}
-
 func (state *PreconfState) GetLatestSealedBlock() *types.Header {
 	if len(state.sealedPreconfBlocks) > 0 {
 		return state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1].header
@@ -105,9 +92,6 @@ func (state *PreconfState) GetHeaderByNumber(number uint64) *types.Header {
 // GetHeaderByHash returns the header of a sealed pre-confirmed block by its hash.
 // If no such block exists, it returns nil.
 func (state *PreconfState) GetHeaderByHash(hash common.Hash) *types.Header {
-	if state.pendingPreconfBlock != nil && state.pendingPreconfBlock.header.Hash() == hash {
-		return state.pendingPreconfBlock.header
-	}
 	for _, env := range state.sealedPreconfBlocks {
 		if env.sealedBlock.Hash() == hash {
 			return env.header
@@ -131,17 +115,9 @@ func (state *PreconfState) BlockNumber() uint64 {
 }
 
 // StateAndHeaderByNumber returns the state database and header of a block specified by number.
-// If the number is pending, it returns the pending pre-confirmed block's state and header.
 // If a sealed pre-confirmed block with the specified number exists, it returns its state and header.
 // Otherwise, it returns an error.
 func (state *PreconfState) StateAndHeaderByNumber(number rpc.BlockNumber) (*state.StateDB, *types.Header, error) {
-	if number == rpc.PendingBlockNumber {
-		if state.pendingPreconfBlock != nil {
-			return state.pendingPreconfBlock.state, state.pendingPreconfBlock.header, nil
-		} else {
-			return nil, nil, errors.New("no pending preconf block found")
-		}
-	}
 	no := uint64(number)
 	for _, env := range state.sealedPreconfBlocks {
 		if env.sealedBlock.NumberU64() == no {
@@ -155,9 +131,6 @@ func (state *PreconfState) StateAndHeaderByNumber(number rpc.BlockNumber) (*stat
 // If a sealed pre-confirmed block with the specified hash exists, it returns its state and header.
 // Otherwise, it returns an error.
 func (state *PreconfState) StateAndHeaderByhash(hash common.Hash) (*state.StateDB, *types.Header, error) {
-	if state.pendingPreconfBlock != nil && state.pendingPreconfBlock.header.Hash() == hash {
-		return state.pendingPreconfBlock.state, state.pendingPreconfBlock.header, nil
-	}
 	for _, env := range state.sealedPreconfBlocks {
 		if env.sealedBlock.Hash() == hash {
 			return env.state, env.header, nil
@@ -175,25 +148,15 @@ func (state *PreconfState) GetReceipts(hash common.Hash) (types.Receipts, error)
 	}
 	var receipts types.Receipts
 	var err error
-	if state.pendingPreconfBlock != nil && state.pendingPreconfBlock.header.Hash() == hash {
-		receipts, err = deriveReceipts(state.pendingPreconfBlock.receipts,
-			state.chain.Config(),
-			hash,
-			state.pendingPreconfBlock.header,
-			state.pendingPreconfBlock.txs,
-		)
-	}
-	if len(receipts) == 0 {
-		for _, env := range state.sealedPreconfBlocks {
-			if env.sealedBlock.Hash() == hash {
-				receipts, err = deriveReceipts(
-					env.receipts,
-					state.chain.Config(),
-					hash,
-					env.header,
-					env.txs)
-				break
-			}
+	for _, env := range state.sealedPreconfBlocks {
+		if env.sealedBlock.Hash() == hash {
+			receipts, err = deriveReceipts(
+				env.receipts,
+				state.chain.Config(),
+				hash,
+				env.header,
+				env.txs)
+			break
 		}
 	}
 	if len(receipts) > 0 {
@@ -267,9 +230,6 @@ func (state *PreconfState) BlockByHash(hash common.Hash) (*types.Block, error) {
 // It first checks the pending pre-confirmed block's state, then the last sealed pre-confirmed block's state.
 // If neither exists, it returns zero.
 func (state *PreconfState) GetPoolNonce(addr common.Address) uint64 {
-	if state.pendingPreconfBlock != nil {
-		return state.pendingPreconfBlock.state.GetNonce(addr)
-	}
 	if len(state.sealedPreconfBlocks) > 0 {
 		return state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1].state.GetNonce(addr)
 	}
@@ -277,12 +237,6 @@ func (state *PreconfState) GetPoolNonce(addr common.Address) uint64 {
 }
 
 func (state *PreconfState) GetTransaction(hash common.Hash) (bool, *types.Transaction, common.Hash, uint64, uint64, error) {
-	if state.pendingPreconfBlock != nil {
-		found, tx, blockHash, blockIndex, txIndex, err := state.getTransactionFromEnv(state.pendingPreconfBlock, hash)
-		if found {
-			return found, tx, blockHash, blockIndex, txIndex, err
-		}
-	}
 	for _, sealedPreconfBlock := range state.sealedPreconfBlocks {
 		found, tx, blockHash, blockIndex, txIndex, err := state.getTransactionFromEnv(sealedPreconfBlock, hash)
 		if found {
@@ -307,19 +261,9 @@ func (state *PreconfState) getTransactionFromEnv(env *environment, hash common.H
 	return false, nil, common.Hash{}, 0, 0, nil
 }
 
-func (state *PreconfState) getPendingPreconfBlock() (*environment, error) {
-	if state.pendingPreconfBlock == nil {
-		return nil, errors.New("no pending preconf block found")
-	}
-	return state.pendingPreconfBlock, nil
-}
-
 // getLatestPreconfBlock return the last available preconf block.
 // pendingPreconfBlock is preferred over the sealed blocks
 func (state *PreconfState) getLatestPreconfBlock() *environment {
-	if state.pendingPreconfBlock != nil {
-		return state.pendingPreconfBlock
-	}
 	if len(state.sealedPreconfBlocks) > 0 {
 		return state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1]
 	}
@@ -339,44 +283,34 @@ func (state *PreconfState) addSimulatedPreconfEnv(env *environment) uint64 {
 	return newStateId
 }
 
-// setPendingPreconfBlock set the pendingPreconfBlock with the input environment.
-// If the pendingPreconfBlock is not nil, a log.Warn is printed and the pendingPreconfBlock is overwritten.
-func (state *PreconfState) setPendingPreconfBlock(pendingPreconfBlock *environment) {
-	if state.pendingPreconfBlock != nil {
-		log.Warn("current block is not sealed, overwrite pending block environment")
-	}
-	state.pendingPreconfBlock = pendingPreconfBlock
-}
-
-// sealPendingPreconfBlock moves the current pending preconf block to the sealedPreconfBlocks list.
-// It clears the pendingPreconfBlock after sealing.
+// sealPendingPreconfBlock moves the environment at stateId to the sealedPreconfBlocks list.
+// It clears the stateIdMap after sealing.
 //
-// sealPendingPreconfBlock will also clear the stateIdMap. TBC if we want to keep this logic.
-//
-// Returns an error if there is no pending preconf block to seal.
-func (state *PreconfState) sealPendingPreconfBlock(sealedBlockHash common.Hash) error {
+// Returns an error if the stateId doesn't exist.
+func (state *PreconfState) sealPreconfBlock(stateId uint64, sealedBlockHash common.Hash) error {
 	state.sealedBlockMutex.Lock()
 	defer state.sealedBlockMutex.Unlock()
 
-	if state.pendingPreconfBlock == nil {
-		return errors.New("no pending preconf block to seal")
+	envToSeal, exists := state.stateIdMap[stateId]
+	if !exists {
+		return fmt.Errorf("no environment found for stateId %d", stateId)
 	}
-	log.Info("Sealing pending preconf block", "blockNumber", state.pendingPreconfBlock.header.Number.Uint64())
+	log.Info("Sealing environment to preconf block", "blockNumber", envToSeal.header.Number.Uint64())
 
-	// Update the block hash in all receipts for the pendingPreconfBlock. We don't know the hash until sealing so can
+	// Update the block hash in all receipts. We don't know the hash until sealing so can
 	// only do this now.
-	for _, receipt := range state.pendingPreconfBlock.receipts {
+	for _, receipt := range envToSeal.receipts {
 		receipt.BlockHash = sealedBlockHash
 	}
-	for _, receipt := range state.pendingPreconfBlock.hashReceipts {
+	for _, receipt := range envToSeal.hashReceipts {
 		receipt.BlockHash = sealedBlockHash
 	}
 
-	// Add the pending preconf block to our sealed blocks.
-	state.sealedPreconfBlocks = append(state.sealedPreconfBlocks, state.pendingPreconfBlock)
-	log.Info("Pending preconf block sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
+	// Add the environment to our sealed blocks.
+	state.sealedPreconfBlocks = append(state.sealedPreconfBlocks, envToSeal)
+	log.Info("Environment sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
 
-	state.pendingPreconfBlock = nil
+	// Clear the stateIdMap
 	state.stateIdMap = make(map[uint64]*environment)
 	return nil
 }
@@ -399,20 +333,12 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) error
 	log.Info("Processing new chain head event", "eventBlockNumber", eventBlockNumber, "Num sealed preconf blocks", len(state.sealedPreconfBlocks))
 
 	log.Info("These are the sealed preconf blocks we have:")
-	for _, sealedPreconfBlock := range state.sealedPreconfBlocks {
-		log.Info("Number", sealedPreconfBlock.header.Number, "Hash", sealedPreconfBlock.sealedBlock.Hash())
-	}
-
-	// If there are no sealed preconf blocks, perform a sanity check on the pending preconf block.
 	if len(state.sealedPreconfBlocks) == 0 {
-		if state.pendingPreconfBlock != nil && state.pendingPreconfBlock.header.Number.Uint64() <= eventBlockNumber {
-			return fmt.Errorf(
-				"building a pending preconf block that is now stale. Pending preconf number: %s, new chain head: %d",
-				state.pendingPreconfBlock.header.Number.String(),
-				eventBlockNumber,
-			)
+		log.Info("No sealed preconf blocks")
+	} else {
+		for _, sealedPreconfBlock := range state.sealedPreconfBlocks {
+			log.Info("Number", sealedPreconfBlock.header.Number, "Hash", sealedPreconfBlock.sealedBlock.Hash())
 		}
-		return nil
 	}
 
 	// Iterate over sealed preconf blocks to verify their inclusion in the canonical chain.
@@ -467,29 +393,24 @@ loop:
 	return nil
 }
 
-// commitStateIDToPendingBlock takes a state ID from the map and adds the changes from that state ID
-// to the pending preconf block. Returns the cumulative gas used and builderPayment of the new pendingPreconfBlock.
-func (state *PreconfState) commitStateIDToPendingBlock(stateId uint64) (uint64, *uint256.Int, error) {
-	state.commitMutex.Lock()
-	defer state.commitMutex.Unlock()
+// calculateStateMetrics returns the cumulative gas used and builder payment for a given state ID.
+func (state *PreconfState) calculateStateMetrics(stateId uint64) (uint64, *uint256.Int, error) {
+	state.sealedBlockMutex.Lock()
+	defer state.sealedBlockMutex.Unlock()
 
-	envToCommit, exists := state.stateIdMap[stateId]
+	env, exists := state.stateIdMap[stateId]
 	if !exists {
 		return 0, nil, fmt.Errorf("state for id %d does not exist", stateId)
 	}
 
-	log.Info("Committing state ID to pending preconf block", "stateId", stateId, "blockNumber", envToCommit.header.Number.Uint64())
-
-	// Add the environment corresponding to the state ID to the pending preconf block.
-	state.pendingPreconfBlock = envToCommit
-	log.Info("Pending preconf block updated with committed state", "newPendingBlockNumber", envToCommit.header.Number.Uint64())
+	log.Info("Calculating metrics for state", "stateId", stateId, "blockNumber", env.header.Number.Uint64())
 
 	totalGas := uint64(0)
-	for _, receipt := range state.pendingPreconfBlock.receipts {
+	for _, receipt := range env.receipts {
 		totalGas += receipt.GasUsed
 	}
 
-	return totalGas, state.pendingPreconfBlock.cumulativeBuilderPayment, nil
+	return totalGas, env.cumulativeBuilderPayment, nil
 }
 
 // getLatestSealedBlock returns the latest block from sealedPreconfBlocks if there are items in the array.
