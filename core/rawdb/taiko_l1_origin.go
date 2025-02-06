@@ -41,7 +41,7 @@ type l1OriginMarshaling struct {
 }
 
 // IsPreconfBlock returns true if the L1Origin is for a preconfirmation block.
-func (l L1Origin) IsPreconfBlock() bool {
+func (l *L1Origin) IsPreconfBlock() bool {
 	return l.L1BlockHeight == nil
 }
 
