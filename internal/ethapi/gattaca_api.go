@@ -105,8 +105,9 @@ func (s *TransactionAPI) SealBlock(ctx context.Context, stateId uint64) (map[str
 }
 
 func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}, error) {
-	log.Info("GTC-API: handleResponse")
 	res := <-resCh
+
+	log.Info("GTC-API: handleResponse", "res", res)
 
 	// Helper function to create execution result wrapper
 	createExecutionResult := func(resultType string, data map[string]interface{}, stateId uint64) map[string]interface{} {

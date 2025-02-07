@@ -41,6 +41,7 @@ type GattacaWorker struct {
 	config      *Config
 	engine      consensus.Engine
 	lock        sync.RWMutex
+	stateIdLock sync.Mutex // Lock for stateId operations
 	halt        bool
 	haltReason  string
 
@@ -105,8 +106,8 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 }
 
 func (g *GattacaWorker) getNextStateId() uint64 {
-	g.lock.Lock()
-	defer g.lock.Unlock()
+	g.stateIdLock.Lock() // Use the separate lock instead
+	defer g.stateIdLock.Unlock()
 
 	// Check for overflow - if we're at max uint64, reset to starting point
 	if g.currentStateId == math.MaxUint64 {
@@ -234,6 +235,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 
 	// Check for halt message
 	if g.halt {
+		log.Error("GTC-WORKER: PRECONF: simulateTx, halt message received", "haltReason", g.haltReason)
 		res <- SimulationResponse{
 			error: NewHaltError(errors.New(g.haltReason)),
 		}
@@ -243,12 +245,14 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	// Fetch state ID
 	env, err := g.retrieveEnv(stateId)
 	if err != nil {
+		log.Error("GTC-WORKER: PRECONF: simulateTx, error retrieving env", "err", err)
 		res <- SimulationResponse{error: NewRetrieveEnError(err)}
 		return
 	}
 
 	// Anchor tx must always be applied first
 	if len(env.txs) == 0 {
+		log.Error("GTC-WORKER: PRECONF: simulateTx, first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId)
 		res <- SimulationResponse{
 			error: fmt.Errorf("first transaction needs to executed by simulateAnchorAtState. StateId %d", stateId),
 		}
@@ -259,15 +263,18 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	simEnv := env.copy()
 
 	startBalance := simEnv.state.GetBalance(env.coinbase)
+	log.Info("GTC-WORKER: PRECONF: simulateTx, startBalance", "startBalance", startBalance)
 	receipt, _, _, err := g.commitTx(simEnv, tx)
+	log.Info("GTC-WORKER: PRECONF: simulateTx, receipt", "receipt", receipt)
 	if err != nil {
-		log.Error("Failed to simulate transaction", "err", err)
+		log.Error("GTC-WORKER: PRECONF: simulateTx, failed to simulate transaction", "err", err)
 		res <- SimulationResponse{
 			error: NewCommitError(err),
 		}
 		return
 	}
 	endBalance := simEnv.state.GetBalance(env.coinbase)
+	log.Info("GTC-WORKER: PRECONF: simulateTx, endBalance", "endBalance", endBalance)
 
 	var builderPayment *uint256.Int
 	if endBalance.Cmp(startBalance) <= 0 {
@@ -284,6 +291,8 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	// Add env to state id map
 	newStateId := g.getNextStateId()
 	g.preconfState.stateIdMap[newStateId] = simEnv
+
+	log.Info("GTC-WORKER: PRECONF: simulateTx, sending response to channel", "newStateId", newStateId)
 
 	res <- SimulationResponse{
 		error:          nil,
