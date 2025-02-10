@@ -359,6 +359,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	)
 	if err != nil {
 		// Error finalizing and assembling block; send error response.
+		log.Error("GTC-WORKER: PRECONF: sealBlock, failed to finalize and assemble block", "err", err)
 		req.Response <- SealBlockResponse{err: err}
 		return
 	}
