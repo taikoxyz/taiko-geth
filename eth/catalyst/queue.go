@@ -21,7 +21,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 )
 
@@ -77,10 +79,17 @@ func (q *payloadQueue) get(id engine.PayloadID, full bool) *engine.ExecutionPayl
 	q.lock.RLock()
 	defer q.lock.RUnlock()
 
+	payloadIdHex := hexutil.Encode(id[:])
+	log.Info("Getting payload from queue", "id", payloadIdHex, "full", full, "length", len(q.payloads), "payloads", q.payloads)
+
 	for _, item := range q.payloads {
 		if item == nil {
 			return nil // no more items
 		}
+
+		payloadIdHex := hexutil.Encode(item.id[:])
+		log.Info("Checking payload", "id", payloadIdHex)
+
 		if item.id == id {
 			if !full {
 				return item.payload.Resolve()

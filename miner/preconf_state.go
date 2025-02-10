@@ -38,6 +38,7 @@ type PreconfState struct {
 	// sealedBlockMutex is held by any fn that modifies the sealedPreconfBlocks array.
 	// TODO: we should make this a RwLock and read lock when fetching sealedPreconfBlocks state
 	sealedBlockMutex sync.Mutex
+	stateIdMutex     sync.RWMutex // Mutex for stateIdMap
 	// receiptsCache stores the derived receipts in order to not compute them twice
 	receiptsCache *lru.Cache[common.Hash, []*types.Receipt]
 }
@@ -279,6 +280,9 @@ func (state *PreconfState) getSealedPreconfBlock() []*environment {
 // in order to retrieve it later on.
 
 func (state *PreconfState) addSimulatedPreconfEnv(env *environment) uint64 {
+	state.stateIdMutex.Lock()
+	defer state.stateIdMutex.Unlock()
+
 	newStateId := rand.Uint64()
 	state.stateIdMap[newStateId] = env.copy()
 	return newStateId
@@ -289,8 +293,8 @@ func (state *PreconfState) addSimulatedPreconfEnv(env *environment) uint64 {
 //
 // Returns an error if the stateId doesn't exist.
 func (state *PreconfState) sealPreconfBlock(stateId uint64, sealedBlockHash common.Hash) error {
-	state.sealedBlockMutex.Lock()
-	defer state.sealedBlockMutex.Unlock()
+	state.stateIdMutex.Lock()
+	defer state.stateIdMutex.Unlock()
 
 	envToSeal, exists := state.stateIdMap[stateId]
 	if !exists {
@@ -358,10 +362,10 @@ func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
 			divergenceCanonicalHash = canonicalHash
 			divergencePreconfHash = preconfBlock.sealedBlock.Hash()
 			divergenceNumber = preconfBlockNum
-			log.Info("Found chain divergence",
+			log.Warn("Found chain divergence",
 				"blockNumber", preconfBlockNum,
-				"preconfHash", preconfBlock.sealedBlock.Hash(),
-				"canonicalHash", canonicalHash)
+				"preconfHash", preconfBlock.sealedBlock.Hash().String(),
+				"canonicalHash", canonicalHash.String())
 			break
 		}
 	}
@@ -380,11 +384,11 @@ func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
 		log.Warn("GATTACA (handleReorg): Detected divergence between canonical chain and sealed preconf blocks. Cleaned up divergent blocks",
 			"fromIndex", divergenceIdx,
 			"remainingBlocks", len(state.sealedPreconfBlocks),
-			"canonicalHash", divergenceCanonicalHash,
-			"preconfHash", divergencePreconfHash,
+			"canonicalHash", divergenceCanonicalHash.String(),
+			"preconfHash", divergencePreconfHash.String(),
 			"canonicalNumber", divergenceNumber,
 			"numPreconfBlocksBeforeDivergence", numPreconfBlocksBeforeDivergence,
-			"numPreconfBlocksAfterDivergence", len(state.sealedPreconfBlocks)-numPreconfBlocksBeforeDivergence)
+			"numPreconfBlocksAfterDivergence", numPreconfBlocksBeforeDivergence-len(state.sealedPreconfBlocks))
 	}
 }
 
@@ -405,6 +409,22 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) {
 		return
 	}
 
+	// info log block hash and txs
+	log.Info("GATTACA (onNewChainHeadEvent): New chain head event",
+		"blockHash", event.Block.Hash().String(),
+		"txs", len(event.Block.Transactions()))
+	// log details of all txs
+	for _, tx := range event.Block.Transactions() {
+		log.Info("GATTACA (onNewChainHeadEvent): Tx",
+			"hash", tx.Hash().String(),
+			"value", tx.Value(),
+			"to", tx.To().String(),
+			"gas", tx.Gas(),
+			"gasPrice", tx.GasPrice(),
+			"nonce", tx.Nonce(),
+			"data", tx.Data())
+	}
+
 	// Handle any potential reorgs
 	state.handleReorg(event.Block)
 
@@ -421,7 +441,7 @@ func (state *PreconfState) calculateStateMetrics(stateId uint64) (uint64, *uint2
 		return 0, nil, fmt.Errorf("state for id %d does not exist", stateId)
 	}
 
-	log.Info("Calculating metrics for state", "stateId", stateId, "blockNumber", env.header.Number.Uint64())
+	log.Info("Calculating metrics for state", "stateId", stateId, "blockNumber", env.header.Number.Uint64(), "num_receipts", len(env.receipts))
 
 	totalGas := uint64(0)
 	for _, receipt := range env.receipts {
@@ -453,6 +473,9 @@ func (state *PreconfState) currentBlockNumber() *big.Int {
 }
 
 func (state *PreconfState) envAtId(stateId uint64) *environment {
+	state.stateIdMutex.RLock()
+	defer state.stateIdMutex.RUnlock()
+
 	return state.stateIdMap[stateId]
 }
 

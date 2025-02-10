@@ -313,6 +313,8 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 	api.forkchoiceLock.Lock()
 	defer api.forkchoiceLock.Unlock()
 
+	log.Info("FORKCHOICEUPDATED: Forkchoice update received", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash)
+
 	log.Trace("Engine API request received", "method", "ForkchoiceUpdated", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash)
 	if update.HeadBlockHash == (common.Hash{}) {
 		log.Warn("Forkchoice requested update to zero hash")
@@ -382,6 +384,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		}
 	}
 	valid := func(id *engine.PayloadID) engine.ForkChoiceResponse {
+		log.Info("FORKCHOICEUPDATED: Forkchoice update validated", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash, "blockId", id)
 		return engine.ForkChoiceResponse{
 			PayloadStatus: engine.PayloadStatusV1{Status: engine.VALID, LatestValidHash: &update.HeadBlockHash},
 			PayloadID:     id,
@@ -498,6 +501,8 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
 			}
 
+			log.Info("FORKCHOICEUPDATED: TAIKO case Forkchoice update validated", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash, "blockId", id)
+
 			return valid(&id), nil
 		}
 
@@ -514,6 +519,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		// If we already are busy generating this work, then we do not need
 		// to start a second process.
 		if api.localBlocks.has(id) {
+			log.Info("FORKCHOICEUPDATED: api.localBlocks.has(id) case Forkchoice update validated", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash, "blockId", id)
 			return valid(&id), nil
 		}
 		payload, err := api.eth.Miner().BuildPayload(args, payloadWitness)
@@ -522,6 +528,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			return valid(nil), engine.InvalidPayloadAttributes.With(err)
 		}
 		api.localBlocks.put(id, payload)
+		log.Info("FORKCHOICEUPDATED: api.localBlocks.put(id, payload) case Forkchoice update validated", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash, "blockId", id)
 		return valid(&id), nil
 	}
 	return valid(nil), nil

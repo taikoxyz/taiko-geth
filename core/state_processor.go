@@ -133,7 +133,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 // and uses the input parameters for its environment similar to ApplyTransaction. However,
 // this method takes an already created EVM instance as input.
 func ApplyTransactionWithEVM(msg *Message, config *params.ChainConfig, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (receipt *types.Receipt, err error) {
-	log.Info("ApplyTransactionWithEVM", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
+	//log.Info("ApplyTransactionWithEVM", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
 	if evm.Config.Tracer != nil && evm.Config.Tracer.OnTxStart != nil {
 		evm.Config.Tracer.OnTxStart(evm.GetVMContext(), tx, msg.From)
 		if evm.Config.Tracer.OnTxEnd != nil {
@@ -148,7 +148,7 @@ func ApplyTransactionWithEVM(msg *Message, config *params.ChainConfig, gp *GasPo
 
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage(evm, msg, gp)
-	log.Info("ApplyMessage result", "result", result, "err", err)
+	//log.Info("ApplyMessage result", "result", result, "err", err)
 
 	if err != nil {
 		return nil, err
@@ -163,7 +163,7 @@ func ApplyTransactionWithEVM(msg *Message, config *params.ChainConfig, gp *GasPo
 	}
 	*usedGas += result.UsedGas
 
-	log.Info("ApplyTransactionWithEVM", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
+	//log.Info("ApplyTransactionWithEVM", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
 
 	return MakeReceipt(evm, result, statedb, blockNumber, blockHash, tx, *usedGas, root), nil
 }
@@ -218,7 +218,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 		return nil, err
 	}
 
-	log.Info("ApplyTransaction", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
+	//log.Info("ApplyTransaction", "tx", tx.Hash().Hex(), "from", msg.From, "to", msg.To, "nonce", msg.Nonce, "stateNonce", statedb.GetNonce(msg.From), "isAnchor", msg.IsAnchor)
 
 	// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 	// add it to the Message, if its an ontake block.

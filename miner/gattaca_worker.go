@@ -292,6 +292,29 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	newStateId := g.getNextStateId()
 	g.preconfState.stateIdMap[newStateId] = simEnv
 
+	log.Info("GTC-WORKER: PRECONF: simulateTx, successfully simulated tx", "tx", tx.Hash().Hex(), "receipt", receipt)
+
+	// log simEnv
+	log.Info("Sim env Block header details",
+		"parentHash", simEnv.header.ParentHash.Hex(),
+		"sha3Uncles", simEnv.header.UncleHash.Hex(),
+		"miner", simEnv.header.Coinbase.Hex(),
+		"stateRoot", simEnv.header.Root.Hex(),
+		"transactionsRoot", simEnv.header.Root.Hex(),
+		"receiptsRoot", simEnv.header.ReceiptHash.Hex(),
+		"logsBloom", simEnv.header.Bloom,
+		"difficulty", simEnv.header.Difficulty,
+		"number", simEnv.header.Number,
+		"gasLimit", simEnv.header.GasLimit,
+		"gasUsed", simEnv.header.GasUsed,
+		"timestamp", simEnv.header.Time,
+		"extraData", simEnv.header.Extra,
+		"mixHash", simEnv.header.MixDigest,
+		"nonce", simEnv.header.Nonce,
+		"baseFee", simEnv.header.BaseFee,
+		"withdrawalsRoot", "todo",
+		"hash", simEnv.header.Hash)
+
 	log.Info("GTC-WORKER: PRECONF: simulateTx, sending response to channel", "newStateId", newStateId)
 
 	res <- SimulationResponse{
@@ -331,7 +354,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		g.chain,
 		env.header,
 		env.state,
-		&types.Body{Transactions: env.txs, Withdrawals: nil},
+		&types.Body{Transactions: env.txs, Withdrawals: make([]*types.Withdrawal, 0)},
 		env.receipts,
 	)
 	if err != nil {
@@ -339,6 +362,27 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 		req.Response <- SealBlockResponse{err: err}
 		return
 	}
+
+	// log block header details
+	log.Info("Sealed Block header details",
+		"parentHash", block.ParentHash().Hex(),
+		"sha3Uncles", block.UncleHash().Hex(),
+		"miner", block.Coinbase().Hex(),
+		"stateRoot", block.Root().Hex(),
+		"transactionsRoot", block.Root().Hex(),
+		"receiptsRoot", block.ReceiptHash().Hex(),
+		"logsBloom", block.Bloom(),
+		"difficulty", block.Difficulty(),
+		"number", block.Number(),
+		"gasLimit", block.GasLimit(),
+		"gasUsed", block.GasUsed(),
+		"timestamp", block.Time(),
+		"extraData", block.Extra(),
+		"mixHash", block.MixDigest(),
+		"nonce", block.Nonce(),
+		"baseFee", block.BaseFee(),
+		"withdrawalsRoot", "todo",
+		"hash", block.Hash().Hex())
 
 	results := make(chan *types.Block, 1)
 	if err := g.engine.Seal(g.chain, block, results, nil); err != nil {
@@ -352,6 +396,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	env.sealedBlock = sealedBlock
 	err = g.preconfState.sealPreconfBlock(req.StateId, sealedBlock.Hash())
 	if err != nil {
+		log.Error("GTC-WORKER: PRECONF: sealBlock, failed to seal block", "err", err)
 		req.Response <- SealBlockResponse{err: err}
 		return
 	}
@@ -359,15 +404,18 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	// Set preconf tag in block
 	sealedBlock.PreconfBlock = true
 
+	log.Info("GTC-WORKER: PRECONF: inserting block into chain")
+
 	// Note: might change the actual chain. Will this have side effects?
 	_, err = g.chain.InsertChain(types.Blocks{sealedBlock})
 	if err != nil {
+		log.Error("GTC-WORKER: PRECONF: sealBlock, failed to insert chain", "err", err)
 		req.Response <- SealBlockResponse{err: err}
 		return
 	}
 
 	// Send the successful seal block response.
-	log.Info("Sending seal block response",
+	log.Info("GTC-WORKER: PRECONF: sealBlock, sending seal block response",
 		"sealedBlockNumber", sealedBlock.Number().Uint64(),
 		"sealedBlockHash", sealedBlock.Hash().Hex(),
 	)

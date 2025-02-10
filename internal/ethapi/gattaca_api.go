@@ -101,6 +101,9 @@ func (s *TransactionAPI) SealBlock(ctx context.Context, stateId uint64) (map[str
 	retMap["cumulative_builder_payment"] = res.CumulativeBuilderPayment()
 	retMap["cumulative_gas_used"] = res.CumulativeGasUsed()
 	retMap["built_block"] = RPCMarshalBlock(res.Block(), true, true, s.b.ChainConfig())
+
+	log.Info("GTC-API: SealBlock", "retMap", retMap)
+
 	return retMap, res.Err()
 }
 

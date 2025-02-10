@@ -174,7 +174,7 @@ func (evm *EVM) Interpreter() *EVMInterpreter {
 // the necessary steps to create accounts and reverses the state in case of an
 // execution error or failed value transfer.
 func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
-	log.Info("EVM: Call", "caller", caller.Address(), "to", addr, "input", hex.EncodeToString(input), "gas", gas, "value", value.ToBig())
+	//log.Info("EVM: Call", "caller", caller.Address(), "to", addr, "input", hex.EncodeToString(input), "gas", gas, "value", value.ToBig())
 	// Capture the tracer start/end events in debug mode
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, CALL, caller.Address(), addr, input, gas, value.ToBig())
@@ -218,7 +218,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 
 	if isPrecompile {
 		ret, gas, err = RunPrecompiledContract(p, input, gas, evm.Config.Tracer)
-		log.Info("EVM: Call", "ret", ret, "gas", gas, "err", err)
+		//log.Info("EVM: Call", "ret", ret, "gas", gas, "err", err)
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.

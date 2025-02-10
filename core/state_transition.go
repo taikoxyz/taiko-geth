@@ -198,7 +198,6 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 // indicates a core error meaning that the message would always fail for that particular
 // state and would never be accepted within a block.
 func ApplyMessage(evm *vm.EVM, msg *Message, gp *GasPool) (*ExecutionResult, error) {
-	log.Info("ApplyMessage before transitioning")
 	return NewStateTransition(evm, msg, gp).TransitionDb()
 }
 
@@ -400,14 +399,6 @@ func (st *StateTransition) preCheck() error {
 // However if any consensus issue encountered, return the error directly with
 // nil evm execution result.
 func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
-	// Add initial logging
-	log.Info("Starting transaction transition",
-		"from", st.msg.From,
-		"to", st.msg.To,
-		"value", st.msg.Value,
-		"gasLimit", st.msg.GasLimit,
-		"isAnchor", st.msg.IsAnchor)
-
 	// Check clauses 1-3, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
 		log.Error("Transaction pre-check failed", "error", err)
@@ -421,12 +412,8 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		contractCreation = msg.To == nil
 	)
 
-	log.Info("StateTransition details:", "sender", sender.Address(), "to", msg.To)
+	//log.Info("StateTransition details:", "sender", sender.Address(), "to", msg.To)
 
-	// log transactioncount for address 0x0000777735367b36bC9B61C50022d9D0700dB4Ec here
-	address := common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
-	nonce := st.state.GetNonce(address)
-	log.Info("TransactionCount for address 0x0000777735367b36bC9B61C50022d9D0700dB4Ec", "nonce", nonce)
 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
 	gas, err := IntrinsicGas(msg.Data, msg.AccessList, contractCreation, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai)
 	if err != nil {
@@ -485,11 +472,6 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 				"returnData", hex.EncodeToString(ret))
 		}
 	} else {
-		log.Info("Executing message call",
-			"from", msg.From,
-			"to", st.to(),
-			"input", hex.EncodeToString(msg.Data[:min(len(msg.Data), 100)]), // First 100 bytes of input
-			"value", value)
 		st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1)
 		ret, st.gasRemaining, vmerr = st.evm.Call(sender, st.to(), msg.Data, st.gasRemaining, value)
 		if vmerr != nil {
@@ -514,7 +496,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	}
 	effectiveTipU256, _ := uint256.FromBig(effectiveTip)
 
-	log.Info("executed transaction", "vmerr", vmerr, "from", msg.From, "to", msg.To, "gas", st.gasUsed(), "gasPrice", msg.GasPrice, "effectiveTip", effectiveTip, "value", msg.Value, "isAnchor", msg.IsAnchor)
+	//log.Info("executed transaction", "vmerr", vmerr, "from", msg.From, "to", msg.To, "gas", st.gasUsed(), "gasPrice", msg.GasPrice, "effectiveTip", effectiveTip, "value", msg.Value, "isAnchor", msg.IsAnchor)
 
 	if st.evm.Config.NoBaseFee && msg.GasFeeCap.Sign() == 0 && msg.GasTipCap.Sign() == 0 {
 		// Skip fee payment when NoBaseFee is set and the fee fields
@@ -541,10 +523,6 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			st.evm.AccessEvents.AddAccount(st.evm.Context.Coinbase, true)
 		}
 	}
-
-	address = common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
-	nonce = st.state.GetNonce(address)
-	log.Info("TransactionCount after transition for address 0x0000777735367b36bC9B61C50022d9D0700dB4Ec", "nonce", nonce)
 
 	return &ExecutionResult{
 		UsedGas:     st.gasUsed(),
