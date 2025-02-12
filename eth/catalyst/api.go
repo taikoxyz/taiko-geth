@@ -210,6 +210,7 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV1(update engine.ForkchoiceStateV1, pa
 // ForkchoiceUpdatedV2 is equivalent to V1 with the addition of withdrawals in the payload
 // attributes. It supports both PayloadAttributesV1 and PayloadAttributesV2.
 func (api *ConsensusAPI) ForkchoiceUpdatedV2(update engine.ForkchoiceStateV1, params *engine.PayloadAttributes) (engine.ForkChoiceResponse, error) {
+	log.Info("FORKCHOICEUPDATED: Forkchoice update received", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash)
 	if params != nil {
 		if params.BeaconRoot != nil {
 			return engine.STATUS_INVALID, engine.InvalidPayloadAttributes.With(errors.New("unexpected beacon root"))
@@ -330,6 +331,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 	// reason.
 	block := api.eth.BlockChain().GetBlockByHash(update.HeadBlockHash)
 	if block == nil {
+		log.Info("FORKCHOICEUPDATED: Block not found in local database", "hash", update.HeadBlockHash)
 		// If this block was previously invalidated, keep rejecting it here too
 		if res := api.checkInvalidAncestor(update.HeadBlockHash, update.HeadBlockHash); res != nil {
 			return engine.ForkChoiceResponse{PayloadStatus: *res, PayloadID: nil}, nil
@@ -365,6 +367,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 	// Block is known locally, just sanity check that the beacon client does not
 	// attempt to push us back to before the merge.
 	if block.Difficulty().BitLen() > 0 || block.NumberU64() == 0 {
+		log.Info("FORKCHOICEUPDATED: Block is known locally, just sanity check that the beacon client does not attempt to push us back to before the merge")
 		var (
 			td  = api.eth.BlockChain().GetTd(update.HeadBlockHash, block.NumberU64())
 			ptd = api.eth.BlockChain().GetTd(block.ParentHash(), block.NumberU64()-1)
@@ -391,12 +394,14 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		}
 	}
 
+	log.Info("FORKCHOICEUPDATED: Checking if the block is canonical", "number", block.NumberU64(), "hash", update.HeadBlockHash)
 	// CHANGE(taiko): check whether `--taiko` flag is set.
 	isTaiko := api.eth.BlockChain().Config().Taiko
 
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {
 		// Block is not canonical, set head.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
+			log.Error("FORKCHOICEUPDATED: Failed to set canonical block", "err", err)
 			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
 		}
 	} else if api.eth.BlockChain().CurrentBlock().Hash() == update.HeadBlockHash {
@@ -405,6 +410,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		// missing and we are requested to generate the payload in slot.
 	} else if isTaiko { // CHANGE(taiko): reorg is allowed in L2.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
+			log.Error("FORKCHOICEUPDATED: isTaiko case, Failed to set canonical block", "err", err)
 			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
 		}
 	} else {
@@ -428,6 +434,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			return engine.STATUS_INVALID, engine.InvalidForkChoiceState.With(errors.New("final block not in canonical chain"))
 		}
 		// Set the finalized block
+		log.Info("FORKCHOICEUPDATED: Setting finalized block", "number", finalBlock.NumberU64(), "hash", update.FinalizedBlockHash)
 		api.eth.BlockChain().SetFinalized(finalBlock.Header())
 	}
 	// Check if the safe block hash is in our canonical tree, if not something is wrong
@@ -442,6 +449,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			return engine.STATUS_INVALID, engine.InvalidForkChoiceState.With(errors.New("safe block not in canonical chain"))
 		}
 		// Set the safe block
+		log.Info("FORKCHOICEUPDATED: Setting safe block", "number", safeBlock.NumberU64(), "hash", update.SafeBlockHash)
 		api.eth.BlockChain().SetSafe(safeBlock.Header())
 	}
 	// If payload generation was requested, create a new block to be potentially
@@ -450,6 +458,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 	if payloadAttributes != nil {
 		// CHANGE(taiko): create a L2 block by Taiko protocol.
 		if isTaiko {
+			log.Info("FORKCHOICEUPDATED: Creating sealing block", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash)
 			// No need to check payloadAttribute here, because all its fields are
 			// marked as required.
 			block, err := api.eth.Miner().SealBlockWith(
@@ -531,6 +540,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		log.Info("FORKCHOICEUPDATED: api.localBlocks.put(id, payload) case Forkchoice update validated", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash, "blockId", id)
 		return valid(&id), nil
 	}
+	log.Info("FORKCHOICEUPDATED: last case Forkchoice update validated", "head", update.HeadBlockHash, "finalized", update.FinalizedBlockHash, "safe", update.SafeBlockHash)
 	return valid(nil), nil
 }
 

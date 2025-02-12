@@ -3,6 +3,7 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"math/rand"
 	"sync"
@@ -22,7 +23,8 @@ import (
 type StateId uint64
 
 const (
-	LatestSealedId StateId = 0
+	LatestSealedId     StateId = 0
+	StateIdToStartFrom         = uint64(1) // 0 is reserved for latest sealed state
 )
 
 // PreconfState holds all information about any blocks that have been pre-confirmed
@@ -41,6 +43,8 @@ type PreconfState struct {
 	stateIdMutex     sync.RWMutex // Mutex for stateIdMap
 	// receiptsCache stores the derived receipts in order to not compute them twice
 	receiptsCache *lru.Cache[common.Hash, []*types.Receipt]
+	// currentStateId is the next stateId to be used
+	currentStateId uint64
 }
 
 // NewPreconfState initializes a new PreconfState with empty sealed and pending preconf blocks.
@@ -51,7 +55,8 @@ func NewPreconfState(chain *core.BlockChain) *PreconfState {
 		stateIdMap:          make(map[uint64]*environment),
 		sealedPreconfBlocks: make([]*environment, 0),
 		// create an lru cache limited to 32 elements
-		receiptsCache: lru.NewCache[common.Hash, []*types.Receipt](32),
+		receiptsCache:  lru.NewCache[common.Hash, []*types.Receipt](32),
+		currentStateId: StateIdToStartFrom,
 	}
 }
 
@@ -376,7 +381,7 @@ func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
 		state.sealedPreconfBlocks = state.sealedPreconfBlocks[:divergenceIdx]
 
 		// Reset state map since it might contain invalid states
-		state.stateIdMap = make(map[uint64]*environment)
+		state.resetState()
 
 		// Clear receipts cache for reorged blocks
 		state.receiptsCache = lru.NewCache[common.Hash, []*types.Receipt](32)
@@ -390,6 +395,14 @@ func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
 			"numPreconfBlocksBeforeDivergence", numPreconfBlocksBeforeDivergence,
 			"numPreconfBlocksAfterDivergence", numPreconfBlocksBeforeDivergence-len(state.sealedPreconfBlocks))
 	}
+}
+
+func (state *PreconfState) resetState() {
+	state.stateIdMutex.Lock()
+	defer state.stateIdMutex.Unlock()
+
+	state.currentStateId = StateIdToStartFrom
+	state.stateIdMap = make(map[uint64]*environment)
 }
 
 // onNewChainHeadEvent processes new chain head events and handles potential chain reorganizations.
@@ -497,4 +510,18 @@ func (state *PreconfState) addSealedBlock(env *environment, stateId uint64) erro
 
 	state.sealedPreconfBlocks = append(state.sealedPreconfBlocks, env)
 	return nil
+}
+
+func (state *PreconfState) getNextStateId() uint64 {
+	state.stateIdMutex.Lock()
+	defer state.stateIdMutex.Unlock()
+
+	// Check for overflow - if we're at max uint64, reset to starting point
+	if state.currentStateId == math.MaxUint64 {
+		state.currentStateId = StateIdToStartFrom
+	}
+
+	current := state.currentStateId
+	state.currentStateId++
+	return current
 }

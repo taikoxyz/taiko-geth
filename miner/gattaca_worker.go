@@ -3,7 +3,6 @@ package miner
 import (
 	"errors"
 	"fmt"
-	"math"
 	"math/big"
 	"sync"
 
@@ -30,9 +29,8 @@ var (
 )
 
 var (
-	singletonGattaca   *GattacaWorker = nil
-	singletonLock                     = &sync.Mutex{}
-	stateIdToStartFrom                = uint64(1) // 0 is reserved for latest sealed state
+	singletonGattaca *GattacaWorker = nil
+	singletonLock                   = &sync.Mutex{}
 )
 
 type GattacaWorker struct {
@@ -46,8 +44,6 @@ type GattacaWorker struct {
 	haltReason  string
 
 	preconfState *PreconfState
-
-	currentStateId uint64
 }
 
 func NewGattacaWorker(
@@ -63,14 +59,13 @@ func NewGattacaWorker(
 	if singletonGattaca == nil {
 
 		singletonGattaca = &GattacaWorker{
-			chainConfig:    chainConfig,
-			chain:          chain,
-			config:         config,
-			engine:         engine,
-			halt:           false,
-			haltReason:     "",
-			preconfState:   preconfState,
-			currentStateId: stateIdToStartFrom,
+			chainConfig:  chainConfig,
+			chain:        chain,
+			config:       config,
+			engine:       engine,
+			halt:         false,
+			haltReason:   "",
+			preconfState: preconfState,
 		}
 
 		go singletonGattaca.runLoop()
@@ -103,20 +98,6 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 			g.preconfState.onNewChainHeadEvent(&ev)
 		}
 	}
-}
-
-func (g *GattacaWorker) getNextStateId() uint64 {
-	g.stateIdLock.Lock() // Use the separate lock instead
-	defer g.stateIdLock.Unlock()
-
-	// Check for overflow - if we're at max uint64, reset to starting point
-	if g.currentStateId == math.MaxUint64 {
-		g.currentStateId = stateIdToStartFrom
-	}
-
-	current := g.currentStateId
-	g.currentStateId++
-	return current
 }
 
 // simulateAnchorTx simulates the execution of an anchor transaction in a new environment
@@ -214,7 +195,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.receipts = append(simEnv.receipts, receipt)
 
-	newStateId := g.getNextStateId()
+	newStateId := g.preconfState.getNextStateId()
 	g.preconfState.stateIdMap[newStateId] = simEnv
 	log.Info("Added simulation environment to stateIdMap", "stateId", newStateId)
 
@@ -289,7 +270,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	simEnv.receipts = append(simEnv.receipts, receipt)
 
 	// Add env to state id map
-	newStateId := g.getNextStateId()
+	newStateId := g.preconfState.getNextStateId()
 	g.preconfState.stateIdMap[newStateId] = simEnv
 
 	log.Info("GTC-WORKER: PRECONF: simulateTx, successfully simulated tx", "tx", tx.Hash().Hex(), "receipt", receipt)
