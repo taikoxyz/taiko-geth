@@ -141,7 +141,7 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 		timestamp:     uint64(time.Now().Unix()),
 		forceTime:     true,
 		parentHash:    currentHead.Hash(),
-		coinbase:      common.HexToAddress("0xB851706411c088A2c43e6AfCb2794be5dd2f2A51"),
+		coinbase:      currentHead.Coinbase,
 		random:        currentHead.MixDigest,
 		noTxs:         false,
 		baseFeePerGas: big.NewInt(1),
