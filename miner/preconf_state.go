@@ -426,12 +426,18 @@ func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) {
 	log.Info("GATTACA (onNewChainHeadEvent): New chain head event",
 		"blockHash", event.Block.Hash().String(),
 		"txs", len(event.Block.Transactions()))
+
 	// log details of all txs
 	for _, tx := range event.Block.Transactions() {
+		var to string = ""
+		if tx.To() != nil {
+			to = tx.To().String()
+		}
+
 		log.Info("GATTACA (onNewChainHeadEvent): Tx",
 			"hash", tx.Hash().String(),
 			"value", tx.Value(),
-			"to", tx.To().String(),
+			"to", to,
 			"gas", tx.Gas(),
 			"gasPrice", tx.GasPrice(),
 			"nonce", tx.Nonce(),
