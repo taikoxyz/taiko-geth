@@ -30,15 +30,11 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		ExtraData        hexutil.Bytes           `json:"extraData"     gencodec:"required"`
 		BaseFeePerGas    *hexutil.Big            `json:"baseFeePerGas" gencodec:"required"`
 		BlockHash        common.Hash             `json:"blockHash"     gencodec:"required"`
-		Transactions     []hexutil.Bytes         `json:"transactions"`
+		Transactions     []hexutil.Bytes         `json:"transactions"  gencodec:"required"`
 		Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
-		Deposits         types.Deposits          `json:"depositRequests"`
 		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
-		TxHash           common.Hash             `json:"txHash"`
-		WithdrawalsHash  common.Hash             `json:"withdrawalsHash"`
-		TaikoBlock       bool
 	}
 	var enc ExecutableData
 	enc.ParentHash = e.ParentHash
@@ -63,11 +59,7 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 	enc.Withdrawals = e.Withdrawals
 	enc.BlobGasUsed = (*hexutil.Uint64)(e.BlobGasUsed)
 	enc.ExcessBlobGas = (*hexutil.Uint64)(e.ExcessBlobGas)
-	enc.Deposits = e.Deposits
 	enc.ExecutionWitness = e.ExecutionWitness
-	enc.TxHash = e.TxHash
-	enc.WithdrawalsHash = e.WithdrawalsHash
-	enc.TaikoBlock = e.TaikoBlock
 	return json.Marshal(&enc)
 }
 
@@ -87,15 +79,11 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		ExtraData        *hexutil.Bytes          `json:"extraData"     gencodec:"required"`
 		BaseFeePerGas    *hexutil.Big            `json:"baseFeePerGas" gencodec:"required"`
 		BlockHash        *common.Hash            `json:"blockHash"     gencodec:"required"`
-		Transactions     []hexutil.Bytes         `json:"transactions"`
+		Transactions     []hexutil.Bytes         `json:"transactions"  gencodec:"required"`
 		Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
-		Deposits         *types.Deposits         `json:"depositRequests"`
 		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
-		TxHash           *common.Hash            `json:"txHash"`
-		WithdrawalsHash  *common.Hash            `json:"withdrawalsHash"`
-		TaikoBlock       *bool
 	}
 	var dec ExecutableData
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -168,20 +156,8 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 	if dec.ExcessBlobGas != nil {
 		e.ExcessBlobGas = (*uint64)(dec.ExcessBlobGas)
 	}
-	if dec.Deposits != nil {
-		e.Deposits = *dec.Deposits
-	}
 	if dec.ExecutionWitness != nil {
 		e.ExecutionWitness = dec.ExecutionWitness
-	}
-	if dec.TxHash != nil {
-		e.TxHash = *dec.TxHash
-	}
-	if dec.WithdrawalsHash != nil {
-		e.WithdrawalsHash = *dec.WithdrawalsHash
-	}
-	if dec.TaikoBlock != nil {
-		e.TaikoBlock = *dec.TaikoBlock
 	}
 	return nil
 }

@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"net/netip"
 	"slices"
@@ -324,8 +325,7 @@ func (s *DistinctNetSet) key(ip netip.Addr) netip.Prefix {
 
 // String implements fmt.Stringer
 func (s DistinctNetSet) String() string {
-	keys := maps.Keys(s.members)
-	slices.SortFunc(keys, func(a, b netip.Prefix) int {
+	keys := slices.SortedFunc(maps.Keys(s.members), func(a, b netip.Prefix) int {
 		return strings.Compare(a.String(), b.String())
 	})
 
