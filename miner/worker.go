@@ -120,6 +120,7 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv) *envi
 	newEnv.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
 	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
 	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
+	newEnv.coinbase = newEnvParams.Coinbase
 
 	// If we took the env from the head (no sealed block) then we can take the hash from the header.
 	if env.sealedBlock == nil {
