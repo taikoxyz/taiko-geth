@@ -346,7 +346,7 @@ func (b *GattacaEthAPIBackend) SubscribeLogsEvent(ch chan<- []*types.Log) event.
 }
 
 func (b *GattacaEthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction) error {
-	return errors.New("simulator does not support submit transaction")
+	return b.eth.txPool.Add([]*types.Transaction{signedTx}, true, false)[0]
 }
 
 func (b *GattacaEthAPIBackend) GetPoolTransactions() (types.Transactions, error) {
