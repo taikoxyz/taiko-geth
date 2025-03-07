@@ -379,7 +379,6 @@ func BlockToExecutableData(block *types.Block, fees *big.Int, sidecars []*types.
 type ExecutionPayloadBody struct {
 	TransactionData []hexutil.Bytes     `json:"transactions"`
 	Withdrawals     []*types.Withdrawal `json:"withdrawals"`
-	Deposits        types.Deposits      `json:"depositRequests"`
 }
 
 // Client identifiers to support ClientVersionV1.

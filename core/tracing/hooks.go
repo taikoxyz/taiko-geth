@@ -270,6 +270,10 @@ const (
 	// BalanceChangeRevert is emitted when the balance is reverted back to a previous value due to call failure.
 	// It is only emitted when the tracer has opted in to use the journaling wrapper (WrapWithJournal).
 	BalanceChangeRevert BalanceChangeReason = 15
+
+	// CHANGE(taiko): Add new balance change reasons
+	BalanceIncreaseTreasury       BalanceChangeReason = 99
+	BalanceIncreaseBaseFeeSharing BalanceChangeReason = 100
 )
 
 // GasChangeReason is used to indicate the reason for a gas change, useful

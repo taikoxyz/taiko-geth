@@ -77,10 +77,6 @@ type backend interface {
 
 	// Close closes the trie database backend and releases all held resources.
 	Close() error
-
-	// Reader returns a reader for accessing all trie nodes with provided state
-	// root. An error will be returned if the requested state is not available.
-	Reader(root common.Hash) (database.Reader, error)
 }
 
 // Database is the wrapper of the underlying backend which is shared by different

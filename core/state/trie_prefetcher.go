@@ -449,29 +449,6 @@ func (sf *subfetcher) loop() {
 					} else {
 						sf.seenWriteSlot[*task.slot] = struct{}{}
 					}
-					if _, ok := sf.seenWrite[key]; ok {
-						sf.dupsCross++
-						continue
-					}
-				} else {
-					if _, ok := sf.seenRead[key]; ok {
-						sf.dupsCross++
-						continue
-					}
-					if _, ok := sf.seenWrite[key]; ok {
-						sf.dupsWrite++
-						continue
-					}
-				}
-				if len(task.key) == common.AddressLength {
-					sf.trie.GetAccount(common.BytesToAddress(task.key))
-				} else {
-					sf.trie.GetStorage(sf.addr, task.key)
-				}
-				if task.read {
-					sf.seenRead[key] = struct{}{}
-				} else {
-					sf.seenWrite[key] = struct{}{}
 				}
 			}
 

@@ -1,8 +1,4 @@
-<<<<<<<< HEAD:core/rawdb/freezer_memory_test.go
-// Copyright 2024 The go-ethereum Authors
-========
 // Copyright 2018 The go-ethereum Authors
->>>>>>>> v1.15.4:rpc/ipc_wasip1.go
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -18,32 +14,6 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-<<<<<<<< HEAD:core/rawdb/freezer_memory_test.go
-package rawdb
-
-import (
-	"testing"
-
-	"github.com/ethereum/go-ethereum/core/rawdb/ancienttest"
-	"github.com/ethereum/go-ethereum/ethdb"
-)
-
-func TestMemoryFreezer(t *testing.T) {
-	ancienttest.TestAncientSuite(t, func(kinds []string) ethdb.AncientStore {
-		tables := make(map[string]bool)
-		for _, kind := range kinds {
-			tables[kind] = true
-		}
-		return NewMemoryFreezer(false, tables)
-	})
-	ancienttest.TestResettableAncientSuite(t, func(kinds []string) ethdb.ResettableAncientStore {
-		tables := make(map[string]bool)
-		for _, kind := range kinds {
-			tables[kind] = true
-		}
-		return NewMemoryFreezer(false, tables)
-	})
-========
 //go:build wasip1
 // +build wasip1
 
@@ -65,5 +35,4 @@ func ipcListen(endpoint string) (net.Listener, error) {
 // newIPCConnection will connect to a named pipe with the given endpoint as name.
 func newIPCConnection(ctx context.Context, endpoint string) (net.Conn, error) {
 	return nil, errNotSupported
->>>>>>>> v1.15.4:rpc/ipc_wasip1.go
 }

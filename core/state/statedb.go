@@ -187,11 +187,6 @@ func New(root common.Hash, db Database) (*StateDB, error) {
 	return sdb, nil
 }
 
-// SetLogger sets the logger for account update hooks.
-func (s *StateDB) SetLogger(l *tracing.Hooks) {
-	s.logger = l
-}
-
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
 // state trie concurrently while the state is mutated so that when we reach the
 // commit phase, most of the needed data is already hot.
@@ -245,9 +240,6 @@ func (s *StateDB) AddLog(log *types.Log) {
 	log.TxHash = s.thash
 	log.TxIndex = uint(s.txIndex)
 	log.Index = s.logSize
-	if s.logger != nil && s.logger.OnLog != nil {
-		s.logger.OnLog(log)
-	}
 	s.logs[s.thash] = append(s.logs[s.thash], log)
 	s.logSize++
 }
@@ -436,7 +428,7 @@ func (s *StateDB) SubBalance(addr common.Address, amount *uint256.Int, reason tr
 func (s *StateDB) SetBalance(addr common.Address, amount *uint256.Int, reason tracing.BalanceChangeReason) {
 	stateObject := s.getOrNewStateObject(addr)
 	if stateObject != nil {
-		stateObject.SetBalance(amount, reason)
+		stateObject.SetBalance(amount)
 	}
 }
 

@@ -170,7 +170,7 @@ func TestCopy(t *testing.T) {
 
 	for i := byte(0); i < 255; i++ {
 		obj := orig.getOrNewStateObject(common.BytesToAddress([]byte{i}))
-		obj.AddBalance(uint256.NewInt(uint64(i)), tracing.BalanceChangeUnspecified)
+		obj.AddBalance(uint256.NewInt(uint64(i)))
 		orig.updateStateObject(obj)
 	}
 	orig.Finalise(false)
@@ -187,9 +187,9 @@ func TestCopy(t *testing.T) {
 		copyObj := copy.getOrNewStateObject(common.BytesToAddress([]byte{i}))
 		ccopyObj := ccopy.getOrNewStateObject(common.BytesToAddress([]byte{i}))
 
-		origObj.AddBalance(uint256.NewInt(2*uint64(i)), tracing.BalanceChangeUnspecified)
-		copyObj.AddBalance(uint256.NewInt(3*uint64(i)), tracing.BalanceChangeUnspecified)
-		ccopyObj.AddBalance(uint256.NewInt(4*uint64(i)), tracing.BalanceChangeUnspecified)
+		origObj.AddBalance(uint256.NewInt(2 * uint64(i)))
+		copyObj.AddBalance(uint256.NewInt(3 * uint64(i)))
+		ccopyObj.AddBalance(uint256.NewInt(4 * uint64(i)))
 
 		orig.updateStateObject(origObj)
 		copy.updateStateObject(copyObj)
@@ -1296,12 +1296,12 @@ func TestDeleteStorage(t *testing.T) {
 	obj := fastState.getOrNewStateObject(addr)
 	storageRoot := obj.data.Root
 
-	_, fastNodes, err := fastState.deleteStorage(addr, crypto.Keccak256Hash(addr[:]), storageRoot)
+	_, _, fastNodes, err := fastState.deleteStorage(addr, crypto.Keccak256Hash(addr[:]), storageRoot)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, slowNodes, err := slowState.deleteStorage(addr, crypto.Keccak256Hash(addr[:]), storageRoot)
+	_, _, slowNodes, err := slowState.deleteStorage(addr, crypto.Keccak256Hash(addr[:]), storageRoot)
 	if err != nil {
 		t.Fatal(err)
 	}

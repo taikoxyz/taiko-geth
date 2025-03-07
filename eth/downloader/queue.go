@@ -810,19 +810,6 @@ func (q *queue) DeliverBodies(id string, txLists [][]*types.Transaction, txListH
 				return errInvalidBody
 			}
 		}
-		if header.RequestsHash == nil {
-			// nil hash means that requests should not be present in body
-			if requestsLists[index] != nil {
-				return errInvalidBody
-			}
-		} else { // non-nil hash: body must have requests
-			if requestsLists[index] == nil {
-				return errInvalidBody
-			}
-			if requestsListHashes[index] != *header.RequestsHash {
-				return errInvalidBody
-			}
-		}
 		// Blocks must have a number of blobs corresponding to the header gas usage,
 		// and zero before the Cancun hardfork.
 		var blobs int

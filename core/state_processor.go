@@ -72,7 +72,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	var (
 		context vm.BlockContext
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
-		err     error
 	)
 
 	// Apply pre-execution system calls.
@@ -194,12 +193,6 @@ func MakeReceipt(evm *vm.EVM, result *ExecutionResult, statedb *state.StateDB, b
 		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
 	}
 
-	// Merge the tx-local access event into the "block-local" one, in order to collect
-	// all values, so that the witness can be built.
-	if statedb.GetTrie().IsVerkle() {
-		statedb.AccessEvents().Merge(evm.AccessEvents)
-	}
-
 	// Set the receipt logs and create the bloom filter.
 	receipt.Logs = statedb.GetLogs(tx.Hash(), blockNumber.Uint64(), blockHash)
 	receipt.Bloom = types.CreateBloom(receipt)
@@ -220,7 +213,7 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	}
 	// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 	// add it to the Message, if its an ontake block.
-	if config.IsOntake(header.Number) {
+	if evm.ChainConfig().IsOntake(header.Number) {
 		msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 	}
 	// Create a new context to be used in the EVM environment
@@ -323,12 +316,14 @@ func processRequestsSystemCall(requests *[][]byte, evm *vm.EVM, requestType byte
 	*requests = append(*requests, requestsData)
 }
 
+var depositTopic = common.HexToHash("0x649bbc62d0e31342afea4e5cd82d4049e7e1ee912fc0889aa790803be39038c5")
+
 // ParseDepositLogs extracts the EIP-6110 deposit values from logs emitted by
 // BeaconDepositContract.
 func ParseDepositLogs(requests *[][]byte, logs []*types.Log, config *params.ChainConfig) error {
 	deposits := make([]byte, 1) // note: first byte is 0x00 (== deposit request type)
 	for _, log := range logs {
-		if log.Address == config.DepositContractAddress {
+		if log.Address == config.DepositContractAddress && len(log.Topics) > 0 && log.Topics[0] == depositTopic {
 			request, err := types.DepositLogToRequest(log.Data)
 			if err != nil {
 				return fmt.Errorf("unable to parse deposit data: %v", err)
@@ -348,47 +343,4 @@ func onSystemCallStart(tracer *tracing.Hooks, ctx *tracing.VMContext) {
 	} else if tracer.OnSystemCallStart != nil {
 		tracer.OnSystemCallStart()
 	}
-}
-
-// ProcessParentBlockHash stores the parent block hash in the history storage contract
-// as per EIP-2935.
-func ProcessParentBlockHash(prevHash common.Hash, vmenv *vm.EVM, statedb *state.StateDB) {
-	if tracer := vmenv.Config.Tracer; tracer != nil {
-		if tracer.OnSystemCallStart != nil {
-			tracer.OnSystemCallStart()
-		}
-		if tracer.OnSystemCallEnd != nil {
-			defer tracer.OnSystemCallEnd()
-		}
-	}
-
-	msg := &Message{
-		From:      params.SystemAddress,
-		GasLimit:  30_000_000,
-		GasPrice:  common.Big0,
-		GasFeeCap: common.Big0,
-		GasTipCap: common.Big0,
-		To:        &params.HistoryStorageAddress,
-		Data:      prevHash.Bytes(),
-	}
-	vmenv.Reset(NewEVMTxContext(msg), statedb)
-	statedb.AddAddressToAccessList(params.HistoryStorageAddress)
-	_, _, _ = vmenv.Call(vm.AccountRef(msg.From), *msg.To, msg.Data, 30_000_000, common.U2560)
-	statedb.Finalise(true)
-}
-
-// ParseDepositLogs extracts the EIP-6110 deposit values from logs emitted by
-// BeaconDepositContract.
-func ParseDepositLogs(logs []*types.Log, config *params.ChainConfig) (types.Requests, error) {
-	deposits := make(types.Requests, 0)
-	for _, log := range logs {
-		if log.Address == config.DepositContractAddress {
-			d, err := types.UnpackIntoDeposit(log.Data)
-			if err != nil {
-				return nil, fmt.Errorf("unable to parse deposit data: %v", err)
-			}
-			deposits = append(deposits, types.NewRequest(d))
-		}
-	}
-	return deposits, nil
 }

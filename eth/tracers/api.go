@@ -640,14 +640,6 @@ func (api *API) traceBlock(ctx context.Context, block *types.Block, config *Trac
 		signer    = types.MakeSigner(api.backend.ChainConfig(), block.Number(), block.Time())
 		results   = make([]*txTraceResult, len(txs))
 	)
-	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
-		vmenv := vm.NewEVM(blockCtx, vm.TxContext{}, statedb, api.backend.ChainConfig(), vm.Config{})
-		core.ProcessBeaconBlockRoot(*beaconRoot, vmenv, statedb)
-	}
-	if api.backend.ChainConfig().IsPrague(block.Number(), block.Time()) {
-		vmenv := vm.NewEVM(blockCtx, vm.TxContext{}, statedb, api.backend.ChainConfig(), vm.Config{})
-		core.ProcessParentBlockHash(block.ParentHash(), vmenv, statedb)
-	}
 	for i, tx := range txs {
 		if i == 0 && api.backend.ChainConfig().Taiko {
 			if err := tx.MarkAsAnchor(); err != nil {

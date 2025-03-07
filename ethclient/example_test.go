@@ -1,8 +1,4 @@
-<<<<<<<< HEAD:params/verkle_params.go
-// Copyright 2023 The go-ethereum Authors
-========
 // Copyright 2024 The go-ethereum Authors
->>>>>>>> v1.15.4:ethclient/example_test.go
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -18,27 +14,6 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-<<<<<<<< HEAD:params/verkle_params.go
-package params
-
-// Verkle tree EIP: costs associated to witness accesses
-var (
-	WitnessBranchReadCost  uint64 = 1900
-	WitnessChunkReadCost   uint64 = 200
-	WitnessBranchWriteCost uint64 = 3000
-	WitnessChunkWriteCost  uint64 = 500
-	WitnessChunkFillCost   uint64 = 6200
-)
-
-// ClearVerkleWitnessCosts sets all witness costs to 0, which is necessary
-// for historical block replay simulations.
-func ClearVerkleWitnessCosts() {
-	WitnessBranchReadCost = 0
-	WitnessChunkReadCost = 0
-	WitnessBranchWriteCost = 0
-	WitnessChunkWriteCost = 0
-	WitnessChunkFillCost = 0
-========
 package ethclient_test
 
 import (
@@ -57,5 +32,4 @@ func init() {
 		panic("can't launch node: " + err.Error())
 	}
 	exampleNode = n
->>>>>>>> v1.15.4:ethclient/example_test.go
 }

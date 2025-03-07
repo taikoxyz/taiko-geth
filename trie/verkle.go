@@ -241,44 +241,6 @@ func (t *VerkleTrie) RollBackAccount(addr common.Address) error {
 	return nil
 }
 
-// RollBackAccount removes the account info + code from the tree, unlike DeleteAccount
-// that will overwrite it with 0s. The first 64 storage slots are also removed.
-func (t *VerkleTrie) RollBackAccount(addr common.Address) error {
-	var (
-		evaluatedAddr = t.cache.Get(addr.Bytes())
-		basicDataKey  = utils.BasicDataKeyWithEvaluatedAddress(evaluatedAddr)
-	)
-	basicDataBytes, err := t.root.Get(basicDataKey, t.nodeResolver)
-	if err != nil {
-		return fmt.Errorf("rollback: error finding code size: %w", err)
-	}
-	if len(basicDataBytes) == 0 {
-		return errors.New("rollback: basic data is not existent")
-	}
-	// The code size is encoded in BasicData as a 3-byte big-endian integer. Spare bytes are present
-	// before the code size to support bigger integers in the future.
-	// LittleEndian.Uint32(...) expects 4-bytes, so we need to shift the offset 1-byte to the left.
-	codeSize := binary.BigEndian.Uint32(basicDataBytes[utils.BasicDataCodeSizeOffset-1:])
-
-	// Delete the account header + first 64 slots + first 128 code chunks
-	_, err = t.root.(*verkle.InternalNode).DeleteAtStem(basicDataKey[:31], t.nodeResolver)
-	if err != nil {
-		return fmt.Errorf("error rolling back account header: %w", err)
-	}
-
-	// Delete all further code
-	for i, chunknr := uint64(31*128), uint64(128); i < uint64(codeSize); i, chunknr = i+31*256, chunknr+256 {
-		// evaluate group key at the start of a new group
-		offset := uint256.NewInt(chunknr)
-		key := utils.CodeChunkKeyWithEvaluatedAddress(evaluatedAddr, offset)
-
-		if _, err = t.root.(*verkle.InternalNode).DeleteAtStem(key[:], t.nodeResolver); err != nil {
-			return fmt.Errorf("error deleting code chunk stem (addr=%x, offset=%d) error: %w", addr[:], offset, err)
-		}
-	}
-	return nil
-}
-
 // DeleteStorage implements state.Trie, deleting the specified storage slot from
 // the trie. If the storage slot was not existent in the trie, no error will be
 // returned. If the trie is corrupted, an error will be returned.

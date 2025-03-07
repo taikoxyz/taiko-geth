@@ -150,7 +150,7 @@ func (dl *diskLayer) account(hash common.Hash, depth int) ([]byte, error) {
 	defer dl.lock.RUnlock()
 
 	if dl.stale {
-		return nil, common.Hash{}, nil, errSnapshotStale
+		return nil, errSnapshotStale
 	}
 	// Try to retrieve the account from the not-yet-written
 	// node buffer first. Note the buffer is lock free since

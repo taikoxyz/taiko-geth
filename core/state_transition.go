@@ -552,18 +552,24 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		// are 0. This avoids a negative effectiveTip being applied to
 		// the coinbase when simulating calls.
 	} else {
+		var fee *uint256.Int
 		// CHANGE(taiko): basefee is not burnt, but sent to a treasury and block.coinbase instead.
 		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.msg.IsAnchor {
-			totalFee := new(uint256.Int).SetUint64(st.gasUsed())
-			totalFee.Mul(fee, effectiveTipU256)
-			feeCoinbase := new(big.Int).Div(
-				new(big.Int).Mul(totalFee, new(big.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
-				new(big.Int).SetUint64(100),
+			fee := new(uint256.Int).SetUint64(st.gasUsed())
+			fee.Mul(fee, effectiveTipU256)
+			feeCoinbase := new(uint256.Int).Div(
+				new(uint256.Int).Mul(fee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
+				new(uint256.Int).SetUint64(100),
 			)
-			feeTreasury := new(big.Int).Sub(totalFee, feeCoinbase)
-			st.state.AddBalance(st.getTreasuryAddress(), uint256.MustFromBig(feeTreasury), tracing.BalanceIncreaseTreasury)
-			st.state.AddBalance(st.evm.Context.Coinbase, uint256.MustFromBig(feeCoinbase), tracing.BalanceIncreaseBaseFeeSharing)
+			feeTreasury := new(uint256.Int).Sub(fee, feeCoinbase)
+			st.state.AddBalance(st.getTreasuryAddress(), feeTreasury, tracing.BalanceIncreaseTreasury)
+			st.state.AddBalance(st.evm.Context.Coinbase, feeCoinbase, tracing.BalanceIncreaseBaseFeeSharing)
+		} else {
+			fee := new(uint256.Int).SetUint64(st.gasUsed())
+			fee.Mul(fee, effectiveTipU256)
+			st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
 		}
+
 		// add the coinbase to the witness iff the fee is greater than 0
 		if rules.IsEIP4762 && fee.Sign() != 0 {
 			st.evm.AccessEvents.AddAccount(st.evm.Context.Coinbase, true)
@@ -684,7 +690,7 @@ func (st *stateTransition) blobGasUsed() uint64 {
 }
 
 // CHANGE(taiko): returns the treasury address based on chain ID.
-func (st *StateTransition) getTreasuryAddress() common.Address {
+func (st *stateTransition) getTreasuryAddress() common.Address {
 	var (
 		prefix = st.evm.ChainConfig().ChainID.String()
 		suffix = "10001"

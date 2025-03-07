@@ -198,18 +198,3 @@ func (dl *diskLayer) stopGeneration() {
 		<-abort
 	}
 }
-
-// stopGeneration aborts the state snapshot generation if it is currently running.
-func (dl *diskLayer) stopGeneration() {
-	dl.lock.RLock()
-	generating := dl.genMarker != nil
-	dl.lock.RUnlock()
-	if !generating {
-		return
-	}
-	if dl.genAbort != nil {
-		abort := make(chan *generatorStats)
-		dl.genAbort <- abort
-		<-abort
-	}
-}

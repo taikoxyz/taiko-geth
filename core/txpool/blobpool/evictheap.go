@@ -24,7 +24,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/holiman/uint256"
-	"golang.org/x/exp/maps"
 )
 
 // evictHeap is a helper data structure to keep track of the cheapest bottleneck

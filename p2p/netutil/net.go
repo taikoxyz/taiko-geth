@@ -26,8 +26,6 @@ import (
 	"net/netip"
 	"slices"
 	"strings"
-
-	"golang.org/x/exp/maps"
 )
 
 var special4, special6 Netlist
