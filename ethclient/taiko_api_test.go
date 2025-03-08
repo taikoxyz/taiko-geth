@@ -70,7 +70,6 @@ func newTaikoAPITestClient(t *testing.T) (*Client, []*types.Block, ethdb.Databas
 	n.RegisterAPIs([]rpc.API{
 		{
 			Namespace: "taiko",
-			Version:   params.VersionWithMeta,
 			Service:   eth.NewTaikoAPIBackend(ethservice),
 			Public:    true,
 		},
