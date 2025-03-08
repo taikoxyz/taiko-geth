@@ -1004,6 +1004,7 @@ func TestCommitSequenceStackTrie(t *testing.T) {
 		}
 		// Flush trie -> database
 		root, nodes := trie.Commit(false)
+
 		// Flush memdb -> disk (sponge)
 		db.Update(root, types.EmptyRootHash, trienode.NewWithNodeSet(nodes))
 		db.Commit(root)
@@ -1062,6 +1063,7 @@ func TestCommitSequenceSmallRoot(t *testing.T) {
 
 	// Flush trie -> database
 	root, nodes := trie.Commit(false)
+
 	// Flush memdb -> disk (sponge)
 	db.Update(root, types.EmptyRootHash, trienode.NewWithNodeSet(nodes))
 	db.Commit(root)
