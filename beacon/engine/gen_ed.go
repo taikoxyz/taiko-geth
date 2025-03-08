@@ -35,6 +35,9 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
 		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
+		TxHash           common.Hash             `json:"txHash"`
+		WithdrawalsHash  common.Hash             `json:"withdrawalsHash"`
+		TaikoBlock       bool
 	}
 	var enc ExecutableData
 	enc.ParentHash = e.ParentHash
@@ -60,6 +63,9 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 	enc.BlobGasUsed = (*hexutil.Uint64)(e.BlobGasUsed)
 	enc.ExcessBlobGas = (*hexutil.Uint64)(e.ExcessBlobGas)
 	enc.ExecutionWitness = e.ExecutionWitness
+	enc.TxHash = e.TxHash
+	enc.WithdrawalsHash = e.WithdrawalsHash
+	enc.TaikoBlock = e.TaikoBlock
 	return json.Marshal(&enc)
 }
 
@@ -84,6 +90,9 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
 		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
+		TxHash           *common.Hash            `json:"txHash"`
+		WithdrawalsHash  *common.Hash            `json:"withdrawalsHash"`
+		TaikoBlock       *bool
 	}
 	var dec ExecutableData
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -141,11 +150,12 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'blockHash' for ExecutableData")
 	}
 	e.BlockHash = *dec.BlockHash
-	if dec.Transactions != nil {
-		e.Transactions = make([][]byte, len(dec.Transactions))
-		for k, v := range dec.Transactions {
-			e.Transactions[k] = v
-		}
+	if dec.Transactions == nil {
+		return errors.New("missing required field 'transactions' for ExecutableData")
+	}
+	e.Transactions = make([][]byte, len(dec.Transactions))
+	for k, v := range dec.Transactions {
+		e.Transactions[k] = v
 	}
 	if dec.Withdrawals != nil {
 		e.Withdrawals = dec.Withdrawals
@@ -158,6 +168,15 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 	}
 	if dec.ExecutionWitness != nil {
 		e.ExecutionWitness = dec.ExecutionWitness
+	}
+	if dec.TxHash != nil {
+		e.TxHash = *dec.TxHash
+	}
+	if dec.WithdrawalsHash != nil {
+		e.WithdrawalsHash = *dec.WithdrawalsHash
+	}
+	if dec.TaikoBlock != nil {
+		e.TaikoBlock = *dec.TaikoBlock
 	}
 	return nil
 }
