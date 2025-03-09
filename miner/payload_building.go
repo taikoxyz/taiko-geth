@@ -98,6 +98,8 @@ func newPayload(empty *types.Block, emptyRequests [][]byte, witness *stateless.W
 		emptyRequests: emptyRequests,
 		emptyWitness:  witness,
 		stop:          make(chan struct{}),
+		// CHANGE(taiko): buffered channel to communicate done to taiko payload builder
+		done: make(chan struct{}, 1),
 	}
 	log.Info("Starting work on payload", "id", payload.id)
 	payload.cond = sync.NewCond(&payload.lock)
