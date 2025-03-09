@@ -17,9 +17,9 @@
 // makeTest generates a test for the configured tracer by running
 // a prestate reassembled and a call trace run, assembling all the
 // gathered information into a test case.
-var makeTest = function (tx, traceConfig) {
+var makeTest = function(tx, traceConfig) {
     // Generate the genesis block from the block, transaction and prestate data
-    var block = eth.getBlock(eth.getTransaction(tx).blockHash);
+    var block   = eth.getBlock(eth.getTransaction(tx).blockHash);
     var genesis = eth.getBlock(block.parentHash);
 
     delete genesis.gasUsed;
@@ -35,11 +35,11 @@ var makeTest = function (tx, traceConfig) {
     delete genesis.withdrawalsRoot;
     delete genesis.baseFeePerGas;
 
-    genesis.gasLimit = genesis.gasLimit.toString();
-    genesis.number = genesis.number.toString();
+    genesis.gasLimit  = genesis.gasLimit.toString();
+    genesis.number    = genesis.number.toString();
     genesis.timestamp = genesis.timestamp.toString();
 
-    genesis.alloc = debug.traceTransaction(tx, { tracer: "prestateTracer" });
+    genesis.alloc = debug.traceTransaction(tx, {tracer: "prestateTracer"});
     for (var key in genesis.alloc) {
         var nonce = genesis.alloc[key].nonce;
         if (nonce) {
@@ -53,11 +53,11 @@ var makeTest = function (tx, traceConfig) {
     delete result.time;
 
     var context = {
-        number: block.number.toString(),
+        number:     block.number.toString(),
         difficulty: block.difficulty,
-        timestamp: block.timestamp.toString(),
-        gasLimit: block.gasLimit.toString(),
-        miner: block.miner,
+        timestamp:  block.timestamp.toString(),
+        gasLimit:   block.gasLimit.toString(),
+        miner:      block.miner,
     };
     if (block.baseFeePerGas) {
         context.baseFeePerGas = block.baseFeePerGas.toString();
@@ -66,8 +66,8 @@ var makeTest = function (tx, traceConfig) {
     var data = {
         genesis: genesis,
         context: context,
-        input: eth.getRawTransaction(tx),
-        result: result,
+        input:   eth.getRawTransaction(tx),
+        result:  result,
     };
     if (traceConfig && traceConfig.tracerConfig) {
         data.tracerConfig = traceConfig.tracerConfig;

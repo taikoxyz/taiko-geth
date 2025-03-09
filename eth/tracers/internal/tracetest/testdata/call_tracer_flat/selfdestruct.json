@@ -80,24 +80,7 @@
       "error": "insufficient balance for transfer",
       "result": {},
       "subtraces": 0,
-      "traceAddress": [
-        0
-      ],
-      "type": "create"
-    },
-    {
-      "action": {
-        "from": "0x1d99a1a3efa9181f540f9e24fa6e4e08eb7844ca",
-        "gas": "0x50ac",
-        "init": "0x5a",
-        "value": "0x1"
-      },
-      "error": "insufficient balance for transfer",
-      "result": {},
-      "subtraces": 0,
-      "traceAddress": [
-        0
-      ],
+      "traceAddress": [0],
       "type": "create"
     },
     {
@@ -108,9 +91,7 @@
         "balance": "0x0"
       },
       "result": null,
-      "traceAddress": [
-        1
-      ],
+      "traceAddress": [1],
       "subtraces": 0,
       "transactionPosition": 14,
       "transactionHash": "0xdd76f02407e2f8329303ba688e111cae4f7008ad0d14d6e42c5698424ea36d79",

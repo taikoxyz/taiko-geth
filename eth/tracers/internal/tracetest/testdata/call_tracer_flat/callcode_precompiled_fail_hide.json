@@ -81,9 +81,7 @@
       "error": "insufficient balance for transfer",
       "result": {},
       "subtraces": 0,
-      "traceAddress": [
-        0
-      ],
+      "traceAddress": [0],
       "type": "call"
     }
   ]
