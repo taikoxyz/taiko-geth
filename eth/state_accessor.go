@@ -250,12 +250,22 @@ func (eth *Ethereum) stateAtTransaction(ctx context.Context, block *types.Block,
 	// Recompute transactions up to the target index.
 	signer := types.MakeSigner(eth.blockchain.Config(), block.Number(), block.Time())
 	for idx, tx := range block.Transactions() {
+		if idx == 0 && eth.config.Genesis.Config.Taiko {
+			if err := tx.MarkAsAnchor(); err != nil {
+				return nil, vm.BlockContext{}, nil, nil, err
+			}
+		}
 		if idx == txIndex {
 			return tx, context, statedb, release, nil
 		}
 		// Assemble the transaction call message and return if the requested offset
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
 
+		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
+		// add it to the Message, if its an ontake block.
+		if eth.blockchain.Config().IsOntake(block.Number()) {
+			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
+		}
 		// Not yet the searched for transaction, execute on top of the current state
 		statedb.SetTxContext(tx.Hash(), idx)
 		if _, err := core.ApplyMessage(evm, msg, new(core.GasPool).AddGas(tx.Gas())); err != nil {
