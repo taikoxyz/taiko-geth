@@ -741,9 +741,13 @@ txloop:
 			break txloop
 		case jobs <- task:
 		}
-
 		// Generate the next state snapshot fast without tracing
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
+		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
+		// add it to the Message, if its an ontake block.
+		if api.backend.ChainConfig().IsOntake(block.Number()) {
+			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
+		}
 		statedb.SetTxContext(tx.Hash(), i)
 		if _, err := core.ApplyMessage(evm, msg, new(core.GasPool).AddGas(msg.GasLimit)); err != nil {
 			failed = err
