@@ -552,24 +552,22 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		// are 0. This avoids a negative effectiveTip being applied to
 		// the coinbase when simulating calls.
 	} else {
-		var fee *uint256.Int
+		fee := new(uint256.Int).SetUint64(st.gasUsed())
+		fee.Mul(fee, effectiveTipU256)
+		st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
+
 		// CHANGE(taiko): basefee is not burnt, but sent to a treasury and block.coinbase instead.
 		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.msg.IsAnchor {
-			fee = new(uint256.Int).SetUint64(st.gasUsed())
-			fee.Mul(fee, effectiveTipU256)
+			totalFee := new(uint256.Int).SetUint64(st.gasUsed())
+			totalFee.Mul(totalFee, effectiveTipU256)
 			feeCoinbase := new(uint256.Int).Div(
-				new(uint256.Int).Mul(fee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
+				new(uint256.Int).Mul(totalFee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
 				new(uint256.Int).SetUint64(100),
 			)
-			feeTreasury := new(uint256.Int).Sub(fee, feeCoinbase)
+			feeTreasury := new(uint256.Int).Sub(totalFee, feeCoinbase)
 			st.state.AddBalance(st.getTreasuryAddress(), feeTreasury, tracing.BalanceIncreaseTreasury)
 			st.state.AddBalance(st.evm.Context.Coinbase, feeCoinbase, tracing.BalanceIncreaseBaseFeeSharing)
-		} else {
-			fee = new(uint256.Int).SetUint64(st.gasUsed())
-			fee.Mul(fee, effectiveTipU256)
-			st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
 		}
-
 		// add the coinbase to the witness iff the fee is greater than 0
 		if rules.IsEIP4762 && fee.Sign() != 0 {
 			st.evm.AccessEvents.AddAccount(st.evm.Context.Coinbase, true)
