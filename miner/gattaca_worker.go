@@ -189,7 +189,9 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 	simEnv.receipts = append(simEnv.receipts, receipt)
 
 	newStateId := g.preconfState.getNextStateId()
+	g.preconfState.stateIdMutex.Lock()
 	g.preconfState.stateIdMap[newStateId] = simEnv
+	g.preconfState.stateIdMutex.Unlock()
 
 	res <- SimulationResponse{
 		gasUsed:        receipt.GasUsed,
@@ -257,7 +259,9 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 
 	// Add env to state id map
 	newStateId := g.preconfState.getNextStateId()
+	g.preconfState.stateIdMutex.Lock()
 	g.preconfState.stateIdMap[newStateId] = simEnv
+	g.preconfState.stateIdMutex.Unlock()
 
 	log.Info("GTC-WORKER: successfully simulated tx", "tx", tx.Hash().Hex(), "receipt", receipt)
 
