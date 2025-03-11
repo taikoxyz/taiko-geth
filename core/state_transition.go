@@ -558,8 +558,10 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 
 		// CHANGE(taiko): basefee is not burnt, but sent to a treasury and block.coinbase instead.
 		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.msg.IsAnchor {
-			totalFee := new(uint256.Int).SetUint64(st.gasUsed())
-			totalFee.Mul(totalFee, effectiveTipU256)
+			totalFee := new(uint256.Int).Mul(
+				new(uint256.Int).SetUint64(st.gasUsed()),
+				new(uint256.Int).SetUint64(st.evm.Context.BaseFee.Uint64()),
+			)
 			feeCoinbase := new(uint256.Int).Div(
 				new(uint256.Int).Mul(totalFee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
 				new(uint256.Int).SetUint64(100),
