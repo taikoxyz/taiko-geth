@@ -22,8 +22,6 @@ import (
 	"math/big"
 	"strings"
 
-	"encoding/hex"
-
 	"github.com/ethereum/go-ethereum/common"
 	cmath "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -163,8 +161,6 @@ type Message struct {
 
 // TransactionToMessage converts a transaction into a Message.
 func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.Int) (*Message, error) {
-	log.Info("TransactionToMessage", "tx", tx, "baseFee", baseFee)
-
 	msg := &Message{
 		Nonce:            tx.Nonce(),
 		GasLimit:         tx.Gas(),
@@ -401,7 +397,6 @@ func (st *StateTransition) preCheck() error {
 func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// Check clauses 1-3, buy gas if everything is correct
 	if err := st.preCheck(); err != nil {
-		log.Error("Transaction pre-check failed", "error", err)
 		return nil, err
 	}
 
@@ -417,13 +412,9 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
 	gas, err := IntrinsicGas(msg.Data, msg.AccessList, contractCreation, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai)
 	if err != nil {
-		log.Error("Intrinsic gas calculation failed", "error", err)
 		return nil, err
 	}
 	if st.gasRemaining < gas {
-		log.Error("Insufficient gas remaining for intrinsic gas",
-			"gasRemaining", st.gasRemaining,
-			"intrinsicGas", gas)
 		return nil, fmt.Errorf("%w: have %d, want %d", ErrIntrinsicGas, st.gasRemaining, gas)
 	}
 	if t := st.evm.Config.Tracer; t != nil && t.OnGasChange != nil {
@@ -463,23 +454,10 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		vmerr error
 	)
 	if contractCreation {
-		log.Info("Executing contract creation")
 		ret, _, st.gasRemaining, vmerr = st.evm.Create(sender, msg.Data, st.gasRemaining, value)
-		if vmerr != nil {
-			log.Error("Contract creation failed",
-				"error", vmerr,
-				"gasRemaining", st.gasRemaining,
-				"returnData", hex.EncodeToString(ret))
-		}
 	} else {
 		st.state.SetNonce(msg.From, st.state.GetNonce(sender.Address())+1)
 		ret, st.gasRemaining, vmerr = st.evm.Call(sender, st.to(), msg.Data, st.gasRemaining, value)
-		if vmerr != nil {
-			log.Error("Message call failed",
-				"error", vmerr,
-				"gasRemaining", st.gasRemaining,
-				"returnData", hex.EncodeToString(ret))
-		}
 	}
 
 	var gasRefund uint64
@@ -495,8 +473,6 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		effectiveTip = cmath.BigMin(msg.GasTipCap, new(big.Int).Sub(msg.GasFeeCap, st.evm.Context.BaseFee))
 	}
 	effectiveTipU256, _ := uint256.FromBig(effectiveTip)
-
-	//log.Info("executed transaction", "vmerr", vmerr, "from", msg.From, "to", msg.To, "gas", st.gasUsed(), "gasPrice", msg.GasPrice, "effectiveTip", effectiveTip, "value", msg.Value, "isAnchor", msg.IsAnchor)
 
 	if st.evm.Config.NoBaseFee && msg.GasFeeCap.Sign() == 0 && msg.GasTipCap.Sign() == 0 {
 		// Skip fee payment when NoBaseFee is set and the fee fields

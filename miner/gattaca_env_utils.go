@@ -173,16 +173,13 @@ func (g *GattacaWorker) retrieveEnv(stateId uint64) (*environment, error) {
 		// stateId 1 fetches the latest sealed env, if present, or the latest chain head env
 		env, err := g.envFromHead()
 		if err != nil {
-			log.Error("Failed to retrieve env from head", "err", err)
 			return nil, err
 		}
 		latestSealedEnv := g.preconfState.latestSealedPreconfEnv()
 		if latestSealedEnv != nil && latestSealedEnv.header.Number.Uint64() > env.header.Number.Uint64() {
-			log.Info("Using latest sealed env", "latestSealedEnv", latestSealedEnv.header.Number.Uint64(), "env", env.header.Number.Uint64())
 			return latestSealedEnv, nil
 		}
 
-		log.Info("Using head env", "headEnv", env.header.Number.Uint64())
 		return env, nil
 	} else {
 		env, exists := g.preconfState.stateIdMap[stateId]
@@ -190,14 +187,6 @@ func (g *GattacaWorker) retrieveEnv(stateId uint64) (*environment, error) {
 			return nil, errors.New(fmt.Sprintf("state not found for id %d", stateId))
 		}
 
-		envHead, err := g.envFromHead()
-		if err != nil {
-			log.Error("Failed to retrieve env from head", "err", err)
-			return nil, err
-		}
-		log.Info("Head env", "headEnv", envHead.header.Number.Uint64(), "gasLimit", envHead.header.GasLimit)
-
-		log.Info("Retrieved env for stateId", "stateId", stateId, "env", env.header.Number.Uint64(), "gasLimit", env.header.GasLimit)
 		return env, nil
 	}
 }

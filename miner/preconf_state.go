@@ -305,7 +305,7 @@ func (state *PreconfState) sealPreconfBlock(stateId uint64, sealedBlockHash comm
 	if !exists {
 		return fmt.Errorf("no environment found for stateId %d", stateId)
 	}
-	log.Info("GATTACA (sealPreconfBlock): Sealing environment to preconf block", "blockNumber", envToSeal.header.Number.Uint64())
+	log.Info("GTC-WORKER: Sealing environment to preconf block", "blockNumber", envToSeal.header.Number.Uint64())
 
 	// Add the environment to our sealed blocks.
 	err := state.addSealedBlock(envToSeal, stateId)
@@ -322,7 +322,7 @@ func (state *PreconfState) sealPreconfBlock(stateId uint64, sealedBlockHash comm
 		receipt.BlockHash = sealedBlockHash
 	}
 
-	log.Info("GATTACA (sealPreconfBlock): Environment sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
+	log.Info("GTC-WORKER: Environment sealed", "totalSealedBlocks", len(state.sealedPreconfBlocks))
 
 	// Clear the stateIdMap
 	state.stateIdMap = make(map[uint64]*environment)
@@ -367,7 +367,7 @@ func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
 			divergenceCanonicalHash = canonicalHash
 			divergencePreconfHash = preconfBlock.sealedBlock.Hash()
 			divergenceNumber = preconfBlockNum
-			log.Warn("Found chain divergence",
+			log.Warn("GTC-WORKER: Found chain divergence",
 				"blockNumber", preconfBlockNum,
 				"preconfHash", preconfBlock.sealedBlock.Hash().String(),
 				"canonicalHash", canonicalHash.String())
@@ -386,7 +386,7 @@ func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
 		// Clear receipts cache for reorged blocks
 		state.receiptsCache = lru.NewCache[common.Hash, []*types.Receipt](32)
 
-		log.Warn("GATTACA (handleReorg): Detected divergence between canonical chain and sealed preconf blocks. Cleaned up divergent blocks",
+		log.Warn("GTC-WORKER: Detected divergence between canonical chain and sealed preconf blocks. Cleaned up divergent blocks",
 			"fromIndex", divergenceIdx,
 			"remainingBlocks", len(state.sealedPreconfBlocks),
 			"canonicalHash", divergenceCanonicalHash.String(),
@@ -417,37 +417,20 @@ func (state *PreconfState) resetState() {
 //   - error: Returns nil as handleReorg handles all cleanup internally
 func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) {
 	if event.Block.PreconfBlock {
-		log.Info("GATTACA (onNewChainHeadEvent): Ignoring chain event update from preconf block",
+		log.Info("GTC-WORKER: Ignoring chain event update from preconf block",
 			"eventBlockNumber", event.Block.NumberU64())
 		return
 	}
 
 	// info log block hash and txs
-	log.Info("GATTACA (onNewChainHeadEvent): New chain head event",
+	log.Info("GTC-WORKER: New chain head event",
 		"blockHash", event.Block.Hash().String(),
 		"txs", len(event.Block.Transactions()))
-
-	// log details of all txs
-	for _, tx := range event.Block.Transactions() {
-		var to string = ""
-		if tx.To() != nil {
-			to = tx.To().String()
-		}
-
-		log.Info("GATTACA (onNewChainHeadEvent): Tx",
-			"hash", tx.Hash().String(),
-			"value", tx.Value(),
-			"to", to,
-			"gas", tx.Gas(),
-			"gasPrice", tx.GasPrice(),
-			"nonce", tx.Nonce(),
-			"data", tx.Data())
-	}
 
 	// Handle any potential reorgs
 	state.handleReorg(event.Block)
 
-	log.Info("GATTACA (onNewChainHeadEvent): Finished processing sealed preconf blocks against new chain head")
+	log.Info("GTC-WORKER: Finished processing sealed preconf blocks against new chain head")
 }
 
 // calculateStateMetrics returns the cumulative gas used and builder payment for a given state ID.
@@ -460,7 +443,7 @@ func (state *PreconfState) calculateStateMetrics(stateId uint64) (uint64, *uint2
 		return 0, nil, fmt.Errorf("state for id %d does not exist", stateId)
 	}
 
-	log.Info("Calculating metrics for state", "stateId", stateId, "blockNumber", env.header.Number.Uint64(), "num_receipts", len(env.receipts))
+	log.Info("GTC-WORKER: Calculating metrics for state", "stateId", stateId, "blockNumber", env.header.Number.Uint64(), "num_receipts", len(env.receipts))
 
 	totalGas := uint64(0)
 	for _, receipt := range env.receipts {
@@ -509,7 +492,7 @@ func (state *PreconfState) addSealedBlock(env *environment, stateId uint64) erro
 	if len(state.sealedPreconfBlocks) > 0 {
 		lastBlock := state.sealedPreconfBlocks[len(state.sealedPreconfBlocks)-1]
 		if newBlockNum <= lastBlock.header.Number.Uint64() {
-			return fmt.Errorf("GATTACA (addSealedBlock): attempting to add block %d out of order, last block was %d, stateId %d",
+			return fmt.Errorf("GTC-WORKER: attempting to add block %d out of order, last block was %d, stateId %d",
 				newBlockNum, lastBlock.header.Number.Uint64(), stateId)
 		}
 	}

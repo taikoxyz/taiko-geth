@@ -33,30 +33,16 @@ type Reason struct {
 
 func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, env common.BlockEnv, extraData string) (map[string]interface{}, error) {
 
-	log.Info("SimulateAnchorTx", "input", input, "env", env, "extraData", extraData)
+	log.Info("GTC-API: SimulateAnchorTx")
 
 	tx := new(types.Transaction)
 	if err := rlp.DecodeBytes(input, &tx); err != nil {
-		log.Warn("PRECONF: RLP decodin failed, trying unmarshalBinary", "error", err)
 		err = tx.UnmarshalBinary(input)
 		if err != nil {
-			log.Error("PRECONF: unmarshalBinary also failed. call failure", "error", err)
+			log.Error("GTC-API: SimulateAnchorTx", "rlp decoding failed", "error", err)
 			return nil, err
 		}
 	}
-
-	// log tx details
-	log.Info("SimulateAnchorTx",
-		"type", tx.Type(),
-		"chainId", tx.ChainId(),
-		"maxFeePerGas", tx.GasFeeCap(),
-		"gasPrice", tx.GasPrice(),
-		"nonce", tx.Nonce(),
-		"gasLimit", tx.Gas(),
-		"to", tx.To(),
-		"value", tx.Value(),
-		"data", hexutil.Encode(tx.Data()),
-		"hash", tx.Hash())
 
 	resCh := make(chan miner.SimulationResponse)
 	miner.SimAnchorTx <- miner.SimulateAnchorTx{
@@ -69,13 +55,12 @@ func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Byt
 }
 
 func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint64) (map[string]interface{}, error) {
-	log.Info("GTC-API: SimulateTxAtState", "input", input, "stateId", stateId)
+	log.Info("GTC-API: SimulateTxAtState", "stateId", stateId)
 	tx := new(types.Transaction)
 	if err := rlp.DecodeBytes(input, &tx); err != nil {
-		log.Warn("PRECONF: RLP decodin failed, trying unmarshalBinary", "error", err)
 		err = tx.UnmarshalBinary(input)
 		if err != nil {
-			log.Error("PRECONF: unmarshalBinary also failed. call failure", "error", err)
+			log.Error("GTC-API: SimulateTxAtState", "rlp decoding failed", "error", err)
 			return nil, err
 		}
 	}
@@ -108,15 +93,11 @@ func (s *TransactionAPI) SealBlock(ctx context.Context, stateId uint64) (map[str
 	retMap["cumulative_gas_used"] = res.CumulativeGasUsed()
 	retMap["built_block"] = RPCMarshalBlock(res.Block(), true, true, s.b.ChainConfig())
 
-	log.Info("GTC-API: SealBlock", "retMap", retMap)
-
 	return retMap, res.Err()
 }
 
 func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}, error) {
 	res := <-resCh
-
-	log.Info("GTC-API: handleResponse", "res", res)
 
 	// Helper function to create execution result wrapper
 	createExecutionResult := func(resultType string, data map[string]interface{}, stateId uint64) map[string]interface{} {
@@ -132,24 +113,19 @@ func handleResponse(resCh chan miner.SimulationResponse) (map[string]interface{}
 		errData := make(map[string]interface{})
 		var revertError miner.CommitError // GTC change: miner.RevertCommitError
 
-		log.Info("GTC-API: handleResponse", "error", err, "error type", fmt.Sprintf("%T", err))
-
 		switch {
 		case errors.As(err, &revertError):
-			log.Info("GTC-API: handleResponse", "revertError", revertError)
 			errData["gas_used"] = hexutils.BytesToHex([]byte(strconv.FormatUint(res.GasUsed(), 10)))
 			errData["builder_payment"] = res.BuilderPayment().String()
 			errData["state_id"] = res.StateId()
 			retMap := createExecutionResult("revert", errData, res.StateId())
 			return retMap, nil
 		default:
-			log.Info("GTC-API: handleResponse", "default")
 			errData["reason"] = err.Error()
 			retMap := createExecutionResult("invalid", errData, res.StateId())
 			return retMap, nil
 		}
 	} else {
-		log.Info("GTC-API: handleResponse", "success")
 		successData := map[string]interface{}{
 			"gas_used":        fmt.Sprintf("0x%x", res.GasUsed()),
 			"builder_payment": res.BuilderPayment().String(),

@@ -1773,8 +1773,6 @@ func (api *TransactionAPI) GetTransactionCount(ctx context.Context, address comm
 	}
 	nonce := state.GetNonce(address)
 
-	log.Info("GetTransactionCount", "address", address, "nonce", nonce, "blockNrOrHash", blockNrOrHash, "error", state.Error())
-
 	return (*hexutil.Uint64)(&nonce), state.Error()
 }
 

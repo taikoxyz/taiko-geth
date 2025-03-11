@@ -17,19 +17,15 @@
 package vm
 
 import (
-	"bytes"
-	"encoding/hex"
 	"errors"
 	"math/big"
 	"sync/atomic"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -174,7 +170,6 @@ func (evm *EVM) Interpreter() *EVMInterpreter {
 // the necessary steps to create accounts and reverses the state in case of an
 // execution error or failed value transfer.
 func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
-	//log.Info("EVM: Call", "caller", caller.Address(), "to", addr, "input", hex.EncodeToString(input), "gas", gas, "value", value.ToBig())
 	// Capture the tracer start/end events in debug mode
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, CALL, caller.Address(), addr, input, gas, value.ToBig())
@@ -184,12 +179,10 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	}
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
-		log.Error("EVM-FAIL: Call", "error", ErrDepth)
 		return nil, gas, ErrDepth
 	}
 	// Fail if we're trying to transfer more than the available balance
 	if !value.IsZero() && !evm.Context.CanTransfer(evm.StateDB, caller.Address(), value) {
-		log.Error("EVM-FAIL: Call", "error", ErrInsufficientBalance)
 		return nil, gas, ErrInsufficientBalance
 	}
 	snapshot := evm.StateDB.Snapshot()
@@ -201,7 +194,6 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 			wgas := evm.AccessEvents.AddAccount(addr, false)
 			if gas < wgas {
 				evm.StateDB.RevertToSnapshot(snapshot)
-				log.Error("EVM-FAIL: Call", "error", ErrOutOfGas)
 				return nil, 0, ErrOutOfGas
 			}
 			gas -= wgas
@@ -209,7 +201,6 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.IsZero() {
 			// Calling a non-existing account, don't do anything.
-			log.Error("EVM-FAIL: Call", "error", ErrOutOfGas)
 			return nil, gas, nil
 		}
 		evm.StateDB.CreateAccount(addr)
@@ -218,7 +209,6 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 
 	if isPrecompile {
 		ret, gas, err = RunPrecompiledContract(p, input, gas, evm.Config.Tracer)
-		//log.Info("EVM: Call", "ret", ret, "gas", gas, "err", err)
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
@@ -228,7 +218,6 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		}
 		if len(code) == 0 {
 			ret, err = nil, nil // gas is unchanged
-			log.Error("EVM-FAIL: Call", "error", ErrOutOfGas)
 		} else {
 			addrCopy := addr
 			// If the account has no code, we can abort here
@@ -245,33 +234,12 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {
-			log.Info("EVM-FAIL: Call", "error", err)
 			if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
 				evm.Config.Tracer.OnGasChange(gas, 0, tracing.GasChangeCallFailedExecution)
 			}
 
 			gas = 0
 		}
-
-		revertReason := ""
-		if err == ErrExecutionReverted && len(ret) > 0 {
-			revertReason = hex.EncodeToString(ret)
-			// If it follows the ABI error format (0x08c379a0 for Error(string))
-			if len(ret) >= 4 && bytes.Equal(ret[:4], []byte{0x08, 0xc3, 0x79, 0xa0}) {
-				// Try to decode the error string
-				if errorMsg, err := abi.UnpackRevert(ret); err == nil {
-					revertReason = errorMsg
-				}
-			}
-		}
-
-		log.Error("EVM execution error",
-			"err", err,
-			"depth", evm.depth,
-			"caller", caller.Address(),
-			"contract", addr,
-			"revert_reason", revertReason,
-		)
 	}
 	return ret, gas, err
 }
