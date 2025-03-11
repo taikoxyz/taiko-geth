@@ -456,11 +456,13 @@ func (state *PreconfState) calculateStateMetrics(stateId uint64) (uint64, *uint2
 // getLatestSealedBlock returns the latest block from sealedPreconfBlocks if there are items in the array.
 // Otherwise, it returns nil.
 func (state *PreconfState) latestSealedPreconfEnv() *environment {
+	state.sealedBlockMutex.Lock()
+	defer state.sealedBlockMutex.Unlock()
+
 	numPreconfBlocks := len(state.sealedPreconfBlocks)
 	if numPreconfBlocks > 0 {
 		return state.sealedPreconfBlocks[numPreconfBlocks-1]
 	}
-
 	return nil
 }
 

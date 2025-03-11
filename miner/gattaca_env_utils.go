@@ -179,14 +179,14 @@ func (g *GattacaWorker) retrieveEnv(stateId uint64) (*environment, error) {
 		if latestSealedEnv != nil && latestSealedEnv.header.Number.Uint64() > env.header.Number.Uint64() {
 			return latestSealedEnv, nil
 		}
-
 		return env, nil
 	} else {
+		g.preconfState.stateIdMutex.RLock()
 		env, exists := g.preconfState.stateIdMap[stateId]
+		g.preconfState.stateIdMutex.RUnlock()
 		if !exists {
 			return nil, errors.New(fmt.Sprintf("state not found for id %d", stateId))
 		}
-
 		return env, nil
 	}
 }
