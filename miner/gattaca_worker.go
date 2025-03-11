@@ -8,7 +8,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
 
-	ckzg4844 "github.com/ethereum/c-kzg-4844/bindings/go"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
@@ -19,11 +18,10 @@ import (
 )
 
 var (
-	SimCh             = make(chan SimulateTxRequest, 1000)
-	SimAnchorTx       = make(chan SimulateAnchorTx, 1000)
-	SealBlock         = make(chan SealBlockRequest, 1)
-	taikoMinTip       = big.NewInt(0)
-	maxBytesPerTxList = ckzg4844.BytesPerBlob
+	SimCh       = make(chan SimulateTxRequest, 1000)
+	SimAnchorTx = make(chan SimulateAnchorTx, 1000)
+	SealBlock   = make(chan SealBlockRequest, 1)
+	taikoMinTip = big.NewInt(0)
 
 	GoldenTouchAddress = common.HexToAddress("0x0000777735367b36bC9B61C50022d9D0700dB4Ec")
 )
@@ -373,16 +371,6 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 	if tx.Protected() && !g.chainConfig.IsEIP155(env.header.Number) {
 		log.Info("GTC-WORKER: Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", g.chainConfig.EIP155Block)
 		return nil, nil, 0, errors.New("ignoring reply protected transaction")
-	}
-
-	// Encode and compress the txList, if the byte length is > maxBytesPerTxList, we cannot include it.
-	compressedBytes, err := encodeAndCompressTxList(append(env.txs, tx))
-	if err != nil {
-		return nil, nil, 0, err
-	}
-	compressedBytesLen := len(compressedBytes)
-	if compressedBytesLen > int(maxBytesPerTxList) {
-		return nil, nil, 0, errors.New("reached maxBytesPerTxList")
 	}
 
 	// Execute the transaction and return the result.
