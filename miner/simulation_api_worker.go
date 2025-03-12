@@ -27,11 +27,11 @@ var (
 )
 
 var (
-	singletonGattaca *GattacaWorker = nil
-	singletonLock                   = &sync.Mutex{}
+	simulationApiSingleton *SimulationAPIWorker = nil
+	singletonLock                               = &sync.Mutex{}
 )
 
-type GattacaWorker struct {
+type SimulationAPIWorker struct {
 	chainConfig *params.ChainConfig
 	chain       *core.BlockChain
 	config      *Config
@@ -44,19 +44,19 @@ type GattacaWorker struct {
 	preconfState *PreconfState
 }
 
-func NewGattacaWorker(
+func NewSimulationApiWorker(
 	chainConfig *params.ChainConfig,
 	chain *core.BlockChain,
 	config *Config,
 	engine consensus.Engine,
 	preconfState *PreconfState,
-) (*GattacaWorker, error) {
+) (*SimulationAPIWorker, error) {
 
 	singletonLock.Lock()
 	defer singletonLock.Unlock()
-	if singletonGattaca == nil {
+	if simulationApiSingleton == nil {
 
-		singletonGattaca = &GattacaWorker{
+		simulationApiSingleton = &SimulationAPIWorker{
 			chainConfig:  chainConfig,
 			chain:        chain,
 			config:       config,
@@ -66,13 +66,13 @@ func NewGattacaWorker(
 			preconfState: preconfState,
 		}
 
-		go singletonGattaca.runLoop()
-		go singletonGattaca.newHeadEventSubscriber()
+		go simulationApiSingleton.runLoop()
+		go simulationApiSingleton.newHeadEventSubscriber()
 	}
-	return singletonGattaca, nil
+	return simulationApiSingleton, nil
 }
 
-func (g *GattacaWorker) runLoop() {
+func (g *SimulationAPIWorker) runLoop() {
 	for {
 		select {
 		case req := <-SimCh:
@@ -86,7 +86,7 @@ func (g *GattacaWorker) runLoop() {
 	}
 }
 
-func (g *GattacaWorker) newHeadEventSubscriber() {
+func (g *SimulationAPIWorker) newHeadEventSubscriber() {
 	newBlockCh := make(chan core.ChainHeadEvent, 10)
 	sub := g.chain.SubscribeChainHeadEvent(newBlockCh)
 	defer sub.Unsubscribe()
@@ -101,10 +101,10 @@ func (g *GattacaWorker) newHeadEventSubscriber() {
 // simulateAnchorTx simulates the execution of an anchor transaction in a new environment
 // based on the latest sealed state. It commits the transaction to the state, checks for errors,
 // and returns the simulation result via the provided channel.
-func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams common.BlockEnv, res chan SimulationResponse, extraData string) {
+func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams common.BlockEnv, res chan SimulationResponse, extraData string) {
 	// Log the input parameters for the simulation.
 	log.Info(
-		"GTC-WORKER: simulateAnchorTx",
+		"Simulator-WORKER: simulateAnchorTx",
 		"newEnvParams", newEnvParams,
 		"txHash", tx.Hash(),
 	)
@@ -163,7 +163,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 
 	// Verify the tx didn't fail. e.g., nonce issues.
 	if err != nil {
-		log.Error("GTC-WORKER: Transaction commit failed", "error", err)
+		log.Error("Simulator-WORKER: Transaction commit failed", "error", err)
 		res <- SimulationResponse{
 			error: NewCommitError(err),
 		}
@@ -172,7 +172,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 
 	// Verify the tx didn't revert.
 	if receipt.Status == types.ReceiptStatusFailed {
-		log.Error("GTC-WORKER: anchor transaction reverted", "receipt", receipt)
+		log.Error("Simulator-WORKER: anchor transaction reverted", "receipt", receipt)
 		err := errors.New("transaction reverted")
 		res <- SimulationResponse{
 			error:   NewCommitError(err),
@@ -180,7 +180,7 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 		}
 		return
 	}
-	log.Info("GTC-WORKER: anchor transaction executed successfully", "gasUsed", receipt.GasUsed)
+	log.Info("Simulator-WORKER: anchor transaction executed successfully", "gasUsed", receipt.GasUsed)
 
 	// Finalise the simulation environment and add it to the stateIdMap.
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
@@ -200,11 +200,11 @@ func (g *GattacaWorker) simulateAnchorTx(tx *types.Transaction, newEnvParams com
 
 // simulateTx fetches the environment at stateId. It then clones this environment and simulates/commits the tx request
 // to this cloned environment. A new stateId is then generated and the cloned environment is saved.
-func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res chan SimulationResponse) {
+func (g *SimulationAPIWorker) simulateTx(stateId uint64, tx *types.Transaction, res chan SimulationResponse) {
 	g.lock.RLock()
 	defer g.lock.RUnlock()
 
-	log.Info("GTC-WORKER: simulateTx", "stateId", stateId, "tx", tx.Hash().Hex())
+	log.Info("Simulator-WORKER: simulateTx", "stateId", stateId, "tx", tx.Hash().Hex())
 
 	// Check for halt message
 	if g.halt {
@@ -235,7 +235,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	startBalance := simEnv.state.GetBalance(env.coinbase)
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 	if err != nil {
-		log.Error("GTC-WORKER: simulateTx, failed to simulate transaction", "err", err)
+		log.Error("Simulator-WORKER: simulateTx, failed to simulate transaction", "err", err)
 		res <- SimulationResponse{
 			error: NewCommitError(err),
 		}
@@ -261,7 +261,7 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 	g.preconfState.stateIdMap[newStateId] = simEnv
 	g.preconfState.stateIdMutex.Unlock()
 
-	log.Info("GTC-WORKER: successfully simulated tx", "tx", tx.Hash().Hex(), "receipt", receipt)
+	log.Info("Simulator-WORKER: successfully simulated tx", "tx", tx.Hash().Hex(), "receipt", receipt)
 
 	res <- SimulationResponse{
 		error:          nil,
@@ -272,11 +272,11 @@ func (g *GattacaWorker) simulateTx(stateId uint64, tx *types.Transaction, res ch
 }
 
 // sealBlock seals the block at the given stateId
-func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
+func (g *SimulationAPIWorker) sealBlock(req SealBlockRequest) {
 	g.lock.Lock()
 	defer g.lock.Unlock()
 
-	log.Info("GTC-WORKER: sealBlock", "stateId", req.StateId)
+	log.Info("Simulator-WORKER: sealBlock", "stateId", req.StateId)
 
 	// First commit the state
 	cumGasUsed, builderPayment, err := g.preconfState.calculateStateMetrics(req.StateId)
@@ -305,7 +305,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	)
 	if err != nil {
 		// Error finalizing and assembling block; send error response.
-		log.Error("GTC-WORKER: sealBlock, failed to finalize and assemble block", "err", err)
+		log.Error("Simulator-WORKER: sealBlock, failed to finalize and assemble block", "err", err)
 		req.Response <- SealBlockResponse{err: err}
 		return
 	}
@@ -321,7 +321,7 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	env.sealedBlock = sealedBlock
 	err = g.preconfState.sealPreconfBlock(req.StateId, sealedBlock.Hash())
 	if err != nil {
-		log.Error("GTC-WORKER: sealBlock, failed to seal block", "err", err)
+		log.Error("Simulator-WORKER: sealBlock, failed to seal block", "err", err)
 		req.Response <- SealBlockResponse{err: err}
 		return
 	}
@@ -329,12 +329,12 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	// Set preconf tag in block
 	sealedBlock.PreconfBlock = true
 
-	log.Info("GTC-WORKER: inserting block into chain")
+	log.Info("Simulator-WORKER: inserting block into chain")
 
 	// Note: might change the actual chain. Will this have side effects?
 	_, err = g.chain.InsertChain(types.Blocks{sealedBlock})
 	if err != nil {
-		log.Error("GTC-WORKER: sealBlock, failed to insert chain", "err", err)
+		log.Error("Simulator-WORKER: sealBlock, failed to insert chain", "err", err)
 		req.Response <- SealBlockResponse{err: err}
 		return
 	}
@@ -349,19 +349,19 @@ func (g *GattacaWorker) sealBlock(req SealBlockRequest) {
 	}
 }
 
-func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*types.Receipt, *uint256.Int, uint64, error) {
+func (g *SimulationAPIWorker) commitTx(env *environment, tx *types.Transaction) (*types.Receipt, *uint256.Int, uint64, error) {
 
-	log.Info("GTC-WORKER: commitTx", "tx", tx.Hash().Hex())
+	log.Info("Simulator-WORKER: commitTx", "tx", tx.Hash().Hex())
 
 	if env.gasPool.Gas() < params.TxGas {
-		log.Info("GTC-WORKER: Not enough gas for further transactions", "have", env.gasPool, "want", params.TxGas)
+		log.Info("Simulator-WORKER: Not enough gas for further transactions", "have", env.gasPool, "want", params.TxGas)
 		return nil, nil, 0, errors.New("not enough gas for further transactions")
 	}
 
 	// Optional min tip.
 	if taikoMinTip != nil {
 		if tx.GasTipCapIntCmp(taikoMinTip) < 0 {
-			log.Info("GTC-WORKER: Ignoring transaction with low tip", "hash", tx.Hash(), "tip", tx.GasTipCap(), "minTip", taikoMinTip)
+			log.Info("Simulator-WORKER: Ignoring transaction with low tip", "hash", tx.Hash(), "tip", tx.GasTipCap(), "minTip", taikoMinTip)
 			return nil, nil, 0, errors.New("ignoring transaction with low tip")
 		}
 	}
@@ -369,7 +369,7 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 	// Check whether the tx is replay protected. If we're not in the EIP155 hf
 	// phase, start ignoring the sender until we do.
 	if tx.Protected() && !g.chainConfig.IsEIP155(env.header.Number) {
-		log.Info("GTC-WORKER: Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", g.chainConfig.EIP155Block)
+		log.Info("Simulator-WORKER: Ignoring reply protected transaction", "hash", tx.Hash(), "eip155", g.chainConfig.EIP155Block)
 		return nil, nil, 0, errors.New("ignoring reply protected transaction")
 	}
 
@@ -401,7 +401,7 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 
 	sender, err := signer.Sender(tx)
 	if err != nil {
-		log.Error("GTC-WORKER: failed to recover sender", "err", err)
+		log.Error("Simulator-WORKER: failed to recover sender", "err", err)
 		return nil, nil, 0, err
 	}
 
@@ -411,7 +411,7 @@ func (g *GattacaWorker) commitTx(env *environment, tx *types.Transaction) (*type
 	return receipt, balance, nonce, err
 }
 
-func (g *GattacaWorker) commitPreconfTransaction(env *environment, tx *types.Transaction) (*types.Receipt, error) {
+func (g *SimulationAPIWorker) commitPreconfTransaction(env *environment, tx *types.Transaction) (*types.Receipt, error) {
 
 	if tx.Type() == types.BlobTxType {
 		return g.commitPreconfBlobTransaction(env, tx)
@@ -424,7 +424,7 @@ func (g *GattacaWorker) commitPreconfTransaction(env *environment, tx *types.Tra
 	return receipt, nil
 }
 
-func (g *GattacaWorker) commitPreconfBlobTransaction(env *environment, tx *types.Transaction) (*types.Receipt, error) {
+func (g *SimulationAPIWorker) commitPreconfBlobTransaction(env *environment, tx *types.Transaction) (*types.Receipt, error) {
 	sc := tx.BlobTxSidecar()
 	if sc == nil {
 		return nil, errors.New("blob transaction without blobs in miner")
@@ -447,13 +447,13 @@ func (g *GattacaWorker) commitPreconfBlobTransaction(env *environment, tx *types
 	return receipt, nil
 }
 
-func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction) (*types.Receipt, error) {
+func (g *SimulationAPIWorker) applyTransaction(env *environment, tx *types.Transaction) (*types.Receipt, error) {
 	var (
 		snap = env.state.Snapshot()
 		gp   = env.gasPool.Gas()
 	)
 
-	log.Info("GTC-WORKER: applyTransaction", "tx", tx.Hash().Hex())
+	log.Info("Simulator-WORKER: applyTransaction", "tx", tx.Hash().Hex())
 
 	receipt, err := core.ApplyTransaction(g.chainConfig, g.chain, &env.coinbase, env.gasPool, env.state, env.header, tx, &env.header.GasUsed, *g.chain.GetVMConfig())
 	if err != nil {
@@ -464,11 +464,11 @@ func (g *GattacaWorker) applyTransaction(env *environment, tx *types.Transaction
 	return receipt, err
 }
 
-func (g *GattacaWorker) PreconfState() *PreconfState {
+func (g *SimulationAPIWorker) PreconfState() *PreconfState {
 	return g.preconfState
 }
 
-func (g *GattacaWorker) validateAnchorNonce(tx *types.Transaction, env *environment) error {
+func (g *SimulationAPIWorker) validateAnchorNonce(tx *types.Transaction, env *environment) error {
 	// Ensure anchor tx nonce matches parent block number
 	parentNumber := env.header.Number.Uint64() - 1
 	if tx.Nonce() != parentNumber {

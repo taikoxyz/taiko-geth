@@ -74,24 +74,24 @@ type Miner struct {
 	pending     *pending
 	pendingMu   sync.Mutex // Lock protects the pending block
 
-	// gattacaWorker: worker state manager and api override provider
-	gattacaWorker *GattacaWorker
+	// simulationApiWorker: worker state manager and api override provider
+	simulationApiWorker *SimulationAPIWorker
 }
 
 // New creates a new miner with provided config.
 func New(eth Backend, config Config, chainConfig *params.ChainConfig, engine consensus.Engine, preconfState *PreconfState) *Miner {
-	gattacaWorker, err := NewGattacaWorker(chainConfig, eth.BlockChain(), &config, engine, preconfState)
+	simulationApiWorker, err := NewSimulationApiWorker(chainConfig, eth.BlockChain(), &config, engine, preconfState)
 	if err != nil {
 		panic(err)
 	}
 	return &Miner{
-		config:        &config,
-		chainConfig:   eth.BlockChain().Config(),
-		engine:        engine,
-		txpool:        eth.TxPool(),
-		chain:         eth.BlockChain(),
-		pending:       &pending{},
-		gattacaWorker: gattacaWorker,
+		config:              &config,
+		chainConfig:         eth.BlockChain().Config(),
+		engine:              engine,
+		txpool:              eth.TxPool(),
+		chain:               eth.BlockChain(),
+		pending:             &pending{},
+		simulationApiWorker: simulationApiWorker,
 	}
 }
 

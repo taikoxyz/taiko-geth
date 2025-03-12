@@ -44,13 +44,13 @@ func NewSimulatorAPI(b ethapi.Backend) *SimulatorAPI {
 
 func (s *SimulatorAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, env common.BlockEnv, extraData string) (map[string]interface{}, error) {
 
-	log.Info("GTC-API: SimulateAnchorTx")
+	log.Info("Simulator-API: SimulateAnchorTx")
 
 	tx := new(types.Transaction)
 	if err := rlp.DecodeBytes(input, &tx); err != nil {
 		err = tx.UnmarshalBinary(input)
 		if err != nil {
-			log.Error("GTC-API: SimulateAnchorTx", "rlp decoding failed", "error", err)
+			log.Error("Simulator-API: SimulateAnchorTx", "rlp decoding failed", "error", err)
 			return nil, err
 		}
 	}
@@ -66,12 +66,12 @@ func (s *SimulatorAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes
 }
 
 func (s *SimulatorAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint64) (map[string]interface{}, error) {
-	log.Info("GTC-API: SimulateTxAtState", "stateId", stateId)
+	log.Info("Simulator-API: SimulateTxAtState", "stateId", stateId)
 	tx := new(types.Transaction)
 	if err := rlp.DecodeBytes(input, &tx); err != nil {
 		err = tx.UnmarshalBinary(input)
 		if err != nil {
-			log.Error("GTC-API: SimulateTxAtState", "rlp decoding failed", "error", err)
+			log.Error("Simulator-API: SimulateTxAtState", "rlp decoding failed", "error", err)
 			return nil, err
 		}
 	}
@@ -86,7 +86,7 @@ func (s *SimulatorAPI) SimulateTxAtState(ctx context.Context, input hexutil.Byte
 }
 
 func (s *SimulatorAPI) SealBlock(ctx context.Context, stateId uint64) (map[string]interface{}, error) {
-	log.Info("GTC-API: SealBlock", "stateId", stateId)
+	log.Info("Simulator-API: SealBlock", "stateId", stateId)
 	resCh := make(chan miner.SealBlockResponse, 1)
 	miner.SealBlock <- miner.SealBlockRequest{
 		StateId:  stateId,
@@ -96,7 +96,7 @@ func (s *SimulatorAPI) SealBlock(ctx context.Context, stateId uint64) (map[strin
 	retMap := make(map[string]interface{})
 
 	if res.Block() == nil {
-		log.Error("GTC-API: SealBlock", "block is nil")
+		log.Error("Simulator-API: SealBlock", "block is nil")
 		return nil, errors.New("block is nil")
 	}
 

@@ -17,7 +17,7 @@ import (
 	"github.com/holiman/uint256"
 )
 
-func (g *GattacaWorker) prepareWork(genParams *generateParams) (*environment, error) {
+func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environment, error) {
 
 	// Find the parent block for sealing task
 	parent := g.chain.CurrentBlock()
@@ -106,7 +106,7 @@ func (g *GattacaWorker) prepareWork(genParams *generateParams) (*environment, er
 }
 
 // makeEnv creates a new environment for the sealing block.
-func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address, witness bool) (*environment, error) {
+func (g *SimulationAPIWorker) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address, witness bool) (*environment, error) {
 	// Retrieve the parent state to execute on top.
 	state, err := g.chain.StateAt(parent.Root)
 	if err != nil {
@@ -134,7 +134,7 @@ func (g *GattacaWorker) makeEnv(parent *types.Header, header *types.Header, coin
 	}, nil
 }
 
-func (g *GattacaWorker) envFromHead() (*environment, error) {
+func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 	currentHead := g.chain.CurrentBlock()
 	sealedBlock := g.chain.GetBlockByNumber(currentHead.Number.Uint64())
 	envParams := &generateParams{
@@ -168,7 +168,7 @@ func (g *GattacaWorker) envFromHead() (*environment, error) {
 // For any other stateId, it looks up the corresponding environment in the stateIdMap.
 // If the stateId is not found in the map, it returns an error indicating that the
 // stateId is not present.
-func (g *GattacaWorker) retrieveEnv(stateId uint64) (*environment, error) {
+func (g *SimulationAPIWorker) retrieveEnv(stateId uint64) (*environment, error) {
 	if stateId == uint64(LatestSealedId) {
 		// stateId 1 fetches the latest sealed env, if present, or the latest chain head env
 		env, err := g.envFromHead()

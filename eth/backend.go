@@ -84,7 +84,7 @@ type Ethereum struct {
 	bloomIndexer      *core.ChainIndexer             // Bloom indexer operating during block imports
 	closeBloomHandler chan struct{}
 
-	APIBackend *GattacaEthAPIBackend
+	APIBackend *SimulatorAPIBackend
 
 	miner    *miner.Miner
 	gasPrice *big.Int
@@ -264,7 +264,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	eth.miner = miner.New(eth, config.Miner, eth.blockchain.Config(), eth.engine, preconfState)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
 	// change(TAIKO): preconfirmation URL
-	eth.APIBackend = &GattacaEthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil, config.PreconfirmationForwardingURL, preconfState}
+	eth.APIBackend = &SimulatorAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil, config.PreconfirmationForwardingURL, preconfState}
 	if eth.APIBackend.allowUnprotectedTxs {
 		log.Info("Unprotected transactions allowed")
 	}
