@@ -47,6 +47,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/internal/shutdowncheck"
+	"github.com/ethereum/go-ethereum/internal/simulator"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/node"
@@ -254,7 +255,11 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 
-	preconfState := miner.NewPreconfState(eth.blockchain)
+	// Initialize preconfState and miner based on API configuration
+	var preconfState *miner.PreconfState
+	if stack.Config().HasSimulatorAPI() {
+		preconfState = miner.NewPreconfState(eth.blockchain)
+	}
 
 	eth.miner = miner.New(eth, config.Miner, eth.blockchain.Config(), eth.engine, preconfState)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
@@ -269,7 +274,20 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	eth.netRPCService = ethapi.NewNetAPI(eth.p2pServer, networkID)
 
 	// Register the backend on the node
-	stack.RegisterAPIs(eth.APIs())
+	apis := eth.APIs()
+
+	// Register the simulator API if it is enabled
+	if stack.Config().HasSimulatorAPI() {
+		log.Info("Simulator-API: Registering simulator API")
+		apis = append(apis, rpc.API{
+			Namespace: "simulator",
+			Service:   simulator.NewSimulatorAPI(eth.APIBackend),
+		})
+	} else {
+		log.Info("Simulator-API: Simulator API is disabled")
+	}
+
+	stack.RegisterAPIs(apis)
 	stack.RegisterProtocols(eth.Protocols())
 	stack.RegisterLifecycle(eth)
 

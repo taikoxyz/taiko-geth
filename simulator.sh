@@ -11,7 +11,7 @@
     --http.addr "0.0.0.0" \
     --http.vhosts "*" \
     --http.corsdomain "*" \
-    --http.api eth,net,web3,txpool,miner,taiko,admin \
+    --http.api eth,net,web3,txpool,miner,taiko,admin,simulator \
     --ws \
     --ws.port 18546 \
     --ws.addr "0.0.0.0" \

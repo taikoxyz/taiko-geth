@@ -481,3 +481,12 @@ func (c *Config) GetKeyStoreDir() (string, bool, error) {
 
 	return keydir, isEphemeral, nil
 }
+
+func (c *Config) HasSimulatorAPI() bool {
+	for _, api := range c.HTTPModules {
+		if api == "simulator" {
+			return true
+		}
+	}
+	return false
+}

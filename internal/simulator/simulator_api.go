@@ -1,4 +1,4 @@
-package ethapi
+package simulator
 
 import (
 	"context"
@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -31,7 +32,17 @@ type Reason struct {
 	Reason string `json:"reason"`
 }
 
-func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, env common.BlockEnv, extraData string) (map[string]interface{}, error) {
+// SimulatorAPI exposes methods for simulating transactions and sealing blocks.
+type SimulatorAPI struct {
+	b ethapi.Backend
+}
+
+// NewSimulatorAPI creates a new RPC service with methods for simulating transactions and sealing blocks.
+func NewSimulatorAPI(b ethapi.Backend) *SimulatorAPI {
+	return &SimulatorAPI{b}
+}
+
+func (s *SimulatorAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, env common.BlockEnv, extraData string) (map[string]interface{}, error) {
 
 	log.Info("GTC-API: SimulateAnchorTx")
 
@@ -54,7 +65,7 @@ func (s *TransactionAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Byt
 	return handleResponse(resCh)
 }
 
-func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint64) (map[string]interface{}, error) {
+func (s *SimulatorAPI) SimulateTxAtState(ctx context.Context, input hexutil.Bytes, stateId uint64) (map[string]interface{}, error) {
 	log.Info("GTC-API: SimulateTxAtState", "stateId", stateId)
 	tx := new(types.Transaction)
 	if err := rlp.DecodeBytes(input, &tx); err != nil {
@@ -74,7 +85,7 @@ func (s *TransactionAPI) SimulateTxAtState(ctx context.Context, input hexutil.By
 	return handleResponse(resCh)
 }
 
-func (s *TransactionAPI) SealBlock(ctx context.Context, stateId uint64) (map[string]interface{}, error) {
+func (s *SimulatorAPI) SealBlock(ctx context.Context, stateId uint64) (map[string]interface{}, error) {
 	log.Info("GTC-API: SealBlock", "stateId", stateId)
 	resCh := make(chan miner.SealBlockResponse, 1)
 	miner.SealBlock <- miner.SealBlockRequest{
@@ -91,7 +102,7 @@ func (s *TransactionAPI) SealBlock(ctx context.Context, stateId uint64) (map[str
 
 	retMap["cumulative_builder_payment"] = res.CumulativeBuilderPayment()
 	retMap["cumulative_gas_used"] = res.CumulativeGasUsed()
-	retMap["built_block"] = RPCMarshalBlock(res.Block(), true, true, s.b.ChainConfig())
+	retMap["built_block"] = ethapi.RPCMarshalBlock(res.Block(), true, true, s.b.ChainConfig())
 
 	return retMap, res.Err()
 }
