@@ -84,7 +84,10 @@ type Ethereum struct {
 	bloomIndexer      *core.ChainIndexer             // Bloom indexer operating during block imports
 	closeBloomHandler chan struct{}
 
-	APIBackend *SimulatorAPIBackend
+	APIBackend interface {
+		ethapi.Backend
+		tracers.Backend
+	}
 
 	miner    *miner.Miner
 	gasPrice *big.Int
@@ -263,12 +266,21 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 	eth.miner = miner.New(eth, config.Miner, eth.blockchain.Config(), eth.engine, preconfState)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
-	// change(TAIKO): preconfirmation URL
-	eth.APIBackend = &SimulatorAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil, config.PreconfirmationForwardingURL, preconfState}
-	if eth.APIBackend.allowUnprotectedTxs {
+
+	if stack.Config().AllowUnprotectedTxs {
 		log.Info("Unprotected transactions allowed")
 	}
-	eth.APIBackend.gpo = gasprice.NewOracle(eth.APIBackend, config.GPO, config.Miner.GasPrice)
+
+	// Initialize API backend based on API configuration
+	if stack.Config().HasSimulatorAPI() {
+		backend := &SimulatorAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil, config.PreconfirmationForwardingURL, preconfState}
+		backend.gpo = gasprice.NewOracle(backend, config.GPO, config.Miner.GasPrice)
+		eth.APIBackend = backend
+	} else {
+		backend := &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil, ""}
+		backend.gpo = gasprice.NewOracle(backend, config.GPO, config.Miner.GasPrice)
+		eth.APIBackend = backend
+	}
 
 	// Start the RPC service
 	eth.netRPCService = ethapi.NewNetAPI(eth.p2pServer, networkID)

@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -102,6 +103,9 @@ type Backend interface {
 
 	// GTC: Add GetTd method to the Backend interface
 	GetTd(ctx context.Context, hash common.Hash) *big.Int
+
+	// Common methods between SimulatorBackend and EthAPIBackend
+	TxPool() *txpool.TxPool
 }
 
 func GetAPIs(apiBackend Backend) []rpc.API {
