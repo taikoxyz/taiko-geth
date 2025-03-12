@@ -480,7 +480,34 @@ func (state *PreconfState) envAtId(stateId uint64) *environment {
 	state.stateIdMutex.RLock()
 	defer state.stateIdMutex.RUnlock()
 
-	return state.stateIdMap[stateId]
+	if env, exists := state.stateIdMap[stateId]; exists {
+		return env
+	}
+	return nil
+}
+
+// addEnvironment adds a new environment to the stateIdMap in a thread-safe manner and returns the assigned stateId
+func (p *PreconfState) addEnvironment(env *environment) uint64 {
+	if env == nil {
+		return 0
+	}
+
+	p.stateIdMutex.Lock()
+	defer p.stateIdMutex.Unlock()
+
+	if p.stateIdMap == nil {
+		p.stateIdMap = make(map[uint64]*environment)
+	}
+
+	// Check for overflow - if we're at max uint64, reset to starting point
+	if p.currentStateId == math.MaxUint64 {
+		p.currentStateId = StateIdToStartFrom
+	}
+
+	stateId := p.currentStateId
+	p.currentStateId++
+	p.stateIdMap[stateId] = env
+	return stateId
 }
 
 // Add this helper to ensure blocks are always added in order
@@ -501,18 +528,4 @@ func (state *PreconfState) addSealedBlock(env *environment, stateId uint64) erro
 
 	state.sealedPreconfBlocks = append(state.sealedPreconfBlocks, env)
 	return nil
-}
-
-func (state *PreconfState) getNextStateId() uint64 {
-	state.stateIdMutex.Lock()
-	defer state.stateIdMutex.Unlock()
-
-	// Check for overflow - if we're at max uint64, reset to starting point
-	if state.currentStateId == math.MaxUint64 {
-		state.currentStateId = StateIdToStartFrom
-	}
-
-	current := state.currentStateId
-	state.currentStateId++
-	return current
 }

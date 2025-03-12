@@ -181,10 +181,8 @@ func (g *SimulationAPIWorker) retrieveEnv(stateId uint64) (*environment, error) 
 		}
 		return env, nil
 	} else {
-		g.preconfState.stateIdMutex.RLock()
-		env, exists := g.preconfState.stateIdMap[stateId]
-		g.preconfState.stateIdMutex.RUnlock()
-		if !exists {
+		env := g.preconfState.envAtId(stateId)
+		if env == nil {
 			return nil, errors.New(fmt.Sprintf("state not found for id %d", stateId))
 		}
 		return env, nil

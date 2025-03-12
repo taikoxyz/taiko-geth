@@ -186,10 +186,7 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.receipts = append(simEnv.receipts, receipt)
 
-	newStateId := g.preconfState.getNextStateId()
-	g.preconfState.stateIdMutex.Lock()
-	g.preconfState.stateIdMap[newStateId] = simEnv
-	g.preconfState.stateIdMutex.Unlock()
+	newStateId := g.preconfState.addEnvironment(simEnv)
 
 	res <- SimulationResponse{
 		gasUsed:        receipt.GasUsed,
@@ -256,10 +253,7 @@ func (g *SimulationAPIWorker) simulateTx(stateId uint64, tx *types.Transaction, 
 	simEnv.receipts = append(simEnv.receipts, receipt)
 
 	// Add env to state id map
-	newStateId := g.preconfState.getNextStateId()
-	g.preconfState.stateIdMutex.Lock()
-	g.preconfState.stateIdMap[newStateId] = simEnv
-	g.preconfState.stateIdMutex.Unlock()
+	newStateId := g.preconfState.addEnvironment(simEnv)
 
 	log.Info("Simulator-WORKER: successfully simulated tx", "tx", tx.Hash().Hex(), "receipt", receipt)
 
@@ -286,8 +280,8 @@ func (g *SimulationAPIWorker) sealBlock(req SealBlockRequest) {
 	}
 
 	// Get the environment to seal
-	env, exists := g.preconfState.stateIdMap[req.StateId]
-	if !exists {
+	env := g.preconfState.envAtId(req.StateId)
+	if env == nil {
 		req.Response <- SealBlockResponse{err: errors.New("state id not found")}
 		return
 	}
