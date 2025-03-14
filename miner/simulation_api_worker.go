@@ -449,7 +449,7 @@ func (g *SimulationAPIWorker) applyTransaction(env *environment, tx *types.Trans
 
 	log.Info("Simulator-WORKER: applyTransaction", "tx", tx.Hash().Hex())
 
-	receipt, err := core.ApplyTransaction(g.chainConfig, g.chain, &env.coinbase, env.gasPool, env.state, env.header, tx, &env.header.GasUsed, *g.chain.GetVMConfig())
+	receipt, err := core.ApplyTransaction(env.evm, env.gasPool, env.state, env.header, tx, &env.header.GasUsed)
 	if err != nil {
 		env.state.RevertToSnapshot(snap)
 		env.gasPool.SetGas(gp)

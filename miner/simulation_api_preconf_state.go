@@ -187,7 +187,7 @@ func deriveReceipts(receipts types.Receipts,
 	// Compute effective blob gas price.
 	var blobGasPrice *big.Int
 	if header != nil && header.ExcessBlobGas != nil {
-		blobGasPrice = eip4844.CalcBlobFee(*header.ExcessBlobGas)
+		blobGasPrice = eip4844.CalcBlobFee(config, header)
 	}
 	err := receipts.DeriveFields(config, blockHash, header.Number.Uint64(), header.Time, baseFee, blobGasPrice, txs)
 	return receipts, err
@@ -331,9 +331,14 @@ func (state *PreconfState) sealPreconfBlock(stateId uint64, sealedBlockHash comm
 
 // handleReorg processes potential chain reorganizations by comparing sealed preconf blocks
 // with the canonical chain and cleaning up any divergent blocks.
-func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
+func (state *PreconfState) handleReorg(event *core.ChainHeadEvent) {
 	state.sealedBlockMutex.Lock()
 	defer state.sealedBlockMutex.Unlock()
+
+	if event == nil {
+		log.Warn("Simulator-WORKER: Received nil event")
+		return
+	}
 
 	// Early return if no sealed blocks
 	if len(state.sealedPreconfBlocks) == 0 {
@@ -350,14 +355,14 @@ func (state *PreconfState) handleReorg(canonicalBlock *types.Block) {
 		preconfBlockNum := preconfBlock.header.Number.Uint64()
 
 		// Skip if this block number is beyond current canonical chain
-		if preconfBlockNum > canonicalBlock.NumberU64() {
+		if preconfBlockNum > event.Header.Number.Uint64() {
 			continue
 		}
 
 		// Get canonical hash either from the new block or chain state
 		var canonicalHash common.Hash
-		if preconfBlockNum == canonicalBlock.NumberU64() {
-			canonicalHash = canonicalBlock.Hash()
+		if preconfBlockNum == event.Header.Number.Uint64() {
+			canonicalHash = event.Header.Hash()
 		} else {
 			canonicalHash = state.chain.GetCanonicalHash(preconfBlockNum)
 		}
@@ -416,19 +421,13 @@ func (state *PreconfState) resetState() {
 // Returns:
 //   - error: Returns nil as handleReorg handles all cleanup internally
 func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) {
-	if event.Block.PreconfBlock {
-		log.Info("Simulator-WORKER: Ignoring chain event update from preconf block",
-			"eventBlockNumber", event.Block.NumberU64())
-		return
-	}
-
 	// info log block hash and txs
 	log.Info("Simulator-WORKER: New chain head event",
-		"blockHash", event.Block.Hash().String(),
-		"txs", len(event.Block.Transactions()))
+		"blockHash", event.Header.Hash().String(),
+		"txs-hash", len(event.Header.TxHash))
 
 	// Handle any potential reorgs
-	state.handleReorg(event.Block)
+	state.handleReorg(event)
 
 	log.Info("Simulator-WORKER: Finished processing sealed preconf blocks against new chain head")
 }

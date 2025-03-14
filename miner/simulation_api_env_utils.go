@@ -75,10 +75,10 @@ func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environme
 	if g.chainConfig.IsCancun(header.Number, header.Time) {
 		var excessBlobGas uint64
 		if g.chainConfig.IsCancun(parent.Number, parent.Time) {
-			excessBlobGas = eip4844.CalcExcessBlobGas(*parent.ExcessBlobGas, *parent.BlobGasUsed)
+			excessBlobGas = eip4844.CalcExcessBlobGas(g.chainConfig, parent, header.Time)
 		} else {
 			// For the first post-fork block, both parent.data_gas_used and parent.excess_data_gas are evaluated as 0
-			excessBlobGas = eip4844.CalcExcessBlobGas(0, 0)
+			excessBlobGas = eip4844.CalcExcessBlobGas(g.chainConfig, parent, header.Time)
 		}
 		header.BlobGasUsed = new(uint64)
 		header.ExcessBlobGas = &excessBlobGas
@@ -99,8 +99,8 @@ func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environme
 	}
 	if header.ParentBeaconRoot != nil {
 		context := core.NewEVMBlockContext(header, g.chain, nil)
-		vmenv := vm.NewEVM(context, vm.TxContext{}, env.state, g.chainConfig, vm.Config{})
-		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, vmenv, env.state)
+		vmenv := vm.NewEVM(context, env.state, g.chainConfig, vm.Config{})
+		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, vmenv)
 	}
 	return env, nil
 }
