@@ -77,6 +77,7 @@ func (env *environment) copy() *environment {
 		header:                   types.CopyHeader(env.header),
 		receipts:                 copyReceipts(env.receipts),
 		cumulativeBuilderPayment: env.cumulativeBuilderPayment,
+		evm:                      env.evm,
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool

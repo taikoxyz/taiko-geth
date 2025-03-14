@@ -119,6 +119,9 @@ func (g *SimulationAPIWorker) makeEnv(parent *types.Header, header *types.Header
 		}
 		state.StartPrefetcher("miner", bundle)
 	}
+
+	evm := vm.NewEVM(core.NewEVMBlockContext(header, g.chain, &coinbase), state, g.chainConfig, vm.Config{})
+
 	// Note the passed coinbase may be different with header.Coinbase.
 	return &environment{
 		signer:   types.MakeSigner(g.chainConfig, header.Number, header.Time),
@@ -126,8 +129,8 @@ func (g *SimulationAPIWorker) makeEnv(parent *types.Header, header *types.Header
 		coinbase: coinbase,
 		header:   header,
 		witness:  state.Witness(),
-
-		//gattaca
+		// simulator
+		evm:                      evm,
 		hashReceipts:             make(map[string]*types.Receipt),
 		cumulativeBuilderPayment: new(uint256.Int).SetUint64(0),
 		txs:                      make([]*types.Transaction, 0),
