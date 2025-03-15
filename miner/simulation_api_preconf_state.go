@@ -289,7 +289,7 @@ func (state *PreconfState) addSimulatedPreconfEnv(env *environment) uint64 {
 	defer state.stateIdMutex.Unlock()
 
 	newStateId := rand.Uint64()
-	state.stateIdMap[newStateId] = env.copy()
+	state.stateIdMap[newStateId] = env.copy(state.chain, state.chain.Config())
 	return newStateId
 }
 

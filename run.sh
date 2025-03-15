@@ -10,7 +10,7 @@
   --http.addr "0.0.0.0" \
   --http.vhosts "*" \
   --http.corsdomain "*" \
-  --http.api eth,net,web3,txpool,miner,taiko,admin \
+  --http.api eth,net,web3,txpool,miner,taiko,admin,simulator \
   --ws \
   --ws.addr "0.0.0.0" \
   --ws.origins "*" \
@@ -19,7 +19,7 @@
   --authrpc.vhosts "*" \
   --authrpc.jwtsecret ~/taiko-geth-gattaca/geth/jwtsecret \
   --allow-insecure-unlock \
-  --ws.api eth,net,web3,txpool,miner,taiko \
+  --ws.api eth,net,web3,txpool,miner,taiko,simulator \
   --taiko \
   --maxpeers 100 \
   --bootnodes "enode://a3d89e39a8054c7e9317759f1540639ecc4285f1603609a02e5093715ec1077b99f6320c11d0e3ee1ba83ee00bbdf5b158138c31b27bafc0754a6f33abc4dd74@34.44.8.214:30303" \

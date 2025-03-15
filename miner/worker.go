@@ -68,7 +68,7 @@ type environment struct {
 }
 
 // copy creates a deep copy of environment.
-func (env *environment) copy() *environment {
+func (env *environment) copy(chain core.ChainContext, config *params.ChainConfig) *environment {
 	cpy := &environment{
 		signer:                   env.signer,
 		state:                    env.state.Copy(),
@@ -77,7 +77,6 @@ func (env *environment) copy() *environment {
 		header:                   types.CopyHeader(env.header),
 		receipts:                 copyReceipts(env.receipts),
 		cumulativeBuilderPayment: env.cumulativeBuilderPayment,
-		evm:                      env.evm,
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool
@@ -93,6 +92,8 @@ func (env *environment) copy() *environment {
 		cpy.hashReceipts[k] = v
 	}
 
+	cpy.evm = vm.NewEVM(core.NewEVMBlockContext(cpy.header, chain, &cpy.coinbase), cpy.state, config, vm.Config{})
+
 	return cpy
 }
 
@@ -106,13 +107,14 @@ func (env *environment) reset() {
 	env.header.GasLimit = 240_250_000
 	env.header.GasUsed = 0
 	env.cumulativeBuilderPayment = new(uint256.Int).SetUint64(0)
+	env.evm = nil
 }
 
 // copy creates a deep copy of environment.
 // resets all params that are updated when we add txs and sets the new header
 // params to match the new environment we are sent
-func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv) *environment {
-	newEnv := env.copy()
+func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain core.ChainContext, config *params.ChainConfig) *environment {
+	newEnv := env.copy(chain, config)
 	newEnv.reset()
 
 	// Set new env params in header
@@ -131,6 +133,8 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv) *envi
 	} else {
 		newEnv.header.ParentHash = env.sealedBlock.Hash()
 	}
+
+	newEnv.evm = vm.NewEVM(core.NewEVMBlockContext(newEnv.header, chain, &newEnv.coinbase), newEnv.state, config, vm.Config{})
 	return newEnv
 }
 

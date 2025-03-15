@@ -128,7 +128,7 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 	env.header.Extra = bbExtraData
 
 	// Copy the environment from the latest sealed state and set the params for the new block.
-	simEnv := env.copyAtNewEnvironment(newEnvParams)
+	simEnv := env.copyAtNewEnvironment(newEnvParams, g.chain, g.chainConfig)
 
 	// Set the new tx signer in the env.
 	simEnv.signer = types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
@@ -227,7 +227,7 @@ func (g *SimulationAPIWorker) simulateTx(stateId uint64, tx *types.Transaction, 
 	}
 
 	// Copy environment and simulate tx.
-	simEnv := env.copy()
+	simEnv := env.copy(g.chain, g.chainConfig)
 
 	startBalance := simEnv.state.GetBalance(env.coinbase)
 	receipt, _, _, err := g.commitTx(simEnv, tx)
