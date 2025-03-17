@@ -300,41 +300,34 @@ func (t *Taiko) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 // ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchor or TaikoL2.anchorV2 transaction.
 func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (bool, error) {
 	if tx.Type() != types.DynamicFeeTxType {
-		log.Info("anchorTx invalidated", "reason", "txType")
 		return false, nil
 	}
 
 	if tx.To() == nil || *tx.To() != t.taikoL2Address {
-		log.Info("anchorTx invalidated", "tx.To", tx.To())
 		return false, nil
 	}
 
 	if !bytes.HasPrefix(tx.Data(), AnchorSelector) &&
 		!bytes.HasPrefix(tx.Data(), AnchorV2Selector) &&
 		!bytes.HasPrefix(tx.Data(), AnchorV3Selector) {
-		log.Info("anchorTx invalidated", "reason", "selector")
 		return false, nil
 	}
 
 	if tx.Value().Cmp(common.Big0) != 0 {
-		log.Info("anchorTx invalidated", "reason", "value")
 		return false, nil
 	}
 
 	if t.chainConfig.IsPacaya(header.Number) {
 		if tx.Gas() != AnchorV3GasLimit {
-			log.Info("anchorTx invalidated", "gasLimit pacaya", tx.Gas())
 			return false, nil
 		}
 	} else {
 		if tx.Gas() != AnchorGasLimit {
-			log.Info("anchorTx invalidated", "gasLimit non pacaya", tx.Gas())
 			return false, nil
 		}
 	}
 
 	if tx.GasFeeCap().Cmp(header.BaseFee) != 0 {
-		log.Info("anchorTx invalidated", "gasFeeCap", tx.GasFeeCap(), "baseFee", header.BaseFee)
 		return false, nil
 	}
 
@@ -342,7 +335,6 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 
 	addr, err := s.Sender(tx)
 	if err != nil {
-		log.Info("anchorTx invalid", "reason", "sender")
 		return false, err
 	}
 
