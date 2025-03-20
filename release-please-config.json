@@ -14,8 +14,8 @@
       { "type": "revert", "section": "Reverted Commits", "hidden": false },
       { "type": "build", "section": "Build", "hidden": false }
     ],
-    "packages": { 
-        ".": {}
+    "separate-pull-requests": true,
+    "packages": {
+      ".": {}
     }
-}
-  
+  }
