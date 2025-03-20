@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - taiko
+      - changelog-sections
 
 permissions:
   contents: write
