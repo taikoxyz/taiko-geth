@@ -249,6 +249,7 @@ func (w *Miner) commitL2Transactions(
 	)
 
 	if presetTxs != nil {
+		// TODO(David): env.receipts[0].GasUsed
 		env.txs = append(env.txs, presetTxs...)
 	}
 
@@ -329,10 +330,8 @@ loop:
 		}
 	}
 
-	if pruningResult == nil {
-		if pruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
-			return nil, err
-		}
+	if pruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
+		return nil, err
 	}
 
 	return pruningResult, nil
