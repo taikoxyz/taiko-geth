@@ -96,7 +96,7 @@ func (w *Miner) buildTransactionsLists(
 		}
 
 		return txsPruningResult.PrunedTxs, &PreBuiltTxList{
-			TxList:           env.txs,
+			TxList:           txsPruningResult.Remaining,
 			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
 			BytesLength:      uint64(txsPruningResult.Size),
 		}, nil
