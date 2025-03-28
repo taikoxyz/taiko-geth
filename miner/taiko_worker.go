@@ -242,10 +242,10 @@ func (w *Miner) commitL2Transactions(
 	minTip uint64,
 ) (*txsPruningResult, error) {
 	var (
-		txs              = txsLocal
-		isLocal          = true
-		txsPruningResult *txsPruningResult
-		err              error
+		txs           = txsLocal
+		isLocal       = true
+		pruningResult *txsPruningResult
+		err           error
 	)
 
 	if presetTxs != nil {
@@ -318,11 +318,11 @@ loop:
 				}
 
 				if len(b) > int(maxBytesPerTxList) {
-					if txsPruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
+					if pruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
 						return nil, err
 					}
 					// If there are pruned transactions, break the loop.
-					if len(txsPruningResult.Pruned) > 0 {
+					if len(pruningResult.Pruned) > 0 {
 						break loop
 					}
 				}
@@ -336,13 +336,13 @@ loop:
 		}
 	}
 
-	if txsPruningResult == nil {
-		if txsPruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
+	if pruningResult == nil {
+		if pruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
 			return nil, err
 		}
 	}
 
-	return txsPruningResult, nil
+	return pruningResult, nil
 }
 
 // encodeAndCompressTxList encodes and compresses the given transactions list.
