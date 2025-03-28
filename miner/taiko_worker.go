@@ -95,7 +95,7 @@ func (w *Miner) buildTransactionsLists(
 			return nil, nil, err
 		}
 
-		return txsPruningResult.PrunedTxs, &PreBuiltTxList{
+		return txsPruningResult.Pruned, &PreBuiltTxList{
 			TxList:           txsPruningResult.Remaining,
 			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
 			BytesLength:      uint64(txsPruningResult.Size),
@@ -322,7 +322,7 @@ loop:
 						return nil, err
 					}
 					// If there are pruned transactions, break the loop.
-					if len(txsPruningResult.PrunedTxs) > 0 {
+					if len(txsPruningResult.Pruned) > 0 {
 						break loop
 					}
 				}
@@ -374,7 +374,7 @@ func compress(txListBytes []byte) ([]byte, error) {
 
 // txsPruningResult represents the result of a transactions list pruning.
 type txsPruningResult struct {
-	PrunedTxs []*types.Transaction
+	Pruned    []*types.Transaction
 	Remaining []*types.Transaction
 	Size      int
 }
@@ -388,7 +388,7 @@ func pruneTransactions(txs []*types.Transaction, sizeLimit uint64) (*txsPruningR
 			return nil, err
 		}
 		if len(b) <= int(sizeLimit) {
-			return &txsPruningResult{PrunedTxs: prunedTxs, Remaining: txs, Size: len(b)}, nil
+			return &txsPruningResult{Pruned: prunedTxs, Remaining: txs, Size: len(b)}, nil
 		}
 		if len(txs) < TxListCompressionPruneStep {
 			prunedTxs = append(txs, prunedTxs...)
@@ -400,5 +400,5 @@ func pruneTransactions(txs []*types.Transaction, sizeLimit uint64) (*txsPruningR
 	}
 
 	// All transactions are pruned.
-	return &txsPruningResult{PrunedTxs: prunedTxs, Remaining: txs, Size: 0}, nil
+	return &txsPruningResult{Pruned: prunedTxs, Remaining: txs, Size: 0}, nil
 }
