@@ -22,6 +22,11 @@ import (
 	"github.com/holiman/uint256"
 )
 
+const (
+	TxListCompressionCheckInterval = 100
+	TxListCompressionPruneStep     = 10
+)
+
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given conditions
 // 1. All transactions should all be able to pay the given base fee.
 // 2. The total gas used should not exceed the given blockMaxGasLimit
@@ -72,39 +77,37 @@ func (w *Miner) buildTransactionsLists(
 		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee)
 	)
 
-	commitTxs := func(firstTransaction *types.Transaction) (*types.Transaction, *PreBuiltTxList, error) {
+	commitTxs := func(presetTxs []*types.Transaction) ([]*types.Transaction, *PreBuiltTxList, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
 		env.header.GasLimit = blockMaxGasLimit
 
-		lastTransaction := w.commitL2Transactions(
+		txsPruningResult, err := w.commitL2Transactions(
 			env,
-			firstTransaction,
+			presetTxs,
 			newTransactionsByPriceAndNonce(signer, maps.Clone(localTxs), baseFee),
 			newTransactionsByPriceAndNonce(signer, maps.Clone(remoteTxs), baseFee),
 			maxBytesPerTxList,
 			minTip,
 		)
-
-		b, err := encodeAndCompressTxList(env.txs)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		return lastTransaction, &PreBuiltTxList{
+		return txsPruningResult.PrunedTxs, &PreBuiltTxList{
 			TxList:           env.txs,
 			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
-			BytesLength:      uint64(len(b)),
+			BytesLength:      uint64(txsPruningResult.Size),
 		}, nil
 	}
 
 	var (
-		lastTx *types.Transaction
-		res    *PreBuiltTxList
+		prunedTxs []*types.Transaction
+		res       *PreBuiltTxList
 	)
-	for i := 0; i < int(maxTransactionsLists); i++ {
-		if lastTx, res, err = commitTxs(lastTx); err != nil {
+	for range int(maxTransactionsLists) {
+		if prunedTxs, res, err = commitTxs(prunedTxs); err != nil {
 			return nil, err
 		}
 
@@ -133,7 +136,7 @@ func (w *Miner) sealBlockWith(
 	}
 
 	if len(txs) == 0 {
-		// A L2 block needs to have have at least one `TaikoL2.anchor` / `TaikoL2.anchorV2`.
+		// A L2 block needs to have have at least one `TaikoL2.anchor` / `TaikoL2.anchorV2` / `TaikoL2.anchorV3`.
 		return nil, fmt.Errorf("too less transactions in the block")
 	}
 
@@ -232,20 +235,21 @@ func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 // commitL2Transactions tries to commit the transactions into the given state.
 func (w *Miner) commitL2Transactions(
 	env *environment,
-	firstTransaction *types.Transaction,
+	presetTxs []*types.Transaction,
 	txsLocal *transactionsByPriceAndNonce,
 	txsRemote *transactionsByPriceAndNonce,
 	maxBytesPerTxList uint64,
 	minTip uint64,
-) *types.Transaction {
+) (*txsPruningResult, error) {
 	var (
-		txs             = txsLocal
-		isLocal         = true
-		lastTransaction *types.Transaction
+		txs              = txsLocal
+		isLocal          = true
+		txsPruningResult *txsPruningResult
+		err              error
 	)
 
-	if firstTransaction != nil {
-		env.txs = append(env.txs, firstTransaction)
+	if presetTxs != nil {
+		env.txs = append(env.txs, presetTxs...)
 	}
 
 loop:
@@ -306,23 +310,17 @@ loop:
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			txs.Shift()
 
-			data, err := rlp.EncodeToBytes(env.txs)
-			if err != nil {
-				log.Trace("Failed to rlp encode the pending transaction %s: %w", tx.Hash(), err)
-				txs.Pop()
-				continue
-			}
-			if len(data) >= int(maxBytesPerTxList) {
-				// Encode and compress the txList, if the byte length is > maxBytesPerTxList, remove the latest tx and break.
-				b, err := compress(data)
+			// Check the size of the compressed txList, if it exceeds the maxBytesPerTxList, break the loop.
+			if env.tcount%TxListCompressionCheckInterval == 0 {
+				b, err := encodeAndCompressTxList(env.txs)
 				if err != nil {
-					log.Trace("Failed to rlp encode and compress the pending transaction %s: %w", tx.Hash(), err)
-					txs.Pop()
-					continue
+					return nil, err
 				}
+
 				if len(b) > int(maxBytesPerTxList) {
-					lastTransaction = env.txs[env.tcount-1]
-					env.txs = env.txs[0 : env.tcount-1]
+					if txsPruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
+						return nil, err
+					}
 					break loop
 				}
 			}
@@ -335,7 +333,13 @@ loop:
 		}
 	}
 
-	return lastTransaction
+	if txsPruningResult == nil {
+		if txsPruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
+			return nil, err
+		}
+	}
+
+	return txsPruningResult, nil
 }
 
 // encodeAndCompressTxList encodes and compresses the given transactions list.
@@ -363,4 +367,35 @@ func compress(txListBytes []byte) ([]byte, error) {
 	}
 
 	return b.Bytes(), nil
+}
+
+// txsPruningResult represents the result of a transactions list pruning.
+type txsPruningResult struct {
+	PrunedTxs []*types.Transaction
+	Remaining []*types.Transaction
+	Size      int
+}
+
+// pruneTransactions prunes the transactions from the given environment to fit the size limit.
+func pruneTransactions(txs []*types.Transaction, sizeLimit uint64) (*txsPruningResult, error) {
+	var prunedTxs []*types.Transaction
+	for len(txs) > 0 {
+		b, err := encodeAndCompressTxList(txs)
+		if err != nil {
+			return nil, err
+		}
+		if len(b) <= int(sizeLimit) {
+			return &txsPruningResult{PrunedTxs: prunedTxs, Remaining: txs, Size: len(b)}, nil
+		}
+		if len(txs) < TxListCompressionPruneStep {
+			prunedTxs = append(txs, prunedTxs...)
+			txs = []*types.Transaction{}
+			break
+		}
+		prunedTxs = append(txs[len(txs)-TxListCompressionPruneStep:], prunedTxs...)
+		txs = txs[:len(txs)-TxListCompressionPruneStep]
+	}
+
+	// All transactions are pruned.
+	return &txsPruningResult{PrunedTxs: prunedTxs, Remaining: txs, Size: 0}, nil
 }
