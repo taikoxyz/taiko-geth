@@ -312,19 +312,12 @@ loop:
 
 			// Check the size of the compressed txList, if it exceeds the maxBytesPerTxList, break the loop.
 			if env.tcount%TxListCompressionCheckInterval == 0 {
-				b, err := encodeAndCompressTxList(env.txs)
-				if err != nil {
+				if pruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
 					return nil, err
 				}
-
-				if len(b) > int(maxBytesPerTxList) {
-					if pruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
-						return nil, err
-					}
-					// If there are pruned transactions, break the loop.
-					if len(pruningResult.Pruned) > 0 {
-						break loop
-					}
+				// If there are pruned transactions, break the loop.
+				if len(pruningResult.Pruned) > 0 {
+					break loop
 				}
 			}
 
