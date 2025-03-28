@@ -321,7 +321,7 @@ loop:
 					if txsPruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
 						return nil, err
 					}
-                                          // If there are pruned transactions, break the loop.
+					// If there are pruned transactions, break the loop.
 					if len(txsPruningResult.PrunedTxs) > 0 {
 						break loop
 					}
