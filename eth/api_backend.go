@@ -188,7 +188,7 @@ func (b *EthAPIBackend) Pending() (*types.Block, types.Receipts, *state.StateDB)
 
 func (b *EthAPIBackend) StateAndHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*state.StateDB, *types.Header, error) {
 	// CHANGE(taiko): always use the latest block number for pending state.
-	if number == rpc.PendingBlockNumber {
+	if b.ChainConfig().Taiko && number == rpc.PendingBlockNumber {
 		number = rpc.LatestBlockNumber
 	}
 	// Pending state is only known by the miner
