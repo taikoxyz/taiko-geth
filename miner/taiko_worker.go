@@ -51,7 +51,13 @@ func (w *Miner) buildTransactionsLists(
 	}
 
 	// Check if tx pool is empty at first.
-	if len(w.txpool.Pending(txpool.PendingFilter{MinTip: uint256.NewInt(minTip), BaseFee: uint256.MustFromBig(baseFee), OnlyPlainTxs: true})) == 0 {
+	if len(w.txpool.Pending(
+		txpool.PendingFilter{
+			MinTip:       uint256.NewInt(minTip),
+			BaseFee:      uint256.MustFromBig(baseFee),
+			OnlyPlainTxs: true,
+		},
+	)) == 0 {
 		return txsLists, nil
 	}
 
@@ -98,25 +104,25 @@ func (w *Miner) buildTransactionsLists(
 
 		return txsPruningResult, &PreBuiltTxList{
 			TxList:           txsPruningResult.TxsRemaining,
-			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas() - accumulateGasUsed(txsPruningResult.ReceiptsPruned),
+			EstimatedGasUsed: accumulateGasUsed(txsPruningResult.ReceiptsRemaining),
 			BytesLength:      uint64(txsPruningResult.Size),
 		}, nil
 	}
 
 	var (
-		pruningResult = new(txsPruningResult)
-		res           *PreBuiltTxList
+		pruningResult  = new(txsPruningResult)
+		preBuiltTxList *PreBuiltTxList
 	)
 	for range int(maxTransactionsLists) {
-		if pruningResult, res, err = commitTxs(pruningResult); err != nil {
+		if pruningResult, preBuiltTxList, err = commitTxs(pruningResult); err != nil {
 			return nil, err
 		}
 
-		if len(res.TxList) == 0 {
+		if len(preBuiltTxList.TxList) == 0 {
 			break
 		}
 
-		txsLists = append(txsLists, res)
+		txsLists = append(txsLists, preBuiltTxList)
 	}
 
 	return txsLists, nil
@@ -368,10 +374,11 @@ func compress(txListBytes []byte) ([]byte, error) {
 
 // txsPruningResult represents the result of a transactions list pruning.
 type txsPruningResult struct {
-	TxsPruned      []*types.Transaction
-	ReceiptsPruned []*types.Receipt
-	TxsRemaining   []*types.Transaction
-	Size           int
+	TxsPruned         []*types.Transaction
+	ReceiptsPruned    []*types.Receipt
+	TxsRemaining      []*types.Transaction
+	ReceiptsRemaining []*types.Receipt
+	Size              int
 }
 
 // pruneTransactions prunes the transactions from the given environment to fit the size limit.
@@ -402,19 +409,22 @@ func pruneTransactions(
 			prunedTxs = append(txs, prunedTxs...)
 			prunedReceipts = append(receipts, prunedReceipts...)
 			txs = []*types.Transaction{}
+			receipts = []*types.Receipt{}
 			break
 		}
 		prunedTxs = append(txs[len(txs)-TxListCompressionPruneStep:], prunedTxs...)
 		prunedReceipts = append(receipts[len(receipts)-TxListCompressionPruneStep:], prunedReceipts...)
 		txs = txs[:len(txs)-TxListCompressionPruneStep]
+		receipts = receipts[:len(receipts)-TxListCompressionPruneStep]
 	}
 
 	// All transactions are pruned.
 	return &txsPruningResult{
-		TxsPruned:      prunedTxs,
-		ReceiptsPruned: prunedReceipts,
-		TxsRemaining:   txs,
-		Size:           0,
+		TxsPruned:         prunedTxs,
+		ReceiptsPruned:    prunedReceipts,
+		TxsRemaining:      txs,
+		ReceiptsRemaining: receipts,
+		Size:              0,
 	}, nil
 }
 
