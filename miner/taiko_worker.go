@@ -89,7 +89,7 @@ func (w *Miner) buildTransactionsLists(
 		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
 		env.header.GasLimit = blockMaxGasLimit
 
-		txsPruningResult, err := w.commitL2Transactions(
+		result, err := w.commitL2Transactions(
 			env,
 			pruningResult.TxsPruned,
 			pruningResult.ReceiptsPruned,
@@ -102,10 +102,10 @@ func (w *Miner) buildTransactionsLists(
 			return nil, nil, err
 		}
 
-		return txsPruningResult, &PreBuiltTxList{
-			TxList:           txsPruningResult.TxsRemaining,
-			EstimatedGasUsed: accumulateGasUsed(txsPruningResult.ReceiptsRemaining),
-			BytesLength:      uint64(txsPruningResult.Size),
+		return result, &PreBuiltTxList{
+			TxList:           result.TxsRemaining,
+			EstimatedGasUsed: accumulateGasUsed(result.ReceiptsRemaining),
+			BytesLength:      uint64(result.Size),
 		}, nil
 	}
 
