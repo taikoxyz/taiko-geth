@@ -257,6 +257,7 @@ func (w *Miner) commitL2Transactions(
 	)
 
 	if presetTxs != nil {
+		env.tcount = len(presetTxs)
 		env.txs = append(env.txs, presetTxs...)
 		env.receipts = append(env.receipts, presetReceipts...)
 	}
