@@ -77,15 +77,15 @@ func (w *Miner) buildTransactionsLists(
 		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee)
 	)
 
-	commitTxs := func(presetTxs []*types.Transaction) ([]*types.Transaction, *PreBuiltTxList, error) {
+	commitTxs := func(pruningResult *txsPruningResult) (*txsPruningResult, *PreBuiltTxList, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
-		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit)
+		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit - pruningResult.GasPruned)
 		env.header.GasLimit = blockMaxGasLimit
 
 		txsPruningResult, err := w.commitL2Transactions(
 			env,
-			presetTxs,
+			pruningResult.TxsPruned,
 			newTransactionsByPriceAndNonce(signer, maps.Clone(localTxs), baseFee),
 			newTransactionsByPriceAndNonce(signer, maps.Clone(remoteTxs), baseFee),
 			maxBytesPerTxList,
@@ -95,19 +95,19 @@ func (w *Miner) buildTransactionsLists(
 			return nil, nil, err
 		}
 
-		return txsPruningResult.Pruned, &PreBuiltTxList{
-			TxList:           txsPruningResult.Remaining,
-			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas(),
+		return txsPruningResult, &PreBuiltTxList{
+			TxList:           txsPruningResult.TxsRemaining,
+			EstimatedGasUsed: env.header.GasLimit - env.gasPool.Gas() - txsPruningResult.GasPruned,
 			BytesLength:      uint64(txsPruningResult.Size),
 		}, nil
 	}
 
 	var (
-		prunedTxs []*types.Transaction
-		res       *PreBuiltTxList
+		pruningResult = new(txsPruningResult)
+		res           *PreBuiltTxList
 	)
 	for range int(maxTransactionsLists) {
-		if prunedTxs, res, err = commitTxs(prunedTxs); err != nil {
+		if pruningResult, res, err = commitTxs(pruningResult); err != nil {
 			return nil, err
 		}
 
@@ -249,7 +249,6 @@ func (w *Miner) commitL2Transactions(
 	)
 
 	if presetTxs != nil {
-		// TODO(David): env.receipts[0].GasUsed
 		env.txs = append(env.txs, presetTxs...)
 	}
 
@@ -313,11 +312,11 @@ loop:
 
 			// Check the size of the compressed txList, if it exceeds the maxBytesPerTxList, break the loop.
 			if env.tcount%TxListCompressionCheckInterval == 0 {
-				if pruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
+				if pruningResult, err = pruneTransactions(env.txs, env.receipts, maxBytesPerTxList); err != nil {
 					return nil, err
 				}
 				// If there are pruned transactions, break the loop.
-				if len(pruningResult.Pruned) > 0 {
+				if len(pruningResult.TxsPruned) > 0 {
 					break loop
 				}
 			}
@@ -330,7 +329,7 @@ loop:
 		}
 	}
 
-	if pruningResult, err = pruneTransactions(env.txs, maxBytesPerTxList); err != nil {
+	if pruningResult, err = pruneTransactions(env.txs, env.receipts, maxBytesPerTxList); err != nil {
 		return nil, err
 	}
 
@@ -366,31 +365,61 @@ func compress(txListBytes []byte) ([]byte, error) {
 
 // txsPruningResult represents the result of a transactions list pruning.
 type txsPruningResult struct {
-	Pruned    []*types.Transaction
-	Remaining []*types.Transaction
-	Size      int
+	TxsPruned    []*types.Transaction
+	TxsRemaining []*types.Transaction
+	GasPruned    uint64
+	Size         int
 }
 
 // pruneTransactions prunes the transactions from the given environment to fit the size limit.
-func pruneTransactions(txs []*types.Transaction, sizeLimit uint64) (*txsPruningResult, error) {
-	var prunedTxs []*types.Transaction
+func pruneTransactions(
+	txs []*types.Transaction,
+	receipts []*types.Receipt,
+	sizeLimit uint64,
+) (*txsPruningResult, error) {
+	var (
+		prunedTxs      []*types.Transaction
+		prunedReceipts []*types.Receipt
+	)
+
 	for len(txs) > 0 {
 		b, err := encodeAndCompressTxList(txs)
 		if err != nil {
 			return nil, err
 		}
 		if len(b) <= int(sizeLimit) {
-			return &txsPruningResult{Pruned: prunedTxs, Remaining: txs, Size: len(b)}, nil
+			return &txsPruningResult{
+				TxsPruned:    prunedTxs,
+				GasPruned:    accumulateGasUsed(prunedReceipts),
+				TxsRemaining: txs,
+				Size:         len(b),
+			}, nil
 		}
 		if len(txs) < TxListCompressionPruneStep {
 			prunedTxs = append(txs, prunedTxs...)
+			prunedReceipts = append(receipts, prunedReceipts...)
 			txs = []*types.Transaction{}
 			break
 		}
 		prunedTxs = append(txs[len(txs)-TxListCompressionPruneStep:], prunedTxs...)
+		prunedReceipts = append(receipts[len(receipts)-TxListCompressionPruneStep:], prunedReceipts...)
 		txs = txs[:len(txs)-TxListCompressionPruneStep]
 	}
 
 	// All transactions are pruned.
-	return &txsPruningResult{Pruned: prunedTxs, Remaining: txs, Size: 0}, nil
+	return &txsPruningResult{
+		TxsPruned:    prunedTxs,
+		GasPruned:    accumulateGasUsed(prunedReceipts),
+		TxsRemaining: txs,
+		Size:         0,
+	}, nil
+}
+
+// accumulateGasUsed sums up the gas used from the receipts.
+func accumulateGasUsed(receipts []*types.Receipt) uint64 {
+	var gasUsed uint64
+	for _, receipt := range receipts {
+		gasUsed += receipt.GasUsed
+	}
+	return gasUsed
 }
