@@ -139,7 +139,14 @@ func (w *Miner) sealBlockWith(
 	// Decode transactions bytes.
 	var txs types.Transactions
 	if err := rlp.DecodeBytes(blkMeta.TxList, &txs); err != nil {
-		return nil, fmt.Errorf("failed to decode txList: %w", err)
+		log.Warn(
+			"Failed to decode transactions list, will mine an empty block",
+			"timestamp", timestamp,
+			"parentHash", parent,
+			"beneficiary", blkMeta.Beneficiary,
+			"err", err,
+		)
+		txs = make(types.Transactions, 0)
 	}
 
 	if len(txs) == 0 {
