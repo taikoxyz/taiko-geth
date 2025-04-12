@@ -52,7 +52,6 @@ func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environme
 		Time:       timestamp,
 		Coinbase:   genParams.coinbase,
 
-		// gtc
 		Root: parent.Root,
 	}
 	// Set the randomness field from the beacon chain if it's available.

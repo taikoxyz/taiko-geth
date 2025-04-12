@@ -223,7 +223,6 @@ type Block struct {
 	ReceivedAt   time.Time
 	ReceivedFrom interface{}
 
-	// Custom tag set by gattaca preconfer.
 	// Ignore any chain head updates with this set
 	PreconfBlock bool
 }
