@@ -25,7 +25,7 @@ type BlockEnv struct {
 	///Unused after the Paris (AKA the merge) upgrade, and replaced by `prevrandao`.
 	Difficulty *hexutil.Big `json:"difficulty"`
 
-	// Gattaca Change: this value is MixDigest. We just use PrevRandao to not change the struct
+	// Change: this value is MixDigest. We just use PrevRandao to not change the struct
 	PrevRandao *Hash `json:"prevrandao,omitempty"`
 
 	///Excess blob gas and blob gasprice.
