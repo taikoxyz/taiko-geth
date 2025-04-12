@@ -48,6 +48,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
+	"github.com/ethereum/go-ethereum/internal/ethapi/simulator"
 	"github.com/ethereum/go-ethereum/internal/shutdowncheck"
 	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/log"
@@ -88,7 +89,10 @@ type Ethereum struct {
 	bloomIndexer      *core.ChainIndexer             // Bloom indexer operating during block imports
 	closeBloomHandler chan struct{}
 
-	APIBackend *EthAPIBackend
+	APIBackend interface {
+		ethapi.Backend
+		tracers.Backend
+	}
 
 	miner    *miner.Miner
 	gasPrice *big.Int
@@ -266,21 +270,50 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 
-	eth.miner = miner.New(eth, config.Miner, eth.engine)
+	// Initialize preconfState and miner based on API configuration
+	simulatorApiEnabled := stack.Config().HasSimulatorAPI()
+	var preconfState *miner.PreconfState
+	if simulatorApiEnabled {
+		preconfState = miner.NewPreconfState(eth.blockchain)
+	}
+
+	eth.miner = miner.New(eth, config.Miner, eth.blockchain.Config(), eth.engine, preconfState)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
 	eth.miner.SetPrioAddresses(config.TxPool.Locals)
 
-	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
-	if eth.APIBackend.allowUnprotectedTxs {
+	if stack.Config().AllowUnprotectedTxs {
 		log.Info("Unprotected transactions allowed")
 	}
-	eth.APIBackend.gpo = gasprice.NewOracle(eth.APIBackend, config.GPO, config.Miner.GasPrice)
+
+	// Initialize API backend based on API configuration
+	if simulatorApiEnabled {
+		backend := &SimulatorAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil, preconfState}
+		backend.gpo = gasprice.NewOracle(backend, config.GPO, config.Miner.GasPrice)
+		eth.APIBackend = backend
+	} else {
+		backend := &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
+		backend.gpo = gasprice.NewOracle(backend, config.GPO, config.Miner.GasPrice)
+		eth.APIBackend = backend
+	}
 
 	// Start the RPC service
 	eth.netRPCService = ethapi.NewNetAPI(eth.p2pServer, networkID)
 
 	// Register the backend on the node
-	stack.RegisterAPIs(eth.APIs())
+	apis := eth.APIs()
+
+	// Register the simulator API if it is enabled
+	if simulatorApiEnabled {
+		log.Info("Simulator-API: Registering simulator API")
+		apis = append(apis, rpc.API{
+			Namespace: "simulator",
+			Service:   simulator.NewSimulatorAPI(eth.APIBackend),
+		})
+	} else {
+		log.Info("Simulator-API: Simulator API is disabled")
+	}
+
+	stack.RegisterAPIs(apis)
 	stack.RegisterProtocols(eth.Protocols())
 	stack.RegisterLifecycle(eth)
 
