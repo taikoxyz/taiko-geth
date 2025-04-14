@@ -519,16 +519,19 @@ func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
 			}
 		}
 		if pos >= 0 {
-			if pos != 16 && !inGaiko {
+			if pos != 16 {
 				// If the remaining entry is a short node, it replaces
 				// n and its key gets the missing nibble tacked to the
 				// front. This avoids creating an invalid
 				// shortNode{..., shortNode{...}}.  Since the entry
 				// might not be loaded yet, resolve it just for this
 				// check.
-				cnode, err := t.resolve(n.Children[pos], append(prefix, byte(pos)))
-				if err != nil {
-					return false, nil, err
+				cnode := n.Children[pos]
+				if !inGaiko {
+					cnode, err = t.resolve(n.Children[pos], append(prefix, byte(pos)))
+					if err != nil {
+						return false, nil, err
+					}
 				}
 				if cnode, ok := cnode.(*shortNode); ok {
 					// Replace the entire full node with the short node.
