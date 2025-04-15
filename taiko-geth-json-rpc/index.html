@@ -1,0 +1,1114 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="x-ua-compatible" content="ie=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Taiko JSON-RPC API</title>
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css"
+      integrity="sha384-TX8t27EcRE3e/ihU7zmQxVncDAy5uIKz4rEkgIXeMed4M0jlfIDPvg6uqKI2xXr2"
+      crossorigin="anonymous"
+    />
+    <script
+      src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
+      integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj"
+      crossorigin="anonymous"
+    ></script>
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-ho+j7jyWK8fNQe+A12Hb8AhRq26LrZ/JpcUGGOn+Y7RsweNrtN/tE3MoK7ZeZDyx"
+      crossorigin="anonymous"
+    ></script>
+
+    <style>
+      h4 {
+        display: inline;
+      }
+
+      p {
+        word-wrap: break-word;
+      }
+
+      .sidenav,
+      .content {
+        overflow-y: auto;
+        height: calc(100vh - 57px);
+        max-height: calc(100vh - 57px);
+      }
+
+      .sidenav {
+        padding: 0;
+        display: flex;
+        flex-wrap: nowrap;
+        flex-direction: column;
+        justify-content: start;
+        align-items: stretch;
+        align-content: start;
+      }
+
+      #toc {
+        overflow-y: auto;
+      }
+
+      .card {
+        margin-bottom: 15px;
+      }
+
+      .card-header {
+        cursor: pointer;
+      }
+
+      .content,
+      .card-block,
+      .search-form {
+        padding: 15px;
+      }
+
+      .nav-link {
+        color: #343a40 !important;
+      }
+
+      .nav-pills .nav-link.active,
+      .nav-pills .show > .nav-link {
+        color: #f8f9fa !important;
+        background-color: #343a40 !important;
+      }
+
+      .card.disabled,
+      .nav-link.disabled {
+        opacity: 0.5;
+      }
+    </style>
+  </head>
+
+  <body class="bg-light">
+    <nav
+      class="navbar navbar-dark bg-dark justify-content-between sticky-top border-bottom"
+    >
+      <a class="navbar-brand">Taiko JSON-RPC API 1.0</a>
+    </nav>
+
+    <div class="container-fluid">
+      <div class="row">
+        <div class="sidenav col-2 bg-white border-right">
+          <form class="search-form border-bottom" onsubmit="return false">
+            <input
+              class="form-control search-input"
+              type="search"
+              placeholder="Search"
+            />
+          </form>
+
+          <nav id="toc">
+            <ul class="nav nav-pills flex-column">
+              <li class="nav-item">
+                <a class="nav-link" href="#taikoAuth_SetHeadL1Origin"
+                  >taikoAuth_SetHeadL1Origin</a
+                >
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#taikoAuth_TxPoolContent"
+                  >taikoAuth_TxPoolContent</a
+                >
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#taikoAuth_TxPoolContentWithMinTip"
+                  >taikoAuth_TxPoolContentWithMinTip</a
+                >
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#taikoAuth_UpdateL1Origin"
+                  >taikoAuth_UpdateL1Origin</a
+                >
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#taiko_GetSyncMode"
+                  >taiko_GetSyncMode</a
+                >
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#taiko_HeadL1Origin"
+                  >taiko_HeadL1Origin</a
+                >
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="#taiko_L1OriginByID"
+                  >taiko_L1OriginByID</a
+                >
+              </li>
+            </ul>
+          </nav>
+        </div>
+
+        <div class="content col-10" data-spy="scroll" data-target="#toc">
+          <div class="card border">
+            <div class="card-block">
+              Auto-generated JSON-RPC API for Taiko backend.
+            </div>
+          </div>
+
+          <div class="card method" id="taikoAuth_SetHeadL1Origin">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taikoAuth_SetHeadL1Origin-content"
+            >
+              <h4>
+                <span>taikoAuth_SetHeadL1Origin</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taikoAuth_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taikoAuth_SetHeadL1Origin-content"
+            >
+              <p>RPC method SetHeadL1Origin</p>
+
+              <p>
+                SetHeadL1Origin sets the latest L2 block's corresponding L1
+                origin.
+              </p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Parameters</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>params</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.blockID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td>
+                            Hexadecimal or decimal representation of a number.
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taikoAuth_SetHeadL1Origin",
+  "params": {
+    "blockID": 10000
+  }
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": 10000
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card method" id="taikoAuth_TxPoolContent">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taikoAuth_TxPoolContent-content"
+            >
+              <h4>
+                <span>taikoAuth_TxPoolContent</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taikoAuth_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taikoAuth_TxPoolContent-content"
+            >
+              <p>RPC method TxPoolContent</p>
+
+              <p>
+                TxPoolContent retrieves the transaction pool content with the
+                given upper limits.
+              </p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Parameters</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>params</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.baseFee</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.beneficiary</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.blockMaxGasLimit</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.locals</td>
+                          <td>array</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.locals[]</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.maxBytesPerTxList</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.maxTransactionsLists</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>array</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result[]</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result[].BytesLength</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result[].EstimatedGasUsed</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result[].TxList</td>
+                          <td>array</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taikoAuth_TxPoolContent",
+  "params": {
+    "baseFee": 10000,
+    "beneficiary": "0x123456",
+    "blockMaxGasLimit": 10000,
+    "locals": [
+      "0x123456"
+    ],
+    "maxBytesPerTxList": 10000,
+    "maxTransactionsLists": 10000
+  }
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": [
+    {
+      "BytesLength": 10000,
+      "EstimatedGasUsed": 10000,
+      "TxList": [
+        null
+      ]
+    }
+  ]
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card method" id="taikoAuth_TxPoolContentWithMinTip">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taikoAuth_TxPoolContentWithMinTip-content"
+            >
+              <h4>
+                <span>taikoAuth_TxPoolContentWithMinTip</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taikoAuth_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taikoAuth_TxPoolContentWithMinTip-content"
+            >
+              <p>RPC method TxPoolContentWithMinTip</p>
+
+              <p>
+                TxPoolContentWithMinTip retrieves the transaction pool content
+                with the given upper limits and minimum tip.
+              </p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Parameters</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>params</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.baseFee</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.beneficiary</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.blockMaxGasLimit</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.locals</td>
+                          <td>array</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.locals[]</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.maxBytesPerTxList</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.maxTransactionsLists</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.minTip</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>array</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result[]</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result[].BytesLength</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result[].EstimatedGasUsed</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result[].TxList</td>
+                          <td>array</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taikoAuth_TxPoolContentWithMinTip",
+  "params": {
+    "baseFee": 10000,
+    "beneficiary": "0x123456",
+    "blockMaxGasLimit": 10000,
+    "locals": [
+      "0x123456"
+    ],
+    "maxBytesPerTxList": 10000,
+    "maxTransactionsLists": 10000,
+    "minTip": 10000
+  }
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": [
+    {
+      "BytesLength": 10000,
+      "EstimatedGasUsed": 10000,
+      "TxList": [
+        null
+      ]
+    }
+  ]
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card method" id="taikoAuth_UpdateL1Origin">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taikoAuth_UpdateL1Origin-content"
+            >
+              <h4>
+                <span>taikoAuth_UpdateL1Origin</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taikoAuth_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taikoAuth_UpdateL1Origin-content"
+            >
+              <p>RPC method UpdateL1Origin</p>
+
+              <p>
+                UpdateL1Origin updates the L2 block's corresponding L1 origin.
+              </p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Parameters</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>params</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.l1Origin</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.l1Origin.blockID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.l1Origin.l1BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.l1Origin.l1BlockHeight</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.l1Origin.l2BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.blockID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l1BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l1BlockHeight</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l2BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taikoAuth_UpdateL1Origin",
+  "params": {
+    "l1Origin": {
+      "blockID": 10000,
+      "l1BlockHash": "0x123456",
+      "l1BlockHeight": 10000,
+      "l2BlockHash": "0x123456"
+    }
+  }
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": {
+    "blockID": 10000,
+    "l1BlockHash": "0x123456",
+    "l1BlockHeight": 10000,
+    "l2BlockHash": "0x123456"
+  }
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card method" id="taiko_GetSyncMode">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taiko_GetSyncMode-content"
+            >
+              <h4>
+                <span>taiko_GetSyncMode</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taiko_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taiko_GetSyncMode-content"
+            >
+              <p>RPC method GetSyncMode</p>
+
+              <p>GetSyncMode returns the node sync mode.</p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taiko_GetSyncMode"
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": "0x123456"
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card method" id="taiko_HeadL1Origin">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taiko_HeadL1Origin-content"
+            >
+              <h4>
+                <span>taiko_HeadL1Origin</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taiko_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taiko_HeadL1Origin-content"
+            >
+              <p>RPC method HeadL1Origin</p>
+
+              <p>
+                HeadL1Origin returns the latest L2 block's corresponding L1
+                origin.
+              </p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.blockID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l1BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l1BlockHeight</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l2BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taiko_HeadL1Origin"
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": {
+    "blockID": 10000,
+    "l1BlockHash": "0x123456",
+    "l1BlockHeight": 10000,
+    "l2BlockHash": "0x123456"
+  }
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card method" id="taiko_L1OriginByID">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taiko_L1OriginByID-content"
+            >
+              <h4>
+                <span>taiko_L1OriginByID</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taiko_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taiko_L1OriginByID-content"
+            >
+              <p>RPC method L1OriginByID</p>
+
+              <p>
+                L1OriginByID returns the L2 block's corresponding L1 origin.
+              </p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Parameters</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>params</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.blockID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td>
+                            Hexadecimal or decimal representation of a number.
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.blockID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l1BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l1BlockHeight</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l2BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taiko_L1OriginByID",
+  "params": {
+    "blockID": 10000
+  }
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": {
+    "blockID": 10000,
+    "l1BlockHash": "0x123456",
+    "l1BlockHeight": 10000,
+    "l2BlockHash": "0x123456"
+  }
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      $.expr[":"].contains = $.expr.createPseudo(function (arg) {
+        return function (elem) {
+          return $(elem).text().toUpperCase().indexOf(arg.toUpperCase()) >= 0;
+        };
+      });
+
+      $(".search-input").on("paste keyup search", (event) => {
+        const inputValue = event.target.value;
+
+        $(`a`).removeClass("disabled");
+
+        if (inputValue) {
+          $(`.card.method:contains("${inputValue}")`).removeClass("disabled");
+          $(`.card.method:contains("${inputValue}") .collapse`).collapse(
+            "show",
+          );
+          $(`.card.method:not(:contains("${inputValue}"))`).addClass(
+            "disabled",
+          );
+          $(`.card.method:not(:contains("${inputValue}")) .collapse`).collapse(
+            "hide",
+          );
+          $(`.card.method:not(:contains("${inputValue}"))`).each(
+            (index, element) => {
+              $(`a[href='#${element.id}']`).addClass("disabled");
+            },
+          );
+
+          document
+            .querySelector(".card.method:not(.disabled)")
+            .scrollIntoView();
+        } else {
+          $(".card.method").removeClass("disabled");
+          $(".card.method .collapse").collapse("show");
+        }
+      });
+    </script>
+  </body>
+</html>

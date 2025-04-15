@@ -1,0 +1,297 @@
+{
+  "$schema": "https://rawgit.com/mzernetsch/jrgen/master/jrgen-spec.schema.json",
+  "jrgen": "1.2",
+  "jsonrpc": "2.0",
+  "info": {
+    "title": "Taiko JSON-RPC API",
+    "description": [
+      "Auto-generated JSON-RPC API for Taiko backend."
+    ],
+    "version": "1.0"
+  },
+  "definitions": {
+    "*big.Int": {
+      "examples": [
+        10000
+      ],
+      "type": "integer"
+    },
+    "*math.HexOrDecimal256": {
+      "$ref": "#/definitions/*big.Int",
+      "description": "Hexadecimal or decimal representation of a number."
+    },
+    "*miner.PreBuiltTxList": {
+      "properties": {
+        "BytesLength": {
+          "examples": [
+            10000
+          ],
+          "type": "integer"
+        },
+        "EstimatedGasUsed": {
+          "examples": [
+            10000
+          ],
+          "type": "integer"
+        },
+        "TxList": {
+          "type": "array"
+        }
+      },
+      "required": [
+        "TxList",
+        "EstimatedGasUsed",
+        "BytesLength"
+      ],
+      "type": "object"
+    },
+    "*rawdb.L1Origin": {
+      "properties": {
+        "blockID": {
+          "$ref": "#/definitions/*big.Int"
+        },
+        "l1BlockHash": {
+          "examples": [
+            "0x123456"
+          ],
+          "type": "string"
+        },
+        "l1BlockHeight": {
+          "$ref": "#/definitions/*big.Int"
+        },
+        "l2BlockHash": {
+          "examples": [
+            "0x123456"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "blockID",
+        "l2BlockHash",
+        "l1BlockHeight",
+        "l1BlockHash"
+      ],
+      "type": "object"
+    }
+  },
+  "methods": {
+    "taikoAuth_SetHeadL1Origin": {
+      "summary": "RPC method SetHeadL1Origin",
+      "description": "SetHeadL1Origin sets the latest L2 block's corresponding L1 origin.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "blockID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "blockID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*big.Int"
+      }
+    },
+    "taikoAuth_TxPoolContent": {
+      "summary": "RPC method TxPoolContent",
+      "description": "TxPoolContent retrieves the transaction pool content with the given upper limits.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "baseFee": {
+            "$ref": "#/definitions/*big.Int"
+          },
+          "beneficiary": {
+            "examples": [
+              "0x123456"
+            ],
+            "type": "string"
+          },
+          "blockMaxGasLimit": {
+            "examples": [
+              10000
+            ],
+            "type": "integer"
+          },
+          "locals": {
+            "items": {
+              "examples": [
+                "0x123456"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "maxBytesPerTxList": {
+            "examples": [
+              10000
+            ],
+            "type": "integer"
+          },
+          "maxTransactionsLists": {
+            "examples": [
+              10000
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "beneficiary",
+          "baseFee",
+          "blockMaxGasLimit",
+          "maxBytesPerTxList",
+          "locals",
+          "maxTransactionsLists"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "items": {
+          "$ref": "#/definitions/*miner.PreBuiltTxList"
+        },
+        "type": "array"
+      }
+    },
+    "taikoAuth_TxPoolContentWithMinTip": {
+      "summary": "RPC method TxPoolContentWithMinTip",
+      "description": "TxPoolContentWithMinTip retrieves the transaction pool content with the given upper limits and minimum tip.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "baseFee": {
+            "$ref": "#/definitions/*big.Int"
+          },
+          "beneficiary": {
+            "examples": [
+              "0x123456"
+            ],
+            "type": "string"
+          },
+          "blockMaxGasLimit": {
+            "examples": [
+              10000
+            ],
+            "type": "integer"
+          },
+          "locals": {
+            "items": {
+              "examples": [
+                "0x123456"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "maxBytesPerTxList": {
+            "examples": [
+              10000
+            ],
+            "type": "integer"
+          },
+          "maxTransactionsLists": {
+            "examples": [
+              10000
+            ],
+            "type": "integer"
+          },
+          "minTip": {
+            "examples": [
+              10000
+            ],
+            "type": "integer"
+          }
+        },
+        "required": [
+          "beneficiary",
+          "baseFee",
+          "blockMaxGasLimit",
+          "maxBytesPerTxList",
+          "locals",
+          "maxTransactionsLists",
+          "minTip"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "items": {
+          "$ref": "#/definitions/*miner.PreBuiltTxList"
+        },
+        "type": "array"
+      }
+    },
+    "taikoAuth_UpdateL1Origin": {
+      "summary": "RPC method UpdateL1Origin",
+      "description": "UpdateL1Origin updates the L2 block's corresponding L1 origin.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "l1Origin": {
+            "$ref": "#/definitions/*rawdb.L1Origin"
+          }
+        },
+        "required": [
+          "l1Origin"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*rawdb.L1Origin"
+      }
+    },
+    "taiko_GetSyncMode": {
+      "summary": "RPC method GetSyncMode",
+      "description": "GetSyncMode returns the node sync mode.",
+      "tags": [
+        "taiko_"
+      ],
+      "result": {
+        "examples": [
+          "0x123456"
+        ],
+        "type": "string"
+      }
+    },
+    "taiko_HeadL1Origin": {
+      "summary": "RPC method HeadL1Origin",
+      "description": "HeadL1Origin returns the latest L2 block's corresponding L1 origin.",
+      "tags": [
+        "taiko_"
+      ],
+      "result": {
+        "$ref": "#/definitions/*rawdb.L1Origin"
+      }
+    },
+    "taiko_L1OriginByID": {
+      "summary": "RPC method L1OriginByID",
+      "description": "L1OriginByID returns the L2 block's corresponding L1 origin.",
+      "tags": [
+        "taiko_"
+      ],
+      "params": {
+        "properties": {
+          "blockID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "blockID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*rawdb.L1Origin"
+      }
+    }
+  }
+}
