@@ -5,6 +5,8 @@ on:
     branches: [taiko]
     tags:
       - "v*"
+  pull_request:
+    branches: [update-workflow]
 
 env:
   REGISTRY_IMAGE: us-docker.pkg.dev/evmchain/images/taiko-geth
@@ -76,7 +78,7 @@ jobs:
 
       - name: Build and push by digest
         id: build
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           cache-from: type=gha
