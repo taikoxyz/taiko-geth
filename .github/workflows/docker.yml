@@ -2,11 +2,9 @@ name: "Push multi-arch docker image to GAR"
 
 on:
   push:
-    branches: [taiko, update-workflow]
+    branches: [taiko]
     tags:
       - "v*"
-  pull_request:
-    branches: [update-workflow]
 
 env:
   REGISTRY_IMAGE: us-docker.pkg.dev/evmchain/images/taiko-geth
