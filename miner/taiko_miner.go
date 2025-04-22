@@ -23,8 +23,9 @@ func (miner *Miner) SealBlockWith(
 	blkMeta *engine.BlockMetadata,
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
+	witness bool,
 ) (*types.Block, error) {
-	return miner.sealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdrawals)
+	return miner.sealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdrawals, witness)
 }
 
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given limits.

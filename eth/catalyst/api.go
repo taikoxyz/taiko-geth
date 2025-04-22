@@ -447,6 +447,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				payloadAttributes.BlockMetadata,
 				payloadAttributes.BaseFeePerGas,
 				payloadAttributes.Withdrawals,
+				payloadWitness,
 			)
 			if err != nil {
 				log.Error("Failed to create sealing block", "err", err)
@@ -479,7 +480,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
 				return valid(&id), nil
 			}
-			payload, err := api.eth.Miner().BuildPayload(args, false)
+			payload, err := api.eth.Miner().BuildPayload(args, payloadWitness)
 			if err != nil {
 				log.Error("Failed to build payload", "err", err)
 				return valid(nil), engine.InvalidPayloadAttributes.With(err)

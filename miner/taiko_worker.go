@@ -209,6 +209,7 @@ func (w *Miner) sealBlockWith(
 	blkMeta *engine.BlockMetadata,
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
+	witness bool,
 ) (*types.Block, error) {
 	// Decode transactions bytes.
 	var txs types.Transactions
@@ -235,7 +236,7 @@ func (w *Miner) sealBlockWith(
 	// Set extraData
 	w.SetExtra(blkMeta.ExtraData)
 
-	env, err := w.prepareWork(params, false)
+	env, err := w.prepareWork(params, witness)
 	if err != nil {
 		return nil, err
 	}
