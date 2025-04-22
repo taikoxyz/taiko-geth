@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -24,7 +25,7 @@ func (miner *Miner) SealBlockWith(
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
 	witness bool,
-) (*types.Block, error) {
+) (*types.Block, *stateless.Witness, error) {
 	return miner.sealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdrawals, witness)
 }
 

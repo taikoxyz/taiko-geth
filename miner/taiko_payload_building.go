@@ -3,19 +3,21 @@ package miner
 import (
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
 // SetFullBlock updates the full-block to the given block.
-func (payload *Payload) SetFullBlock(block *types.Block, fees *big.Int) {
+func (payload *Payload) SetFullBlock(block *types.Block, witness *stateless.Witness, fees *big.Int) {
 	payload.lock.Lock()
 	defer payload.lock.Unlock()
 
 	go payload.afterSetFullBlock()
 
 	payload.full = block
+	payload.fullWitness = witness
 	payload.fullFees = fees
 
 	feesInEther := new(big.Float).Quo(new(big.Float).SetInt(fees), big.NewFloat(params.Ether))

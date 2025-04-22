@@ -441,7 +441,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		if isTaiko {
 			// No need to check payloadAttribute here, because all its fields are
 			// marked as required.
-			block, err := api.eth.Miner().SealBlockWith(
+			block, witness, err := api.eth.Miner().SealBlockWith(
 				update.HeadBlockHash,
 				payloadAttributes.Timestamp,
 				payloadAttributes.BlockMetadata,
@@ -486,7 +486,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				return valid(nil), engine.InvalidPayloadAttributes.With(err)
 			}
 
-			payload.SetFullBlock(block, common.Big0)
+			payload.SetFullBlock(block, witness, common.Big0)
 
 			api.localBlocks.put(id, payload)
 

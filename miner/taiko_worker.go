@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -210,16 +211,16 @@ func (w *Miner) sealBlockWith(
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
 	witness bool,
-) (*types.Block, error) {
+) (*types.Block, *stateless.Witness, error) {
 	// Decode transactions bytes.
 	var txs types.Transactions
 	if err := rlp.DecodeBytes(blkMeta.TxList, &txs); err != nil {
-		return nil, fmt.Errorf("failed to decode txList: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode txList: %w", err)
 	}
 
 	if len(txs) == 0 {
 		// A L2 block needs to have have at least one `TaikoL2.anchor` / `TaikoL2.anchorV2` / `TaikoL2.anchorV3`.
-		return nil, fmt.Errorf("too less transactions in the block")
+		return nil, nil, fmt.Errorf("too less transactions in the block")
 	}
 
 	params := &generateParams{
@@ -238,7 +239,7 @@ func (w *Miner) sealBlockWith(
 
 	env, err := w.prepareWork(params, witness)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	env.header.GasLimit = blkMeta.GasLimit
@@ -252,7 +253,7 @@ func (w *Miner) sealBlockWith(
 	for i, tx := range txs {
 		if i == 0 {
 			if err := tx.MarkAsAnchor(); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 		// Skip blob transactions
@@ -283,16 +284,16 @@ func (w *Miner) sealBlockWith(
 		env.receipts,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	results := make(chan *types.Block, 1)
 	if err := w.engine.Seal(w.chain, block, results, nil); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	block = <-results
 
-	return block, nil
+	return block, env.witness, nil
 }
 
 // getPendingTxs fetches the pending transactions from tx pool.

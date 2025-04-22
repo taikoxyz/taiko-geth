@@ -49,7 +49,7 @@ func TestSetFullBlock_AvoidPanic(t *testing.T) {
 	block := newTestBlock()
 	// expect not to panic sending to payload.stop
 	// now that done is closed
-	payload.SetFullBlock(block, fees)
+	payload.SetFullBlock(block, nil, fees)
 }
 
 func TestAfterSetFullBlock_Panic_DoneChannelNotSent(t *testing.T) {
@@ -129,7 +129,7 @@ func TestSetFullBlock(t *testing.T) {
 	fees := big.NewInt(1)
 
 	block := newTestBlock()
-	payload.SetFullBlock(block, fees)
+	payload.SetFullBlock(block, nil, fees)
 
 	assert.Equal(t, block, payload.full)
 	assert.Equal(t, fees, payload.fullFees)
