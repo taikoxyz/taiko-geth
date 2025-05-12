@@ -69,7 +69,7 @@ func newPersistedPayloadQueue(dbPath string) (*persistedPayloadQueue, error) {
 		}
 	}
 	q := &persistedPayloadQueue{
-		payloads: make([]*payloadQueueItem, 0, maxTrackedPayloads),
+		payloads: make([]*payloadQueueItem, maxTrackedPayloads),
 		db:       db,
 	}
 	// Load from DB
