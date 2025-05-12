@@ -46,12 +46,18 @@ import (
 )
 
 // Register adds the engine API to the full node.
-func Register(stack *node.Node, backend *eth.Ethereum) error {
+func Register(stack *node.Node, backend *eth.Ethereum, persistedPayloadQueueDbPath string) error {
 	log.Warn("Engine API enabled", "protocol", "eth")
+
+	consensusAPI, err := NewConsensusAPI(backend, persistedPayloadQueueDbPath)
+	if err != nil {
+		return err
+	}
+
 	stack.RegisterAPIs([]rpc.API{
 		{
 			Namespace:     "engine",
-			Service:       NewConsensusAPI(backend),
+			Service:       consensusAPI,
 			Authenticated: true,
 		},
 	})
@@ -118,8 +124,9 @@ var caps = []string{
 type ConsensusAPI struct {
 	eth *eth.Ethereum
 
-	remoteBlocks *headerQueue  // Cache of remote payloads received
-	localBlocks  *payloadQueue // Cache of local payloads generated
+	remoteBlocks *headerQueue // Cache of remote payloads received
+	// CHANGE(taiko): persist payload queue
+	localBlocks *persistedPayloadQueue // Cache of local payloads generated
 
 	// The forkchoice update and new payload method require us to return the
 	// latest valid hash in an invalid chain. To support that return, we need
@@ -160,26 +167,38 @@ type ConsensusAPI struct {
 
 // NewConsensusAPI creates a new consensus api for the given backend.
 // The underlying blockchain needs to have a valid terminal total difficulty set.
-func NewConsensusAPI(eth *eth.Ethereum) *ConsensusAPI {
-	api := newConsensusAPIWithoutHeartbeat(eth)
+// CHANGE(taiko): added payloadQueueDbPath to persist payload queue.
+func NewConsensusAPI(eth *eth.Ethereum, payloadQueueDbPath string) (*ConsensusAPI, error) {
+	api, err := newConsensusAPIWithoutHeartbeat(eth, payloadQueueDbPath)
+	if err != nil {
+		return nil, err
+	}
+
 	go api.heartbeat()
-	return api
+	return api, nil
 }
 
 // newConsensusAPIWithoutHeartbeat creates a new consensus api for the SimulatedBeacon Node.
-func newConsensusAPIWithoutHeartbeat(eth *eth.Ethereum) *ConsensusAPI {
+// CHANGE(taiko): added payloadQueueDbPath to persist payload queue. return error
+func newConsensusAPIWithoutHeartbeat(eth *eth.Ethereum, payloadQueueDbpath string) (*ConsensusAPI, error) {
 	if eth.BlockChain().Config().TerminalTotalDifficulty == nil {
 		log.Warn("Engine API started but chain not configured for merge yet")
 	}
+
+	payloadQueue, err := newPersistedPayloadQueue(payloadQueueDbpath)
+	if err != nil {
+		return nil, err
+	}
+
 	api := &ConsensusAPI{
 		eth:               eth,
 		remoteBlocks:      newHeaderQueue(),
-		localBlocks:       newPayloadQueue(),
+		localBlocks:       payloadQueue,
 		invalidBlocksHits: make(map[common.Hash]int),
 		invalidTipsets:    make(map[common.Hash]*types.Header),
 	}
 	eth.Downloader().SetBadBlockCallback(api.setInvalidAncestor)
-	return api
+	return api, nil
 }
 
 // ForkchoiceUpdatedV1 has several responsibilities:

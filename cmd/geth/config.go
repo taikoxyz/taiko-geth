@@ -234,6 +234,11 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 		utils.RegisterFullSyncTester(stack, eth, common.BytesToHash(hex))
 	}
 
+	var payloadQueueDbPath string = ""
+	if ctx.IsSet(utils.PayloadQueueDatabasePathFlag.Name) {
+		payloadQueueDbPath = ctx.String(utils.PayloadQueueDatabasePathFlag.Name)
+	}
+
 	if ctx.IsSet(utils.DeveloperFlag.Name) {
 		// Start dev mode.
 		simBeacon, err := catalyst.NewSimulatedBeacon(ctx.Uint64(utils.DeveloperPeriodFlag.Name), eth)
@@ -245,13 +250,20 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 	} else if ctx.IsSet(utils.BeaconApiFlag.Name) {
 		// Start blsync mode.
 		srv := rpc.NewServer()
-		srv.RegisterName("engine", catalyst.NewConsensusAPI(eth))
+
+		// CHANGE(taiko): returns err, add dbpath
+		consensusAPI, err := catalyst.NewConsensusAPI(eth, payloadQueueDbPath)
+		if err != nil {
+			utils.Fatalf("failed to register blsync service: %v", err)
+		}
+		srv.RegisterName("engine", consensusAPI)
 		blsyncer := blsync.NewClient(utils.MakeBeaconLightConfig(ctx))
 		blsyncer.SetEngineRPC(rpc.DialInProc(srv))
 		stack.RegisterLifecycle(blsyncer)
 	} else {
 		// Launch the engine API for interacting with external consensus client.
-		err := catalyst.Register(stack, eth)
+		// CHANGE(taiko): add payloadQueueDbPath
+		err := catalyst.Register(stack, eth, payloadQueueDbPath)
 		if err != nil {
 			utils.Fatalf("failed to register catalyst service: %v", err)
 		}

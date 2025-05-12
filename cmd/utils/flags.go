@@ -95,6 +95,13 @@ var (
 		Value:    flags.DirectoryString(node.DefaultDataDir()),
 		Category: flags.EthCategory,
 	}
+	// CHANGE(taiko): add payloadQueueDatabasePath
+	PayloadQueueDatabasePathFlag = &flags.DirectoryFlag{
+		Name:     "payloadqueue.datadir",
+		Usage:    "Data directory for the payload queue database",
+		Value:    "",
+		Category: flags.EthCategory,
+	}
 	RemoteDBFlag = &cli.StringFlag{
 		Name:     "remotedb",
 		Usage:    "URL for remote database",

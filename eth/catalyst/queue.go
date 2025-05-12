@@ -23,82 +23,86 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/miner"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/util"
 )
 
-// maxTrackedPayloads is the maximum number of prepared payloads the execution
-// engine tracks before evicting old ones. Ideally we should only ever track the
-// latest one; but have a slight wiggle room for non-ideal conditions.
-const maxTrackedPayloads = 768 // CHANGE(taiko): change to use `maxBlocksPerBatch`
+const (
+	maxTrackedPayloads = 768 // CHANGE(taiko): change to use `maxBlocksPerBatch`
+	maxTrackedHeaders  = 96
 
-// maxTrackedHeaders is the maximum number of executed payloads the execution
-// engine tracks before evicting old ones. These are tracked outside the chain
-// during initial sync to allow ForkchoiceUpdate to reference past blocks via
-// hashes only. For the sync target it would be enough to track only the latest
-// header, but snap sync also needs the latest finalized height for the ancient
-// limit.
-const maxTrackedHeaders = 96
+	// CHANGE(taiko): payload prefix for levelsDB
+	payloadPrefix = "payload:"
+)
 
-// payloadQueueItem represents an id->payload tuple to store until it's retrieved
-// or evicted.
+// payloadQueueItem represents an id->payload tuple to store until it's retrieved or evicted.
 type payloadQueueItem struct {
 	id      engine.PayloadID
 	payload *miner.Payload
 }
 
-// payloadQueue tracks the latest handful of constructed payloads to be retrieved
-// by the beacon chain if block production is requested.
-type payloadQueue struct {
+// headerQueueItem represents a hash->header tuple to store until it's retrieved or evicted.
+type headerQueueItem struct {
+	hash   common.Hash
+	header *types.Header
+}
+
+// persistedPayloadQueue tracks payloads in memory and persists them to LevelDB.
+// CHANGE(taiko): change payloadQueue to persisted
+type persistedPayloadQueue struct {
 	payloads []*payloadQueueItem
+	db       *leveldb.DB
 	lock     sync.RWMutex
 }
 
-// newPayloadQueue creates a pre-initialized queue with a fixed number of slots
-// all containing empty items.
-func newPayloadQueue() *payloadQueue {
-	return &payloadQueue{
-		payloads: make([]*payloadQueueItem, maxTrackedPayloads),
-	}
-}
+// CHANGE(taiko): persisted payload queue using levels DB
+// newPersistedPayloadQueue opens (or creates) a LevelDB at dbPath and loads existing entries.
+func newPersistedPayloadQueue(dbPath string) (*persistedPayloadQueue, error) {
+	var db *leveldb.DB
+	var err error
 
-// put inserts a new payload into the queue at the given id.
-func (q *payloadQueue) put(id engine.PayloadID, payload *miner.Payload) {
-	q.lock.Lock()
-	defer q.lock.Unlock()
-
-	copy(q.payloads[1:], q.payloads)
-	q.payloads[0] = &payloadQueueItem{
-		id:      id,
-		payload: payload,
-	}
-}
-
-// get retrieves a previously stored payload item or nil if it does not exist.
-func (q *payloadQueue) get(id engine.PayloadID, full bool) *engine.ExecutionPayloadEnvelope {
-	q.lock.RLock()
-	defer q.lock.RUnlock()
-
-	for _, item := range q.payloads {
-		if item == nil {
-			return nil // no more items
+	if dbPath != "" {
+		db, err = leveldb.OpenFile(dbPath, nil)
+		if err != nil {
+			return nil, err
 		}
-		if item.id == id {
-			if !full {
-				return item.payload.Resolve()
+	}
+	q := &persistedPayloadQueue{
+		payloads: make([]*payloadQueueItem, 0, maxTrackedPayloads),
+		db:       db,
+	}
+	// Load from DB
+	if db != nil {
+		iter := db.NewIterator(util.BytesPrefix([]byte(payloadPrefix)), nil)
+		defer iter.Release()
+		for iter.Next() {
+			key := iter.Key()
+			data := iter.Value()
+
+			id := engine.PayloadID(key[len(payloadPrefix):])
+
+			p := new(miner.Payload)
+			if err := rlp.DecodeBytes(data, p); err != nil {
+				continue
 			}
-			return item.payload.ResolveFull()
+			q.payloads = append(q.payloads, &payloadQueueItem{id: id, payload: p})
+			if len(q.payloads) >= maxTrackedPayloads {
+				break
+			}
 		}
 	}
-	return nil
+
+	return q, nil
 }
 
-// has checks if a particular payload is already tracked.
-func (q *payloadQueue) has(id engine.PayloadID) bool {
+func (q *persistedPayloadQueue) has(id engine.PayloadID) bool {
 	q.lock.RLock()
 	defer q.lock.RUnlock()
 
 	for _, item := range q.payloads {
 		if item == nil {
-			return false
+			break
 		}
 		if item.id == id {
 			return true
@@ -107,11 +111,65 @@ func (q *payloadQueue) has(id engine.PayloadID) bool {
 	return false
 }
 
-// headerQueueItem represents an hash->header tuple to store until it's retrieved
-// or evicted.
-type headerQueueItem struct {
-	hash   common.Hash
-	header *types.Header
+// put inserts a new payload into memory and persists it to LevelDB.
+func (q *persistedPayloadQueue) put(id engine.PayloadID, payload *miner.Payload) {
+	q.lock.Lock()
+	defer q.lock.Unlock()
+
+	copy(q.payloads[1:], q.payloads)
+	q.payloads[0] = &payloadQueueItem{id: id, payload: payload}
+
+	key := []byte(payloadPrefix + id.String())
+	data, err := rlp.EncodeToBytes(payload)
+	if err != nil {
+		return
+	}
+
+	if q.db != nil {
+		if err := q.db.Put(key, data, nil); err != nil {
+			return
+		}
+	}
+}
+
+// get retrieves a payload from memory or falls back to LevelDB.
+func (q *persistedPayloadQueue) get(id engine.PayloadID, full bool) *engine.ExecutionPayloadEnvelope {
+	q.lock.RLock()
+
+	defer q.lock.RUnlock()
+
+	for _, item := range q.payloads {
+		if item == nil {
+			break
+		}
+		if item.id == id {
+			if !full {
+				return item.payload.Resolve()
+			}
+			return item.payload.ResolveFull()
+		}
+	}
+
+	// Fallback to DB
+	if q.db != nil {
+		key := []byte(payloadPrefix + id.String())
+		data, err := q.db.Get(key, nil)
+		if err != nil {
+			return nil
+		}
+
+		p := new(miner.Payload)
+		if err := rlp.DecodeBytes(data, p); err != nil {
+			return nil
+		}
+		if !full {
+			return p.Resolve()
+		}
+
+		return p.ResolveFull()
+	}
+
+	return nil
 }
 
 // headerQueue tracks the latest handful of constructed headers to be retrieved

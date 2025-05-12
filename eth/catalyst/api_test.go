@@ -47,6 +47,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/stretchr/testify/assert"
 )
 
 var (
@@ -112,7 +113,8 @@ func TestEth2AssembleBlock(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, blocks)
 	defer n.Close()
 
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 	signer := types.NewEIP155Signer(ethservice.BlockChain().Config().ChainID)
 	tx, err := types.SignTx(types.NewTransaction(uint64(10), blocks[9].Coinbase(), big.NewInt(1000), params.TxGas, big.NewInt(params.InitialBaseFee), nil), signer, testKey)
 	if err != nil {
@@ -151,7 +153,8 @@ func TestEth2AssembleBlockWithAnotherBlocksTxs(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, blocks[:9])
 	defer n.Close()
 
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 
 	// Put the 10th block's tx in the pool and produce a new block
 	txs := blocks[9].Transactions()
@@ -173,7 +176,8 @@ func TestEth2PrepareAndGetPayload(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, blocks[:9])
 	defer n.Close()
 
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 
 	// Put the 10th block's tx in the pool and produce a new block
 	txs := blocks[9].Transactions()
@@ -186,7 +190,7 @@ func TestEth2PrepareAndGetPayload(t *testing.T) {
 		SafeBlockHash:      common.Hash{},
 		FinalizedBlockHash: common.Hash{},
 	}
-	_, err := api.ForkchoiceUpdatedV1(fcState, &blockParams)
+	_, err = api.ForkchoiceUpdatedV1(fcState, &blockParams)
 	if err != nil {
 		t.Fatalf("error preparing payload, err=%v", err)
 	}
@@ -238,8 +242,10 @@ func TestInvalidPayloadTimestamp(t *testing.T) {
 	genesis, preMergeBlocks := generateMergeChain(10, false)
 	n, ethservice := startEthService(t, genesis, preMergeBlocks)
 	defer n.Close()
+
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 	var (
-		api    = NewConsensusAPI(ethservice)
 		parent = ethservice.BlockChain().CurrentBlock()
 	)
 	tests := []struct {
@@ -280,8 +286,10 @@ func TestEth2NewBlock(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, preMergeBlocks)
 	defer n.Close()
 
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
+
 	var (
-		api    = NewConsensusAPI(ethservice)
 		parent = preMergeBlocks[len(preMergeBlocks)-1]
 
 		// This EVM code generates a log when the contract is created.
@@ -473,7 +481,8 @@ func TestFullAPI(t *testing.T) {
 }
 
 func setupBlocks(t *testing.T, ethservice *eth.Ethereum, n int, parent *types.Header, callback func(parent *types.Header), withdrawals [][]*types.Withdrawal, beaconRoots []common.Hash) []*types.Header {
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 	var blocks []*types.Header
 	for i := 0; i < n; i++ {
 		callback(parent)
@@ -521,7 +530,8 @@ func TestExchangeTransitionConfig(t *testing.T) {
 	defer n.Close()
 
 	// invalid ttd
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 	config := engine.TransitionConfigurationV1{
 		TerminalTotalDifficulty: (*hexutil.Big)(big.NewInt(0)),
 		TerminalBlockHash:       common.Hash{},
@@ -581,8 +591,10 @@ func TestNewPayloadOnInvalidChain(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, preMergeBlocks)
 	defer n.Close()
 
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
+
 	var (
-		api    = NewConsensusAPI(ethservice)
 		parent = ethservice.BlockChain().CurrentBlock()
 		signer = types.LatestSigner(ethservice.BlockChain().Config())
 		// This EVM code generates a log when the contract is created.
@@ -685,7 +697,8 @@ func TestEmptyBlocks(t *testing.T) {
 	defer n.Close()
 
 	commonAncestor := ethservice.BlockChain().CurrentBlock()
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 
 	// Setup 10 blocks on the canonical chain
 	setupBlocks(t, ethservice, 10, commonAncestor, func(parent *types.Header) {}, nil, nil)
@@ -811,8 +824,10 @@ func TestTrickRemoteBlockCache(t *testing.T) {
 	}
 	nodeA.Server().AddPeer(nodeB.Server().Self())
 	nodeB.Server().AddPeer(nodeA.Server().Self())
-	apiA := NewConsensusAPI(ethserviceA)
-	apiB := NewConsensusAPI(ethserviceB)
+	apiA, err := NewConsensusAPI(ethserviceA, "")
+	assert.Nil(t, err)
+	apiB, err := NewConsensusAPI(ethserviceB, "")
+	assert.Nil(t, err)
 
 	commonAncestor := ethserviceA.BlockChain().CurrentBlock()
 
@@ -869,7 +884,8 @@ func TestInvalidBloom(t *testing.T) {
 	defer n.Close()
 
 	commonAncestor := ethservice.BlockChain().CurrentBlock()
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 
 	// Setup 10 blocks on the canonical chain
 	setupBlocks(t, ethservice, 10, commonAncestor, func(parent *types.Header) {}, nil, nil)
@@ -894,8 +910,9 @@ func TestSimultaneousNewBlock(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, preMergeBlocks)
 	defer n.Close()
 
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 	var (
-		api    = NewConsensusAPI(ethservice)
 		parent = preMergeBlocks[len(preMergeBlocks)-1]
 	)
 	for i := 0; i < 10; i++ {
@@ -985,7 +1002,8 @@ func TestWithdrawals(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, blocks)
 	defer n.Close()
 
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 
 	// 10: Build Shanghai block with no withdrawals.
 	parent := ethservice.BlockChain().CurrentHeader()
@@ -1102,7 +1120,8 @@ func TestNilWithdrawals(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, blocks)
 	defer n.Close()
 
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 	parent := ethservice.BlockChain().CurrentHeader()
 	aa := common.Address{0xaa}
 
@@ -1298,7 +1317,8 @@ func allBodies(blocks []*types.Block) []*types.Body {
 
 func TestGetBlockBodiesByHash(t *testing.T) {
 	node, eth, blocks := setupBodies(t)
-	api := NewConsensusAPI(eth)
+	api, err := NewConsensusAPI(eth, "")
+	assert.Nil(t, err)
 	defer node.Close()
 
 	tests := []struct {
@@ -1354,7 +1374,8 @@ func TestGetBlockBodiesByHash(t *testing.T) {
 
 func TestGetBlockBodiesByRange(t *testing.T) {
 	node, eth, blocks := setupBodies(t)
-	api := NewConsensusAPI(eth)
+	api, err := NewConsensusAPI(eth, "")
+	assert.Nil(t, err)
 	defer node.Close()
 
 	tests := []struct {
@@ -1435,7 +1456,8 @@ func TestGetBlockBodiesByRange(t *testing.T) {
 
 func TestGetBlockBodiesByRangeInvalidParams(t *testing.T) {
 	node, eth, _ := setupBodies(t)
-	api := NewConsensusAPI(eth)
+	api, err := NewConsensusAPI(eth, "")
+	assert.Nil(t, err)
 	defer node.Close()
 	tests := []struct {
 		start hexutil.Uint64
@@ -1552,7 +1574,8 @@ func TestParentBeaconBlockRoot(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, blocks)
 	defer n.Close()
 
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 
 	// 11: Build Shanghai block with no withdrawals.
 	parent := ethservice.BlockChain().CurrentHeader()
@@ -1635,7 +1658,8 @@ func TestWitnessCreationAndConsumption(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, blocks[:9])
 	defer n.Close()
 
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+	assert.Nil(t, err)
 
 	// Put the 10th block's tx in the pool and produce a new block
 	txs := blocks[9].Transactions()
@@ -1651,7 +1675,7 @@ func TestWitnessCreationAndConsumption(t *testing.T) {
 		SafeBlockHash:      common.Hash{},
 		FinalizedBlockHash: common.Hash{},
 	}
-	_, err := api.ForkchoiceUpdatedWithWitnessV3(fcState, &blockParams)
+	_, err = api.ForkchoiceUpdatedWithWitnessV3(fcState, &blockParams)
 	if err != nil {
 		t.Fatalf("error preparing payload, err=%v", err)
 	}
@@ -1727,7 +1751,10 @@ func TestGetClientVersion(t *testing.T) {
 	n, ethservice := startEthService(t, genesis, preMergeBlocks)
 	defer n.Close()
 
-	api := NewConsensusAPI(ethservice)
+	api, err := NewConsensusAPI(ethservice, "")
+
+	assert.Nil(t, err)
+
 	info := engine.ClientVersionV1{
 		Code:    "TT",
 		Name:    "test",
