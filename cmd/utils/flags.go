@@ -955,6 +955,8 @@ var (
 	// DatabaseFlags is the flag group of all database flags.
 	DatabaseFlags = []cli.Flag{
 		DataDirFlag,
+		// CHANGE(taiko): add flag
+		PayloadQueueDatabasePathFlag,
 		AncientFlag,
 		RemoteDBFlag,
 		DBEngineFlag,
