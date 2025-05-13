@@ -35,6 +35,7 @@ func TestL1Origin(t *testing.T) {
 	testL1Origin := &L1Origin{
 		BlockID:            randomBigInt(),
 		L2BlockHash:        randomHash(),
+		// L1BlockHeight is intentionally set to nil to represent a value of zero for legacy behavior.
 		L1BlockHeight:      nil,
 		L1BlockHash:        randomHash(),
 		BuildPayloadArgsID: [8]byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8},
