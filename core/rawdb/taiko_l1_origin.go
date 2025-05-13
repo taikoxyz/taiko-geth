@@ -85,10 +85,10 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 		// If decoding legacy version succeeds, manually
 		// construct the new L1Origin with default values for the new fields.
 		l1Origin = &L1Origin{
-			BlockID:            l1OriginLegacy.BlockID,
-			L2BlockHash:        l1OriginLegacy.L2BlockHash,
-			L1BlockHeight:      l1OriginLegacy.L1BlockHeight,
-			L1BlockHash:        l1OriginLegacy.L1BlockHash,
+			BlockID:       l1OriginLegacy.BlockID,
+			L2BlockHash:   l1OriginLegacy.L2BlockHash,
+			L1BlockHeight: l1OriginLegacy.L1BlockHeight,
+			L1BlockHash:   l1OriginLegacy.L1BlockHash,
 			// Set BuildPayloadArgsID to an empty hash as the intended default for legacy L1Origin conversions.
 			BuildPayloadArgsID: common.Hash{},
 		}
