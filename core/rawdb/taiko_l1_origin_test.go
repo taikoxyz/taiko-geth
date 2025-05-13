@@ -33,8 +33,8 @@ func randomHash() common.Hash {
 func TestL1Origin(t *testing.T) {
 	db := NewMemoryDatabase()
 	testL1Origin := &L1Origin{
-		BlockID:            randomBigInt(),
-		L2BlockHash:        randomHash(),
+		BlockID:     randomBigInt(),
+		L2BlockHash: randomHash(),
 		// L1BlockHeight is intentionally set to nil to represent a value of zero for legacy behavior.
 		L1BlockHeight:      nil,
 		L1BlockHash:        randomHash(),
