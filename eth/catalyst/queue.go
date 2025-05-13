@@ -31,7 +31,6 @@ import (
 // CHANGE(taiko): payload prefix for levelsDB
 const payloadPrefix = "payload:"
 
-
 // maxTrackedPayloads is the maximum number of prepared payloads the execution
 // engine tracks before evicting old ones. Ideally we should only ever track the
 // latest one; but have a slight wiggle room for non-ideal conditions.
@@ -121,23 +120,29 @@ func (q *persistedPayloadQueue) has(id engine.PayloadID) bool {
 	return false
 }
 
-// put inserts a new payload into memory and persists it to LevelDB.
+// put inserts a new payload into the queue and persists it, evicting old entries
+// from both memory and LevelDB to keep the DB size bounded.
 func (q *persistedPayloadQueue) put(id engine.PayloadID, payload *miner.Payload) {
 	q.lock.Lock()
 	defer q.lock.Unlock()
 
-	copy(q.payloads[1:], q.payloads)
-	q.payloads[0] = &payloadQueueItem{id: id, payload: payload}
-
-	key := []byte(payloadPrefix + id.String())
-	data, err := rlp.EncodeToBytes(payload)
-	if err != nil {
-		return
+	// Evict oldest from memory & DB if at capacity
+	if len(q.payloads) >= maxTrackedPayloads {
+		oldest := q.payloads[len(q.payloads)-1]
+		if q.db != nil && oldest != nil {
+			q.db.Delete([]byte(payloadPrefix+oldest.id.String()), nil)
+		}
+		q.payloads = q.payloads[:len(q.payloads)-1]
 	}
 
+	// Prepend new entry in-memory
+	q.payloads = append([]*payloadQueueItem{{id: id, payload: payload}}, q.payloads...)
+
+	// Persist the new payload to DB
 	if q.db != nil {
-		if err := q.db.Put(key, data, nil); err != nil {
-			return
+		key := []byte(payloadPrefix + id.String())
+		if data, err := rlp.EncodeToBytes(payload); err == nil {
+			q.db.Put(key, data, nil)
 		}
 	}
 }
