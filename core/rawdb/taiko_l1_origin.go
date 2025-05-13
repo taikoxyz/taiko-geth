@@ -33,7 +33,7 @@ type L1Origin struct {
 	L2BlockHash        common.Hash `json:"l2BlockHash"`
 	L1BlockHeight      *big.Int    `json:"l1BlockHeight" rlp:"optional"`
 	L1BlockHash        common.Hash `json:"l1BlockHash" rlp:"optional"`
-	BuildPayloadArgsID common.Hash `json:"buildPayloadArgsID" rlp:"optional"`
+	BuildPayloadArgsID [8]byte     `json:"buildPayloadArgsID" rlp:"optional"`
 }
 
 // L1OriginLegacy represents a legacy L1Origin of a L2 block.
@@ -90,7 +90,7 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 			L1BlockHeight: l1OriginLegacy.L1BlockHeight,
 			L1BlockHash:   l1OriginLegacy.L1BlockHash,
 			// Set BuildPayloadArgsID to an empty hash as the intended default for legacy L1Origin conversions.
-			BuildPayloadArgsID: common.Hash{},
+			BuildPayloadArgsID: [8]byte{},
 		}
 	}
 

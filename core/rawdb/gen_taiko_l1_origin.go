@@ -20,7 +20,7 @@ func (l L1Origin) MarshalJSON() ([]byte, error) {
 		L2BlockHash        common.Hash           `json:"l2BlockHash"`
 		L1BlockHeight      *math.HexOrDecimal256 `json:"l1BlockHeight" rlp:"optional"`
 		L1BlockHash        common.Hash           `json:"l1BlockHash" rlp:"optional"`
-		BuildPayloadArgsID common.Hash           `json:"buildPayloadArgsID" rlp:"optional"`
+		BuildPayloadArgsID [8]byte               `json:"buildPayloadArgsID" rlp:"optional"`
 	}
 	var enc L1Origin
 	enc.BlockID = (*math.HexOrDecimal256)(l.BlockID)
@@ -38,7 +38,7 @@ func (l *L1Origin) UnmarshalJSON(input []byte) error {
 		L2BlockHash        *common.Hash          `json:"l2BlockHash"`
 		L1BlockHeight      *math.HexOrDecimal256 `json:"l1BlockHeight" rlp:"optional"`
 		L1BlockHash        *common.Hash          `json:"l1BlockHash" rlp:"optional"`
-		BuildPayloadArgsID *common.Hash          `json:"buildPayloadArgsID" rlp:"optional"`
+		BuildPayloadArgsID *[8]byte              `json:"buildPayloadArgsID" rlp:"optional"`
 	}
 	var dec L1Origin
 	if err := json.Unmarshal(input, &dec); err != nil {
