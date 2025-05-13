@@ -50,6 +50,7 @@ type l1OriginMarshaling struct {
 }
 
 // IsPreconfBlock returns true if the L1Origin is for a preconfirmation block.
+// A preconfirmation block is defined as one where the L1BlockHeight is either nil or zero.
 func (l *L1Origin) IsPreconfBlock() bool {
 	return l.L1BlockHeight == nil || l.L1BlockHeight.Cmp(common.Big0) == 0
 }
