@@ -164,6 +164,10 @@ func (w *Miner) buildTransactionsLists(
 		txsLists = append(txsLists, preBuiltTxList)
 	}
 
+	log.Info("buildTransactionsLists: commit transactions finished",
+		"txLists", len(txsLists),
+	)
+
 	return txsLists, nil
 }
 
