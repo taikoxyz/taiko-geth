@@ -64,12 +64,12 @@ func (w *Miner) buildTransactionsLists(
 		txpool.PendingFilter{
 			MinTip:       uint256.NewInt(minTip),
 			BaseFee:      uint256.MustFromBig(baseFee),
-			OnlyPlainTxs: false,
+			OnlyPlainTxs: true,
 		},
 	)) == 0 {
 		log.Warn("buildTransactionsLists: tx pool is empty",
 			"minTip", minTip,
-			"onlyPlainTxs", false,
+			"onlyPlainTxs", true,
 		)
 		return txsLists, nil
 	}
