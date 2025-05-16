@@ -59,17 +59,22 @@ func (w *Miner) buildTransactionsLists(
 		return nil, fmt.Errorf("failed to find current head")
 	}
 
+	onlyPlainTxs := true
+
+	if minTip == 0 {
+		onlyPlainTxs = false
+	}
 	// Check if tx pool is empty at first.
 	if len(w.txpool.Pending(
 		txpool.PendingFilter{
 			MinTip:       uint256.NewInt(minTip),
 			BaseFee:      uint256.MustFromBig(baseFee),
-			OnlyPlainTxs: true,
+			OnlyPlainTxs: onlyPlainTxs,
 		},
 	)) == 0 {
 		log.Warn("buildTransactionsLists: tx pool is empty",
 			"minTip", minTip,
-			"onlyPlainTxs", true,
+			"onlyPlainTxs", onlyPlainTxs,
 		)
 		return txsLists, nil
 	}
