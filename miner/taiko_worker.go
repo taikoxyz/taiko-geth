@@ -47,7 +47,6 @@ func (w *Miner) buildTransactionsLists(
 	)
 
 	log.Info("buildTransactionsLists",
-		"baseFee", baseFee.Uint64(),
 		"blockMaxGasLimit", blockMaxGasLimit,
 		"maxBytesPerTxList", maxBytesPerTxList,
 		"maxTransactionsLists", maxTransactionsLists,
@@ -69,7 +68,6 @@ func (w *Miner) buildTransactionsLists(
 		},
 	)) == 0 {
 		log.Warn("buildTransactionsLists: tx pool is empty",
-			"baseFee", baseFee.Uint64(),
 			"minTip", minTip,
 			"onlyPlainTxs", true,
 		)
@@ -93,7 +91,6 @@ func (w *Miner) buildTransactionsLists(
 		"coinbase", params.coinbase,
 		"random", params.random,
 		"noTxs", params.noTxs,
-		"baseFeePerGas", params.baseFeePerGas.Uint64(),
 	)
 
 	env, err := w.prepareWork(params, false)
