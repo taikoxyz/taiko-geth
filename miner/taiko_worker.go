@@ -67,8 +67,10 @@ func (w *Miner) buildTransactionsLists(
 			OnlyPlainTxs: true,
 		},
 	)) == 0 {
-		log.Warn("buildTransactionsLists: tx pool is empty",
+		log.Warn(
+			"Transaction pool is empty",
 			"minTip", minTip,
+			"baseFee", baseFee,
 			"onlyPlainTxs", true,
 		)
 		return txsLists, nil
@@ -84,12 +86,15 @@ func (w *Miner) buildTransactionsLists(
 		baseFeePerGas: baseFee,
 	}
 
-	log.Info("buildTransactionsLists: prepare work",
+	log.Info(
+		"Prepare the sealing task for building transactions lists",
 		"timestamp", params.timestamp,
 		"forceTime", params.forceTime,
 		"parentHash", params.parentHash,
 		"coinbase", params.coinbase,
 		"random", params.random,
+		"minTip", minTip,
+		"baseFee", baseFee,
 		"noTxs", params.noTxs,
 	)
 
@@ -121,12 +126,24 @@ func (w *Miner) buildTransactionsLists(
 			minTip,
 		)
 		if err != nil {
-			log.Error("buildTransactionsLists: commit transactions failed", "error", err)
+			log.Error(
+				"Failed to commit transactions for building transactions lists",
+				"timestamp", params.timestamp,
+				"forceTime", params.forceTime,
+				"parentHash", params.parentHash,
+				"coinbase", params.coinbase,
+				"random", params.random,
+				"minTip", minTip,
+				"baseFee", baseFee,
+				"noTxs", params.noTxs,
+				"error", err,
+			)
 
 			return nil, nil, err
 		}
 
-		log.Info("buildTransactionsLists: commit transactions",
+		log.Info(
+			"New transactions committed for building transactions lists",
 			"localTxs", len(localTxs),
 			"remoteTxs", len(remoteTxs),
 			"txsPruned", len(pruningResult.TxsPruned),
@@ -161,7 +178,16 @@ func (w *Miner) buildTransactionsLists(
 		txsLists = append(txsLists, preBuiltTxList)
 	}
 
-	log.Info("buildTransactionsLists: commit transactions finished",
+	log.Info(
+		"Finished building transactions lists",
+		"timestamp", params.timestamp,
+		"forceTime", params.forceTime,
+		"parentHash", params.parentHash,
+		"coinbase", params.coinbase,
+		"random", params.random,
+		"minTip", minTip,
+		"baseFee", baseFee,
+		"noTxs", params.noTxs,
 		"txLists", len(txsLists),
 	)
 
