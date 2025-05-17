@@ -46,7 +46,8 @@ func (w *Miner) buildTransactionsLists(
 		currentHead = w.chain.CurrentBlock()
 	)
 
-	log.Info("buildTransactionsLists",
+	log.Info(
+		"Start building transactions lists",
 		"blockMaxGasLimit", blockMaxGasLimit,
 		"maxBytesPerTxList", maxBytesPerTxList,
 		"maxTransactionsLists", maxTransactionsLists,
@@ -55,7 +56,14 @@ func (w *Miner) buildTransactionsLists(
 	)
 
 	if currentHead == nil {
-		log.Error("buildTransactionsLists failed to find current head")
+		log.Error(
+			"Failed to find current head",
+			"blockMaxGasLimit", blockMaxGasLimit,
+			"maxBytesPerTxList", maxBytesPerTxList,
+			"maxTransactionsLists", maxTransactionsLists,
+			"localAccounts", localAccounts,
+			"minTip", minTip,
+		)
 		return nil, fmt.Errorf("failed to find current head")
 	}
 
@@ -68,7 +76,7 @@ func (w *Miner) buildTransactionsLists(
 		},
 	)) == 0 {
 		log.Warn(
-			"Transaction pool is empty",
+			"Transaction pool for building transactions lists is empty",
 			"minTip", minTip,
 			"baseFee", baseFee,
 			"onlyPlainTxs", true,
