@@ -128,7 +128,7 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 	env.header.Extra = bbExtraData
 
 	// Copy the environment from the latest sealed state and set the params for the new block.
-	simEnv := env.copyAtNewEnvironment(newEnvParams, g.chain, g.chainConfig)
+	simEnv := env.copy(g.chain, g.chainConfig)
 
 	// Set the new tx signer in the env.
 	simEnv.signer = types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
@@ -322,16 +322,6 @@ func (g *SimulationAPIWorker) sealBlock(req SealBlockRequest) {
 
 	// Set preconf tag in block
 	sealedBlock.PreconfBlock = true
-
-	log.Info("Simulator-WORKER: inserting block into chain")
-
-	// Note: might change the actual chain. Will this have side effects?
-	_, err = g.chain.InsertChain(types.Blocks{sealedBlock})
-	if err != nil {
-		log.Error("Simulator-WORKER: sealBlock, failed to insert chain", "err", err)
-		req.Response <- SealBlockResponse{err: err}
-		return
-	}
 
 	// Send the successful seal block response.
 	cumulativeBuilderPaymentHex := fmt.Sprintf("0x%x", builderPayment)
