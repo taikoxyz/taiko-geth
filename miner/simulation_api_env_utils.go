@@ -94,9 +94,10 @@ func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environme
 		return nil, err
 	}
 	if header.ParentBeaconRoot != nil {
-		context := core.NewEVMBlockContext(header, g.chain, nil)
-		vmenv := vm.NewEVM(context, env.state, g.chainConfig, vm.Config{})
-		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, vmenv)
+		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, env.evm)
+	}
+	if g.chainConfig.IsPrague(header.Number, header.Time) {
+		core.ProcessParentBlockHash(header.ParentHash, env.evm)
 	}
 	return env, nil
 }
