@@ -89,10 +89,7 @@ type Ethereum struct {
 	bloomIndexer      *core.ChainIndexer             // Bloom indexer operating during block imports
 	closeBloomHandler chan struct{}
 
-	APIBackend interface {
-		ethapi.Backend
-		tracers.Backend
-	}
+	APIBackend *EthAPIBackend
 
 	miner    *miner.Miner
 	gasPrice *big.Int
