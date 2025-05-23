@@ -308,11 +308,8 @@ func (g *SimulationAPIWorker) sealBlock(req SealBlockRequest) {
 	}
 	sealedBlock := <-results
 
-	// Clear the preconf states
+	// Clear the preconf states after sealing the block
 	g.preconfState.clearStateIdMap()
-
-	// Set preconf tag in block
-	sealedBlock.PreconfBlock = true
 
 	// Send the successful seal block response.
 	cumulativeBuilderPaymentHex := fmt.Sprintf("0x%x", builderPayment)
