@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/holiman/uint256"
 )
 
 func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environment, error) {
@@ -121,6 +120,8 @@ func (g *SimulationAPIWorker) makeEnv(parent *types.Header, header *types.Header
 
 	evm := vm.NewEVM(core.NewEVMBlockContext(header, g.chain, &coinbase), state, g.chainConfig, vm.Config{})
 
+	initialBalance := state.GetBalance(coinbase)
+
 	// Note the passed coinbase may be different with header.Coinbase.
 	return &environment{
 		signer:   types.MakeSigner(g.chainConfig, header.Number, header.Time),
@@ -129,16 +130,14 @@ func (g *SimulationAPIWorker) makeEnv(parent *types.Header, header *types.Header
 		header:   header,
 		witness:  state.Witness(),
 		// simulator
-		evm:                      evm,
-		hashReceipts:             make(map[string]*types.Receipt),
-		cumulativeBuilderPayment: new(uint256.Int).SetUint64(0),
-		txs:                      make([]*types.Transaction, 0),
+		evm:                    evm,
+		txs:                    make([]*types.Transaction, 0),
+		initialCoinbaseBalance: initialBalance,
 	}, nil
 }
 
 func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 	currentHead := g.chain.CurrentBlock()
-	sealedBlock := g.chain.GetBlockByNumber(currentHead.Number.Uint64())
 	envParams := &generateParams{
 		timestamp:     uint64(time.Now().Unix()),
 		forceTime:     true,
@@ -156,30 +155,21 @@ func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 	}
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
-	env.sealedBlock = sealedBlock
 
 	return env, nil
 }
 
 // retrieveEnv retrieves the environment associated with the given stateId.
-// If stateId equals LatestSealedId, it attempts to fetch the latest sealed environment.
-//   - If the latest sealed environment exists and its block number is higher than
-//     the current head environment, it returns the sealed environment.
-//   - Otherwise, it returns the head environment.
-//
+// If stateId equals LatestSealedId, it attempts to fetch the latest chain head environment.
 // For any other stateId, it looks up the corresponding environment in the stateIdMap.
 // If the stateId is not found in the map, it returns an error indicating that the
 // stateId is not present.
 func (g *SimulationAPIWorker) retrieveEnv(stateId uint64) (*environment, error) {
 	if stateId == uint64(LatestSealedId) {
-		// stateId 1 fetches the latest sealed env, if present, or the latest chain head env
+		// stateId 0 fetches the latest chain head env
 		env, err := g.envFromHead()
 		if err != nil {
 			return nil, err
-		}
-		latestSealedEnv := g.preconfState.latestSealedPreconfEnv()
-		if latestSealedEnv != nil && latestSealedEnv.header.Number.Uint64() > env.header.Number.Uint64() {
-			return latestSealedEnv, nil
 		}
 		return env, nil
 	} else {

@@ -109,7 +109,7 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 		"txHash", tx.Hash(),
 	)
 
-	// Fetch the latest sealed env.
+	// Fetch the latest chain head env.
 	env, err := g.retrieveEnv(uint64(LatestSealedId))
 	if err != nil {
 		res <- SimulationResponse{
@@ -127,7 +127,7 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 	}
 	env.header.Extra = bbExtraData
 
-	// Copy the environment from the latest sealed state and set the params for the new block.
+	// Copy the environment from the latest chain head state and set the params for the new block.
 	simEnv := env.copy(g.chain, g.chainConfig)
 
 	// Set the new tx signer in the env.
@@ -183,7 +183,6 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 	log.Info("Simulator-WORKER: anchor transaction executed successfully", "gasUsed", receipt.GasUsed)
 
 	// Finalise the simulation environment and add it to the stateIdMap.
-	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
 	simEnv.receipts = append(simEnv.receipts, receipt)
 
 	newStateId := g.preconfState.addEnvironment(simEnv)
@@ -248,8 +247,6 @@ func (g *SimulationAPIWorker) simulateTx(stateId uint64, tx *types.Transaction, 
 	}
 
 	// Tx simulation worked so save result to new env.
-	simEnv.hashReceipts[tx.Hash().Hex()] = receipt
-	simEnv.cumulativeBuilderPayment = new(uint256.Int).Add(simEnv.cumulativeBuilderPayment, builderPayment)
 	simEnv.receipts = append(simEnv.receipts, receipt)
 
 	// Add env to state id map
@@ -311,14 +308,8 @@ func (g *SimulationAPIWorker) sealBlock(req SealBlockRequest) {
 	}
 	sealedBlock := <-results
 
-	//before sealing it, set the block to the env
-	env.sealedBlock = sealedBlock
-	err = g.preconfState.sealPreconfBlock(req.StateId, sealedBlock.Hash())
-	if err != nil {
-		log.Error("Simulator-WORKER: sealBlock, failed to seal block", "err", err)
-		req.Response <- SealBlockResponse{err: err}
-		return
-	}
+	// Clear the preconf states
+	g.preconfState.clearStateIdMap()
 
 	// Set preconf tag in block
 	sealedBlock.PreconfBlock = true

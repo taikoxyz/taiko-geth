@@ -62,21 +62,19 @@ type environment struct {
 	witness *stateless.Witness
 
 	// simulator
-	hashReceipts             map[string]*types.Receipt
-	cumulativeBuilderPayment *uint256.Int
-	sealedBlock              *types.Block
+	initialCoinbaseBalance *uint256.Int
 }
 
 // copy creates a deep copy of environment.
 func (env *environment) copy(chain core.ChainContext, config *params.ChainConfig) *environment {
 	cpy := &environment{
-		signer:                   env.signer,
-		state:                    env.state.Copy(),
-		tcount:                   env.tcount,
-		coinbase:                 env.coinbase,
-		header:                   types.CopyHeader(env.header),
-		receipts:                 copyReceipts(env.receipts),
-		cumulativeBuilderPayment: env.cumulativeBuilderPayment,
+		signer:                 env.signer,
+		state:                  env.state.Copy(),
+		tcount:                 env.tcount,
+		coinbase:               env.coinbase,
+		header:                 types.CopyHeader(env.header),
+		receipts:               copyReceipts(env.receipts),
+		initialCoinbaseBalance: env.initialCoinbaseBalance,
 	}
 	if env.gasPool != nil {
 		gasPool := *env.gasPool
@@ -87,10 +85,6 @@ func (env *environment) copy(chain core.ChainContext, config *params.ChainConfig
 
 	cpy.sidecars = make([]*types.BlobTxSidecar, len(env.sidecars))
 	copy(cpy.sidecars, env.sidecars)
-	cpy.hashReceipts = make(map[string]*types.Receipt, len(env.hashReceipts))
-	for k, v := range env.hashReceipts {
-		cpy.hashReceipts[k] = v
-	}
 
 	cpy.evm = vm.NewEVM(core.NewEVMBlockContext(cpy.header, chain, &cpy.coinbase), cpy.state, config, vm.Config{})
 
@@ -106,7 +100,7 @@ func (env *environment) reset() {
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
 	env.header.GasUsed = 0
-	env.cumulativeBuilderPayment = new(uint256.Int).SetUint64(0)
+	env.initialCoinbaseBalance = new(uint256.Int).SetUint64(0)
 	env.evm = nil
 }
 
@@ -126,13 +120,11 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain
 	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
 	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
 	newEnv.coinbase = newEnvParams.Coinbase
+	newEnv.header.ParentHash = env.header.Hash()
 
-	// If we took the env from the head (no sealed block) then we can take the hash from the header.
-	if env.sealedBlock == nil {
-		newEnv.header.ParentHash = env.header.Hash()
-	} else {
-		newEnv.header.ParentHash = env.sealedBlock.Hash()
-	}
+	// Store initial coinbase balance
+	initialBalance := newEnv.state.GetBalance(newEnv.coinbase)
+	newEnv.initialCoinbaseBalance = new(uint256.Int).Set(initialBalance)
 
 	newEnv.evm = vm.NewEVM(core.NewEVMBlockContext(newEnv.header, chain, &newEnv.coinbase), newEnv.state, config, vm.Config{})
 	return newEnv
