@@ -5,10 +5,7 @@ import (
 	"math"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/holiman/uint256"
 )
@@ -17,30 +14,26 @@ type StateId uint64
 
 const (
 	LatestSealedId     StateId = 0
-	StateIdToStartFrom         = uint64(1) // 0 is reserved for latest sealed state
+	StateIdToStartFrom         = uint64(1) // 0 is reserved for latest state
 )
 
-// PreconfState holds all information about pending changes that are going to be pre-confirmed.
+// PreconfState holds all information about pending simulation states.
 type PreconfState struct {
 	// stateIdMap maps all state IDs to their corresponding environments.
 	stateIdMap map[uint64]*environment
 	// chain represents the current canonical blockchain.
 	chain        *core.BlockChain
 	stateIdMutex sync.RWMutex // Mutex for stateIdMap
-	// receiptsCache stores the derived receipts in order to not compute them twice
-	receiptsCache *lru.Cache[common.Hash, []*types.Receipt]
 	// currentStateId is the next stateId to be used
 	currentStateId uint64
 }
 
-// NewPreconfState initializes a new PreconfState with empty sealed and pending preconf blocks.
+// NewPreconfState initializes a new PreconfState.
 // It requires a reference to the canonical blockchain.
 func NewPreconfState(chain *core.BlockChain) *PreconfState {
 	return &PreconfState{
-		chain:      chain,
-		stateIdMap: make(map[uint64]*environment),
-		// create an lru cache limited to 32 elements
-		receiptsCache:  lru.NewCache[common.Hash, []*types.Receipt](32),
+		chain:          chain,
+		stateIdMap:     make(map[uint64]*environment),
 		currentStateId: StateIdToStartFrom,
 	}
 }
@@ -52,11 +45,9 @@ func (state *PreconfState) clearStateIdMap() {
 	state.stateIdMap = make(map[uint64]*environment)
 }
 
-// onNewChainHeadEvent just logs the new chain head event for now
+// onNewChainHeadEvent logs when a new canonical chain head is seen
 func (state *PreconfState) onNewChainHeadEvent(event *core.ChainHeadEvent) {
-	log.Info("Simulator-WORKER: New chain head event",
-		"blockHash", event.Header.Hash().String(),
-		"txs-hash", len(event.Header.TxHash))
+	log.Info("Simulator-WORKER: New chain head event", "blockHash", event.Header.Hash())
 }
 
 // calculateStateMetrics returns the cumulative gas used and builder payment for a given state ID.
@@ -69,13 +60,12 @@ func (state *PreconfState) calculateStateMetrics(stateId uint64) (uint64, *uint2
 		return 0, nil, fmt.Errorf("state for id %d does not exist", stateId)
 	}
 
-	log.Info("Simulator-WORKER: Calculating metrics for state", "stateId", stateId, "blockNumber", env.header.Number.Uint64(), "num_receipts", len(env.receipts))
+	log.Info("Simulator-WORKER: Calculating metrics for state", "stateId", stateId, "blockNumber", env.header.Number.Uint64())
 
-	totalGas := uint64(0)
-	for _, receipt := range env.receipts {
-		totalGas += receipt.GasUsed
-	}
+	// Calculate total gas used from header
+	totalGas := env.header.GasUsed
 
+	// Calculate builder payment by comparing current balance with initial balance
 	builderPayment := new(uint256.Int)
 	endBalance := env.state.GetBalance(env.coinbase)
 	if endBalance.Cmp(env.initialCoinbaseBalance) > 0 {
@@ -95,7 +85,7 @@ func (state *PreconfState) envAtId(stateId uint64) *environment {
 	return nil
 }
 
-// addEnvironment adds a new environment to the stateIdMap in a thread-safe manner and returns the assigned stateId
+// addEnvironment adds a new environment to the stateIdMap and returns the assigned stateId
 func (p *PreconfState) addEnvironment(env *environment) uint64 {
 	if env == nil {
 		return 0

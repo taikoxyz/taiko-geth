@@ -1,7 +1,6 @@
 package miner
 
 import (
-	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -110,26 +108,18 @@ func (g *SimulationAPIWorker) makeEnv(parent *types.Header, header *types.Header
 	if err != nil {
 		return nil, err
 	}
-	if witness {
-		bundle, err := stateless.NewWitness(header, g.chain)
-		if err != nil {
-			return nil, err
-		}
-		state.StartPrefetcher("miner", bundle)
-	}
 
 	evm := vm.NewEVM(core.NewEVMBlockContext(header, g.chain, &coinbase), state, g.chainConfig, vm.Config{})
 
+	// Store initial coinbase balance for builder payment calculation
 	initialBalance := state.GetBalance(coinbase)
 
 	// Note the passed coinbase may be different with header.Coinbase.
 	return &environment{
-		signer:   types.MakeSigner(g.chainConfig, header.Number, header.Time),
-		state:    state,
-		coinbase: coinbase,
-		header:   header,
-		witness:  state.Witness(),
-		// simulator
+		signer:                 types.MakeSigner(g.chainConfig, header.Number, header.Time),
+		state:                  state,
+		coinbase:               coinbase,
+		header:                 header,
 		evm:                    evm,
 		txs:                    make([]*types.Transaction, 0),
 		initialCoinbaseBalance: initialBalance,
@@ -149,10 +139,11 @@ func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 	}
 
 	env, err := g.prepareWork(envParams)
-
 	if err != nil {
 		return nil, err
 	}
+
+	// Set standard gas limits for simulation
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
 
@@ -160,23 +151,16 @@ func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 }
 
 // retrieveEnv retrieves the environment associated with the given stateId.
-// If stateId equals LatestSealedId, it attempts to fetch the latest chain head environment.
+// If stateId equals LatestSealedId, it creates a new environment from the chain head.
 // For any other stateId, it looks up the corresponding environment in the stateIdMap.
-// If the stateId is not found in the map, it returns an error indicating that the
-// stateId is not present.
 func (g *SimulationAPIWorker) retrieveEnv(stateId uint64) (*environment, error) {
 	if stateId == uint64(LatestSealedId) {
-		// stateId 0 fetches the latest chain head env
-		env, err := g.envFromHead()
-		if err != nil {
-			return nil, err
-		}
-		return env, nil
-	} else {
-		env := g.preconfState.envAtId(stateId)
-		if env == nil {
-			return nil, errors.New(fmt.Sprintf("state not found for id %d", stateId))
-		}
-		return env, nil
+		return g.envFromHead()
 	}
+
+	env := g.preconfState.envAtId(stateId)
+	if env == nil {
+		return nil, fmt.Errorf("state not found for id %d", stateId)
+	}
+	return env, nil
 }
