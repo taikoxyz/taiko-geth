@@ -41,7 +41,7 @@ var (
 		[]byte("anchorV3(uint64,bytes32,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
 	)[:4]
 	AnchorV4Selector = crypto.Keccak256(
-		[]byte("anchorV4(uint64,bytes32,uint256,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
+		[]byte("v4Anchor(uint64,bytes32,uint256,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
 	)[:4]
 	AnchorGasLimit   = uint64(250_000)
 	AnchorV3GasLimit = uint64(1_000_000)
