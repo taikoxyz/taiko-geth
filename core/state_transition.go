@@ -170,7 +170,7 @@ type Message struct {
 	IsAnchor bool
 	// CHANGE(taiko): basefeeSharingPctg of the basefee will be sent to the block.coinbase,
 	// the remaining will be sent to the treasury address.
-	BasefeeSharingPctg uint8
+	BasefeeSharingPctg [2]uint8
 }
 
 // TransactionToMessage converts a transaction into a Message.
@@ -562,12 +562,20 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 				new(uint256.Int).SetUint64(st.gasUsed()),
 				new(uint256.Int).SetUint64(st.evm.Context.BaseFee.Uint64()),
 			)
-			feeCoinbase := new(uint256.Int).Div(
-				new(uint256.Int).Mul(totalFee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
+
+			treasury0, treasury1 := st.getTreasuryAddresses()
+
+			feeTreasury0 := new(uint256.Int).Div(
+				new(uint256.Int).Mul(totalFee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg[0]))),
 				new(uint256.Int).SetUint64(100),
 			)
-			feeTreasury := new(uint256.Int).Sub(totalFee, feeCoinbase)
-			st.state.AddBalance(st.getTreasuryAddress(), feeTreasury, tracing.BalanceIncreaseTreasury)
+			feeTreasury1 := new(uint256.Int).Div(
+				new(uint256.Int).Mul(totalFee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg[1]))),
+				new(uint256.Int).SetUint64(100),
+			)
+			feeCoinbase := new(uint256.Int).Sub(totalFee, new(uint256.Int).Add(feeTreasury0, feeTreasury1))
+			st.state.AddBalance(treasury0, feeTreasury0, tracing.BalanceIncreaseTreasury)
+			st.state.AddBalance(treasury1, feeTreasury1, tracing.BalanceIncreaseTreasury)
 			st.state.AddBalance(st.evm.Context.Coinbase, feeCoinbase, tracing.BalanceIncreaseBaseFeeSharing)
 		}
 		// add the coinbase to the witness iff the fee is greater than 0
@@ -690,7 +698,7 @@ func (st *stateTransition) blobGasUsed() uint64 {
 }
 
 // CHANGE(taiko): returns the treasury address based on chain ID.
-func (st *stateTransition) getTreasuryAddress() common.Address {
+func (st *stateTransition) getTreasuryAddresses() (common.Address, common.Address) {
 	var (
 		prefix = st.evm.ChainConfig().ChainID.String()
 		suffix = "10001"
@@ -700,11 +708,17 @@ func (st *stateTransition) getTreasuryAddress() common.Address {
 			prefix +
 			strings.Repeat("0", common.AddressLength*2-len(prefix)-len(suffix)) +
 			suffix,
-	)
+	), common.Address{}
 }
 
-// CHANGE(taiko): decodes an ontake block's extradata, returns basefeeSharingPctg configurations,
+// CHANGE(taiko): decodes an Ontake block's extradata, returns basefeeSharingPctg configurations,
 // the corresponding enocding function in protocol is `LibProposing._encodeGasConfigs`.
 func DecodeOntakeExtraData(extradata []byte) uint8 {
 	return uint8(new(big.Int).SetBytes(extradata).Uint64())
+}
+
+// CHANGE(taiko): decodes a Shasta block's extradata, returns basefeeSharingPctg configurations,
+// the corresponding enocding function in protocol is `TaikoInbox._encodeBaseFeeSharings`.
+func DecodeExtraData(extradata []byte) [2]uint8 {
+	return [2]uint8{extradata[0], extradata[1]}
 }
