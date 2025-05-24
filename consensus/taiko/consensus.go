@@ -313,7 +313,7 @@ func (t *Taiko) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 	return common.Big0
 }
 
-// ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or TaikoL2.anchorV4 transaction.
+// ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or TaikoAnchor.v4Anchor transaction.
 func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (bool, error) {
 	if tx.Type() != types.DynamicFeeTxType {
 		return false, nil
