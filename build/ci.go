@@ -280,13 +280,14 @@ func doTest(cmdline []string) {
 		verbose  = flag.Bool("v", false, "Whether to log verbosely")
 		race     = flag.Bool("race", false, "Execute the race detector")
 		short    = flag.Bool("short", false, "Pass the 'short'-flag to go test")
-		cachedir = flag.String("cachedir", "./build/cache", "directory for caching downloads")
+		// CHANGE(taiko): disable spec download for now.
+		// cachedir = flag.String("cachedir", "./build/cache", "directory for caching downloads")
 	)
 	flag.CommandLine.Parse(cmdline)
 
 	// Get test fixtures.
 	csdb := build.MustLoadChecksums("build/checksums.txt")
-	downloadSpecTestFixtures(csdb, *cachedir)
+	// downloadSpecTestFixtures(csdb, *cachedir) // CHANGE(taiko): disable spec download for now.
 
 	// Configure the toolchain.
 	tc := build.GoToolchain{GOARCH: *arch, CC: *cc}
