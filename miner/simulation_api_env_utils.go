@@ -25,6 +25,9 @@ func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environme
 		}
 		parent = block.Header()
 	}
+
+	log.Info("Simulator-WORKER: prepareWork", "parent", parent.ToString())
+
 	// Sanity check the timestamp correctness, recap the timestamp
 	// to parent+1 if the mutation is allowed.
 	timestamp := genParams.timestamp
