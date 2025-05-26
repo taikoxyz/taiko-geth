@@ -63,6 +63,7 @@ type environment struct {
 
 	// simulator
 	initialCoinbaseBalance *uint256.Int
+	sealedBlock            *types.Block
 }
 
 // copy creates a deep copy of environment.
@@ -120,12 +121,20 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain
 	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
 	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
 	newEnv.coinbase = newEnvParams.Coinbase
-	newEnv.header.ParentHash = env.header.Hash()
+
+	// If we took the env from the head (no sealed block) then we can take the hash from the header.
+	if env.sealedBlock == nil {
+		log.Info("Simulator-WORKER: copyAtNewEnvironment - no sealed block", "env", env.ToString(), "sealedBlock", env.sealedBlock)
+		newEnv.header.ParentHash = env.header.Hash()
+	} else {
+		log.Info("Simulator-WORKER: copyAtNewEnvironment - sealed block", "env", env.ToString(), "sealedBlock", env.sealedBlock)
+		newEnv.header.ParentHash = env.sealedBlock.Hash()
+	}
 
 	log.Info("Simulator-WORKER: copyAtNewEnvironment", "env", env.ToString())
 
 	// Store initial coinbase balance
-	initialBalance := new(uint256.Int).SetUint64(0) //newEnv.state.GetBalance(newEnv.coinbase)
+	initialBalance := newEnv.state.GetBalance(newEnv.coinbase)
 	newEnv.initialCoinbaseBalance = new(uint256.Int).Set(initialBalance)
 
 	newEnv.evm = vm.NewEVM(core.NewEVMBlockContext(newEnv.header, chain, &newEnv.coinbase), newEnv.state, config, vm.Config{})
@@ -145,6 +154,7 @@ func (env *environment) ToString() string {
 		"  sidecars: %d sidecars\n"+
 		"  blobs: %d\n"+
 		"  witness: %v\n"+
+		"  sealedBlock: %v\n"+
 		"}",
 		env.signer,
 		env.state,
@@ -156,7 +166,8 @@ func (env *environment) ToString() string {
 		len(env.receipts),
 		len(env.sidecars),
 		env.blobs,
-		env.witness)
+		env.witness,
+		env.sealedBlock)
 }
 
 const (

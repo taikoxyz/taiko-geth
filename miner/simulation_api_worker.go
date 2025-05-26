@@ -310,6 +310,7 @@ func (g *SimulationAPIWorker) sealBlock(req SealBlockRequest) {
 	sealedBlock := <-results
 
 	// Clear the preconf states after sealing the block
+	env.sealedBlock = nil
 	g.preconfState.clearStateIdMap()
 
 	// Send the successful seal block response.

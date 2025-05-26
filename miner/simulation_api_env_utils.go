@@ -138,6 +138,7 @@ func (g *SimulationAPIWorker) makeEnv(parent *types.Header, header *types.Header
 
 func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 	currentHead := g.chain.CurrentBlock()
+	sealedBlock := g.chain.GetBlockByNumber(currentHead.Number.Uint64())
 	envParams := &generateParams{
 		timestamp:     uint64(time.Now().Unix()),
 		forceTime:     true,
@@ -156,6 +157,7 @@ func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 	// Set standard gas limits for simulation
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
+	env.sealedBlock = sealedBlock
 
 	return env, nil
 }
