@@ -108,54 +108,6 @@ type Header struct {
 	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"`
 }
 
-func (h *Header) ToString() string {
-	return fmt.Sprintf("Header{\n"+
-		"  ParentHash: %s\n"+
-		"  UncleHash: %s\n"+
-		"  Coinbase: %s\n"+
-		"  Root: %s\n"+
-		"  TxHash: %s\n"+
-		"  ReceiptHash: %s\n"+
-		"  Bloom: %s\n"+
-		"  Difficulty: %s\n"+
-		"  Number: %s\n"+
-		"  GasLimit: %d\n"+
-		"  GasUsed: %d\n"+
-		"  Time: %d\n"+
-		"  Extra: %s\n"+
-		"  MixDigest: %s\n"+
-		"  Nonce: %s\n"+
-		"  BaseFee: %s\n"+
-		"  WithdrawalsHash: %s\n"+
-		"  BlobGasUsed: %d\n"+
-		"  ExcessBlobGas: %d\n"+
-		"  ParentBeaconRoot: %s\n"+
-		"  RequestsHash: %s\n"+
-		"}",
-		h.ParentHash,
-		h.UncleHash,
-		h.Coinbase,
-		h.Root,
-		h.TxHash,
-		h.ReceiptHash,
-		h.Bloom,
-		h.Difficulty,
-		h.Number,
-		h.GasLimit,
-		h.GasUsed,
-		h.Time,
-		h.Extra,
-		h.MixDigest,
-		h.Nonce,
-		h.BaseFee,
-		h.WithdrawalsHash,
-		h.BlobGasUsed,
-		h.ExcessBlobGas,
-		h.ParentBeaconRoot,
-		h.RequestsHash,
-		"}")
-}
-
 // field type overrides for gencodec
 type headerMarshaling struct {
 	Difficulty    *hexutil.Big

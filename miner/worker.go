@@ -124,14 +124,10 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain
 
 	// If we took the env from the head (no sealed block) then we can take the hash from the header.
 	if env.sealedBlock == nil {
-		log.Info("Simulator-WORKER: copyAtNewEnvironment - no sealed block", "env", env.ToString(), "sealedBlock", env.sealedBlock)
 		newEnv.header.ParentHash = env.header.Hash()
 	} else {
-		log.Info("Simulator-WORKER: copyAtNewEnvironment - sealed block", "env", env.ToString(), "sealedBlock", env.sealedBlock)
 		newEnv.header.ParentHash = env.sealedBlock.Hash()
 	}
-
-	log.Info("Simulator-WORKER: copyAtNewEnvironment", "env", env.ToString())
 
 	// Store initial coinbase balance
 	initialBalance := newEnv.state.GetBalance(newEnv.coinbase)
@@ -139,35 +135,6 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain
 
 	newEnv.evm = vm.NewEVM(core.NewEVMBlockContext(newEnv.header, chain, &newEnv.coinbase), newEnv.state, config, vm.Config{})
 	return newEnv
-}
-
-func (env *environment) ToString() string {
-	return fmt.Sprintf("Environment{\n"+
-		"  signer: %v\n"+
-		"  state: %v\n"+
-		"  tcount: %d\n"+
-		"  gasPool: %v\n"+
-		"  coinbase: %s\n"+
-		"  header: %s\n"+
-		"  txs: %d transactions\n"+
-		"  receipts: %d receipts\n"+
-		"  sidecars: %d sidecars\n"+
-		"  blobs: %d\n"+
-		"  witness: %v\n"+
-		"  sealedBlock: %v\n"+
-		"}",
-		env.signer,
-		env.state,
-		env.tcount,
-		env.gasPool,
-		env.coinbase.Hex(),
-		env.header.ToString(),
-		len(env.txs),
-		len(env.receipts),
-		len(env.sidecars),
-		env.blobs,
-		env.witness,
-		env.sealedBlock)
 }
 
 const (
