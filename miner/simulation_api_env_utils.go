@@ -25,6 +25,7 @@ func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environme
 		}
 		parent = block.Header()
 	}
+
 	// Sanity check the timestamp correctness, recap the timestamp
 	// to parent+1 if the mutation is allowed.
 	timestamp := genParams.timestamp
@@ -94,10 +95,14 @@ func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environme
 		return nil, err
 	}
 	if header.ParentBeaconRoot != nil {
-		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, env.evm)
+		context := core.NewEVMBlockContext(header, g.chain, nil)
+		vmenv := vm.NewEVM(context, env.state, g.chainConfig, vm.Config{})
+		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, vmenv)
 	}
 	if g.chainConfig.IsPrague(header.Number, header.Time) {
-		core.ProcessParentBlockHash(header.ParentHash, env.evm)
+		context := core.NewEVMBlockContext(header, g.chain, nil)
+		vmenv := vm.NewEVM(context, env.state, g.chainConfig, vm.Config{})
+		core.ProcessParentBlockHash(header.ParentHash, vmenv)
 	}
 	return env, nil
 }
@@ -129,6 +134,7 @@ func (g *SimulationAPIWorker) makeEnv(parent *types.Header, header *types.Header
 
 func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 	currentHead := g.chain.CurrentBlock()
+	sealedBlock := g.chain.GetBlockByNumber(currentHead.Number.Uint64())
 	envParams := &generateParams{
 		timestamp:     uint64(time.Now().Unix()),
 		forceTime:     true,
@@ -147,6 +153,7 @@ func (g *SimulationAPIWorker) envFromHead() (*environment, error) {
 	// Set standard gas limits for simulation
 	env.gasPool = new(core.GasPool).AddGas(30_000_000)
 	env.header.GasLimit = 240_250_000
+	env.sealedBlock = sealedBlock
 
 	return env, nil
 }

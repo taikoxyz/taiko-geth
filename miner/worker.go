@@ -63,6 +63,7 @@ type environment struct {
 
 	// simulator
 	initialCoinbaseBalance *uint256.Int
+	sealedBlock            *types.Block
 }
 
 // copy creates a deep copy of environment.
@@ -120,7 +121,13 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain
 	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
 	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
 	newEnv.coinbase = newEnvParams.Coinbase
-	newEnv.header.ParentHash = env.header.Hash()
+
+	// If we took the env from the head (no sealed block) then we can take the hash from the header.
+	if env.sealedBlock == nil {
+		newEnv.header.ParentHash = env.header.Hash()
+	} else {
+		newEnv.header.ParentHash = env.sealedBlock.Hash()
+	}
 
 	// Store initial coinbase balance
 	initialBalance := newEnv.state.GetBalance(newEnv.coinbase)
