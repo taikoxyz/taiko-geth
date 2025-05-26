@@ -130,6 +130,33 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain
 	return newEnv
 }
 
+func (env *environment) ToString() string {
+	return fmt.Sprintf("Environment{\n"+
+		"  signer: %v\n"+
+		"  state: %v\n"+
+		"  tcount: %d\n"+
+		"  gasPool: %v\n"+
+		"  coinbase: %s\n"+
+		"  header: %v\n"+
+		"  txs: %d transactions\n"+
+		"  receipts: %d receipts\n"+
+		"  sidecars: %d sidecars\n"+
+		"  blobs: %d\n"+
+		"  witness: %v\n"+
+		"}",
+		env.signer,
+		env.state,
+		env.tcount,
+		env.gasPool,
+		env.coinbase.Hex(),
+		env.header,
+		len(env.txs),
+		len(env.receipts),
+		len(env.sidecars),
+		env.blobs,
+		env.witness)
+}
+
 const (
 	commitInterruptNone int32 = iota
 	commitInterruptNewHead

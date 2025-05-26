@@ -159,6 +159,7 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 	}
 
 	// Commit the anchor to the state
+	log.Info("Simulator-WORKER: simulateAnchorTx", "simEnv", simEnv.ToString())
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 
 	// Verify the tx didn't fail. e.g., nonce issues.
