@@ -98,11 +98,13 @@ func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environme
 		vmenv := vm.NewEVM(context, env.state, g.chainConfig, vm.Config{})
 		core.ProcessBeaconBlockRoot(*header.ParentBeaconRoot, vmenv)
 	}
-	if g.chainConfig.IsPrague(header.Number, header.Time) {
-		context := core.NewEVMBlockContext(header, g.chain, nil)
-		vmenv := vm.NewEVM(context, env.state, g.chainConfig, vm.Config{})
-		core.ProcessParentBlockHash(header.ParentHash, vmenv)
-	}
+	/*
+		if g.chainConfig.IsPrague(header.Number, header.Time) {
+			context := core.NewEVMBlockContext(header, g.chain, nil)
+			vmenv := vm.NewEVM(context, env.state, g.chainConfig, vm.Config{})
+			core.ProcessParentBlockHash(header.ParentHash, vmenv)
+		}
+	*/
 	return env, nil
 }
 

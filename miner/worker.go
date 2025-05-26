@@ -137,7 +137,7 @@ func (env *environment) ToString() string {
 		"  tcount: %d\n"+
 		"  gasPool: %v\n"+
 		"  coinbase: %s\n"+
-		"  header: %v\n"+
+		"  header: %s\n"+
 		"  txs: %d transactions\n"+
 		"  receipts: %d receipts\n"+
 		"  sidecars: %d sidecars\n"+
@@ -149,7 +149,7 @@ func (env *environment) ToString() string {
 		env.tcount,
 		env.gasPool,
 		env.coinbase.Hex(),
-		env.header,
+		env.header.ToString(),
 		len(env.txs),
 		len(env.receipts),
 		len(env.sidecars),
