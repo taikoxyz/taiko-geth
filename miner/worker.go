@@ -122,8 +122,10 @@ func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain
 	newEnv.coinbase = newEnvParams.Coinbase
 	newEnv.header.ParentHash = env.header.Hash()
 
+	log.Info("Simulator-WORKER: copyAtNewEnvironment", "env", env.ToString())
+
 	// Store initial coinbase balance
-	initialBalance := newEnv.state.GetBalance(newEnv.coinbase)
+	initialBalance := new(uint256.Int).SetUint64(0) //newEnv.state.GetBalance(newEnv.coinbase)
 	newEnv.initialCoinbaseBalance = new(uint256.Int).Set(initialBalance)
 
 	newEnv.evm = vm.NewEVM(core.NewEVMBlockContext(newEnv.header, chain, &newEnv.coinbase), newEnv.state, config, vm.Config{})
