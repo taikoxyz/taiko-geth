@@ -128,7 +128,7 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 	env.header.Extra = bbExtraData
 
 	// Copy the environment from the latest chain head state and set the params for the new block.
-	simEnv := env.copy(g.chain, g.chainConfig)
+	simEnv := env.copyAtNewEnvironment(newEnvParams, g.chain, g.chainConfig)
 
 	// Set the new tx signer in the env.
 	simEnv.signer = types.MakeSigner(g.chainConfig, simEnv.header.Number, simEnv.header.Time)
