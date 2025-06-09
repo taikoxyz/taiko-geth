@@ -718,7 +718,7 @@ func DecodeOntakeExtraData(extradata []byte) uint8 {
 }
 
 // CHANGE(taiko): decodes a Shasta block's extradata, returns basefeeSharingPctg configurations,
-// the corresponding enocding function in protocol is `TaikoInbox._encodeBaseFeeSharings`.
+// the corresponding enocding function in protocol is `TaikoInbox._encodeExtraData`.
 func DecodeExtraData(extradata []byte) [2]uint8 {
 	return [2]uint8{extradata[0], extradata[1]}
 }
