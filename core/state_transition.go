@@ -562,7 +562,6 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 				new(uint256.Int).SetUint64(st.gasUsed()),
 				new(uint256.Int).SetUint64(st.evm.Context.BaseFee.Uint64()),
 			)
-
 			feeCoinbase := new(uint256.Int).Div(
 				new(uint256.Int).Mul(totalFee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
 				new(uint256.Int).SetUint64(100),
