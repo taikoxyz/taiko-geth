@@ -150,14 +150,6 @@ func (g *SimulationAPIWorker) simulateAnchorTx(tx *types.Transaction, newEnvPara
 		return
 	}
 
-	// Ensure anchor tx nonce matches parent block number
-	if err := g.validateAnchorNonce(tx, simEnv); err != nil {
-		res <- SimulationResponse{
-			error: fmt.Errorf("invalid anchor nonce: %w", err),
-		}
-		return
-	}
-
 	// Commit the anchor to the state
 	receipt, _, _, err := g.commitTx(simEnv, tx)
 
@@ -439,14 +431,4 @@ func (g *SimulationAPIWorker) applyTransaction(env *environment, tx *types.Trans
 
 func (g *SimulationAPIWorker) PreconfState() *PreconfState {
 	return g.preconfState
-}
-
-func (g *SimulationAPIWorker) validateAnchorNonce(tx *types.Transaction, env *environment) error {
-	// Ensure anchor tx nonce matches parent block number
-	parentNumber := env.header.Number.Uint64() - 1
-	if tx.Nonce() != parentNumber {
-		return fmt.Errorf("anchor nonce %d does not match parent block number %d",
-			tx.Nonce(), parentNumber)
-	}
-	return nil
 }
