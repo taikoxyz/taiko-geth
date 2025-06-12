@@ -247,26 +247,12 @@ func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 
 	// Verify anchor transaction
 	if len(body.Transactions) != 0 { // Transactions list might be empty when building empty payload.
-		checkAnchorTx := true
-
-		// For Shasta blocks, only the last block in the batch should have the anchor transaction as
-		// the first transaction.
-		if t.chainConfig.IsShasta(header.Number) {
-			sender, err := types.MakeSigner(t.chainConfig, header.Number, header.Time).Sender(body.Transactions[0])
-			if err != nil {
-				return nil, err
-			}
-			checkAnchorTx = strings.EqualFold(sender.String(), GoldenTouchAccount.String())
+		isAnchor, err := t.ValidateAnchorTx(body.Transactions[0], header)
+		if err != nil {
+			return nil, err
 		}
-
-		if checkAnchorTx {
-			isAnchor, err := t.ValidateAnchorTx(body.Transactions[0], header)
-			if err != nil {
-				return nil, err
-			}
-			if !isAnchor {
-				return nil, ErrAnchorTxNotFound
-			}
+		if !isAnchor {
+			return nil, ErrAnchorTxNotFound
 		}
 	}
 
