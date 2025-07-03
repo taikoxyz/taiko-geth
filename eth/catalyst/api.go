@@ -93,7 +93,7 @@ var caps = []string{
 	"engine_exchangeTransitionConfigurationV1",
 	"engine_getPayloadV1",
 	"engine_getPayloadV2",
-	"engine_getPayloadFullV2", // CHANGE(taiko): added new method
+	"taiko_engine_getPayloadV2", // CHANGE(taiko): added new method
 	"engine_getPayloadV3",
 	"engine_getPayloadV4",
 	"engine_getBlobsV1",
@@ -578,8 +578,8 @@ func (api *ConsensusAPI) GetPayloadV2(payloadID engine.PayloadID) (*engine.Execu
 	return api.getPayload(payloadID, false)
 }
 
-// CHANGE(taiko): GetPayloadFullV2 returns a cached payload by id with witness.
-func (api *ConsensusAPI) GetPayloadFullV2(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
+// CHANGE(taiko): TaikoGetPayloadV2 returns a cached payload by id with witness.
+func (api *ConsensusAPI) TaikoGetPayloadV2(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
 	if !payloadID.Is(engine.PayloadV1, engine.PayloadV2) {
 		return nil, engine.UnsupportedFork
 	}
