@@ -205,7 +205,7 @@ func (s *TaikoAPIBackend) getWitness(ctx context.Context, number rpc.BlockNumber
 	if err != nil {
 		return nil, err
 	}
-	preState, release, err := s.eth.APIBackend.StateAtBlock(ctx, parentBlock, 128, nil, true, false)
+	statedb, release, err := s.eth.APIBackend.StateAtBlock(ctx, parentBlock, 128, nil, true, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get state at block %s: %w", parentNumber, err)
 	}
@@ -215,16 +215,21 @@ func (s *TaikoAPIBackend) getWitness(ctx context.Context, number rpc.BlockNumber
 	if err != nil {
 		return nil, err
 	}
-	preState.StartPrefetcher("witness", witness)
-	defer preState.StopPrefetcher()
+	statedb.StartPrefetcher("witness", witness)
+	defer statedb.StopPrefetcher()
 	// Run the stateless blocks processing and self-validate certain fields
-	res, err := s.eth.BlockChain().Processor().Process(block, preState, vm.Config{})
+	res, err := s.eth.BlockChain().Processor().Process(block, statedb, vm.Config{})
 	if err != nil {
 		return nil, err
 	}
-	if err = s.eth.BlockChain().Validator().ValidateState(block, preState, res, true); err != nil {
+	if err = s.eth.BlockChain().Validator().ValidateState(block, statedb, res, true); err != nil {
 		return nil, err
 	}
+	// type extWitness struct {
+	// 	Headers []*types.Header
+	// 	Codes   [][]byte
+	// 	State   [][]byte
+	// }
 	b, err := rlp.EncodeToBytes(witness)
 	if err != nil {
 		return nil, err
