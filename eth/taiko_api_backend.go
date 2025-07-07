@@ -1,25 +1,41 @@
 package eth
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"math/big"
+	"sync"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/stateless"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 )
+
+const witnessCacheSize = 256
 
 // TaikoAPIBackend handles L2 node related RPC calls.
 type TaikoAPIBackend struct {
-	eth *Ethereum
+	mu           sync.RWMutex
+	eth          *Ethereum
+	witnessCache *lru.Cache[rpc.BlockNumber, hexutil.Bytes]
 }
 
 // NewTaikoAPIBackend creates a new TaikoAPIBackend instance.
 func NewTaikoAPIBackend(eth *Ethereum) *TaikoAPIBackend {
 	return &TaikoAPIBackend{
-		eth: eth,
+		eth:          eth,
+		witnessCache: lru.NewCache[rpc.BlockNumber, hexutil.Bytes](witnessCacheSize),
 	}
 }
 
@@ -144,4 +160,74 @@ func (a *TaikoAuthAPIBackend) TxPoolContentWithMinTip(
 		maxTransactionsLists,
 		minTip,
 	)
+}
+
+// blockByNumber is the wrapper of the chain access function offered by the backend.
+// It will return an error if the block is not found.
+func (s *TaikoAPIBackend) blockByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Block, error) {
+	block, err := s.eth.APIBackend.BlockByNumber(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	if block == nil {
+		return nil, fmt.Errorf("block #%d not found", number)
+	}
+	return block, nil
+}
+
+// GetWitness retrieves the witness for a given block number.
+func (s *TaikoAPIBackend) GetWitness(ctx context.Context, number rpc.BlockNumber) (hexutil.Bytes, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	res, ok := s.witnessCache.Get(number)
+	if ok {
+		return res, nil
+	}
+	res, err := s.getWitness(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	s.witnessCache.Add(number, res)
+	return res, nil
+}
+
+func (s *TaikoAPIBackend) getWitness(ctx context.Context, number rpc.BlockNumber) (hexutil.Bytes, error) {
+	if number < 1 {
+		return nil, errors.New("genesis is not traceable")
+	}
+	block, err := s.blockByNumber(ctx, number)
+	if err != nil {
+		return nil, err
+	}
+	parentNumber := number - 1
+	parentBlock, err := s.blockByNumber(ctx, parentNumber)
+	if err != nil {
+		return nil, err
+	}
+	preState, release, err := s.eth.APIBackend.StateAtBlock(ctx, parentBlock, 128, nil, true, false)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state at block %s: %w", parentNumber, err)
+	}
+	defer release()
+
+	witness, err := stateless.NewWitness(block.Header(), s.eth.BlockChain().HeaderChain())
+	if err != nil {
+		return nil, err
+	}
+	preState.StartPrefetcher("witness", witness)
+	defer preState.StopPrefetcher()
+	// Run the stateless blocks processing and self-validate certain fields
+	res, err := s.eth.BlockChain().Processor().Process(block, preState, vm.Config{})
+	if err != nil {
+		return nil, err
+	}
+	if err = s.eth.BlockChain().Validator().ValidateState(block, preState, res, true); err != nil {
+		return nil, err
+	}
+	b, err := rlp.EncodeToBytes(witness)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
