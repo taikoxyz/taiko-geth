@@ -217,12 +217,11 @@ func (s *TaikoAPIBackend) getWitness(ctx context.Context, number rpc.BlockNumber
 	}
 	statedb.StartPrefetcher("witness", witness)
 	defer statedb.StopPrefetcher()
-	// Run the stateless blocks processing and self-validate certain fields
 	res, err := s.eth.BlockChain().Processor().Process(block, statedb, vm.Config{})
 	if err != nil {
 		return nil, err
 	}
-	if err = s.eth.BlockChain().Validator().ValidateState(block, statedb, res, true); err != nil {
+	if err = s.eth.BlockChain().Validator().ValidateState(block, statedb, res, false); err != nil {
 		return nil, err
 	}
 	// type extWitness struct {
