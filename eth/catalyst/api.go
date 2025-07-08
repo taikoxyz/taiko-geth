@@ -579,7 +579,7 @@ func (api *ConsensusAPI) GetPayloadV2(payloadID engine.PayloadID) (*engine.Execu
 }
 
 // CHANGE(taiko): TaikoGetPayloadV2 returns a cached payload by id with witness.
-func (api *ConsensusAPI) TaikoGetPayloadV2(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
+func (api *ConsensusAPI) GetTaikoPayloadV2(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
 	if !payloadID.Is(engine.PayloadV1, engine.PayloadV2) {
 		return nil, engine.UnsupportedFork
 	}
