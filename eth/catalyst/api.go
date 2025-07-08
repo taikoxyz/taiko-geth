@@ -93,7 +93,7 @@ var caps = []string{
 	"engine_exchangeTransitionConfigurationV1",
 	"engine_getPayloadV1",
 	"engine_getPayloadV2",
-	"taiko_engine_getPayloadV2", // CHANGE(taiko): added new method
+	"engine_getTaikoPayloadV2", // CHANGE(taiko): added new method
 	"engine_getPayloadV3",
 	"engine_getPayloadV4",
 	"engine_getBlobsV1",
