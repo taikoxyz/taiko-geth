@@ -33,6 +33,7 @@ type L1Origin struct {
 	L2BlockHash        common.Hash `json:"l2BlockHash"`
 	L1BlockHeight      *big.Int    `json:"l1BlockHeight" rlp:"optional"`
 	L1BlockHash        common.Hash `json:"l1BlockHash" rlp:"optional"`
+	IsForcedInclusion  bool        `json:"isForcedInclusion" rlp:"optional"`
 	BuildPayloadArgsID [8]byte     `json:"buildPayloadArgsID" rlp:"optional"`
 }
 
