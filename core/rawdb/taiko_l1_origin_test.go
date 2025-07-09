@@ -39,6 +39,7 @@ func TestL1Origin(t *testing.T) {
 		L1BlockHeight:      nil,
 		L1BlockHash:        randomHash(),
 		BuildPayloadArgsID: [8]byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8},
+		IsForcedInclusion:  true,
 	}
 	WriteL1Origin(db, testL1Origin.BlockID, testL1Origin)
 	l1Origin, err := ReadL1Origin(db, testL1Origin.BlockID)
@@ -49,6 +50,7 @@ func TestL1Origin(t *testing.T) {
 	assert.True(t, l1Origin.L1BlockHeight.Cmp(common.Big0) == 0)
 	assert.Equal(t, testL1Origin.L1BlockHash, l1Origin.L1BlockHash)
 	assert.Equal(t, testL1Origin.BuildPayloadArgsID, l1Origin.BuildPayloadArgsID)
+	assert.Equal(t, testL1Origin.IsForcedInclusion, l1Origin.IsForcedInclusion)
 }
 
 func TestHeadL1Origin(t *testing.T) {
