@@ -34,7 +34,7 @@ type L1Origin struct {
 	L1BlockHeight      *big.Int    `json:"l1BlockHeight" rlp:"optional"`
 	L1BlockHash        common.Hash `json:"l1BlockHash" rlp:"optional"`
 	IsForcedInclusion  bool        `json:"isForcedInclusion" rlp:"optional"`
-	Signature          [65]byte    `json:"signature" rlp:"optional"`
+	Signature          [65]byte    `json:"signature" rlp:"optional"` // signature of the envelope via p2p
 	BuildPayloadArgsID [8]byte     `json:"buildPayloadArgsID" rlp:"optional"`
 }
 
