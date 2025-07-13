@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -63,4 +64,79 @@ func TestHeadL1Origin(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, blockID)
 	assert.Equal(t, testBlockID, blockID)
+}
+
+func TestReadL1OriginFallbacks(t *testing.T) {
+	db := NewMemoryDatabase()
+
+	t.Run("LegacyTwo → L1Origin", func(t *testing.T) {
+		// prepare a second‐legacy L1Origin
+		blockID := randomBigInt()
+		height := randomBigInt()
+		l2Hash := randomHash()
+		l1Hash := randomHash()
+		buildID := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
+
+		legacyTwo := &L1OriginLegacyTwo{
+			BlockID:            blockID,
+			L2BlockHash:        l2Hash,
+			L1BlockHeight:      height,
+			L1BlockHash:        l1Hash,
+			BuildPayloadArgsID: buildID,
+		}
+
+		// encode & write raw RLP
+		data, err := rlp.EncodeToBytes(legacyTwo)
+		require.NoError(t, err)
+		require.NoError(t, db.Put(l1OriginKey(blockID), data))
+
+		// read back via our helper
+		got, err := ReadL1Origin(db, blockID)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+
+		// verify fields
+		assert.Equal(t, blockID, got.BlockID)
+		assert.Equal(t, l2Hash, got.L2BlockHash)
+		assert.True(t, got.L1BlockHeight.Cmp(height) == 0)
+		assert.Equal(t, l1Hash, got.L1BlockHash)
+		assert.Equal(t, buildID, got.BuildPayloadArgsID)
+		assert.False(t, got.IsForcedInclusion)
+		assert.Equal(t, [65]byte{}, got.Signature)
+	})
+
+	t.Run("LegacyOne → L1Origin", func(t *testing.T) {
+		// prepare the original legacy L1Origin
+		blockID := randomBigInt()
+		height := randomBigInt()
+		l2Hash := randomHash()
+		l1Hash := randomHash()
+
+		legacyOne := &L1OriginLegacy{
+			BlockID:       blockID,
+			L2BlockHash:   l2Hash,
+			L1BlockHeight: height,
+			L1BlockHash:   l1Hash,
+		}
+
+		// encode & write raw RLP
+		data, err := rlp.EncodeToBytes(legacyOne)
+		require.NoError(t, err)
+		require.NoError(t, db.Put(l1OriginKey(blockID), data))
+
+		// read back via our helper
+		got, err := ReadL1Origin(db, blockID)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+
+		// verify fields
+		assert.Equal(t, blockID, got.BlockID)
+		assert.Equal(t, l2Hash, got.L2BlockHash)
+		assert.True(t, got.L1BlockHeight.Cmp(height) == 0)
+		assert.Equal(t, l1Hash, got.L1BlockHash)
+		// new fields should be zero-default
+		assert.Equal(t, [8]byte{}, got.BuildPayloadArgsID)
+		assert.False(t, got.IsForcedInclusion)
+		assert.Equal(t, [65]byte{}, got.Signature)
+	})
 }
