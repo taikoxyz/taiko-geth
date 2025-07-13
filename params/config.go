@@ -649,6 +649,11 @@ func (c *ChainConfig) IsPacaya(num *big.Int) bool {
 	return isBlockForked(c.PacayaBlock, num)
 }
 
+// CHANGE(taiko): IsShasta returns whether num is either equal to the Shasta fork block or greater.
+func (c *ChainConfig) IsShasta(num *big.Int) bool {
+	return false // TODO: Implement this check.
+}
+
 // IsVerkleGenesis checks whether the verkle fork is activated at the genesis block.
 //
 // Verkle mode is considered enabled if the verkle fork time is configured,

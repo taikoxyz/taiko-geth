@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -91,7 +92,7 @@ func (t *Taiko) VerifyHeader(chain consensus.ChainHeaderReader, header *types.He
 		return consensus.ErrUnknownAncestor
 	}
 	// Sanity checks passed, do a proper verification
-	return t.verifyHeader(header, parent, time.Now().Unix())
+	return t.verifyHeader(chain, header, parent, time.Now().Unix())
 }
 
 // VerifyHeaders is similar to VerifyHeader, but verifies a batch of headers
@@ -118,7 +119,7 @@ func (t *Taiko) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*type
 			if parent == nil {
 				err = consensus.ErrUnknownAncestor
 			} else {
-				err = t.verifyHeader(header, parent, unixNow)
+				err = t.verifyHeader(chain, header, parent, unixNow)
 			}
 			select {
 			case <-abort:
@@ -130,7 +131,7 @@ func (t *Taiko) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*type
 	return abort, results
 }
 
-func (t *Taiko) verifyHeader(header, parent *types.Header, unixNow int64) error {
+func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *types.Header, unixNow int64) error {
 	// Ensure that the header's extra-data section is of a reasonable size (<= 32 bytes)
 	if uint64(len(header.Extra)) > params.MaximumExtraDataSize {
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), params.MaximumExtraDataSize)
@@ -169,6 +170,21 @@ func (t *Taiko) verifyHeader(header, parent *types.Header, unixNow int64) error 
 	// BaseFee should not be empty
 	if header.BaseFee == nil {
 		return ErrEmptyBasefee
+	}
+
+	// Verify the header's EIP-4396 attributes.
+	if t.chainConfig.IsShasta(header.Number) {
+		var parentBlockTime uint64
+		if header.Number.Cmp(common.Big2) >= 0 {
+			if ancestorBlock := chain.GetHeaderByHash(parent.ParentHash); ancestorBlock != nil {
+				parentBlockTime = parent.Time - ancestorBlock.Time
+			} else {
+				return fmt.Errorf("ancestor block not found for parent %s", parent.ParentHash.Hex())
+			}
+		}
+		if err := misc.VerifyEIP4396Header(t.chainConfig, parent, parentBlockTime, header); err != nil {
+			return err
+		}
 	}
 
 	// WithdrawalsHash should not be empty

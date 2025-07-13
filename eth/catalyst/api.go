@@ -441,8 +441,15 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		if isTaiko {
 			// No need to check payloadAttribute here, because all its fields are
 			// marked as required.
+			var parentBlockTime uint64
+			if block.Number().Cmp(common.Big2) >= 0 {
+				if ancestor := api.eth.BlockChain().GetHeaderByHash(block.ParentHash()); ancestor != nil {
+					parentBlockTime = block.Time() - ancestor.Time
+				}
+			}
 			block, err := api.eth.Miner().SealBlockWith(
-				update.HeadBlockHash,
+				block.Header(),
+				parentBlockTime,
 				payloadAttributes.Timestamp,
 				payloadAttributes.BlockMetadata,
 				payloadAttributes.BaseFeePerGas,
