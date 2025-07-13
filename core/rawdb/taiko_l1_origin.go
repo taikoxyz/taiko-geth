@@ -80,10 +80,8 @@ func WriteL1Origin(db ethdb.KeyValueWriter, blockID *big.Int, l1Origin *L1Origin
 
 // ReadL1Origin retrieves the given L2 block's L1Origin from database.
 func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) {
-	data, err := db.Get(l1OriginKey(blockID))
-	if err != nil {
-		return nil, fmt.Errorf("db.Get L1Origin: %w", err)
-	}
+	data, _ := db.Get(l1OriginKey(blockID))
+
 	if len(data) == 0 {
 		return nil, nil
 	}
