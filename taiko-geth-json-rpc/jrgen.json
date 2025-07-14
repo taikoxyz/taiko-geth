@@ -97,34 +97,6 @@
         "$ref": "#/definitions/*big.Int"
       }
     },
-    "taikoAuth_SetL1OriginSignature": {
-      "summary": "RPC method SetL1OriginSignature",
-      "description": "Invokes the SetL1OriginSignature method on *TaikoAuthAPIBackend",
-      "tags": [
-        "taikoAuth_"
-      ],
-      "params": {
-        "properties": {
-          "blockID": {
-            "$ref": "#/definitions/*big.Int"
-          },
-          "signature": {
-            "examples": [
-              "0x123456"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "blockID",
-          "signature"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "$ref": "#/definitions/*rawdb.L1Origin"
-      }
-    },
     "taikoAuth_TxPoolContent": {
       "summary": "RPC method TxPoolContent",
       "description": "TxPoolContent retrieves the transaction pool content with the given upper limits.",
