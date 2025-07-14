@@ -15,7 +15,6 @@ import (
 )
 
 func (g *SimulationAPIWorker) prepareWork(genParams *generateParams) (*environment, error) {
-
 	// Find the parent block for sealing task
 	parent := g.chain.CurrentBlock()
 	if genParams.parentHash != (common.Hash{}) {

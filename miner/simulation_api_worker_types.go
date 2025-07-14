@@ -60,8 +60,7 @@ type ReqCommitState struct {
 }
 
 type InnerCommitState struct {
-	StateId   uint32
-	commitRes chan SimulationResponse
+	StateId uint32
 }
 
 type SimulationResponse struct {
@@ -75,11 +74,6 @@ type CommitStateResponse struct {
 	cumulativeGasUsed        uint64
 	cumulativeBuilderPayment *hexutil.U256
 	error                    error
-}
-
-type inMemoryStore struct {
-	block *types.Block
-	env   *environment
 }
 
 func (c CommitStateResponse) CumulativeGasUsed() uint64 {

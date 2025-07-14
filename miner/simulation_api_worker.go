@@ -37,7 +37,6 @@ type SimulationAPIWorker struct {
 	config      *Config
 	engine      consensus.Engine
 	lock        sync.RWMutex
-	stateIdLock sync.Mutex // Lock for stateId operations
 	halt        bool
 	haltReason  string
 
@@ -51,11 +50,9 @@ func NewSimulationApiWorker(
 	engine consensus.Engine,
 	preconfState *PreconfState,
 ) (*SimulationAPIWorker, error) {
-
 	singletonLock.Lock()
 	defer singletonLock.Unlock()
 	if simulationApiSingleton == nil {
-
 		simulationApiSingleton = &SimulationAPIWorker{
 			chainConfig:  chainConfig,
 			chain:        chain,
@@ -77,7 +74,6 @@ func (g *SimulationAPIWorker) runLoop() {
 		select {
 		case req := <-SimCh:
 			go g.simulateTx(req.StateId, req.Tx, req.SimRes)
-			break
 		case req := <-SealBlock:
 			go g.sealBlock(req)
 		case req := <-SimAnchorTx:
@@ -90,11 +86,8 @@ func (g *SimulationAPIWorker) newHeadEventSubscriber() {
 	newBlockCh := make(chan core.ChainHeadEvent, 10)
 	sub := g.chain.SubscribeChainHeadEvent(newBlockCh)
 	defer sub.Unsubscribe()
-	for {
-		select {
-		case ev := <-newBlockCh:
-			g.preconfState.onNewChainHeadEvent(&ev)
-		}
+	for ev := range newBlockCh {
+		g.preconfState.onNewChainHeadEvent(&ev)
 	}
 }
 
@@ -315,7 +308,6 @@ func (g *SimulationAPIWorker) sealBlock(req SealBlockRequest) {
 }
 
 func (g *SimulationAPIWorker) commitTx(env *environment, tx *types.Transaction) (*types.Receipt, *uint256.Int, uint64, error) {
-
 	log.Info("Simulator-WORKER: commitTx", "tx", tx.Hash().Hex())
 
 	if env.gasPool.Gas() < params.TxGas {
@@ -377,7 +369,6 @@ func (g *SimulationAPIWorker) commitTx(env *environment, tx *types.Transaction) 
 }
 
 func (g *SimulationAPIWorker) commitPreconfTransaction(env *environment, tx *types.Transaction) (*types.Receipt, error) {
-
 	if tx.Type() == types.BlobTxType {
 		return g.commitPreconfBlobTransaction(env, tx)
 	}

@@ -86,25 +86,25 @@ func (state *PreconfState) envAtId(stateId uint64) *environment {
 }
 
 // addEnvironment adds a new environment to the stateIdMap and returns the assigned stateId
-func (p *PreconfState) addEnvironment(env *environment) uint64 {
+func (state *PreconfState) addEnvironment(env *environment) uint64 {
 	if env == nil {
 		return 0
 	}
 
-	p.stateIdMutex.Lock()
-	defer p.stateIdMutex.Unlock()
+	state.stateIdMutex.Lock()
+	defer state.stateIdMutex.Unlock()
 
-	if p.stateIdMap == nil {
-		p.stateIdMap = make(map[uint64]*environment)
+	if state.stateIdMap == nil {
+		state.stateIdMap = make(map[uint64]*environment)
 	}
 
 	// Check for overflow - if we're at max uint64, reset to starting point
-	if p.currentStateId == math.MaxUint64 {
-		p.currentStateId = StateIdToStartFrom
+	if state.currentStateId == math.MaxUint64 {
+		state.currentStateId = StateIdToStartFrom
 	}
 
-	stateId := p.currentStateId
-	p.currentStateId++
-	p.stateIdMap[stateId] = env
+	stateId := state.currentStateId
+	state.currentStateId++
+	state.stateIdMap[stateId] = env
 	return stateId
 }

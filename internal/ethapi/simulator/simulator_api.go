@@ -43,7 +43,6 @@ func NewSimulatorAPI(b ethapi.Backend) *SimulatorAPI {
 }
 
 func (s *SimulatorAPI) SimulateAnchorTx(ctx context.Context, input hexutil.Bytes, env common.BlockEnv, extraData string) (map[string]interface{}, error) {
-
 	log.Info("Simulator-API: SimulateAnchorTx")
 
 	tx := new(types.Transaction)
