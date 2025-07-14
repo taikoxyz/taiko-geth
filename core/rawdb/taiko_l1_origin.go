@@ -78,7 +78,6 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 	// First try to decode the new version (with new fields).
 	l1Origin := new(L1Origin)
 	if err := rlp.Decode(bytes.NewReader(data), l1Origin); err != nil {
-		log.Warn("Failed to decode L1Origin with new format", "err", err)
 
 		// Try legacy format
 		l1OriginLegacy := new(L1OriginLegacy)
@@ -86,7 +85,6 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 			return nil, fmt.Errorf("invalid legacy L1Origin RLP bytes: %w", err)
 		}
 
-		log.Info("Decoded L1Origin with legacy format")
 		l1Origin = &L1Origin{
 			BlockID:            l1OriginLegacy.BlockID,
 			L2BlockHash:        l1OriginLegacy.L2BlockHash,
@@ -101,7 +99,6 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 		log.Info("Decoded L1Origin with new format")
 	}
 
-	log.Info("Final L1Origin", "signature", fmt.Sprintf("%x", l1Origin.Signature))
 	return l1Origin, nil
 }
 
