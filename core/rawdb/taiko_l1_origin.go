@@ -38,6 +38,18 @@ type L1Origin struct {
 	Signature          [65]byte    `json:"signature"         rlp:"optional"`
 }
 
+// This mirrors the bad rollout where IsForcedInclusion & Signature
+// were stuck *before* BuildPayloadArgsID.
+type L1OriginWrongOrder struct {
+	BlockID            *big.Int
+	L2BlockHash        common.Hash
+	L1BlockHeight      *big.Int    `rlp:"optional"`
+	L1BlockHash        common.Hash `rlp:"optional"`
+	IsForcedInclusion  bool        `rlp:"optional"`
+	Signature          [65]byte    `rlp:"optional"`
+	BuildPayloadArgsID [8]byte     `rlp:"optional"`
+}
+
 // L1OriginLegacy represents a legacy L1Origin of a L2 block.
 type L1OriginLegacy struct {
 	BlockID       *big.Int    `json:"blockID" gencodec:"required"`
@@ -84,6 +96,19 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 		// If decoding the new version fails, try to decode the legacy version (without new fields).
 		l1OriginLegacy := new(L1OriginLegacy)
 		if err := rlp.Decode(bytes.NewReader(data), &l1OriginLegacy); err != nil {
+			var bad L1OriginWrongOrder
+			if err := rlp.Decode(bytes.NewReader(data), &bad); err == nil {
+				fixed := &L1Origin{
+					BlockID:            bad.BlockID,
+					L2BlockHash:        bad.L2BlockHash,
+					L1BlockHeight:      bad.L1BlockHeight,
+					L1BlockHash:        bad.L1BlockHash,
+					BuildPayloadArgsID: bad.BuildPayloadArgsID,
+					IsForcedInclusion:  bad.IsForcedInclusion,
+					Signature:          bad.Signature,
+				}
+				return fixed, nil
+			}
 			return nil, fmt.Errorf("invalid legacy L1Origin RLP bytes: %w", err)
 		}
 
