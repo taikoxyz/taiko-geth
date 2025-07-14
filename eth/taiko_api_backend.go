@@ -1,6 +1,7 @@
 package eth
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -93,8 +94,14 @@ func (a *TaikoAuthAPIBackend) SetL1OriginSignature(blockID *big.Int, signature [
 		return nil, err
 	}
 
+	log.Info("Setting L1Origin signature", "blockID", blockID, "signature", fmt.Sprintf("%x", signature))
+
 	l1Origin.Signature = signature
 	rawdb.WriteL1Origin(a.eth.ChainDb(), blockID, l1Origin)
+
+	// Verify it was written
+	readBack, _ := rawdb.ReadL1Origin(a.eth.ChainDb(), blockID)
+	log.Info("Signature after write", "signature", fmt.Sprintf("%x", readBack.Signature))
 
 	return l1Origin, nil
 }
