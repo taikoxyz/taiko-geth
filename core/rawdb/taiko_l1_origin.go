@@ -79,6 +79,8 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 	// First try to decode the new version (with new fields).
 	l1Origin := new(L1Origin)
 	if err := rlp.Decode(bytes.NewReader(data), l1Origin); err != nil {
+		log.Warn("Failed to decode L1Origin", "err", err)
+
 		// If decoding the new version fails, try to decode the legacy version (without new fields).
 		l1OriginLegacy := new(L1OriginLegacy)
 		if err := rlp.Decode(bytes.NewReader(data), &l1OriginLegacy); err != nil {
