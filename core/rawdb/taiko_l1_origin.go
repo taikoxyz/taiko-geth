@@ -34,6 +34,8 @@ type L1Origin struct {
 	L1BlockHeight      *big.Int    `json:"l1BlockHeight" rlp:"optional"`
 	L1BlockHash        common.Hash `json:"l1BlockHash" rlp:"optional"`
 	BuildPayloadArgsID [8]byte     `json:"buildPayloadArgsID" rlp:"optional"`
+	IsForcedInclusion  bool        `json:"isForcedInclusion" rlp:"optional"`
+	Signature          [65]byte    `json:"signature"         rlp:"optional"`
 }
 
 // L1OriginLegacy represents a legacy L1Origin of a L2 block.
