@@ -20,6 +20,8 @@ func (l L1Origin) MarshalJSON() ([]byte, error) {
 		L2BlockHash        common.Hash           `json:"l2BlockHash"`
 		L1BlockHeight      *math.HexOrDecimal256 `json:"l1BlockHeight" rlp:"optional"`
 		L1BlockHash        common.Hash           `json:"l1BlockHash" rlp:"optional"`
+		IsForcedInclusion  bool                  `json:"isForcedInclusion" rlp:"optional"`
+		Signature          [65]byte              `json:"signature" rlp:"optional"`
 		BuildPayloadArgsID [8]byte               `json:"buildPayloadArgsID" rlp:"optional"`
 	}
 	var enc L1Origin
@@ -27,6 +29,8 @@ func (l L1Origin) MarshalJSON() ([]byte, error) {
 	enc.L2BlockHash = l.L2BlockHash
 	enc.L1BlockHeight = (*math.HexOrDecimal256)(l.L1BlockHeight)
 	enc.L1BlockHash = l.L1BlockHash
+	enc.IsForcedInclusion = l.IsForcedInclusion
+	enc.Signature = l.Signature
 	enc.BuildPayloadArgsID = l.BuildPayloadArgsID
 	return json.Marshal(&enc)
 }
@@ -38,6 +42,8 @@ func (l *L1Origin) UnmarshalJSON(input []byte) error {
 		L2BlockHash        *common.Hash          `json:"l2BlockHash"`
 		L1BlockHeight      *math.HexOrDecimal256 `json:"l1BlockHeight" rlp:"optional"`
 		L1BlockHash        *common.Hash          `json:"l1BlockHash" rlp:"optional"`
+		IsForcedInclusion  *bool                 `json:"isForcedInclusion" rlp:"optional"`
+		Signature          *[65]byte             `json:"signature" rlp:"optional"`
 		BuildPayloadArgsID *[8]byte              `json:"buildPayloadArgsID" rlp:"optional"`
 	}
 	var dec L1Origin
@@ -56,6 +62,12 @@ func (l *L1Origin) UnmarshalJSON(input []byte) error {
 	}
 	if dec.L1BlockHash != nil {
 		l.L1BlockHash = *dec.L1BlockHash
+	}
+	if dec.IsForcedInclusion != nil {
+		l.IsForcedInclusion = *dec.IsForcedInclusion
+	}
+	if dec.Signature != nil {
+		l.Signature = *dec.Signature
 	}
 	if dec.BuildPayloadArgsID != nil {
 		l.BuildPayloadArgsID = *dec.BuildPayloadArgsID
