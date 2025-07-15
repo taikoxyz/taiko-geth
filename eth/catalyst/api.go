@@ -456,10 +456,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			// L1Origin **MUST NOT** be nil, it's a required field in PayloadAttributesV1.
 			l1Origin := payloadAttributes.L1Origin
 
-			log.Info("Engine: Received L1Origin",
-				"blockID", l1Origin.BlockID,
-				"signature", fmt.Sprintf("%.20x", l1Origin.Signature))
-
 			// Set the block hash before inserting the L1Origin into database.
 			l1Origin.L2BlockHash = block.Hash()
 
