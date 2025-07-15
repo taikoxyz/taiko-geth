@@ -2,7 +2,7 @@ name: "Push multi-arch docker image to GAR"
 
 on:
   push:
-    branches: [taiko, set_l1_origin_signature]
+    branches: [taiko]
     tags:
       - "v*"
 
