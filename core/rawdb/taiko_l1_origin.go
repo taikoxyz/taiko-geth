@@ -59,6 +59,17 @@ func (l *L1Origin) IsPreconfBlock() bool {
 
 // WriteL1Origin stores a L1Origin into the database.
 func WriteL1Origin(db ethdb.KeyValueWriter, blockID *big.Int, l1Origin *L1Origin) {
+
+	log.Info("WriteL1Origin",
+		"blockID", l1Origin.BlockID.Uint64(),
+		"signature", common.Bytes2Hex(l1Origin.Signature[:]),
+		"l2BlockHash", l1Origin.L2BlockHash.Hex(),
+		"L1BlockHeight", l1Origin.L1BlockHeight.Uint64(),
+		"L1BlockHash", l1Origin.L1BlockHash.Hex(),
+		"buildPayloadArgsID", l1Origin.BuildPayloadArgsID,
+		"isForcedInclusion", l1Origin.IsForcedInclusion,
+	)
+
 	data, err := rlp.EncodeToBytes(l1Origin)
 	if err != nil {
 		log.Crit("Failed to encode L1Origin", "err", err)
@@ -67,9 +78,14 @@ func WriteL1Origin(db ethdb.KeyValueWriter, blockID *big.Int, l1Origin *L1Origin
 	if err := db.Put(l1OriginKey(blockID), data); err != nil {
 		log.Crit("Failed to store L1Origin", "err", err)
 	}
+
+	log.Info("WriteL1Origin completed",
+		"buildPayloadArgsID", l1Origin.BuildPayloadArgsID,
+	)
 }
 
 func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) {
+	log.Info("ReadingL1Origin", "blockID", blockID.Uint64())
 	data, _ := db.Get(l1OriginKey(blockID))
 	if len(data) == 0 {
 		return nil, nil
@@ -95,6 +111,16 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 			Signature:         [65]byte{},
 		}
 	}
+
+	log.Info("ReadL1Origin complete",
+		"blockID", l1Origin.BlockID.Uint64(),
+		"signature", common.Bytes2Hex(l1Origin.Signature[:]),
+		"l2BlockHash", l1Origin.L2BlockHash.Hex(),
+		"L1BlockHeight", l1Origin.L1BlockHeight.Uint64(),
+		"L1BlockHash", l1Origin.L1BlockHash.Hex(),
+		"buildPayloadArgsID", l1Origin.BuildPayloadArgsID,
+		"isForcedInclusion", l1Origin.IsForcedInclusion,
+	)
 
 	return l1Origin, nil
 }
