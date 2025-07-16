@@ -64,8 +64,6 @@ func WriteL1Origin(db ethdb.KeyValueWriter, blockID *big.Int, l1Origin *L1Origin
 		"blockID", l1Origin.BlockID.Uint64(),
 		"signature", common.Bytes2Hex(l1Origin.Signature[:]),
 		"l2BlockHash", l1Origin.L2BlockHash.Hex(),
-		"L1BlockHeight", l1Origin.L1BlockHeight.Uint64(),
-		"L1BlockHash", l1Origin.L1BlockHash.Hex(),
 		"buildPayloadArgsID", l1Origin.BuildPayloadArgsID,
 		"isForcedInclusion", l1Origin.IsForcedInclusion,
 	)
@@ -116,8 +114,6 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 		"blockID", l1Origin.BlockID.Uint64(),
 		"signature", common.Bytes2Hex(l1Origin.Signature[:]),
 		"l2BlockHash", l1Origin.L2BlockHash.Hex(),
-		"L1BlockHeight", l1Origin.L1BlockHeight.Uint64(),
-		"L1BlockHash", l1Origin.L1BlockHash.Hex(),
 		"buildPayloadArgsID", l1Origin.BuildPayloadArgsID,
 		"isForcedInclusion", l1Origin.IsForcedInclusion,
 	)
