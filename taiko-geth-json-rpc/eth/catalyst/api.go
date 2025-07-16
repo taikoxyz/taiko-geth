@@ -473,7 +473,16 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			}
 			id := args.Id()
 
-			log.Debug(fmt.Sprintf("BuildPayloadArgs: %v. Id: %v", args, id))
+			log.Debug("PayloadArgs",
+				"parent", args.Parent.Hex(),
+				"timestamp", args.Timestamp,
+				"feeRecipient", args.FeeRecipient.Hex(),
+				"random", args.Random.Hex(),
+				"withdrawals", args.Withdrawals,
+				"version", args.Version,
+				"id", id.String(),
+				"txListHash", txListHash.Hex(),
+			)
 
 			// If we already are busy generating this work, then we do not need
 			// to start a second process.
