@@ -7,7 +7,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -40,8 +39,6 @@ func TestL1Origin(t *testing.T) {
 		L1BlockHeight:      nil,
 		L1BlockHash:        randomHash(),
 		BuildPayloadArgsID: [8]byte{0x1, 0x2, 0x3, 0x4, 0x5, 0x6, 0x7, 0x8},
-		IsForcedInclusion:  true,
-		Signature:          [65]byte{0x9, 0xa, 0xb, 0xc, 0xd, 0xe, 0xf, 0x10},
 	}
 	WriteL1Origin(db, testL1Origin.BlockID, testL1Origin)
 	l1Origin, err := ReadL1Origin(db, testL1Origin.BlockID)
@@ -52,8 +49,6 @@ func TestL1Origin(t *testing.T) {
 	assert.True(t, l1Origin.L1BlockHeight.Cmp(common.Big0) == 0)
 	assert.Equal(t, testL1Origin.L1BlockHash, l1Origin.L1BlockHash)
 	assert.Equal(t, testL1Origin.BuildPayloadArgsID, l1Origin.BuildPayloadArgsID)
-	assert.Equal(t, testL1Origin.IsForcedInclusion, l1Origin.IsForcedInclusion)
-	assert.Equal(t, testL1Origin.Signature, l1Origin.Signature)
 }
 
 func TestHeadL1Origin(t *testing.T) {
@@ -66,77 +61,115 @@ func TestHeadL1Origin(t *testing.T) {
 	assert.Equal(t, testBlockID, blockID)
 }
 
-func TestReadL1OriginFallbacks(t *testing.T) {
+func TestL1Origin_OptionalFields(t *testing.T) {
 	db := NewMemoryDatabase()
 
-	t.Run("LegacyTwo → L1Origin", func(t *testing.T) {
-		// prepare a second‐legacy L1Origin
-		blockID := randomBigInt()
-		height := randomBigInt()
-		l2Hash := randomHash()
-		l1Hash := randomHash()
-		buildID := [8]byte{1, 2, 3, 4, 5, 6, 7, 8}
-
-		legacyTwo := &L1OriginLegacyTwo{
-			BlockID:            blockID,
-			L2BlockHash:        l2Hash,
-			L1BlockHeight:      height,
-			L1BlockHash:        l1Hash,
-			BuildPayloadArgsID: buildID,
+	// helper to generate a random 65-byte signature
+	randSig := func() [65]byte {
+		var sig [65]byte
+		if _, err := rand.Read(sig[:]); err != nil {
+			t.Fatalf("rand.Read failed: %v", err)
 		}
+		return sig
+	}
 
-		// encode & write raw RLP
-		data, err := rlp.EncodeToBytes(legacyTwo)
-		require.NoError(t, err)
-		require.NoError(t, db.Put(l1OriginKey(blockID), data))
+	tests := []struct {
+		name              string
+		origin            *L1Origin
+		expectHeightZero  bool
+		expectBuildIDZero bool
+		expectForced      bool
+		expectSignature   [65]byte
+	}{
+		{
+			name: "signature only",
+			origin: &L1Origin{
+				BlockID:     randomBigInt(),
+				L2BlockHash: randomHash(),
+				// leave L1BlockHeight nil → treated as zero
+				L1BlockHash:        common.Hash{}, // zero
+				BuildPayloadArgsID: [8]byte{},     // zero
+				// new fields:
+				IsForcedInclusion: false,
+				Signature:         randSig(),
+			},
+			expectHeightZero:  true,
+			expectBuildIDZero: true,
+			expectForced:      false,
+			// will compare against origin.Signature
+		},
+		{
+			name: "forced only",
+			origin: &L1Origin{
+				BlockID:            randomBigInt(),
+				L2BlockHash:        randomHash(),
+				L1BlockHeight:      nil,
+				L1BlockHash:        common.Hash{}, // zero
+				BuildPayloadArgsID: [8]byte{},     // zero
+				IsForcedInclusion:  true,
+				Signature:          [65]byte{}, // zero
+			},
+			expectHeightZero:  true,
+			expectBuildIDZero: true,
+			expectForced:      true,
+			expectSignature:   [65]byte{},
+		},
+		{
+			name: "all fields",
+			origin: &L1Origin{
+				BlockID:            randomBigInt(),
+				L2BlockHash:        randomHash(),
+				L1BlockHeight:      big.NewInt(42),
+				L1BlockHash:        randomHash(),
+				BuildPayloadArgsID: [8]byte{1, 2, 3, 4, 5, 6, 7, 8},
+				IsForcedInclusion:  true,
+				Signature:          randSig(),
+			},
+			expectHeightZero:  false,
+			expectBuildIDZero: false,
+			expectForced:      true,
+			// will compare against origin.Signature
+		},
+	}
 
-		// read back via our helper
-		got, err := ReadL1Origin(db, blockID)
-		require.NoError(t, err)
-		require.NotNil(t, got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// write & read
+			WriteL1Origin(db, tt.origin.BlockID, tt.origin)
+			got, err := ReadL1Origin(db, tt.origin.BlockID)
+			require.NoError(t, err)
+			require.NotNil(t, got)
 
-		// verify fields
-		assert.Equal(t, blockID, got.BlockID)
-		assert.Equal(t, l2Hash, got.L2BlockHash)
-		assert.True(t, got.L1BlockHeight.Cmp(height) == 0)
-		assert.Equal(t, l1Hash, got.L1BlockHash)
-		assert.Equal(t, buildID, got.BuildPayloadArgsID)
-		assert.False(t, got.IsForcedInclusion)
-		assert.Equal(t, [65]byte{}, got.Signature)
-	})
+			// always-check the core fields
+			assert.Equal(t, tt.origin.BlockID, got.BlockID, "BlockID")
+			assert.Equal(t, tt.origin.L2BlockHash, got.L2BlockHash, "L2BlockHash")
 
-	t.Run("LegacyOne → L1Origin", func(t *testing.T) {
-		// prepare the original legacy L1Origin
-		blockID := randomBigInt()
-		height := randomBigInt()
-		l2Hash := randomHash()
-		l1Hash := randomHash()
+			// L1BlockHeight
+			if tt.expectHeightZero {
+				// nil or zero should both become zero
+				assert.NotNil(t, got.L1BlockHeight, "L1BlockHeight should be non-nil")
+				assert.Zero(t, got.L1BlockHeight.Cmp(common.Big0), "L1BlockHeight==0")
+			} else {
+				assert.Equal(t, tt.origin.L1BlockHeight, got.L1BlockHeight, "L1BlockHeight")
+			}
 
-		legacyOne := &L1OriginLegacy{
-			BlockID:       blockID,
-			L2BlockHash:   l2Hash,
-			L1BlockHeight: height,
-			L1BlockHash:   l1Hash,
-		}
+			// L1BlockHash
+			if tt.origin.L1BlockHash == (common.Hash{}) {
+				assert.Equal(t, common.Hash{}, got.L1BlockHash, "L1BlockHash zero")
+			} else {
+				assert.Equal(t, tt.origin.L1BlockHash, got.L1BlockHash, "L1BlockHash")
+			}
 
-		// encode & write raw RLP
-		data, err := rlp.EncodeToBytes(legacyOne)
-		require.NoError(t, err)
-		require.NoError(t, db.Put(l1OriginKey(blockID), data))
+			// BuildPayloadArgsID
+			if tt.expectBuildIDZero {
+				assert.Equal(t, [8]byte{}, got.BuildPayloadArgsID, "BuildPayloadArgsID zero")
+			} else {
+				assert.Equal(t, tt.origin.BuildPayloadArgsID, got.BuildPayloadArgsID, "BuildPayloadArgsID")
+			}
 
-		// read back via our helper
-		got, err := ReadL1Origin(db, blockID)
-		require.NoError(t, err)
-		require.NotNil(t, got)
-
-		// verify fields
-		assert.Equal(t, blockID, got.BlockID)
-		assert.Equal(t, l2Hash, got.L2BlockHash)
-		assert.True(t, got.L1BlockHeight.Cmp(height) == 0)
-		assert.Equal(t, l1Hash, got.L1BlockHash)
-		// new fields should be zero-default
-		assert.Equal(t, [8]byte{}, got.BuildPayloadArgsID)
-		assert.False(t, got.IsForcedInclusion)
-		assert.Equal(t, [65]byte{}, got.Signature)
-	})
+			// NEW fields
+			assert.Equal(t, tt.expectForced, got.IsForcedInclusion, "IsForcedInclusion")
+			assert.Equal(t, tt.origin.Signature, got.Signature, "Signature")
+		})
+	}
 }
