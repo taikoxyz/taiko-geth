@@ -479,6 +479,7 @@ func (c *Config) GetKeyStoreDir() (string, bool, error) {
 	return keydir, isEphemeral, nil
 }
 
+// CHANGE(taiko): check if simulator API is enabled in HTTP modules for simulation support.
 func (c *Config) HasSimulatorAPI() bool {
 	for _, api := range c.HTTPModules {
 		if api == "simulator" {

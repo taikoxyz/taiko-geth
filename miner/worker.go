@@ -61,7 +61,7 @@ type environment struct {
 
 	witness *stateless.Witness
 
-	// simulator
+	// CHANGE(taiko): simulator fields for managing pre-confirmed state and builder payments.
 	initialCoinbaseBalance *uint256.Int
 	sealedBlock            *types.Block
 }

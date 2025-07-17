@@ -75,11 +75,11 @@ type Miner struct {
 	pending     *pending
 	pendingMu   sync.Mutex // Lock protects the pending block
 
-	// simulationApiWorker: worker state manager and api override provider
+	// CHANGE(taiko): simulationApiWorker manages worker state and provides API overrides for simulation support.
 	simulationApiWorker *SimulationAPIWorker
 }
 
-// New creates a new miner with provided config.
+// CHANGE(taiko): New creates a new miner with provided config and simulation support.
 func New(eth Backend, config Config, chainConfig *params.ChainConfig, engine consensus.Engine, preconfState *PreconfState) *Miner {
 	simulationApiWorker, err := NewSimulationApiWorker(chainConfig, eth.BlockChain(), &config, engine, preconfState)
 	if err != nil {

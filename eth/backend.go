@@ -267,7 +267,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 
-	// Initialize preconfState and miner based on API configuration
+	// CHANGE(taiko): Initialize preconfState and miner based on API configuration
 	simulatorApiEnabled := stack.Config().HasSimulatorAPI()
 	var preconfState *miner.PreconfState
 	if simulatorApiEnabled {
@@ -292,7 +292,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	// Register the backend on the node
 	apis := eth.APIs()
 
-	// Register the simulator API if it is enabled
+	// CHANGE(taiko): register the simulator API if it is enabled for simulation support.
 	if simulatorApiEnabled {
 		log.Info("Simulator-API: Registering simulator API")
 		apis = append(apis, rpc.API{
