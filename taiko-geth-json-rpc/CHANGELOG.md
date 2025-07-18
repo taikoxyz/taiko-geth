@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.17.0](https://github.com/taikoxyz/taiko-geth/compare/v1.16.0...v1.17.0) (2025-07-16)
+
+
+### Features
+
+* **core:** add optional isForcedInclusion and Signature to L1Origin ([#434](https://github.com/taikoxyz/taiko-geth/issues/434)) ([a1fe1d8](https://github.com/taikoxyz/taiko-geth/commit/a1fe1d8309492866f21993b7065d608081b5750e))
+* **core:** ll1 origin updates ([#439](https://github.com/taikoxyz/taiko-geth/issues/439)) ([8c15fa3](https://github.com/taikoxyz/taiko-geth/commit/8c15fa30e3cd178ce646a71b9c13993369af8f64))
+* **taiko-api:** set l1 origin sig ([#440](https://github.com/taikoxyz/taiko-geth/issues/440)) ([8a11e69](https://github.com/taikoxyz/taiko-geth/commit/8a11e69d35c7a1cc7b7176d8a01dab8f2fb8c3d5))
+
+
+### Bug Fixes
+
+* **core:** revert PR ([#438](https://github.com/taikoxyz/taiko-geth/issues/438)) ([bdc0f79](https://github.com/taikoxyz/taiko-geth/commit/bdc0f79a6c8cb6e98bceac4bb2d64091ef61f50a))
+
+
+### Chores
+
+* log buildpayloadargs and its id ([#441](https://github.com/taikoxyz/taiko-geth/issues/441)) ([7810ed8](https://github.com/taikoxyz/taiko-geth/commit/7810ed871c46e9753b91889deb59a2a6fd7210d6))
+
 ## [1.16.0](https://github.com/taikoxyz/taiko-geth/compare/v1.15.0...v1.16.0) (2025-05-21)
 
 
