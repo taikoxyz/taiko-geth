@@ -839,12 +839,6 @@ var (
 		Value:    ethconfig.Defaults.GPO.IgnorePrice.Int64(),
 		Category: flags.GasPriceCategory,
 	}
-	// CHANGE(taiko): add `--gpo.defaultprice` flag.
-	GpoDefaultGasPriceFlag = &cli.Int64Flag{
-		Name:     "gpo.defaultprice",
-		Usage:    "Default gas price",
-		Category: flags.GasPriceCategory,
-	}
 
 	// Metrics flags
 	MetricsEnabledFlag = &cli.BoolFlag{
