@@ -1,9 +1,9 @@
 {
   "0x661690Da28C8b78B0199019771771bAfb6A93969": {
-    "balance": "0x3635c9adc5dea00000"
+    "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
   },
   "0x79fcdef22feed20eddacbb2587640e45491b757f": {
-    "balance": "0x3635c9adc5dea00000"
+    "balance": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
   },
   "0x0167010000000000000000000000000000000006": {
     "contractName": "SharedResolverImpl",
