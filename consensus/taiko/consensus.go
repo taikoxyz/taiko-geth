@@ -40,8 +40,8 @@ var (
 	AnchorV3Selector = crypto.Keccak256(
 		[]byte("anchorV3(uint64,bytes32,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
 	)[:4]
-	AnchorV4Selector = crypto.Keccak256(
-		[]byte("v4Anchor(uint64,bytes32,uint256,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
+	UpdateStateSelector = crypto.Keccak256(
+		[]byte("updateState(uint48,address,bytes,bytes32,(uint8,uint96,address)[],uint16,uint48,bytes32,bytes32)"),
 	)[:4]
 	AnchorGasLimit   = uint64(250_000)
 	AnchorV3GasLimit = uint64(1_000_000)
@@ -310,7 +310,7 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 	}
 
 	if t.chainConfig.IsShasta(header.Number) {
-		if !bytes.HasPrefix(tx.Data(), AnchorV4Selector) {
+		if !bytes.HasPrefix(tx.Data(), UpdateStateSelector) {
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
