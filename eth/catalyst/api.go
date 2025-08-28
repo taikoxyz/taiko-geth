@@ -472,6 +472,18 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				TxListHash:   &txListHash,
 			}
 			id := args.Id()
+
+			log.Debug("PayloadArgs",
+				"parent", args.Parent.Hex(),
+				"timestamp", args.Timestamp,
+				"feeRecipient", args.FeeRecipient.Hex(),
+				"random", args.Random.Hex(),
+				"withdrawals", args.Withdrawals,
+				"version", args.Version,
+				"id", id.String(),
+				"txListHash", txListHash.Hex(),
+			)
+
 			// If we already are busy generating this work, then we do not need
 			// to start a second process.
 			if api.localBlocks.has(id) {

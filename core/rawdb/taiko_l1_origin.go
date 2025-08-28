@@ -34,6 +34,8 @@ type L1Origin struct {
 	L1BlockHeight      *big.Int    `json:"l1BlockHeight" rlp:"optional"`
 	L1BlockHash        common.Hash `json:"l1BlockHash" rlp:"optional"`
 	BuildPayloadArgsID [8]byte     `json:"buildPayloadArgsID" rlp:"optional"`
+	IsForcedInclusion  bool        `json:"isForcedInclusion" rlp:"optional"`
+	Signature          [65]byte    `json:"signature"         rlp:"optional"`
 }
 
 // L1OriginLegacy represents a legacy L1Origin of a L2 block.
@@ -67,7 +69,6 @@ func WriteL1Origin(db ethdb.KeyValueWriter, blockID *big.Int, l1Origin *L1Origin
 	}
 }
 
-// ReadL1Origin retrieves the given L2 block's L1Origin from database.
 func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) {
 	data, _ := db.Get(l1OriginKey(blockID))
 	if len(data) == 0 {
@@ -83,15 +84,15 @@ func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) 
 			return nil, fmt.Errorf("invalid legacy L1Origin RLP bytes: %w", err)
 		}
 
-		// If decoding legacy version succeeds, manually
-		// construct the new L1Origin with default values for the new fields.
 		l1Origin = &L1Origin{
-			BlockID:       l1OriginLegacy.BlockID,
-			L2BlockHash:   l1OriginLegacy.L2BlockHash,
-			L1BlockHeight: l1OriginLegacy.L1BlockHeight,
-			L1BlockHash:   l1OriginLegacy.L1BlockHash,
-			// Set BuildPayloadArgsID to an empty hash as the intended default for legacy L1Origin conversions.
+			BlockID:            l1OriginLegacy.BlockID,
+			L2BlockHash:        l1OriginLegacy.L2BlockHash,
+			L1BlockHeight:      l1OriginLegacy.L1BlockHeight,
+			L1BlockHash:        l1OriginLegacy.L1BlockHash,
 			BuildPayloadArgsID: [8]byte{},
+			// These will be zero values
+			IsForcedInclusion: false,
+			Signature:         [65]byte{},
 		}
 	}
 
