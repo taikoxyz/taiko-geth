@@ -41,8 +41,12 @@ var (
 	AnchorV3Selector = crypto.Keccak256(
 		[]byte("anchorV3(uint64,bytes32,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
 	)[:4]
-	AnchorGasLimit   = uint64(250_000)
-	AnchorV3GasLimit = uint64(1_000_000)
+	UpdateStateSelector = crypto.Keccak256(
+		[]byte("updateState(uint48,address,bytes,bytes32,(uint8,uint96,address)[],uint16,uint48,bytes32,bytes32)"),
+	)[:4]
+	AnchorGasLimit      = uint64(250_000)
+	AnchorV3GasLimit    = uint64(1_000_000)
+	UpdateStateGasLimit = uint64(1_000_000)
 )
 
 // Taiko is a consensus engine used by L2 rollup.
@@ -311,7 +315,7 @@ func (t *Taiko) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 	return common.Big0
 }
 
-// ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchor or TaikoL2.anchorV2 transaction.
+// ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or TaikoAnchor.v4Anchor transaction.
 func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (bool, error) {
 	if tx.Type() != types.DynamicFeeTxType {
 		return false, nil
@@ -321,17 +325,29 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 		return false, nil
 	}
 
-	if !bytes.HasPrefix(tx.Data(), AnchorSelector) &&
-		!bytes.HasPrefix(tx.Data(), AnchorV2Selector) &&
-		!bytes.HasPrefix(tx.Data(), AnchorV3Selector) {
-		return false, nil
+	if t.chainConfig.IsShasta(header.Number) {
+		if !bytes.HasPrefix(tx.Data(), UpdateStateSelector) {
+			return false, nil
+		}
+	} else if t.chainConfig.IsPacaya(header.Number) {
+		if !bytes.HasPrefix(tx.Data(), AnchorV3Selector) {
+			return false, nil
+		}
+	} else {
+		if !bytes.HasPrefix(tx.Data(), AnchorSelector) && !bytes.HasPrefix(tx.Data(), AnchorV2Selector) {
+			return false, nil
+		}
 	}
 
 	if tx.Value().Cmp(common.Big0) != 0 {
 		return false, nil
 	}
 
-	if t.chainConfig.IsPacaya(header.Number) {
+	if t.chainConfig.IsShasta(header.Number) {
+		if tx.Gas() != UpdateStateGasLimit {
+			return false, nil
+		}
+	} else if t.chainConfig.IsPacaya(header.Number) {
 		if tx.Gas() != AnchorV3GasLimit {
 			return false, nil
 		}
@@ -345,9 +361,7 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 		return false, nil
 	}
 
-	s := types.MakeSigner(t.chainConfig, header.Number, header.Time)
-
-	addr, err := s.Sender(tx)
+	addr, err := types.MakeSigner(t.chainConfig, header.Number, header.Time).Sender(tx)
 	if err != nil {
 		return false, err
 	}
