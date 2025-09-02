@@ -32,14 +32,13 @@ func VerifyEIP4396Header(
 
 // CalcEIP4396BaseFee calculates the EIP-4396 basefee of the header.
 func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parentBlockTime uint64) *big.Int {
-	// If the current block is the first EIP-4396 block, return the InitialBaseFee.
+	// If the current block is the first EIP-4396 block, return the ShastaInitialBaseFee.
 	if !config.IsShasta(parent.Number) {
-		return new(big.Int).SetUint64(params.InitialBaseFee)
+		return new(big.Int).SetUint64(params.ShastaInitialBaseFee)
 	}
 
-	// TODO: decoded and calculate these values from `header.extraData`.
 	var (
-		blockTimeTarget              uint64 = 12
+		blockTimeTarget              uint64 = 2
 		maxGasTargetTargetPercentage        = 95
 	)
 	parentGasTarget := parent.GasLimit / config.ElasticityMultiplier()
