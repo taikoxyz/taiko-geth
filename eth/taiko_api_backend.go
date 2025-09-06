@@ -60,6 +60,18 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	return l1Origin, nil
 }
 
+// L1OriginByBatchID returns the L1 origin of the last block for the given batch.
+func (s *TaikoAPIBackend) L1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
+	blockID, err := rawdb.ReadBatchToBlock(s.eth.ChainDb(), (*big.Int)(batchID))
+	if err != nil {
+		return nil, err
+	}
+	if blockID == nil {
+		return nil, ethereum.NotFound
+	}
+	return s.L1OriginByID((*math.HexOrDecimal256)(blockID))
+}
+
 // GetSyncMode returns the node sync mode.
 func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 	return s.eth.config.SyncMode.String(), nil
