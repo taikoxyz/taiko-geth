@@ -93,6 +93,12 @@ func (a *TaikoAuthAPIBackend) SetHeadL1Origin(blockID *math.HexOrDecimal256) *bi
 	return (*big.Int)(blockID)
 }
 
+// SetHeadL1Origin sets the latest L2 block's corresponding L1 origin.
+func (a *TaikoAuthAPIBackend) SetBatchToBlock(batchID *math.HexOrDecimal256, blockID *math.HexOrDecimal256) *big.Int {
+	rawdb.WriteBatchToBlock(a.eth.ChainDb(), (*big.Int)(batchID), (*big.Int)(blockID))
+	return (*big.Int)(batchID)
+}
+
 // UpdateL1Origin updates the L2 block's corresponding L1 origin.
 func (a *TaikoAuthAPIBackend) UpdateL1Origin(l1Origin *rawdb.L1Origin) *rawdb.L1Origin {
 	rawdb.WriteL1Origin(a.eth.ChainDb(), l1Origin.BlockID, l1Origin)
