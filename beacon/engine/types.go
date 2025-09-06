@@ -72,8 +72,9 @@ type BlockMetadata struct {
 	MixHash     common.Hash    `json:"mixHash"      gencodec:"required"`
 
 	// Extra fields required in taiko-geth.
-	TxList    []byte `json:"txList"          gencodec:"required"`
-	ExtraData []byte `json:"extraData"       gencodec:"required"`
+	BatchID   *big.Int `json:"batchId"`
+	TxList    []byte   `json:"txList"          gencodec:"required"`
+	ExtraData []byte   `json:"extraData"       gencodec:"required"`
 }
 
 // CHANGE(taiko): JSON type overrides for BlockMetadata.
