@@ -14,9 +14,9 @@ import (
 
 var (
 	// Database key prefix for L2 block's L1Origin.
-	l1OriginPrefix      = []byte("TKO:L1O")
-	batchToBlockPrefixy = []byte("TKO:B2B")
-	headL1OriginKey     = []byte("TKO:LastL1O")
+	l1OriginPrefix     = []byte("TKO:L1O")
+	batchToBlockPrefix = []byte("TKO:B2B")
+	headL1OriginKey    = []byte("TKO:LastL1O")
 )
 
 // l1OriginKey calculates the L1Origin key.
@@ -30,7 +30,7 @@ func l1OriginKey(blockID *big.Int) []byte {
 // batchToBlockPrefix + batch ID -> batchToBlockKey
 func batchToBlockKey(batch *big.Int) []byte {
 	data, _ := (*math.HexOrDecimal256)(batch).MarshalText()
-	return append(batchToBlockPrefixy, data...)
+	return append(batchToBlockPrefix, data...)
 }
 
 //go:generate go run github.com/fjl/gencodec -type L1Origin -field-override l1OriginMarshaling -out gen_taiko_l1_origin.go
