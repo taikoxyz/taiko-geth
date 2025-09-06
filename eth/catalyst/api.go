@@ -517,7 +517,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
 				// Write the batch to block mapping if the batch ID is given.
 				if payloadAttributes.BlockMetadata.BatchID != nil {
-					rawdb.WriteBatchToBlock(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
+					rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
 				}
 			}
 

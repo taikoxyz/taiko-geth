@@ -60,9 +60,9 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	return l1Origin, nil
 }
 
-// L1OriginByBatchID returns the L1 origin of the last block for the given batch.
-func (s *TaikoAPIBackend) L1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
-	blockID, err := rawdb.ReadBatchToBlock(s.eth.ChainDb(), (*big.Int)(batchID))
+// LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.
+func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
+	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
 	if err != nil {
 		return nil, err
 	}
@@ -93,9 +93,12 @@ func (a *TaikoAuthAPIBackend) SetHeadL1Origin(blockID *math.HexOrDecimal256) *bi
 	return (*big.Int)(blockID)
 }
 
-// SetHeadL1Origin sets the latest L2 block's corresponding L1 origin.
-func (a *TaikoAuthAPIBackend) SetBatchToBlock(batchID *math.HexOrDecimal256, blockID *math.HexOrDecimal256) *big.Int {
-	rawdb.WriteBatchToBlock(a.eth.ChainDb(), (*big.Int)(batchID), (*big.Int)(blockID))
+// SetBatchToLastBlock sets the mapping from batch ID to the last block ID in this batch.
+func (a *TaikoAuthAPIBackend) SetBatchToLastBlock(
+	batchID *math.HexOrDecimal256,
+	blockID *math.HexOrDecimal256,
+) *big.Int {
+	rawdb.WriteBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID), (*big.Int)(blockID))
 	return (*big.Int)(batchID)
 }
 
