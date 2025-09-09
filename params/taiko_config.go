@@ -63,6 +63,7 @@ var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	JolnirNetworkID:            TaikoChainConfig,
 	KatlaNetworkID:             TaikoChainConfig,
 	HeklaNetworkID:             TaikoChainConfig,
+	AlethiaHoodiNetworkID:      TaikoChainConfig,
 	PreconfDevnetNetworkID:     TaikoChainConfig,
 	MasayaDevnetNetworkID:      TaikoChainConfig,
 	MainnetChainConfig.ChainID: MainnetChainConfig,
