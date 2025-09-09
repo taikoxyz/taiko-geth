@@ -42,7 +42,7 @@ var (
 		[]byte("anchorV3(uint64,bytes32,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
 	)[:4]
 	UpdateStateSelector = crypto.Keccak256(
-		[]byte("updateState(uint48,address,bytes,bytes32,(uint8,uint96,address)[],uint16,uint48,bytes32,bytes32)"),
+		[]byte("updateState(uint48,address,bytes,bytes32,(uint48,uint8,address,address)[],uint16,uint48,bytes32,bytes32,uint48)"),
 	)[:4]
 	AnchorGasLimit      = uint64(250_000)
 	AnchorV3GasLimit    = uint64(1_000_000)
@@ -327,10 +327,12 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 
 	if t.chainConfig.IsShasta(header.Number) {
 		if !bytes.HasPrefix(tx.Data(), UpdateStateSelector) {
+			log.Info("Invalid anchor tx data prefix", "data", common.Bytes2Hex(tx.Data()), "selector", common.Bytes2Hex(UpdateStateSelector), "number", header.Number)
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
 		if !bytes.HasPrefix(tx.Data(), AnchorV3Selector) {
+			log.Info("Invalid anchor tx data prefix2", "data", common.Bytes2Hex(tx.Data()))
 			return false, nil
 		}
 	} else {
@@ -340,32 +342,39 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 	}
 
 	if tx.Value().Cmp(common.Big0) != 0 {
+		log.Info("Invalid anchor tx value", "value", tx.Value())
 		return false, nil
 	}
 
 	if t.chainConfig.IsShasta(header.Number) {
 		if tx.Gas() != UpdateStateGasLimit {
+			log.Info("Invalid anchor tx gas for UpdateState", "gas", tx.Gas())
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
 		if tx.Gas() != AnchorV3GasLimit {
+			log.Info("Invalid anchor tx gas for AnchorV3", "gas", tx.Gas())
 			return false, nil
 		}
 	} else {
 		if tx.Gas() != AnchorGasLimit {
+			log.Info("Invalid anchor tx gas for Anchor", "gas", tx.Gas())
 			return false, nil
 		}
 	}
 
 	if tx.GasFeeCap().Cmp(header.BaseFee) != 0 {
+		log.Info("Invalid anchor tx gas fee cap", "gasFeeCap", tx.GasFeeCap(), "baseFee", header.BaseFee)
 		return false, nil
 	}
 
 	addr, err := types.MakeSigner(t.chainConfig, header.Number, header.Time).Sender(tx)
 	if err != nil {
+		log.Info("Failed to derive sender of anchor tx", "err", err)
 		return false, err
 	}
 
+	log.Info("Anchor tx sender", "addr", addr.Hex(), "goldenTouch", GoldenTouchAccount.Hex())
 	return strings.EqualFold(addr.String(), GoldenTouchAccount.String()), nil
 }
 
