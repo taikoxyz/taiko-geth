@@ -49,6 +49,7 @@ var (
 	HeklaNetworkID            = big.NewInt(167009)
 	PreconfDevnetNetworkID    = big.NewInt(167010)
 	MasayaDevnetNetworkID     = big.NewInt(167011)
+	AlethiaHoodiNetworkID     = big.NewInt(167012)
 )
 
 var networkIDToChainConfig = map[*big.Int]*ChainConfig{
