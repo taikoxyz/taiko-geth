@@ -449,8 +449,8 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			}
 			block, err := api.eth.Miner().SealBlockWith(
 				block.Header(),
-				parentBlockTime,
 				payloadAttributes.Timestamp,
+				parentBlockTime,
 				payloadAttributes.BlockMetadata,
 				payloadAttributes.BaseFeePerGas,
 				payloadAttributes.Withdrawals,
