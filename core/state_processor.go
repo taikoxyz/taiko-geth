@@ -218,7 +218,9 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	}
 	// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 	// add it to the Message, if its an ontake block.
-	if evm.ChainConfig().IsOntake(header.Number) {
+	if evm.ChainConfig().IsShasta(header.Number) {
+		msg.BasefeeSharingPctg, _ = DecodeShastaExtraData(header.Extra)
+	} else if evm.ChainConfig().IsOntake(header.Number) {
 		msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 	}
 	// Create a new context to be used in the EVM environment
