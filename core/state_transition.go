@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -569,6 +570,16 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 			feeTreasury := new(uint256.Int).Sub(totalFee, feeCoinbase)
 			st.state.AddBalance(st.getTreasuryAddress(), feeTreasury, tracing.BalanceIncreaseTreasury)
 			st.state.AddBalance(st.evm.Context.Coinbase, feeCoinbase, tracing.BalanceIncreaseBaseFeeSharing)
+			log.Info(
+				"basefee sharing",
+				"blockNumber", st.evm.Context.BlockNumber,
+				"basefee", st.evm.Context.BaseFee,
+				"totalFee", totalFee,
+				"pctg", st.msg.BasefeeSharingPctg,
+				"coinbase", feeCoinbase,
+				"treasury", feeTreasury,
+				"treasuryAddress", st.getTreasuryAddress(),
+			)
 		}
 		// add the coinbase to the witness iff the fee is greater than 0
 		if rules.IsEIP4762 && fee.Sign() != 0 {
