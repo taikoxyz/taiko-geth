@@ -57,7 +57,7 @@ func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parent
 		denom = new(big.Int)
 	)
 
-	if parent.GasUsed > parentGasTarget {
+	if parent.GasUsed > parentAdjustedGasTarget {
 		// If the parent block used more gas than its target, the baseFee should increase.
 		// max(1, parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator)
 		num.SetUint64(parent.GasUsed - parentAdjustedGasTarget)
