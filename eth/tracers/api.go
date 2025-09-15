@@ -282,7 +282,9 @@ func (api *API) traceChain(start, end *types.Block, config *TraceConfig, closed 
 					msg, _ := core.TransactionToMessage(tx, signer, task.block.BaseFee())
 					// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 					// add it to the Message, if its an ontake block.
-					if api.backend.ChainConfig().IsOntake(task.block.Number()) {
+					if api.backend.ChainConfig().IsShasta(task.block.Number()) {
+						msg.BasefeeSharingPctg, _ = core.DecodeShastaExtraData(task.block.Header().Extra)
+					} else if api.backend.ChainConfig().IsOntake(task.block.Number()) {
 						msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(task.block.Header().Extra)
 					}
 					txctx := &Context{
@@ -650,7 +652,9 @@ func (api *API) traceBlock(ctx context.Context, block *types.Block, config *Trac
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 		// add it to the Message, if its an ontake block.
-		if api.backend.ChainConfig().IsOntake(block.Number()) {
+		if api.backend.ChainConfig().IsShasta(block.Number()) {
+			msg.BasefeeSharingPctg, _ = core.DecodeShastaExtraData(block.Header().Extra)
+		} else if api.backend.ChainConfig().IsOntake(block.Number()) {
 			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
 		}
 		txctx := &Context{
@@ -702,7 +706,9 @@ func (api *API) traceBlockParallel(ctx context.Context, block *types.Block, stat
 				msg, _ := core.TransactionToMessage(txs[task.index], signer, block.BaseFee())
 				// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 				// add it to the Message, if its an ontake block.
-				if api.backend.ChainConfig().IsOntake(block.Number()) {
+				if api.backend.ChainConfig().IsShasta(block.Number()) {
+					msg.BasefeeSharingPctg, _ = core.DecodeShastaExtraData(block.Header().Extra)
+				} else if api.backend.ChainConfig().IsOntake(block.Number()) {
 					msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
 				}
 				txctx := &Context{
@@ -745,7 +751,9 @@ txloop:
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 		// add it to the Message, if its an ontake block.
-		if api.backend.ChainConfig().IsOntake(block.Number()) {
+		if api.backend.ChainConfig().IsShasta(block.Number()) {
+			msg.BasefeeSharingPctg, _ = core.DecodeShastaExtraData(block.Header().Extra)
+		} else if api.backend.ChainConfig().IsOntake(block.Number()) {
 			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
 		}
 		statedb.SetTxContext(tx.Hash(), i)
@@ -844,7 +852,9 @@ func (api *API) standardTraceBlockToFile(ctx context.Context, block *types.Block
 		)
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 		// add it to the Message, if its an ontake block.
-		if api.backend.ChainConfig().IsOntake(block.Number()) {
+		if api.backend.ChainConfig().IsShasta(block.Number()) {
+			msg.BasefeeSharingPctg, _ = core.DecodeShastaExtraData(block.Header().Extra)
+		} else if api.backend.ChainConfig().IsOntake(block.Number()) {
 			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
 		}
 		// If the transaction needs tracing, swap out the configs
