@@ -49,6 +49,7 @@ var (
 	HeklaNetworkID            = big.NewInt(167009)
 	PreconfDevnetNetworkID    = big.NewInt(167010)
 	MasayaDevnetNetworkID     = big.NewInt(167011)
+	TolbaNetworkID            = big.NewInt(167012)
 )
 
 var networkIDToChainConfig = map[*big.Int]*ChainConfig{
@@ -62,6 +63,7 @@ var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	JolnirNetworkID:            TaikoChainConfig,
 	KatlaNetworkID:             TaikoChainConfig,
 	HeklaNetworkID:             TaikoChainConfig,
+	TolbaNetworkID:             TaikoChainConfig,
 	PreconfDevnetNetworkID:     TaikoChainConfig,
 	MasayaDevnetNetworkID:      TaikoChainConfig,
 	MainnetChainConfig.ChainID: MainnetChainConfig,
