@@ -24,7 +24,7 @@ var (
 	TolbaPacayaBlock          = common.Big0
 	MainnetPacayaBlock        = new(big.Int).SetUint64(1_166_000)
 
-	InternalDevnetShastaBlock = new(big.Int).SetUint64(50)
+	InternalDevnetShastaBlock = new(big.Int).SetUint64(10)
 	PreconfDevnetShastaBlock  = common.Big0
 	MasayaDevnetShastaBlock   = common.Big0
 	HeklaShastaBlock          = new(big.Int).SetUint64(999_999_999_999)
