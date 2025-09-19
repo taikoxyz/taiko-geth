@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -28,6 +29,8 @@ import (
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/triedb/database"
 )
+
+var inGaiko = os.Getenv("GAIKO") == "1"
 
 // Trie is a Merkle Patricia Trie. Use New to create a trie that sits on
 // top of a database. Whenever trie performs a commit operation, the generated
@@ -525,7 +528,11 @@ func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
 				// check.
 				cnode, err := t.resolve(n.Children[pos], append(prefix, byte(pos)))
 				if err != nil {
-					return false, nil, err
+					if inGaiko {
+						cnode = n.Children[pos]
+					} else {
+						return false, nil, err
+					}
 				}
 				if cnode, ok := cnode.(*shortNode); ok {
 					// Replace the entire full node with the short node.
