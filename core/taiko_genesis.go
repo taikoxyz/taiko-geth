@@ -14,15 +14,17 @@ var (
 	PreconfDevnetOntakeBlock  = common.Big0
 	MasayaDevnetOntakeBlock   = common.Big0
 	HeklaOntakeBlock          = new(big.Int).SetUint64(840_512)
+	TolbaOntakeBlock          = common.Big0
 	MainnetOntakeBlock        = new(big.Int).SetUint64(538_304)
 
 	InternalDevnetPacayaBlock = common.Big0
 	PreconfDevnetPacayaBlock  = common.Big0
 	MasayaDevnetPacayaBlock   = common.Big0
 	HeklaPacayaBlock          = new(big.Int).SetUint64(1_299_888)
+	TolbaPacayaBlock          = common.Big0
 	MainnetPacayaBlock        = new(big.Int).SetUint64(1_166_000)
 
-	InternalDevnetShastaBlock = common.Big0
+	InternalDevnetShastaBlock = new(big.Int).SetUint64(10)
 	PreconfDevnetShastaBlock  = common.Big0
 	MasayaDevnetShastaBlock   = common.Big0
 	HeklaShastaBlock          = new(big.Int).SetUint64(999_999_999_999)
@@ -86,6 +88,11 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = MasayaDevnetPacayaBlock
 		chainConfig.ShastaBlock = MasayaDevnetShastaBlock
 		allocJSON = taikoGenesis.MasayaGenesisAllocJSON
+	case params.TolbaNetworkID.Uint64():
+		chainConfig.ChainID = params.TolbaNetworkID
+		chainConfig.OntakeBlock = TolbaOntakeBlock
+		chainConfig.PacayaBlock = TolbaPacayaBlock
+		allocJSON = taikoGenesis.TolbaGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoInternalL2ANetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
