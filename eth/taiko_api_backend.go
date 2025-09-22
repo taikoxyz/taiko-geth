@@ -1,11 +1,13 @@
 package eth
 
 import (
+	"bytes"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
@@ -67,7 +69,12 @@ func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (
 		return nil, err
 	}
 	if blockID == nil {
-		return nil, ethereum.NotFound
+		if blockID, err = s.getLastBlockByBatchId((*big.Int)(batchID)); err != nil {
+			return nil, err
+		}
+		if blockID == nil {
+			return nil, ethereum.NotFound
+		}
 	}
 	return s.L1OriginByID((*math.HexOrDecimal256)(blockID))
 }
@@ -75,6 +82,27 @@ func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (
 // GetSyncMode returns the node sync mode.
 func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 	return s.eth.config.SyncMode.String(), nil
+}
+
+// getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
+func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, error) {
+	currentBlock := s.eth.BlockChain().GetBlockByNumber(s.eth.blockchain.CurrentHeader().Number.Uint64())
+
+	for currentBlock != nil &&
+		currentBlock.Transactions().Len() > 0 &&
+		bytes.HasPrefix(currentBlock.Transactions()[0].Data(), taiko.UpdateStateSelector) {
+		if currentBlock.NumberU64() == 0 {
+			break
+		}
+		// Get proposal ID from the first transaction's data
+		proposalID := new(big.Int).SetBytes(currentBlock.Transactions()[0].Data()[4:36])
+		if proposalID.Cmp(batchID) == 0 {
+			return currentBlock.Number(), nil
+		}
+
+		currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
+	}
+	return nil, ethereum.NotFound
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
@@ -108,6 +136,7 @@ func (a *TaikoAuthAPIBackend) UpdateL1Origin(l1Origin *rawdb.L1Origin) *rawdb.L1
 	return l1Origin
 }
 
+// SetL1OriginSignature sets the L1 origin signature for the given block ID.
 func (a *TaikoAuthAPIBackend) SetL1OriginSignature(blockID *big.Int, signature [65]byte) (*rawdb.L1Origin, error) {
 	l1Origin, err := rawdb.ReadL1Origin(a.eth.ChainDb(), blockID)
 	if err != nil {
