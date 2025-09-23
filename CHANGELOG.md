@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.18.0](https://github.com/taikoxyz/taiko-geth/compare/v1.17.0...v1.18.0) (2025-09-16)
+
+
+### Features
+
+* **miner:** preconf simulator api ([#433](https://github.com/taikoxyz/taiko-geth/issues/433)) ([1ce30d2](https://github.com/taikoxyz/taiko-geth/commit/1ce30d29a96b1a39c7fbb7f3f3f8065595e757da))
+* **repo:** add claude code workflows ([#445](https://github.com/taikoxyz/taiko-geth/issues/445)) ([9aa789d](https://github.com/taikoxyz/taiko-geth/commit/9aa789de8225ecd7808e62214d6aa0e06c660c12))
+
+
+### Chores
+
+* **taiko_genesis:** add genesis for alethia-hoodi testnet ([#448](https://github.com/taikoxyz/taiko-geth/issues/448)) ([0ea6057](https://github.com/taikoxyz/taiko-geth/commit/0ea6057b4c2a428dad564ea421cb94f17049b5cc))
+* **taiko_genesis:** bump devnet account balances ([#432](https://github.com/taikoxyz/taiko-geth/issues/432)) ([4bd4264](https://github.com/taikoxyz/taiko-geth/commit/4bd4264f1a53b9ac0cbfddfcfc70fa35bfa5e4aa))
+* **taiko:** rm unused `--gpo.defaultprice` flag ([#446](https://github.com/taikoxyz/taiko-geth/issues/446)) ([69e2b71](https://github.com/taikoxyz/taiko-geth/commit/69e2b71acc311e0738f99d25ef758e0db27b22a2))
+
 ## [1.17.0](https://github.com/taikoxyz/taiko-geth/compare/v1.16.0...v1.17.0) (2025-07-16)
 
 
