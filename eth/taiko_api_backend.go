@@ -5,6 +5,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -76,9 +77,9 @@ func NewTaikoAuthAPIBackend(eth *Ethereum) *TaikoAuthAPIBackend {
 }
 
 // SetHeadL1Origin sets the latest L2 block's corresponding L1 origin.
-func (a *TaikoAuthAPIBackend) SetHeadL1Origin(blockID *math.HexOrDecimal256) *big.Int {
+func (a *TaikoAuthAPIBackend) SetHeadL1Origin(blockID *math.HexOrDecimal256) *hexutil.Big {
 	rawdb.WriteHeadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
-	return (*big.Int)(blockID)
+	return (*hexutil.Big)(blockID)
 }
 
 // UpdateL1Origin updates the L2 block's corresponding L1 origin.
