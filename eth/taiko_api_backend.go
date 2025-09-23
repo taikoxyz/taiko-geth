@@ -79,6 +79,19 @@ func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (
 	return s.L1OriginByID((*math.HexOrDecimal256)(blockID))
 }
 
+// LastBlockIDByBatchID returns the ID of the last block for the given batch.
+func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*big.Int, error) {
+	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
+	if err != nil {
+		return nil, err
+	}
+	if blockID != nil {
+		return blockID, nil
+	}
+
+	return s.getLastBlockByBatchId((*big.Int)(batchID))
+}
+
 // GetSyncMode returns the node sync mode.
 func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 	return s.eth.config.SyncMode.String(), nil
