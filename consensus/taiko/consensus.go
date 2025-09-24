@@ -322,50 +322,61 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 	}
 
 	if tx.To() == nil || *tx.To() != t.taikoL2Address {
+		log.Info("tx.To() != t.taikoL2Address", "tx.To", tx.To(), "t.taikoL2Address", t.taikoL2Address)
 		return false, nil
 	}
 
 	if t.chainConfig.IsShasta(header.Number) {
 		if !bytes.HasPrefix(tx.Data(), UpdateStateSelector) {
+			log.Info("!bytes.HasPrefix(tx.Data(), UpdateStateSelector)", "tx.Data", tx.Data())
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
 		if !bytes.HasPrefix(tx.Data(), AnchorV3Selector) {
+			log.Info("!bytes.HasPrefix(tx.Data(), AnchorV3Selector)", "tx.Data", tx.Data())
 			return false, nil
 		}
 	} else {
 		if !bytes.HasPrefix(tx.Data(), AnchorSelector) && !bytes.HasPrefix(tx.Data(), AnchorV2Selector) {
+			log.Info("!bytes.HasPrefix(tx.Data(), AnchorSelector) && !bytes.HasPrefix(tx.Data(), AnchorV2Selector)", "tx.Data", tx.Data())
 			return false, nil
 		}
 	}
 
 	if tx.Value().Cmp(common.Big0) != 0 {
+		log.Info("tx.Value().Cmp(common.Big0) != 0", "tx.Value", tx.Value())
 		return false, nil
 	}
 
 	if t.chainConfig.IsShasta(header.Number) {
 		if tx.Gas() != UpdateStateGasLimit {
+			log.Info("tx.Gas() != UpdateStateGasLimit", "tx.Gas", tx.Gas(), "UpdateStateGasLimit", UpdateStateGasLimit)
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
 		if tx.Gas() != AnchorV3GasLimit {
+			log.Info("tx.Gas() != AnchorV3GasLimit", "tx.Gas", tx.Gas(), "AnchorV3GasLimit", AnchorV3GasLimit)
 			return false, nil
 		}
 	} else {
 		if tx.Gas() != AnchorGasLimit {
+			log.Info("tx.Gas() != AnchorGasLimit", "tx.Gas", tx.Gas(), "AnchorGasLimit", AnchorGasLimit)
 			return false, nil
 		}
 	}
 
 	if tx.GasFeeCap().Cmp(header.BaseFee) != 0 {
+		log.Info("tx.GasFeeCap().Cmp(header.BaseFee) != 0", "tx.GasFeeCap", tx.GasFeeCap(), "header.BaseFee", header.BaseFee)
 		return false, nil
 	}
 
 	addr, err := types.MakeSigner(t.chainConfig, header.Number, header.Time).Sender(tx)
 	if err != nil {
+		log.Info("types.MakeSigner failed", "err", err)
 		return false, err
 	}
 
+	log.Info("anchor tx found", "txHash", tx.Hash(), "from", addr, "to", tx.To())
 	return strings.EqualFold(addr.String(), GoldenTouchAccount.String()), nil
 }
 

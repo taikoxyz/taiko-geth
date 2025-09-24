@@ -67,27 +67,40 @@ func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parent
 		denom = new(big.Int)
 	)
 
+	log.Info("parent.GasUsed != parentAdjustedGasTarget", "parent.GasUsed", parent.GasUsed, "parentAdjustedGasTarget", parentAdjustedGasTarget)
+
 	if parent.GasUsed > parentAdjustedGasTarget {
 		// If the parent block used more gas than its target, the baseFee should increase.
 		// max(1, parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator)
 		num.SetUint64(parent.GasUsed - parentAdjustedGasTarget)
+		log.Info("parent.GasUsed > parentAdjustedGasTarget", num)
 		num.Mul(num, parent.BaseFee)
+		log.Info("parent.GasUsed > parentAdjustedGasTarget2", num)
 		num.Div(num, denom.SetUint64(parentGasTarget))
+		log.Info("parent.GasUsed > parentAdjustedGasTarget3", num)
 		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
+		log.Info("parent.GasUsed > parentAdjustedGasTarget4", num)
 		if num.Cmp(common.Big1) < 0 {
+			log.Info("parent.GasUsed > parentAdjustedGasTarget5", num)
 			return num.Add(parent.BaseFee, common.Big1)
 		}
+		log.Info("EIP-4396 baseFee increased", "increase", num)
 		return num.Add(parent.BaseFee, num)
 	} else {
 		// Otherwise if the parent block used less gas than its target, the baseFee should decrease.
 		// max(0, parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator)
 		num.SetUint64(parentAdjustedGasTarget - parent.GasUsed)
+		log.Info("parent.GasUsed <= parentAdjustedGasTarget", num)
 		num.Mul(num, parent.BaseFee)
+		log.Info("parent.GasUsed <= parentAdjustedGasTarget2", num)
 		num.Div(num, denom.SetUint64(parentGasTarget))
+		log.Info("parent.GasUsed <= parentAdjustedGasTarget3", num)
 		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
+		log.Info("parent.GasUsed <= parentAdjustedGasTarget4", num)
 
 		baseFee := num.Sub(parent.BaseFee, num)
 		if baseFee.Cmp(common.Big0) < 0 {
+			log.Info("parent.GasUsed <= parentAdjustedGasTarget5", num)
 			baseFee = common.Big0
 		}
 		return baseFee
