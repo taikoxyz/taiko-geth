@@ -7,7 +7,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -46,15 +45,6 @@ func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parent
 	parentAdjustedGasTarget := min(
 		parentGasTarget*parentBlockTime/blockTimeTarget,
 		parent.GasLimit*uint64(maxGasTargetTargetPercentage)/100,
-	)
-
-	log.Info(
-		"Calculating EIP-4396 baseFee",
-		"parentBaseFee", parent.BaseFee,
-		"parentGasUsed", parent.GasUsed,
-		"parentGasTarget", parentGasTarget,
-		"parentAdjustedGasTarget", parentAdjustedGasTarget,
-		"parentBlockTime", parentBlockTime,
 	)
 
 	// If the parent gasUsed is the same as the adjusted target, the baseFee remains unchanged.
