@@ -16,6 +16,13 @@
       ],
       "type": "integer"
     },
+    "*hexutil.Big": {
+      "description": "Hexadecimal representation of a big integer.",
+      "examples": [
+        "0x1234"
+      ],
+      "type": "string"
+    },
     "*math.HexOrDecimal256": {
       "$ref": "#/definitions/*big.Int",
       "description": "Hexadecimal or decimal representation of a number."
@@ -76,6 +83,31 @@
     }
   },
   "methods": {
+    "taikoAuth_SetBatchToLastBlock": {
+      "summary": "RPC method SetBatchToLastBlock",
+      "description": "SetBatchToLastBlock sets the mapping from batch ID to the last block ID in this batch.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "batchID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          },
+          "blockID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "batchID",
+          "blockID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*big.Int"
+      }
+    },
     "taikoAuth_SetHeadL1Origin": {
       "summary": "RPC method SetHeadL1Origin",
       "description": "SetHeadL1Origin sets the latest L2 block's corresponding L1 origin.",
@@ -94,12 +126,12 @@
         "type": "object"
       },
       "result": {
-        "$ref": "#/definitions/*big.Int"
+        "$ref": "#/definitions/*hexutil.Big"
       }
     },
     "taikoAuth_SetL1OriginSignature": {
       "summary": "RPC method SetL1OriginSignature",
-      "description": "Invokes the SetL1OriginSignature method on *TaikoAuthAPIBackend",
+      "description": "SetL1OriginSignature sets the L1 origin signature for the given block ID.",
       "tags": [
         "taikoAuth_"
       ],
@@ -314,6 +346,48 @@
         },
         "required": [
           "blockID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*rawdb.L1Origin"
+      }
+    },
+    "taiko_LastBlockIDByBatchID": {
+      "summary": "RPC method LastBlockIDByBatchID",
+      "description": "LastBlockIDByBatchID returns the ID of the last block for the given batch.",
+      "tags": [
+        "taiko_"
+      ],
+      "params": {
+        "properties": {
+          "batchID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "batchID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*big.Int"
+      }
+    },
+    "taiko_LastL1OriginByBatchID": {
+      "summary": "RPC method LastL1OriginByBatchID",
+      "description": "LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.",
+      "tags": [
+        "taiko_"
+      ],
+      "params": {
+        "properties": {
+          "batchID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "batchID"
         ],
         "type": "object"
       },

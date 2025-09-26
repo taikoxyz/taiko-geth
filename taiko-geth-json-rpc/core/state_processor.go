@@ -101,7 +101,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		if err != nil {
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
-		if p.config.IsOntake(block.Number()) {
+		if p.config.IsShasta(block.Number()) {
+			msg.BasefeeSharingPctg, _ = DecodeShastaExtraData(header.Extra)
+		} else if p.config.IsOntake(block.Number()) {
 			msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 		}
 		statedb.SetTxContext(tx.Hash(), i)
@@ -216,7 +218,9 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	}
 	// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 	// add it to the Message, if its an ontake block.
-	if evm.ChainConfig().IsOntake(header.Number) {
+	if evm.ChainConfig().IsShasta(header.Number) {
+		msg.BasefeeSharingPctg, _ = DecodeShastaExtraData(header.Extra)
+	} else if evm.ChainConfig().IsOntake(header.Number) {
 		msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 	}
 	// Create a new context to be used in the EVM environment

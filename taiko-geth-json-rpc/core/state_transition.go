@@ -703,8 +703,18 @@ func (st *stateTransition) getTreasuryAddress() common.Address {
 	)
 }
 
-// CHANGE(taiko): decodes an ontake block's extradata, returns basefeeSharingPctg configurations,
+// CHANGE(taiko): decodes an Ontake block's extradata, returns basefeeSharingPctg configurations,
 // the corresponding enocding function in protocol is `LibProposing._encodeGasConfigs`.
 func DecodeOntakeExtraData(extradata []byte) uint8 {
 	return uint8(new(big.Int).SetBytes(extradata).Uint64())
+}
+
+// CHANGE(taiko): decodes an Shasta block's extradata, returns basefeeSharingPctg configurations,
+// the corresponding encoding function in protocol is `LibProposing._encodeGasConfigs`.
+func DecodeShastaExtraData(extradata []byte) (uint8, bool) {
+	// First byte: basefeeSharingPctg
+	basefeeSharingPctg := extradata[0]
+	// Second byte: isLowBondProposal (lowest bit)
+	isLowBondProposal := (extradata[1] & 0x01) != 0
+	return basefeeSharingPctg, isLowBondProposal
 }

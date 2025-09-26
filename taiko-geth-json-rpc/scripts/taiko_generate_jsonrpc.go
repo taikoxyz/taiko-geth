@@ -153,6 +153,10 @@ func generateTypeRef(goType reflect.Type) map[string]interface{} {
 			return map[string]interface{}{
 				"$ref": "#/definitions/*math.HexOrDecimal256",
 			}
+		case "*hexutil.Big":
+			return map[string]interface{}{
+				"$ref": "#/definitions/*hexutil.Big",
+			}
 		}
 	case reflect.Slice:
 		elem := goType.Elem()
@@ -295,6 +299,11 @@ func main() {
 			"*math.HexOrDecimal256": map[string]interface{}{
 				"$ref":        "#/definitions/*big.Int",
 				"description": "Hexadecimal or decimal representation of a number.",
+			},
+			"*hexutil.Big": map[string]interface{}{
+				"type":        "string",
+				"description": "Hexadecimal representation of a big integer.",
+				"examples":    []string{"0x1234"},
 			},
 		},
 		Methods: map[string]Method{},

@@ -14,8 +14,9 @@ import (
 
 var (
 	// Database key prefix for L2 block's L1Origin.
-	l1OriginPrefix  = []byte("TKO:L1O")
-	headL1OriginKey = []byte("TKO:LastL1O")
+	l1OriginPrefix         = []byte("TKO:L1O")
+	batchToLastBlockPrefix = []byte("TKO:B2B")
+	headL1OriginKey        = []byte("TKO:LastL1O")
 )
 
 // l1OriginKey calculates the L1Origin key.
@@ -23,6 +24,13 @@ var (
 func l1OriginKey(blockID *big.Int) []byte {
 	data, _ := (*math.HexOrDecimal256)(blockID).MarshalText()
 	return append(l1OriginPrefix, data...)
+}
+
+// batchToLastBlockKey calculates the batch to block key.
+// batchToBlockPrefix + batch ID -> batchToLastBlockKey
+func batchToLastBlockKey(batch *big.Int) []byte {
+	data, _ := (*math.HexOrDecimal256)(batch).MarshalText()
+	return append(batchToLastBlockPrefix, data...)
 }
 
 //go:generate go run github.com/fjl/gencodec -type L1Origin -field-override l1OriginMarshaling -out gen_taiko_l1_origin.go
@@ -118,6 +126,30 @@ func ReadHeadL1Origin(db ethdb.KeyValueReader) (*big.Int, error) {
 	if err := blockID.UnmarshalText(data); err != nil {
 		log.Error("Unmarshal L1Origin unmarshal error", "error", err)
 		return nil, fmt.Errorf("invalid L1Origin unmarshal: %w", err)
+	}
+
+	return (*big.Int)(blockID), nil
+}
+
+// WriteBatchToLastBlockID stores the mapping from batch ID to the last block ID in this batch.
+func WriteBatchToLastBlockID(db ethdb.KeyValueWriter, batch *big.Int, blockID *big.Int) {
+	data, _ := (*math.HexOrDecimal256)(blockID).MarshalText()
+	if err := db.Put(batchToLastBlockKey(batch), data); err != nil {
+		log.Crit("Failed to store batch to block mapping", "error", err)
+	}
+}
+
+// ReadBatchToLastBlockID retrieves the block ID corresponding to the last block ID in this batch.
+func ReadBatchToLastBlockID(db ethdb.KeyValueReader, batch *big.Int) (*big.Int, error) {
+	data, _ := db.Get(batchToLastBlockKey(batch))
+	if len(data) == 0 {
+		return nil, nil
+	}
+
+	blockID := new(math.HexOrDecimal256)
+	if err := blockID.UnmarshalText(data); err != nil {
+		log.Error("Unmarshal batch to block unmarshal error", "error", err)
+		return nil, fmt.Errorf("invalid batch to block unmarshal: %w", err)
 	}
 
 	return (*big.Int)(blockID), nil
