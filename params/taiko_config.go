@@ -39,14 +39,6 @@ func u64(val uint64) *uint64 { return &val }
 var (
 	TaikoMainnetNetworkID     = big.NewInt(167000)
 	TaikoInternalL2ANetworkID = big.NewInt(167001)
-	TaikoInternalL2BNetworkID = big.NewInt(167002)
-	SnaefellsjokullNetworkID  = big.NewInt(167003)
-	AskjaNetworkID            = big.NewInt(167004)
-	GrimsvotnNetworkID        = big.NewInt(167005)
-	EldfellNetworkID          = big.NewInt(167006)
-	JolnirNetworkID           = big.NewInt(167007)
-	KatlaNetworkID            = big.NewInt(167008)
-	HeklaNetworkID            = big.NewInt(167009)
 	PreconfDevnetNetworkID    = big.NewInt(167010)
 	MasayaDevnetNetworkID     = big.NewInt(167011)
 	TolbaNetworkID            = big.NewInt(167012)
@@ -55,14 +47,6 @@ var (
 var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	TaikoMainnetNetworkID:      TaikoChainConfig,
 	TaikoInternalL2ANetworkID:  TaikoChainConfig,
-	TaikoInternalL2BNetworkID:  TaikoChainConfig,
-	SnaefellsjokullNetworkID:   TaikoChainConfig,
-	AskjaNetworkID:             TaikoChainConfig,
-	GrimsvotnNetworkID:         TaikoChainConfig,
-	EldfellNetworkID:           TaikoChainConfig,
-	JolnirNetworkID:            TaikoChainConfig,
-	KatlaNetworkID:             TaikoChainConfig,
-	HeklaNetworkID:             TaikoChainConfig,
 	TolbaNetworkID:             TaikoChainConfig,
 	PreconfDevnetNetworkID:     TaikoChainConfig,
 	MasayaDevnetNetworkID:      TaikoChainConfig,
