@@ -40,12 +40,12 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = MainnetPacayaBlock
 		chainConfig.ShastaBlock = MainnetShastaBlock
 		allocJSON = taikoGenesis.MainnetGenesisAllocJSON
-	case params.TaikoInternalL2ANetworkID.Uint64():
-		chainConfig.ChainID = params.TaikoInternalL2ANetworkID
+	case params.TaikoInternalNetworkID.Uint64():
+		chainConfig.ChainID = params.TaikoInternalNetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaBlock = InternalDevnetShastaBlock
-		allocJSON = taikoGenesis.InternalL2AGenesisAllocJSON
+		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	case params.PreconfDevnetNetworkID.Uint64():
 		chainConfig.ChainID = params.PreconfDevnetNetworkID
 		chainConfig.OntakeBlock = PreconfDevnetOntakeBlock
@@ -64,11 +64,11 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = TolbaPacayaBlock
 		allocJSON = taikoGenesis.TolbaGenesisAllocJSON
 	default:
-		chainConfig.ChainID = params.TaikoInternalL2ANetworkID
+		chainConfig.ChainID = params.TaikoInternalNetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaBlock = InternalDevnetShastaBlock
-		allocJSON = taikoGenesis.InternalL2AGenesisAllocJSON
+		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	}
 
 	var alloc GenesisAlloc

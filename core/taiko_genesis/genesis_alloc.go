@@ -4,8 +4,8 @@ import (
 	_ "embed"
 )
 
-//go:embed internal_l2a.json
-var InternalL2AGenesisAllocJSON []byte
+//go:embed internal.json
+var InternalGenesisAllocJSON []byte
 
 //go:embed mainnet.json
 var MainnetGenesisAllocJSON []byte

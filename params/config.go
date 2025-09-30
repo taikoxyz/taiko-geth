@@ -333,15 +333,16 @@ var (
 	}
 )
 
-// NetworkNames are user friendly names to use in the chain spec banner.
+// NetworkNames are user-friendly names to use in the chain spec banner.
 var NetworkNames = map[string]string{
 	MainnetChainConfig.ChainID.String(): "mainnet",
 	SepoliaChainConfig.ChainID.String(): "sepolia",
 	HoleskyChainConfig.ChainID.String(): "holesky",
 	// CHANGE(taiko): add Taiko network name.
-	TaikoMainnetNetworkID.String():     "Taiko",
-	TaikoInternalL2ANetworkID.String(): "Taiko Internal L2A Devnet",
-	PreconfDevnetNetworkID.String():    "Taiko Preconfirmation Devnet",
+	TaikoMainnetNetworkID.String():  "Taiko",
+	TaikoInternalNetworkID.String(): "Taiko Internal Devnet",
+	TolbaNetworkID.String():         "Taiko Hoodi L2(Tolba)",
+	PreconfDevnetNetworkID.String(): "Taiko Preconfirmation Devnet",
 }
 
 // ChainConfig is the core config which determines the blockchain settings.

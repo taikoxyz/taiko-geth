@@ -37,16 +37,16 @@ func u64(val uint64) *uint64 { return &val }
 
 // Network IDs
 var (
-	TaikoMainnetNetworkID     = big.NewInt(167000)
-	TaikoInternalL2ANetworkID = big.NewInt(167001)
-	PreconfDevnetNetworkID    = big.NewInt(167010)
-	MasayaDevnetNetworkID     = big.NewInt(167011)
-	TolbaNetworkID            = big.NewInt(167012)
+	TaikoMainnetNetworkID  = big.NewInt(167000)
+	TaikoInternalNetworkID = big.NewInt(167001)
+	PreconfDevnetNetworkID = big.NewInt(167010)
+	MasayaDevnetNetworkID  = big.NewInt(167011)
+	TolbaNetworkID         = big.NewInt(167012)
 )
 
 var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	TaikoMainnetNetworkID:      TaikoChainConfig,
-	TaikoInternalL2ANetworkID:  TaikoChainConfig,
+	TaikoInternalNetworkID:     TaikoChainConfig,
 	TolbaNetworkID:             TaikoChainConfig,
 	PreconfDevnetNetworkID:     TaikoChainConfig,
 	MasayaDevnetNetworkID:      TaikoChainConfig,
@@ -65,7 +65,7 @@ func NetworkIDToChainConfigOrDefault(networkID *big.Int) *ChainConfig {
 }
 
 var TaikoChainConfig = &ChainConfig{
-	ChainID:                 TaikoInternalL2ANetworkID, // Use Internal Devnet network ID by default.
+	ChainID:                 TaikoInternalNetworkID, // Use Internal Devnet network ID by default.
 	HomesteadBlock:          common.Big0,
 	EIP150Block:             common.Big0,
 	EIP155Block:             common.Big0,
