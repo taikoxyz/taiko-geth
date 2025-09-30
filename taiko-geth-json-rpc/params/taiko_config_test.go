@@ -17,48 +17,8 @@ func TestNetworkIDToChainConfigOrDefault(t *testing.T) {
 			TaikoChainConfig,
 		},
 		{
-			"taikoInternalL2ANetworkId",
-			TaikoInternalL2ANetworkID,
-			TaikoChainConfig,
-		},
-		{
-			"taikoInternalL2BNetworkId",
-			TaikoInternalL2BNetworkID,
-			TaikoChainConfig,
-		},
-		{
-			"snaefoll",
-			SnaefellsjokullNetworkID,
-			TaikoChainConfig,
-		},
-		{
-			"askja",
-			AskjaNetworkID,
-			TaikoChainConfig,
-		},
-		{
-			"grimsvotn",
-			GrimsvotnNetworkID,
-			TaikoChainConfig,
-		},
-		{
-			"eldfellNetworkID",
-			EldfellNetworkID,
-			TaikoChainConfig,
-		},
-		{
-			"jolnirNetworkID",
-			JolnirNetworkID,
-			TaikoChainConfig,
-		},
-		{
-			"katlaNetworkID",
-			KatlaNetworkID,
-			TaikoChainConfig,
-		},
-		{
-			"heklaNetworkID",
-			HeklaNetworkID,
+			"taikoInternalNetworkId",
+			TaikoInternalNetworkID,
 			TaikoChainConfig,
 		},
 		{
