@@ -11,7 +11,7 @@ import (
 )
 
 // The number of blocks after the Shasta hardfork where the initial base fee is used.
-// This is set to 3 since if the first Shasta block is genesis blcok, its timestamp may
+// This is set to 3 since if the first Shasta block is genesis block, its timestamp may
 // will be very different from the second block, causing large base fee change.
 const ShastaInitialBaseFeeBlocks uint64 = 3
 
@@ -49,7 +49,7 @@ func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parent
 	parentGasTarget := parent.GasLimit / config.ElasticityMultiplier()
 	parentAdjustedGasTarget := min(
 		parentGasTarget*parentBlockTime/blockTimeTarget,
-		parent.GasLimit*uint64(maxGasTargetTargetPercentage)/100,
+		parent.GasLimit*maxGasTargetTargetPercentage/100,
 	)
 
 	// If the parent gasUsed is the same as the adjusted target, the baseFee remains unchanged.
