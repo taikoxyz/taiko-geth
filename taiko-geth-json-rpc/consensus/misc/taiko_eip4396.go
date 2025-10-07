@@ -10,6 +10,15 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+// The number of blocks after the Shasta hardfork where the initial base fee is used.
+// This is set to 3 since if the first Shasta block is genesis block, its timestamp may
+// will be very different from the second block, causing large base fee change.
+const ShastaInitialBaseFeeBlocks uint64 = 3
+
+// EIP-4396 calculation parameters.
+const blockTimeTarget uint64 = 2
+const maxGasTargetTargetPercentage uint64 = 95
+
 // VerifyEIP4396Header verifies some header attributes which were changed in EIP-4396,
 func VerifyEIP4396Header(
 	config *params.ChainConfig,
@@ -32,19 +41,15 @@ func VerifyEIP4396Header(
 
 // CalcEIP4396BaseFee calculates the EIP-4396 basefee of the header.
 func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parentBlockTime uint64) *big.Int {
-	// If the current block is the first EIP-4396 block, return the ShastaInitialBaseFee.
-	if parent.Number.Cmp(new(big.Int).Add(config.ShastaBlock, common.Big2)) <= 0 {
+	// If the current block is one of the first three EIP-4396 blocks, return the ShastaInitialBaseFee.
+	if parent.Number.Uint64()+1 < config.ShastaBlock.Uint64()+ShastaInitialBaseFeeBlocks {
 		return new(big.Int).SetUint64(params.ShastaInitialBaseFee)
 	}
 
-	var (
-		blockTimeTarget              uint64 = 2
-		maxGasTargetTargetPercentage        = 95
-	)
 	parentGasTarget := parent.GasLimit / config.ElasticityMultiplier()
 	parentAdjustedGasTarget := min(
 		parentGasTarget*parentBlockTime/blockTimeTarget,
-		parent.GasLimit*uint64(maxGasTargetTargetPercentage)/100,
+		parent.GasLimit*maxGasTargetTargetPercentage/100,
 	)
 
 	// If the parent gasUsed is the same as the adjusted target, the baseFee remains unchanged.
