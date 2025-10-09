@@ -26,6 +26,7 @@ var (
 	PreconfDevnetShastaBlock  = common.Big0
 	MasayaDevnetShastaBlock   = common.Big0
 	MainnetShastaBlock        = new(big.Int).SetUint64(999_999_999_999)
+	TolbaShastaBlock          = new(big.Int).SetUint64(999_999_999_999)
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
@@ -62,6 +63,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.ChainID = params.TolbaNetworkID
 		chainConfig.OntakeBlock = TolbaOntakeBlock
 		chainConfig.PacayaBlock = TolbaPacayaBlock
+		chainConfig.ShastaBlock = TolbaShastaBlock
 		allocJSON = taikoGenesis.TolbaGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoInternalNetworkID
