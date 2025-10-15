@@ -104,7 +104,7 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 
 	for currentBlock != nil &&
 		currentBlock.Transactions().Len() > 0 &&
-		bytes.HasPrefix(currentBlock.Transactions()[0].Data(), taiko.UpdateStateSelector) {
+		bytes.HasPrefix(currentBlock.Transactions()[0].Data(), taiko.ShastaAnchorSelector) {
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
