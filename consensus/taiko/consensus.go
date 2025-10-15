@@ -51,26 +51,14 @@ var (
 
 // Taiko is a consensus engine used by L2 rollup.
 type Taiko struct {
-	chainConfig    *params.ChainConfig
-	taikoL2Address common.Address
-	chainDB        ethdb.Database
+	chainConfig *params.ChainConfig
+	chainDB     ethdb.Database
 }
 
 var _ = new(Taiko)
 
 func New(chainConfig *params.ChainConfig, chainDB ethdb.Database) *Taiko {
-	taikoL2AddressPrefix := strings.TrimPrefix(chainConfig.ChainID.String(), "0")
-
-	return &Taiko{
-		chainConfig: chainConfig,
-		taikoL2Address: common.HexToAddress(
-			"0x" +
-				taikoL2AddressPrefix +
-				strings.Repeat("0", common.AddressLength*2-len(taikoL2AddressPrefix)-len(TaikoL2AddressSuffix)) +
-				TaikoL2AddressSuffix,
-		),
-		chainDB: chainDB,
-	}
+	return &Taiko{chainConfig: chainConfig, chainDB: chainDB}
 }
 
 // check all method stubs for interface `Engine` without affect performance.
@@ -318,10 +306,6 @@ func (t *Taiko) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 // ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or Shasta Anchor.anchor transaction.
 func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (bool, error) {
 	if tx.Type() != types.DynamicFeeTxType {
-		return false, nil
-	}
-
-	if tx.To() == nil || *tx.To() != t.taikoL2Address {
 		return false, nil
 	}
 
