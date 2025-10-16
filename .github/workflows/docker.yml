@@ -2,7 +2,7 @@ name: "Push multi-arch docker image to GAR"
 
 on:
   push:
-    branches: [taiko]
+    branches: [taiko,chore/reset_chain_id_taiko_hoodi]
     tags:
       - "v*"
 
