@@ -41,13 +41,13 @@ var (
 	TaikoInternalNetworkID = big.NewInt(167001)
 	PreconfDevnetNetworkID = big.NewInt(167010)
 	MasayaDevnetNetworkID  = big.NewInt(167011)
-	TolbaNetworkID         = big.NewInt(167012)
+	TaikoHoodiNetworkID    = big.NewInt(167013)
 )
 
 var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	TaikoMainnetNetworkID:      TaikoChainConfig,
 	TaikoInternalNetworkID:     TaikoChainConfig,
-	TolbaNetworkID:             TaikoChainConfig,
+	TaikoHoodiNetworkID:        TaikoChainConfig,
 	PreconfDevnetNetworkID:     TaikoChainConfig,
 	MasayaDevnetNetworkID:      TaikoChainConfig,
 	MainnetChainConfig.ChainID: MainnetChainConfig,
