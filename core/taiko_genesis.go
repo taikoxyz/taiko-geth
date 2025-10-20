@@ -72,7 +72,6 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.ShastaBlock = InternalDevnetShastaBlock
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	}
-	
 	var alloc GenesisAlloc
 	if err := alloc.UnmarshalJSON(allocJSON); err != nil {
 		log.Crit("unmarshal alloc json error", "error", err)
