@@ -41,7 +41,7 @@ var (
 	AnchorV3Selector = crypto.Keccak256(
 		[]byte("anchorV3(uint64,bytes32,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
 	)[:4]
-	ShastaAnchorSelector = crypto.Keccak256(
+	AnchorV4Selector = crypto.Keccak256(
 		[]byte("anchor((uint48,address,bytes,bytes32,(uint48,uint8,address,address)[]),(uint16,uint48,bytes32,bytes32))"),
 	)[:4]
 	AnchorGasLimit       = uint64(250_000)
@@ -51,14 +51,26 @@ var (
 
 // Taiko is a consensus engine used by L2 rollup.
 type Taiko struct {
-	chainConfig *params.ChainConfig
-	chainDB     ethdb.Database
+	chainConfig    *params.ChainConfig
+	taikoL2Address common.Address
+	chainDB        ethdb.Database
 }
 
 var _ = new(Taiko)
 
 func New(chainConfig *params.ChainConfig, chainDB ethdb.Database) *Taiko {
-	return &Taiko{chainConfig: chainConfig, chainDB: chainDB}
+	taikoL2AddressPrefix := strings.TrimPrefix(chainConfig.ChainID.String(), "0")
+
+	return &Taiko{
+		chainConfig: chainConfig,
+		taikoL2Address: common.HexToAddress(
+			"0x" +
+				taikoL2AddressPrefix +
+				strings.Repeat("0", common.AddressLength*2-len(taikoL2AddressPrefix)-len(TaikoL2AddressSuffix)) +
+				TaikoL2AddressSuffix,
+		),
+		chainDB: chainDB,
+	}
 }
 
 // check all method stubs for interface `Engine` without affect performance.
@@ -303,14 +315,18 @@ func (t *Taiko) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 	return common.Big0
 }
 
-// ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or Shasta Anchor.anchor transaction.
+// ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or Shasta Anchor.anchorV4 transaction.
 func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (bool, error) {
 	if tx.Type() != types.DynamicFeeTxType {
 		return false, nil
 	}
 
+	if tx.To() == nil || *tx.To() != t.taikoL2Address {
+		return false, nil
+	}
+
 	if t.chainConfig.IsShasta(header.Number) {
-		if !bytes.HasPrefix(tx.Data(), ShastaAnchorSelector) {
+		if !bytes.HasPrefix(tx.Data(), AnchorV4Selector) {
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
