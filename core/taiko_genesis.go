@@ -13,20 +13,20 @@ var (
 	InternalDevnetOntakeBlock = common.Big0
 	PreconfDevnetOntakeBlock  = common.Big0
 	MasayaDevnetOntakeBlock   = common.Big0
-	TolbaOntakeBlock          = common.Big0
+	TaikoHoodiOntakeBlock     = common.Big0
 	MainnetOntakeBlock        = new(big.Int).SetUint64(538_304)
 
 	InternalDevnetPacayaBlock = common.Big0
 	PreconfDevnetPacayaBlock  = common.Big0
 	MasayaDevnetPacayaBlock   = common.Big0
-	TolbaPacayaBlock          = common.Big0
+	TaikoHoodiPacayaBlock     = common.Big0
 	MainnetPacayaBlock        = new(big.Int).SetUint64(1_166_000)
 
 	InternalDevnetShastaBlock = new(big.Int).SetUint64(10)
 	PreconfDevnetShastaBlock  = common.Big0
 	MasayaDevnetShastaBlock   = common.Big0
 	MainnetShastaBlock        = new(big.Int).SetUint64(999_999_999_999)
-	TolbaShastaBlock          = new(big.Int).SetUint64(999_999_999_999)
+	TaikoHoodiShastaBlock     = new(big.Int).SetUint64(999_999_999_999)
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
@@ -59,12 +59,12 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = MasayaDevnetPacayaBlock
 		chainConfig.ShastaBlock = MasayaDevnetShastaBlock
 		allocJSON = taikoGenesis.MasayaGenesisAllocJSON
-	case params.TolbaNetworkID.Uint64():
-		chainConfig.ChainID = params.TolbaNetworkID
-		chainConfig.OntakeBlock = TolbaOntakeBlock
-		chainConfig.PacayaBlock = TolbaPacayaBlock
-		chainConfig.ShastaBlock = TolbaShastaBlock
-		allocJSON = taikoGenesis.TolbaGenesisAllocJSON
+	case params.TaikoHoodiNetworkID.Uint64():
+		chainConfig.ChainID = params.TaikoHoodiNetworkID
+		chainConfig.OntakeBlock = TaikoHoodiOntakeBlock
+		chainConfig.PacayaBlock = TaikoHoodiPacayaBlock
+		chainConfig.ShastaBlock = TaikoHoodiShastaBlock
+		allocJSON = taikoGenesis.TaikoHoodiGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoInternalNetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
@@ -72,7 +72,6 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.ShastaBlock = InternalDevnetShastaBlock
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	}
-
 	var alloc GenesisAlloc
 	if err := alloc.UnmarshalJSON(allocJSON); err != nil {
 		log.Crit("unmarshal alloc json error", "error", err)

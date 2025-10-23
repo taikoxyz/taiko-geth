@@ -16,5 +16,5 @@ var PreconfDevnetGenesisAllocJSON []byte
 //go:embed masaya.json
 var MasayaGenesisAllocJSON []byte
 
-//go:embed tolba.json
-var TolbaGenesisAllocJSON []byte
+//go:embed taiko_hoodi.json
+var TaikoHoodiGenesisAllocJSON []byte

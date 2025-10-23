@@ -341,7 +341,7 @@ var NetworkNames = map[string]string{
 	// CHANGE(taiko): add Taiko network name.
 	TaikoMainnetNetworkID.String():  "Taiko",
 	TaikoInternalNetworkID.String(): "Taiko Internal Devnet",
-	TolbaNetworkID.String():         "Taiko Hoodi L2(Tolba)",
+	TaikoHoodiNetworkID.String():    "Taiko Hoodi L2",
 	PreconfDevnetNetworkID.String(): "Taiko Preconfirmation Devnet",
 }
 

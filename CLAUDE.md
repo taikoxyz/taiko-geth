@@ -85,7 +85,7 @@ make devtools
 
 Pre-configured genesis files in `core/taiko_genesis/`:
 - `mainnet.json` - Taiko mainnet
-- `tolba.json` - Taiko Hoodi testnet
+- `taiko_hoodi.json` - Taiko Hoodi testnet
 
 ## Development Workflow
 
