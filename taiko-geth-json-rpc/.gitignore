@@ -41,5 +41,6 @@ profile.cov
 
 # VS Code
 .vscode
+.code/
 
 tests/spec-tests/

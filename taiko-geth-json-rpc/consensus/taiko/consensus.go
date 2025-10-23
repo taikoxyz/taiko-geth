@@ -41,12 +41,12 @@ var (
 	AnchorV3Selector = crypto.Keccak256(
 		[]byte("anchorV3(uint64,bytes32,uint32,(uint8,uint8,uint32,uint64,uint32),bytes32[])"),
 	)[:4]
-	UpdateStateSelector = crypto.Keccak256(
-		[]byte("updateState(uint48,address,bytes,bytes32,(uint48,uint8,address,address)[],uint16,uint48,bytes32,bytes32,uint48)"),
+	AnchorV4Selector = crypto.Keccak256(
+		[]byte("anchorV4((uint48,address,bytes,bytes32,(uint48,uint8,address,address)[]),(uint16,uint48,bytes32,bytes32))"),
 	)[:4]
-	AnchorGasLimit      = uint64(250_000)
-	AnchorV3GasLimit    = uint64(1_000_000)
-	UpdateStateGasLimit = uint64(1_000_000)
+	AnchorGasLimit   = uint64(250_000)
+	AnchorV3GasLimit = uint64(1_000_000)
+	AnchorV4GasLimit = uint64(1_000_000)
 )
 
 // Taiko is a consensus engine used by L2 rollup.
@@ -315,7 +315,7 @@ func (t *Taiko) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 	return common.Big0
 }
 
-// ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or TaikoAnchor.updateState transaction.
+// ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or Shasta Anchor.anchorV4 transaction.
 func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (bool, error) {
 	if tx.Type() != types.DynamicFeeTxType {
 		return false, nil
@@ -326,7 +326,7 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 	}
 
 	if t.chainConfig.IsShasta(header.Number) {
-		if !bytes.HasPrefix(tx.Data(), UpdateStateSelector) {
+		if !bytes.HasPrefix(tx.Data(), AnchorV4Selector) {
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
@@ -344,7 +344,7 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 	}
 
 	if t.chainConfig.IsShasta(header.Number) {
-		if tx.Gas() != UpdateStateGasLimit {
+		if tx.Gas() != AnchorV4GasLimit {
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
