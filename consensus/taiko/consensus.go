@@ -318,51 +318,62 @@ func (t *Taiko) CalcDifficulty(chain consensus.ChainHeaderReader, time uint64, p
 // ValidateAnchorTx checks if the given transaction is a valid TaikoL2.anchorV3 or Shasta Anchor.anchorV4 transaction.
 func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (bool, error) {
 	if tx.Type() != types.DynamicFeeTxType {
+		log.Warn("Invalid transaction type", "type", tx.Type())
 		return false, nil
 	}
 
 	if tx.To() == nil || *tx.To() != t.taikoL2Address {
+		log.Warn("Invalid transaction to address", "to", tx.To())
 		return false, nil
 	}
 
 	if t.chainConfig.IsShasta(header.Number) {
 		if !bytes.HasPrefix(tx.Data(), AnchorV4Selector) {
+			log.Warn("Shasta: Invalid transaction data")
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
 		if !bytes.HasPrefix(tx.Data(), AnchorV3Selector) {
+			log.Warn("Pacaya: Invalid transaction data")
 			return false, nil
 		}
 	} else {
 		if !bytes.HasPrefix(tx.Data(), AnchorSelector) && !bytes.HasPrefix(tx.Data(), AnchorV2Selector) {
+			log.Warn("Invalid transaction data")
 			return false, nil
 		}
 	}
 
 	if tx.Value().Cmp(common.Big0) != 0 {
+		log.Warn("Invalid transaction value", "value", tx.Value())
 		return false, nil
 	}
 
 	if t.chainConfig.IsShasta(header.Number) {
 		if tx.Gas() != AnchorV4GasLimit {
+			log.Warn("Shasta: Invalid transaction gas", "gas", tx.Gas())
 			return false, nil
 		}
 	} else if t.chainConfig.IsPacaya(header.Number) {
 		if tx.Gas() != AnchorV3GasLimit {
+			log.Warn("Pacaya: Invalid transaction gas", "gas", tx.Gas())
 			return false, nil
 		}
 	} else {
 		if tx.Gas() != AnchorGasLimit {
+			log.Warn("Invalid transaction gas", "gas", tx.Gas())
 			return false, nil
 		}
 	}
 
 	if tx.GasFeeCap().Cmp(header.BaseFee) != 0 {
+		log.Warn("Invalid transaction gas fee cap", "gasFeeCap", tx.GasFeeCap(), "baseFee", header.BaseFee)
 		return false, nil
 	}
 
 	addr, err := types.MakeSigner(t.chainConfig, header.Number, header.Time).Sender(tx)
 	if err != nil {
+		log.Warn("Invalid transaction sender", "err", err)
 		return false, err
 	}
 
