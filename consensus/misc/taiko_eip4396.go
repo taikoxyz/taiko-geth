@@ -21,8 +21,8 @@ const maxGasTargetTargetPercentage uint64 = 95
 
 // Min and Max base fee after Shasta hardfork.
 var (
-	minBaseFeeAfterShasta = new(big.Int).SetUint64(5_000_000)     // 0.005 Gwei
-	maxBaseFeeAfterShasta = new(big.Int).SetUint64(1_000_000_000) // 1 Gwei
+	minBaseFeeShasta = new(big.Int).SetUint64(5_000_000)     // 0.005 Gwei
+	maxBaseFeeShasta = new(big.Int).SetUint64(1_000_000_000) // 1 Gwei
 )
 
 // VerifyEIP4396Header verifies some header attributes which were changed in EIP-4396,
@@ -100,11 +100,11 @@ func clampEIP4396BaseFee(baseFee *big.Int) *big.Int {
 	if baseFee == nil {
 		return nil
 	}
-	if baseFee.Cmp(minBaseFeeAfterShasta) < 0 {
-		return minBaseFeeAfterShasta
+	if baseFee.Cmp(minBaseFeeShasta) < 0 {
+		return minBaseFeeShasta
 	}
-	if baseFee.Cmp(maxBaseFeeAfterShasta) > 0 {
-		return maxBaseFeeAfterShasta
+	if baseFee.Cmp(maxBaseFeeShasta) > 0 {
+		return maxBaseFeeShasta
 	}
 	return baseFee
 }
