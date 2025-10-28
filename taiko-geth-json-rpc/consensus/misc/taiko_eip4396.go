@@ -19,6 +19,12 @@ const ShastaInitialBaseFeeBlocks uint64 = 3
 const blockTimeTarget uint64 = 2
 const maxGasTargetTargetPercentage uint64 = 95
 
+// Min and Max base fee for Shasta blocks.
+var (
+	minBaseFeeShasta = new(big.Int).SetUint64(5_000_000)     // 0.005 Gwei
+	maxBaseFeeShasta = new(big.Int).SetUint64(1_000_000_000) // 1 Gwei
+)
+
 // VerifyEIP4396Header verifies some header attributes which were changed in EIP-4396,
 func VerifyEIP4396Header(
 	config *params.ChainConfig,
@@ -54,7 +60,7 @@ func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parent
 
 	// If the parent gasUsed is the same as the adjusted target, the baseFee remains unchanged.
 	if parent.GasUsed == parentAdjustedGasTarget {
-		return new(big.Int).Set(parent.BaseFee)
+		return parent.BaseFee
 	}
 
 	var (
@@ -70,9 +76,9 @@ func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parent
 		num.Div(num, denom.SetUint64(parentGasTarget))
 		num.Div(num, denom.SetUint64(config.BaseFeeChangeDenominator()))
 		if num.Cmp(common.Big1) < 0 {
-			return num.Add(parent.BaseFee, common.Big1)
+			return clampEIP4396BaseFeeShasta(num.Add(parent.BaseFee, common.Big1))
 		}
-		return num.Add(parent.BaseFee, num)
+		return clampEIP4396BaseFeeShasta(num.Add(parent.BaseFee, num))
 	} else {
 		// Otherwise if the parent block used less gas than its target, the baseFee should decrease.
 		// max(0, parentBaseFee * gasUsedDelta / parentGasTarget / baseFeeChangeDenominator)
@@ -85,6 +91,20 @@ func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parent
 		if baseFee.Cmp(common.Big0) < 0 {
 			baseFee = common.Big0
 		}
-		return baseFee
+		return clampEIP4396BaseFeeShasta(baseFee)
 	}
+}
+
+// clampEIP4396BaseFeeShasta clamps the base fee to be within the min and max limits for Shasta blocks.
+func clampEIP4396BaseFeeShasta(baseFee *big.Int) *big.Int {
+	if baseFee == nil {
+		return nil
+	}
+	if baseFee.Cmp(minBaseFeeShasta) < 0 {
+		return minBaseFeeShasta
+	}
+	if baseFee.Cmp(maxBaseFeeShasta) > 0 {
+		return maxBaseFeeShasta
+	}
+	return baseFee
 }
