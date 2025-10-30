@@ -17,8 +17,8 @@ var (
 	}
 	TaikoInternalShastaTimeFlag = cli.Uint64Flag{
 		Name:    "taiko.internal-shasta-time",
-		Usage:   "Override InternalShastaTime for Taiko internal network (seconds)",
-		Value:   10,
+		Usage:   "Override InternalShastaTime for Taiko internal network (timestamp)",
+		Value:   0,
 		EnvVars: []string{"TAIKO_INTERNAL_SHASTA_TIME"},
 	}
 )
