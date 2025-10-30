@@ -177,7 +177,7 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	}
 
 	// Verify the header's EIP-4396 attributes.
-	if t.chainConfig.IsShasta(header.Number) {
+	if t.chainConfig.IsShasta(header.Number, header.Time) {
 		var parentBlockTime uint64
 		if header.Number.Cmp(common.Big2) >= 0 {
 			if ancestorBlock := chain.GetHeaderByHash(parent.ParentHash); ancestorBlock != nil {
@@ -327,7 +327,7 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 		return false, nil
 	}
 
-	if t.chainConfig.IsShasta(header.Number) {
+	if t.chainConfig.IsShasta(header.Number, header.Time) {
 		if !bytes.HasPrefix(tx.Data(), AnchorV4Selector) {
 			log.Warn("Shasta: Invalid transaction data")
 			return false, nil
@@ -349,7 +349,7 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 		return false, nil
 	}
 
-	if t.chainConfig.IsShasta(header.Number) {
+	if t.chainConfig.IsShasta(header.Number, header.Time) {
 		if tx.Gas() != AnchorV4GasLimit {
 			log.Warn("Shasta: Invalid transaction gas", "gas", tx.Gas())
 			return false, nil

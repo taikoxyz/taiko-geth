@@ -10,11 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// The number of blocks after the Shasta hardfork where the initial base fee is used.
-// This is set to 3 since if the first Shasta block is genesis block, its timestamp may
-// will be very different from the second block, causing large base fee change.
-const ShastaInitialBaseFeeBlocks uint64 = 3
-
 // EIP-4396 calculation parameters.
 const blockTimeTarget uint64 = 2
 const maxGasTargetTargetPercentage uint64 = 95
@@ -47,8 +42,8 @@ func VerifyEIP4396Header(
 
 // CalcEIP4396BaseFee calculates the EIP-4396 basefee of the header.
 func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parentBlockTime uint64) *big.Int {
-	// If the current block is one of the first three EIP-4396 blocks, return the ShastaInitialBaseFee.
-	if parent.Number.Uint64()+1 < config.ShastaBlock.Uint64()+ShastaInitialBaseFeeBlocks {
+	// If the parent is genesis, use the initial base fee for the first post-genesis block.
+	if parent.Number.Cmp(common.Big0) == 0 {
 		return new(big.Int).SetUint64(params.ShastaInitialBaseFee)
 	}
 

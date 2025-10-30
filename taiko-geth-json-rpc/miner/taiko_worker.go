@@ -223,7 +223,7 @@ func (w *Miner) sealBlockWith(
 		return nil, fmt.Errorf("too less transactions in the block")
 	}
 
-	if w.chainConfig.IsShasta(new(big.Int).Add(parent.Number, common.Big1)) {
+	if w.chainConfig.IsShasta(new(big.Int).Add(parent.Number, common.Big1), timestamp) {
 		baseFeePerGas = misc.CalcEIP4396BaseFee(w.chainConfig, parent, parentBlockTime)
 	}
 
