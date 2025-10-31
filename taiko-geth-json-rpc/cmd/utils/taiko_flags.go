@@ -15,6 +15,12 @@ var (
 		Name:  "taiko",
 		Usage: "Taiko network",
 	}
+	TaikoInternalShastaTimeFlag = cli.Uint64Flag{
+		Name:    "taiko.internal-shasta-time",
+		Usage:   "Override InternalShastaTime for Taiko internal network (timestamp)",
+		Value:   0,
+		EnvVars: []string{"TAIKO_INTERNAL_SHASTA_TIME"},
+	}
 )
 
 // RegisterTaikoAPIs initializes and registers the Taiko RPC APIs.

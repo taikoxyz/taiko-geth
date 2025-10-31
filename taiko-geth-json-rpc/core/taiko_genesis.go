@@ -22,7 +22,7 @@ var (
 	TaikoHoodiPacayaBlock     = common.Big0
 	MainnetPacayaBlock        = new(big.Int).SetUint64(1_166_000)
 
-	InternalShastaTime uint64 = 10
+	InternalShastaTime uint64 = 0
 	PreconfShastaTime  uint64 = 0
 	MasayaShastaTime   uint64 = 0
 	MainnetShastaTime  uint64 = 999_999_999_999
