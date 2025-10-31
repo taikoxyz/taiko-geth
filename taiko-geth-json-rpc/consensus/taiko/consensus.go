@@ -44,9 +44,8 @@ var (
 	AnchorV4Selector = crypto.Keccak256(
 		[]byte("anchorV4((uint48,address,bytes,bytes32,(uint48,uint8,address,address)[]),(uint48,bytes32,bytes32))"),
 	)[:4]
-	AnchorGasLimit   = uint64(250_000)
-	AnchorV3GasLimit = uint64(1_000_000)
-	AnchorV4GasLimit = uint64(1_000_000)
+	AnchorGasLimit     = uint64(250_000)
+	AnchorV3V4GasLimit = uint64(1_000_000)
 )
 
 // Taiko is a consensus engine used by L2 rollup.
@@ -349,19 +348,14 @@ func (t *Taiko) ValidateAnchorTx(tx *types.Transaction, header *types.Header) (b
 		return false, nil
 	}
 
-	if t.chainConfig.IsShasta(header.Number, header.Time) {
-		if tx.Gas() != AnchorV4GasLimit {
-			log.Warn("Shasta: Invalid transaction gas", "gas", tx.Gas())
-			return false, nil
-		}
-	} else if t.chainConfig.IsPacaya(header.Number) {
-		if tx.Gas() != AnchorV3GasLimit {
-			log.Warn("Pacaya: Invalid transaction gas", "gas", tx.Gas())
+	if t.chainConfig.IsShasta(header.Number, header.Time) || t.chainConfig.IsPacaya(header.Number) {
+		if tx.Gas() != AnchorV3V4GasLimit {
+			log.Warn("Shasta / Pacaya: Invalid transaction gas limit", "gas", tx.Gas())
 			return false, nil
 		}
 	} else {
 		if tx.Gas() != AnchorGasLimit {
-			log.Warn("Invalid transaction gas", "gas", tx.Gas())
+			log.Warn("Invalid transaction gas limit", "gas", tx.Gas())
 			return false, nil
 		}
 	}
