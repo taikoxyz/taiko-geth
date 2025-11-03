@@ -5,19 +5,12 @@ on:
     # Only run the first time the PR is opened or when it is marked as ready for review
     # This is to avoid claude from automatically reviewing the PR every time there's a new commit
     types: [opened, ready_for_review]
-    # Optional: Only run on specific file changes
-    # paths:
-    #   - "src/**/*.ts"
-    #   - "src/**/*.tsx"
-    #   - "src/**/*.js"
-    #   - "src/**/*.jsx"
+
 
 jobs:
   claude-review:
     # Run for non-draft PRs that are not marked to be skipped
-    if: |
-      github.event.pull_request.draft == false &&
-      !contains(github.event.pull_request.labels.*.name, 'option.do-not-merge')
+    if: (github.event.pull_request.draft == false && !contains(github.event.pull_request.labels.*.name, 'option.do-not-merge') && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [arc-runner-set]
     permissions:
       contents: read
@@ -27,7 +20,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 1
 
