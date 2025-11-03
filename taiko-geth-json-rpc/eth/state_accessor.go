@@ -263,7 +263,7 @@ func (eth *Ethereum) stateAtTransaction(ctx context.Context, block *types.Block,
 
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 		// add it to the Message, if its an ontake block.
-		if eth.blockchain.Config().IsShasta(block.Number(), block.Time()) {
+		if eth.blockchain.Config().IsShasta(block.Time()) {
 			msg.BasefeeSharingPctg, _ = core.DecodeShastaExtraData(block.Header().Extra)
 		} else if eth.blockchain.Config().IsOntake(block.Number()) {
 			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
