@@ -178,7 +178,7 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	// Verify the header's EIP-4396 attributes.
 	if t.chainConfig.IsShasta(header.Number, header.Time) {
 		var parentBlockTime uint64
-		if header.Number.Cmp(common.Big2) >= 0 {
+		if header.Number.Cmp(common.Big0) != 0 {
 			if ancestorBlock := chain.GetHeaderByHash(parent.ParentHash); ancestorBlock != nil {
 				parentBlockTime = parent.Time - ancestorBlock.Time
 			} else {
