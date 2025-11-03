@@ -644,8 +644,8 @@ func (c *ChainConfig) IsPacaya(num *big.Int) bool {
 }
 
 // CHANGE(taiko): IsShasta returns whether time is either equal to the Shasta fork time or greater.
-func (c *ChainConfig) IsShasta(num *big.Int, time uint64) bool {
-	return c.IsLondon(num) && isTimestampForked(c.ShastaTime, time)
+func (c *ChainConfig) IsShasta(time uint64) bool {
+	return isTimestampForked(c.ShastaTime, time)
 }
 
 // IsVerkleGenesis checks whether the verkle fork is activated at the genesis block.
