@@ -1,0 +1,33 @@
+package eth
+
+import (
+	"math/big"
+	"testing"
+
+	"github.com/ethereum/go-ethereum/common/hexutil"
+)
+
+func TestAnchorV4ProposalID(t *testing.T) {
+	const calldata = "0x100f75880000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000011ef81e2241d56850e5be7436e70965d4204c30f27aa4d36d68b7099742c3eb103ed18dfb69d83bdc222a8695ae95befa6aae341145de83e5678be4f8df74ddbf70000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000003c44cdddb6a900fa2b585dd299e03d12fa4293bc00000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+
+	data, err := hexutil.Decode(calldata)
+	if err != nil {
+		t.Fatalf("failed to decode calldata: %v", err)
+	}
+
+	proposalID, err := anchorV4ProposalID(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expected := new(big.Int).SetUint64(10)
+	if proposalID.Cmp(expected) != 0 {
+		t.Fatalf("expected proposal ID %s, got %s", expected, proposalID)
+	}
+}
+
+func TestAnchorV4ProposalIDInvalidData(t *testing.T) {
+	if _, err := anchorV4ProposalID([]byte{0x10, 0x0f}); err == nil {
+		t.Fatal("expected error for malformed calldata")
+	}
+}

@@ -2,6 +2,7 @@ package eth
 
 import (
 	"bytes"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -108,8 +109,11 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
-		// Get proposal ID from the first transaction's data
-		proposalID := new(big.Int).SetBytes(currentBlock.Transactions()[0].Data()[4:36])
+		// Decode the AnchorV4 calldata to fetch the proposal ID.
+		proposalID, err := anchorV4ProposalID(currentBlock.Transactions()[0].Data())
+		if err != nil {
+			return nil, err
+		}
 		if proposalID.Cmp(batchID) == 0 {
 			return currentBlock.Number(), nil
 		}
@@ -117,6 +121,32 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
 	}
 	return nil, ethereum.NotFound
+}
+
+// anchorV4ProposalID extracts the proposal ID encoded inside an AnchorV4 transaction's calldata.
+func anchorV4ProposalID(txData []byte) (*big.Int, error) {
+	if len(txData) < len(taiko.AnchorV4Selector) {
+		return nil, fmt.Errorf("anchor tx data too short: %d", len(txData))
+	}
+	if !bytes.HasPrefix(txData, taiko.AnchorV4Selector) {
+		return nil, fmt.Errorf("invalid anchor selector")
+	}
+
+	args := txData[len(taiko.AnchorV4Selector):]
+	if len(args) < 32 {
+		return nil, fmt.Errorf("anchor calldata missing proposal params offset")
+	}
+
+	offset := new(big.Int).SetBytes(args[:32])
+	if !offset.IsUint64() {
+		return nil, fmt.Errorf("proposal params offset too large")
+	}
+	offsetU64 := offset.Uint64()
+	if offsetU64 > uint64(len(args)) || offsetU64+32 > uint64(len(args)) {
+		return nil, fmt.Errorf("proposal params offset %d out of bounds (len=%d)", offsetU64, len(args))
+	}
+
+	return new(big.Int).SetBytes(args[offsetU64 : offsetU64+32]), nil
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
