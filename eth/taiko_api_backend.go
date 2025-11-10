@@ -109,7 +109,7 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
-		// Decode the AnchorV4 calldata to fetch the proposal ID.
+		// Decode the AnchorV4 calldata to fetch the proposal ID for comparison.
 		proposalID, err := anchorV4ProposalID(currentBlock.Transactions()[0].Data())
 		if err != nil {
 			return nil, err
@@ -126,26 +126,30 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 // anchorV4ProposalID extracts the proposal ID encoded inside an AnchorV4 transaction's calldata.
 func anchorV4ProposalID(txData []byte) (*big.Int, error) {
 	if len(txData) < len(taiko.AnchorV4Selector) {
-		return nil, fmt.Errorf("anchor tx data too short: %d", len(txData))
+		return nil, fmt.Errorf("anchorV4 tx data too short: %d", len(txData))
 	}
 	if !bytes.HasPrefix(txData, taiko.AnchorV4Selector) {
-		return nil, fmt.Errorf("invalid anchor selector")
+		return nil, fmt.Errorf("invalid anchorV4 selector")
 	}
 
+	// Calldata layout: 4-byte selector + ABI-encoded arguments. Skip selector so we can
+	// reason about the argument area directly.
 	args := txData[len(taiko.AnchorV4Selector):]
 	if len(args) < 32 {
-		return nil, fmt.Errorf("anchor calldata missing proposal params offset")
+		return nil, fmt.Errorf("anchorV4 calldata missing proposal params offset")
 	}
 
+	// The first 32 bytes hold the offset (relative to args start) where the proposal tuple lives.
 	offset := new(big.Int).SetBytes(args[:32])
 	if !offset.IsUint64() {
-		return nil, fmt.Errorf("proposal params offset too large")
+		return nil, fmt.Errorf("anchorV4 proposal params offset too large")
 	}
 	offsetU64 := offset.Uint64()
 	if offsetU64 > uint64(len(args)) || offsetU64+32 > uint64(len(args)) {
-		return nil, fmt.Errorf("proposal params offset %d out of bounds (len=%d)", offsetU64, len(args))
+		return nil, fmt.Errorf("anchorV4 proposal params offset %d out of bounds (len=%d)", offsetU64, len(args))
 	}
 
+	// Slice out the proposalId slot (first field inside the tuple) and convert to big.Int.
 	return new(big.Int).SetBytes(args[offsetU64 : offsetU64+32]), nil
 }
 
