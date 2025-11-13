@@ -145,12 +145,14 @@ func anchorV4ProposalID(txData []byte) (*big.Int, error) {
 		return nil, fmt.Errorf("anchorV4 proposal params offset too large")
 	}
 	offsetU64 := offset.Uint64()
-	if offsetU64 > uint64(len(args)) || offsetU64+32 > uint64(len(args)) {
+	if offsetU64 > uint64(len(args)) || offsetU64+64 > uint64(len(args)) {
 		return nil, fmt.Errorf("anchorV4 proposal params offset %d out of bounds (len=%d)", offsetU64, len(args))
 	}
 
-	// Slice out the proposalId slot (first field inside the tuple) and convert to big.Int.
-	return new(big.Int).SetBytes(args[offsetU64 : offsetU64+32]), nil
+	// The proposal tuple encodes submissionWindowEnd first, followed by proposalId. Skip the first slot
+	// to pull the proposalId value.
+	start := int(offsetU64)
+	return new(big.Int).SetBytes(args[start+32 : start+64]), nil
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
