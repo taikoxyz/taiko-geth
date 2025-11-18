@@ -712,6 +712,9 @@ func DecodeOntakeExtraData(extradata []byte) uint8 {
 // CHANGE(taiko): decodes an Shasta block's extradata, returns basefeeSharingPctg configurations,
 // the corresponding encoding function in protocol is `LibProposing._encodeGasConfigs`.
 func DecodeShastaExtraData(extradata []byte) (uint8, bool) {
+	if len(extradata) < params.ShastaExtraDataLen {
+		return 0, false
+	}
 	// First byte: basefeeSharingPctg
 	basefeeSharingPctg := extradata[0]
 	// Second byte: isLowBondProposal (lowest bit)
