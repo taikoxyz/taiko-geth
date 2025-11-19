@@ -1579,20 +1579,20 @@ func (pool *LegacyPool) demoteUnexecutables() {
 		for _, tx := range olds {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
-			log.Trace("Removed old pending transaction", "hash", hash)
+			log.Debug("Removed old pending transaction", "hash", hash.Hex())
 		}
 		// Drop all transactions that are too costly (low balance or out of gas), and queue any invalids back for later
 		drops, invalids := list.Filter(pool.currentState.GetBalance(addr), gasLimit)
 		for _, tx := range drops {
 			hash := tx.Hash()
 			pool.all.Remove(hash)
-			log.Trace("Removed unpayable pending transaction", "hash", hash)
+			log.Debug("Removed unpayable pending transaction", "hash", hash.Hex())
 		}
 		pendingNofundsMeter.Mark(int64(len(drops)))
 
 		for _, tx := range invalids {
 			hash := tx.Hash()
-			log.Trace("Demoting pending transaction", "hash", hash)
+			log.Debug("Demoting pending transaction", "hash", hash.Hex())
 
 			// Internal shuffle shouldn't touch the lookup set.
 			pool.enqueueTx(hash, tx, false)
@@ -1604,7 +1604,17 @@ func (pool *LegacyPool) demoteUnexecutables() {
 			gapped := list.Cap(0)
 			for _, tx := range gapped {
 				hash := tx.Hash()
-				log.Error("Demoting invalidated transaction", "hash", hash)
+				// CHANGE(taiko): log out additional fields
+				fields := []interface{}{"hash", hash.Hex(), "nonce", tx.Nonce(), "value", tx.Value()}
+				if sender, err := types.Sender(pool.signer, tx); err == nil {
+					fields = append(fields, "sender", sender.Hex())
+					if balance := pool.currentState.GetBalance(sender); balance != nil {
+						fields = append(fields, "balance", balance.String())
+					}
+				} else {
+					fields = append(fields, "senderErr", err)
+				}
+				log.Error("Demoting invalidated transaction", fields...)
 
 				// Internal shuffle shouldn't touch the lookup set.
 				pool.enqueueTx(hash, tx, false)
