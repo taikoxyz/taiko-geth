@@ -140,9 +140,16 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), params.MaximumExtraDataSize)
 	}
 
-	// Timestamp should later than or equal to parent (when many L2 blocks included in one L1 block)
-	if header.Time < parent.Time {
-		return ErrOlderBlockTime
+	// Shasta fork enforces a strict timestamp increase, other forks allow equal
+	// timestamps (multiple L2 blocks per L1 block scenario).
+	if t.chainConfig.IsShasta(header.Time) {
+		if header.Time <= parent.Time {
+			return ErrOlderBlockTime
+		}
+	} else {
+		if header.Time < parent.Time {
+			return ErrOlderBlockTime
+		}
 	}
 
 	// Verify that the block number is parent's +1
@@ -177,6 +184,9 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 
 	// Verify the header's EIP-4396 attributes.
 	if t.chainConfig.IsShasta(header.Time) {
+		if len(header.Extra) < params.ShastaExtraDataLen {
+			return fmt.Errorf("Shasta extra-data too short: %d < %d", len(header.Extra), params.ShastaExtraDataLen)
+		}
 		var parentBlockTime uint64
 		if header.Number.Cmp(common.Big1) > 0 {
 			if ancestorBlock := chain.GetHeaderByHash(parent.ParentHash); ancestorBlock != nil {
