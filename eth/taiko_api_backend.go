@@ -173,9 +173,9 @@ func (a *TaikoAuthAPIBackend) SetHeadL1Origin(blockID *math.HexOrDecimal256) *he
 func (a *TaikoAuthAPIBackend) SetBatchToLastBlock(
 	batchID *math.HexOrDecimal256,
 	blockID *math.HexOrDecimal256,
-) *big.Int {
+) *hexutil.Big {
 	rawdb.WriteBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID), (*big.Int)(blockID))
-	return (*big.Int)(batchID)
+	return (*hexutil.Big)(batchID)
 }
 
 // UpdateL1Origin updates the L2 block's corresponding L1 origin.
