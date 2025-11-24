@@ -15,7 +15,7 @@ func TestAnchorV4ProposalID(t *testing.T) {
 		t.Fatalf("failed to decode calldata: %v", err)
 	}
 
-	proposalID, err := anchorV4ProposalID(data)
+	proposalID, err := AnchorV4ProposalID(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestAnchorV4ProposalID(t *testing.T) {
 }
 
 func TestAnchorV4ProposalIDInvalidData(t *testing.T) {
-	if _, err := anchorV4ProposalID([]byte{0x10, 0x0f}); err == nil {
+	if _, err := AnchorV4ProposalID([]byte{0x10, 0x0f}); err == nil {
 		t.Fatal("expected error for malformed calldata")
 	}
 }

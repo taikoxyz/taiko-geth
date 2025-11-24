@@ -110,7 +110,7 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 			break
 		}
 		// Decode the AnchorV4 calldata to fetch the proposal ID for comparison.
-		proposalID, err := anchorV4ProposalID(currentBlock.Transactions()[0].Data())
+		proposalID, err := AnchorV4ProposalID(currentBlock.Transactions()[0].Data())
 		if err != nil {
 			return nil, err
 		}
@@ -123,8 +123,8 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 	return nil, ethereum.NotFound
 }
 
-// anchorV4ProposalID extracts the proposal ID encoded inside an AnchorV4 transaction's calldata.
-func anchorV4ProposalID(txData []byte) (*big.Int, error) {
+// AnchorV4ProposalID extracts the proposal ID encoded inside an AnchorV4 transaction's calldata.
+func AnchorV4ProposalID(txData []byte) (*big.Int, error) {
 	if len(txData) < len(taiko.AnchorV4Selector) {
 		return nil, fmt.Errorf("anchorV4 tx data too short: %d", len(txData))
 	}
