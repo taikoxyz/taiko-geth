@@ -105,7 +105,7 @@
         "type": "object"
       },
       "result": {
-        "$ref": "#/definitions/*big.Int"
+        "$ref": "#/definitions/*hexutil.Big"
       }
     },
     "taikoAuth_SetHeadL1Origin": {
