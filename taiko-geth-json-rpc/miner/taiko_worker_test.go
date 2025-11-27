@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/clique"
+	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -68,4 +69,19 @@ func TestBuildTransactionsLists(t *testing.T) {
 	assert.NoError(t, err)
 	assert.LessOrEqual(t, 1, len(txList))
 	assert.LessOrEqual(t, txList[0].BytesLength, uint64(maxBytesPerTxList))
+}
+
+func TestRemoveGoldenTouchPendingTxs(t *testing.T) {
+	pending := map[common.Address][]*txpool.LazyTransaction{
+		taiko.GoldenTouchAccount: {},
+		testUserAddress:          {},
+	}
+
+	filtered := removeGoldenTouchPendingTxs(pending)
+
+	assert.Len(t, filtered, 1)
+	_, exists := filtered[taiko.GoldenTouchAccount]
+	assert.False(t, exists)
+	_, exists = filtered[testUserAddress]
+	assert.True(t, exists)
 }
