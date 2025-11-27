@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc"
+	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -69,13 +70,14 @@ func (w *Miner) buildTransactionsLists(
 	}
 
 	// Check if tx pool is empty at first.
-	if len(w.txpool.Pending(
+	pendingTxs := removeGoldenTouchPendingTxs(w.txpool.Pending(
 		txpool.PendingFilter{
 			MinTip:       uint256.NewInt(minTip),
 			BaseFee:      uint256.MustFromBig(baseFee),
 			OnlyPlainTxs: true,
 		},
-	)) == 0 {
+	))
+	if len(pendingTxs) == 0 {
 		log.Warn(
 			"Transaction pool for building transactions lists is empty",
 			"minTip", minTip,
@@ -305,7 +307,9 @@ func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 	map[common.Address][]*txpool.LazyTransaction,
 	map[common.Address][]*txpool.LazyTransaction,
 ) {
-	pending := w.txpool.Pending(txpool.PendingFilter{OnlyPlainTxs: true, BaseFee: uint256.MustFromBig(baseFee)})
+	pending := removeGoldenTouchPendingTxs(
+		w.txpool.Pending(txpool.PendingFilter{OnlyPlainTxs: true, BaseFee: uint256.MustFromBig(baseFee)}),
+	)
 	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
 
 	for _, local := range localAccounts {
@@ -317,6 +321,18 @@ func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 	}
 
 	return localTxs, remoteTxs
+}
+
+// removeGoldenTouchPendingTxs drops GoldenTouchAccount transactions when building txpool content.
+func removeGoldenTouchPendingTxs(
+	pending map[common.Address][]*txpool.LazyTransaction,
+) map[common.Address][]*txpool.LazyTransaction {
+	if len(pending) == 0 {
+		return pending
+	}
+
+	delete(pending, taiko.GoldenTouchAccount)
+	return pending
 }
 
 // commitL2Transactions tries to commit the transactions into the given state.
