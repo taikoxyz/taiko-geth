@@ -53,7 +53,6 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.ChainID = params.TaikoHoodiNetworkID
 		chainConfig.OntakeBlock = TaikoHoodiOntakeBlock
 		chainConfig.PacayaBlock = TaikoHoodiPacayaBlock
-		chainConfig.ShastaBlock = TaikoHoodiShastaBlock
 		allocJSON = taikoGenesis.TaikoHoodiGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoInternalNetworkID
