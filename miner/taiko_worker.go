@@ -11,8 +11,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus/misc"
-	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -207,9 +205,8 @@ func (w *Miner) buildTransactionsLists(
 
 // sealBlockWith mines and seals a block with the given block metadata.
 func (w *Miner) sealBlockWith(
-	parent *types.Header,
+	parent common.Hash,
 	timestamp uint64,
-	parentBlockTime uint64,
 	blkMeta *engine.BlockMetadata,
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
@@ -225,14 +222,10 @@ func (w *Miner) sealBlockWith(
 		return nil, fmt.Errorf("too less transactions in the block")
 	}
 
-	if w.chainConfig.IsShasta(new(big.Int).Add(parent.Number, common.Big1)) {
-		baseFeePerGas = misc.CalcEIP4396BaseFee(w.chainConfig, parent, parentBlockTime)
-	}
-
 	params := &generateParams{
 		timestamp:     timestamp,
 		forceTime:     true,
-		parentHash:    parent.Hash(),
+		parentHash:    parent,
 		coinbase:      blkMeta.Beneficiary,
 		random:        blkMeta.MixHash,
 		withdrawals:   withdrawals,

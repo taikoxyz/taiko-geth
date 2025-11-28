@@ -18,14 +18,13 @@ type PreBuiltTxList struct {
 
 // SealBlockWith mines and seals a block without changing the canonical chain.
 func (miner *Miner) SealBlockWith(
-	parent *types.Header,
+	parent common.Hash,
 	timestamp uint64,
-	parentBlockTime uint64,
 	blkMeta *engine.BlockMetadata,
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
 ) (*types.Block, error) {
-	return miner.sealBlockWith(parent, timestamp, parentBlockTime, blkMeta, baseFeePerGas, withdrawals)
+	return miner.sealBlockWith(parent, timestamp, blkMeta, baseFeePerGas, withdrawals)
 }
 
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given limits.

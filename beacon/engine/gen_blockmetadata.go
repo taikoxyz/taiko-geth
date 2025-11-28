@@ -5,7 +5,6 @@ package engine
 import (
 	"encoding/json"
 	"errors"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -20,7 +19,6 @@ func (b BlockMetadata) MarshalJSON() ([]byte, error) {
 		GasLimit    uint64         `json:"gasLimit"     gencodec:"required"`
 		Timestamp   hexutil.Uint64 `json:"timestamp"    gencodec:"required"`
 		MixHash     common.Hash    `json:"mixHash"      gencodec:"required"`
-		BatchID     *big.Int       `json:"batchId"`
 		TxList      hexutil.Bytes  `json:"txList"          gencodec:"required"`
 		ExtraData   []byte         `json:"extraData"       gencodec:"required"`
 	}
@@ -29,7 +27,6 @@ func (b BlockMetadata) MarshalJSON() ([]byte, error) {
 	enc.GasLimit = b.GasLimit
 	enc.Timestamp = hexutil.Uint64(b.Timestamp)
 	enc.MixHash = b.MixHash
-	enc.BatchID = b.BatchID
 	enc.TxList = b.TxList
 	enc.ExtraData = b.ExtraData
 	return json.Marshal(&enc)
@@ -42,7 +39,6 @@ func (b *BlockMetadata) UnmarshalJSON(input []byte) error {
 		GasLimit    *uint64         `json:"gasLimit"     gencodec:"required"`
 		Timestamp   *hexutil.Uint64 `json:"timestamp"    gencodec:"required"`
 		MixHash     *common.Hash    `json:"mixHash"      gencodec:"required"`
-		BatchID     *big.Int        `json:"batchId"`
 		TxList      *hexutil.Bytes  `json:"txList"          gencodec:"required"`
 		ExtraData   []byte          `json:"extraData"       gencodec:"required"`
 	}
@@ -66,9 +62,6 @@ func (b *BlockMetadata) UnmarshalJSON(input []byte) error {
 		return errors.New("missing required field 'mixHash' for BlockMetadata")
 	}
 	b.MixHash = *dec.MixHash
-	if dec.BatchID != nil {
-		b.BatchID = dec.BatchID
-	}
 	if dec.TxList == nil {
 		return errors.New("missing required field 'txList' for BlockMetadata")
 	}

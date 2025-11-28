@@ -441,16 +441,9 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 		if isTaiko {
 			// No need to check payloadAttribute here, because all its fields are
 			// marked as required.
-			var parentBlockTime uint64
-			if block.Number().Cmp(common.Big2) >= 0 {
-				if ancestor := api.eth.BlockChain().GetHeaderByHash(block.ParentHash()); ancestor != nil {
-					parentBlockTime = block.Time() - ancestor.Time
-				}
-			}
 			block, err := api.eth.Miner().SealBlockWith(
-				block.Header(),
+				update.HeadBlockHash,
 				payloadAttributes.Timestamp,
-				parentBlockTime,
 				payloadAttributes.BlockMetadata,
 				payloadAttributes.BaseFeePerGas,
 				payloadAttributes.Withdrawals,
@@ -480,8 +473,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			}
 			id := args.Id()
 
-			log.Debug(
-				"Payload arguments",
+			log.Debug("PayloadArgs",
 				"parent", args.Parent.Hex(),
 				"timestamp", args.Timestamp,
 				"feeRecipient", args.FeeRecipient.Hex(),
@@ -518,10 +510,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			// Write the head L1Origin, only when it's not a preconfirmation block.
 			if !l1Origin.IsPreconfBlock() {
 				rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
-				// Write the batch to block mapping if the batch ID is given.
-				if payloadAttributes.BlockMetadata.BatchID != nil {
-					rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
-				}
 			}
 
 			return valid(&id), nil
