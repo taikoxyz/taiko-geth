@@ -178,10 +178,60 @@ func (a *TaikoAuthAPIBackend) SetBatchToLastBlock(
 	return (*hexutil.Big)(batchID)
 }
 
+func mergeL1Origin(existing *rawdb.L1Origin, update *rawdb.L1Origin) *rawdb.L1Origin {
+	if existing == nil {
+		return update
+	}
+	if update == nil {
+		return existing
+	}
+
+	merged := *existing
+
+	if update.BlockID != nil {
+		merged.BlockID = update.BlockID
+	}
+	if update.L2BlockHash != (common.Hash{}) {
+		merged.L2BlockHash = update.L2BlockHash
+	}
+	if update.L1BlockHeight != nil {
+		// Treat height=0 as "set" only if accompanied by a non-zero hash (e.g. genesis).
+		if update.L1BlockHeight.Sign() > 0 || (update.L1BlockHeight.Sign() == 0 && update.L1BlockHash != (common.Hash{})) {
+			merged.L1BlockHeight = update.L1BlockHeight
+		}
+	}
+	if update.L1BlockHash != (common.Hash{}) {
+		merged.L1BlockHash = update.L1BlockHash
+	}
+	if update.BuildPayloadArgsID != ([8]byte{}) {
+		merged.BuildPayloadArgsID = update.BuildPayloadArgsID
+	}
+	// Never downgrade forced-inclusion status.
+	merged.IsForcedInclusion = merged.IsForcedInclusion || update.IsForcedInclusion
+	if update.Signature != ([65]byte{}) {
+		merged.Signature = update.Signature
+	}
+
+	return &merged
+}
+
 // UpdateL1Origin updates the L2 block's corresponding L1 origin.
 func (a *TaikoAuthAPIBackend) UpdateL1Origin(l1Origin *rawdb.L1Origin) *rawdb.L1Origin {
-	rawdb.WriteL1Origin(a.eth.ChainDb(), l1Origin.BlockID, l1Origin)
-	return l1Origin
+	if l1Origin == nil || l1Origin.BlockID == nil {
+		log.Warn("Invalid L1Origin update", "l1Origin", l1Origin)
+		return l1Origin
+	}
+
+	existing, err := rawdb.ReadL1Origin(a.eth.ChainDb(), l1Origin.BlockID)
+	if err != nil {
+		log.Warn("Failed to read existing L1Origin, overwriting", "blockID", l1Origin.BlockID, "error", err)
+		rawdb.WriteL1Origin(a.eth.ChainDb(), l1Origin.BlockID, l1Origin)
+		return l1Origin
+	}
+
+	merged := mergeL1Origin(existing, l1Origin)
+	rawdb.WriteL1Origin(a.eth.ChainDb(), merged.BlockID, merged)
+	return merged
 }
 
 // SetL1OriginSignature sets the L1 origin signature for the given block ID.
