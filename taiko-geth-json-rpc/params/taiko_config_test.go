@@ -22,11 +22,6 @@ func TestNetworkIDToChainConfigOrDefault(t *testing.T) {
 			TaikoChainConfig,
 		},
 		{
-			"preconfDevnetNetworkID",
-			PreconfDevnetNetworkID,
-			TaikoChainConfig,
-		},
-		{
 			"mainnet",
 			MainnetChainConfig.ChainID,
 			MainnetChainConfig,

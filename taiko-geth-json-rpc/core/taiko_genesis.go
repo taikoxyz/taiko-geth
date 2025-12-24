@@ -11,19 +11,16 @@ import (
 
 var (
 	InternalDevnetOntakeBlock = common.Big0
-	PreconfDevnetOntakeBlock  = common.Big0
 	MasayaDevnetOntakeBlock   = common.Big0
 	TaikoHoodiOntakeBlock     = common.Big0
 	MainnetOntakeBlock        = new(big.Int).SetUint64(538_304)
 
 	InternalDevnetPacayaBlock = common.Big0
-	PreconfDevnetPacayaBlock  = common.Big0
 	MasayaDevnetPacayaBlock   = common.Big0
 	TaikoHoodiPacayaBlock     = common.Big0
 	MainnetPacayaBlock        = new(big.Int).SetUint64(1_166_000)
 
 	InternalShastaTime uint64 = 0
-	PreconfShastaTime  uint64 = 0
 	MasayaShastaTime   uint64 = 0
 	MainnetShastaTime  uint64 = 999_999_999_999
 	HoodiShastaTime    uint64 = 999_999_999_999
@@ -47,12 +44,6 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
-	case params.PreconfDevnetNetworkID.Uint64():
-		chainConfig.ChainID = params.PreconfDevnetNetworkID
-		chainConfig.OntakeBlock = PreconfDevnetOntakeBlock
-		chainConfig.PacayaBlock = PreconfDevnetPacayaBlock
-		chainConfig.ShastaTime = &PreconfShastaTime
-		allocJSON = taikoGenesis.PreconfDevnetGenesisAllocJSON
 	case params.MasayaDevnetNetworkID.Uint64():
 		chainConfig.ChainID = params.MasayaDevnetNetworkID
 		chainConfig.OntakeBlock = MasayaDevnetOntakeBlock
