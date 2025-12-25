@@ -124,33 +124,23 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 }
 
 // AnchorV4ProposalID extracts the proposal ID encoded inside an AnchorV4 transaction's calldata.
+// Calldata layout for anchorV4((uint48),(uint48,bytes32,bytes32)):
+//   - 4 bytes: selector
+//   - 32 bytes: ProposalParams.proposalId (uint48 padded)
+//   - 32 bytes: Checkpoint.blockNumber (uint48 padded)
+//   - 32 bytes: Checkpoint.blockHash
+//   - 32 bytes: Checkpoint.stateRoot
 func AnchorV4ProposalID(txData []byte) (*big.Int, error) {
-	if len(txData) < len(taiko.AnchorV4Selector) {
+	if len(txData) < len(taiko.AnchorV4Selector)+32 {
 		return nil, fmt.Errorf("anchorV4 tx data too short: %d", len(txData))
 	}
 	if !bytes.HasPrefix(txData, taiko.AnchorV4Selector) {
 		return nil, fmt.Errorf("invalid anchorV4 selector")
 	}
 
-	// Calldata layout: 4-byte selector + ABI-encoded arguments. Skip selector so we can
-	// reason about the argument area directly.
+	// The proposalId is the first 32 bytes after the selector (uint48 padded to 32 bytes).
 	args := txData[len(taiko.AnchorV4Selector):]
-	if len(args) < 32 {
-		return nil, fmt.Errorf("anchorV4 calldata missing proposal params offset")
-	}
-
-	// The first 32 bytes hold the offset (relative to args start) where the proposal tuple lives.
-	offset := new(big.Int).SetBytes(args[:32])
-	if !offset.IsUint64() {
-		return nil, fmt.Errorf("anchorV4 proposal params offset too large")
-	}
-	offsetU64 := offset.Uint64()
-	if offsetU64 > uint64(len(args)) || offsetU64+32 > uint64(len(args)) {
-		return nil, fmt.Errorf("anchorV4 proposal params offset %d out of bounds (len=%d)", offsetU64, len(args))
-	}
-
-	// Slice out the proposalId slot (first field inside the tuple) and convert to big.Int.
-	return new(big.Int).SetBytes(args[offsetU64 : offsetU64+32]), nil
+	return new(big.Int).SetBytes(args[:32]), nil
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
