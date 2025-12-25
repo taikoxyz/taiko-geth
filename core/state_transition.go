@@ -708,4 +708,3 @@ func (st *stateTransition) getTreasuryAddress() common.Address {
 func DecodeOntakeExtraData(extradata []byte) uint8 {
 	return uint8(new(big.Int).SetBytes(extradata).Uint64())
 }
-
