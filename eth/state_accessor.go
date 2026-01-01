@@ -264,7 +264,11 @@ func (eth *Ethereum) stateAtTransaction(ctx context.Context, block *types.Block,
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
 		// add it to the Message, if its an ontake block.
 		if eth.blockchain.Config().IsOntake(block.Number()) {
-			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
+			if eth.blockchain.Config().IsShasta(block.Time()) {
+				msg.BasefeeSharingPctg = core.DecodeBasefeeSharingPctg(block.Header().Extra)
+			} else {
+				msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
+			}
 		}
 		// Not yet the searched for transaction, execute on top of the current state
 		statedb.SetTxContext(tx.Hash(), idx)

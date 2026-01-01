@@ -11,6 +11,24 @@ func TestDecodeBasefeeSharingPctg(t *testing.T) {
 	}
 }
 
+func TestDecodeOntakeExtraDataBackwardCompat(t *testing.T) {
+	tests := []struct {
+		name  string
+		extra []byte
+		want  uint8
+	}{
+		{name: "empty", extra: nil, want: 0},
+		{name: "single byte", extra: []byte{0x2a}, want: 0x2a},
+		{name: "two bytes", extra: []byte{0x00, 0x32}, want: 0x32},
+		{name: "multi bytes", extra: []byte{0x01, 0x02}, want: 0x02},
+	}
+	for _, test := range tests {
+		if got := DecodeOntakeExtraData(test.extra); got != test.want {
+			t.Fatalf("%s: expected %d, got %d", test.name, test.want, got)
+		}
+	}
+}
+
 func TestDecodeProposalIDFromExtraData(t *testing.T) {
 	extra := []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a}
 	id, err := DecodeProposalID(extra)
