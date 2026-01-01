@@ -132,7 +132,12 @@ const (
 	DefaultElasticityMultiplier     = 2          // Bounds the maximum gas limit an EIP-1559 block may have.
 	InitialBaseFee                  = 1000000000 // Initial base fee for EIP-1559 blocks.
 	ShastaInitialBaseFee            = 25_000_000 // CHANGE(taiko): add ShastaInitialBaseFee for Shasta fork
-	ShastaExtraDataLen              = 1          // CHANGE(taiko): Shasta extradata encodes basefee share pctg
+
+	// CHANGE(taiko): extraData layout for Shasta and later.
+	ExtraDataBasefeeSharingPctgIndex = 0
+	ExtraDataProposalIDIndex         = 1
+	ExtraDataProposalIDLength        = 6
+	ShastaExtraDataLen               = 1 + ExtraDataProposalIDLength
 
 	MaxCodeSize     = 24576           // Maximum bytecode to permit for a contract
 	MaxInitCodeSize = 2 * MaxCodeSize // Maximum initcode to permit in a creation transaction and create instructions

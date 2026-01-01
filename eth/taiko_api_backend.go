@@ -2,7 +2,6 @@ package eth
 
 import (
 	"bytes"
-	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -10,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
@@ -109,8 +109,7 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
-		// Decode the AnchorV4 calldata to fetch the proposal ID for comparison.
-		proposalID, err := AnchorV4ProposalID(currentBlock.Transactions()[0].Data())
+		proposalID, err := core.DecodeProposalID(currentBlock.Header().Extra)
 		if err != nil {
 			return nil, err
 		}
@@ -121,26 +120,6 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
 	}
 	return nil, ethereum.NotFound
-}
-
-// AnchorV4ProposalID extracts the proposal ID encoded inside an AnchorV4 transaction's calldata.
-// Calldata layout for anchorV4((uint48),(uint48,bytes32,bytes32)):
-//   - 4 bytes: selector
-//   - 32 bytes: ProposalParams.proposalId (uint48 padded)
-//   - 32 bytes: Checkpoint.blockNumber (uint48 padded)
-//   - 32 bytes: Checkpoint.blockHash
-//   - 32 bytes: Checkpoint.stateRoot
-func AnchorV4ProposalID(txData []byte) (*big.Int, error) {
-	if len(txData) < len(taiko.AnchorV4Selector)+32 {
-		return nil, fmt.Errorf("anchorV4 tx data too short: %d", len(txData))
-	}
-	if !bytes.HasPrefix(txData, taiko.AnchorV4Selector) {
-		return nil, fmt.Errorf("invalid anchorV4 selector")
-	}
-
-	// The proposalId is the first 32 bytes after the selector (uint48 padded to 32 bytes).
-	args := txData[len(taiko.AnchorV4Selector):]
-	return new(big.Int).SetBytes(args[:32]), nil
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
