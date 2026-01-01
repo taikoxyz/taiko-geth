@@ -261,14 +261,11 @@ func (eth *Ethereum) stateAtTransaction(ctx context.Context, block *types.Block,
 		// Assemble the transaction call message and return if the requested offset
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
 
-		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
-		// add it to the Message, if its an ontake block.
-		if eth.blockchain.Config().IsOntake(block.Number()) {
-			if eth.blockchain.Config().IsShasta(block.Time()) {
-				msg.BasefeeSharingPctg = core.DecodeBasefeeSharingPctg(block.Header().Extra)
-			} else {
-				msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
-			}
+		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata.
+		if eth.blockchain.Config().IsShasta(block.Time()) {
+			msg.BasefeeSharingPctg = core.DecodeShastaBasefeeSharingPctg(block.Header().Extra)
+		} else if eth.blockchain.Config().IsOntake(block.Number()) {
+			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(block.Header().Extra)
 		}
 		// Not yet the searched for transaction, execute on top of the current state
 		statedb.SetTxContext(tx.Hash(), idx)

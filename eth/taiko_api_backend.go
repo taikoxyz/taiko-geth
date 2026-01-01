@@ -109,7 +109,7 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
-		proposalID, err := core.DecodeProposalID(currentBlock.Header().Extra)
+		proposalID, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
 		if err != nil {
 			return nil, err
 		}

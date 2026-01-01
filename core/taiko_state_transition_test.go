@@ -2,11 +2,11 @@ package core
 
 import "testing"
 
-func TestDecodeBasefeeSharingPctg(t *testing.T) {
-	if got := DecodeBasefeeSharingPctg(nil); got != 0 {
+func TestDecodeShastaBasefeeSharingPctg(t *testing.T) {
+	if got := DecodeShastaBasefeeSharingPctg(nil); got != 0 {
 		t.Fatalf("expected 0 for empty extradata, got %d", got)
 	}
-	if got := DecodeBasefeeSharingPctg([]byte{0x2a, 0x99, 0x88}); got != 0x2a {
+	if got := DecodeShastaBasefeeSharingPctg([]byte{0x2a, 0x99, 0x88}); got != 0x2a {
 		t.Fatalf("expected 0x2a, got %d", got)
 	}
 }
@@ -29,9 +29,9 @@ func TestDecodeOntakeExtraDataBackwardCompat(t *testing.T) {
 	}
 }
 
-func TestDecodeProposalIDFromExtraData(t *testing.T) {
+func TestDecodeShastaProposalIDFromExtraData(t *testing.T) {
 	extra := []byte{0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0a}
-	id, err := DecodeProposalID(extra)
+	id, err := DecodeShastaProposalID(extra)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -40,8 +40,8 @@ func TestDecodeProposalIDFromExtraData(t *testing.T) {
 	}
 }
 
-func TestDecodeProposalIDFromExtraDataInvalid(t *testing.T) {
-	if _, err := DecodeProposalID([]byte{0x01}); err == nil {
+func TestDecodeShastaProposalIDFromExtraDataInvalid(t *testing.T) {
+	if _, err := DecodeShastaProposalID([]byte{0x01}); err == nil {
 		t.Fatal("expected error for short extradata")
 	}
 }

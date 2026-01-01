@@ -703,9 +703,28 @@ func (st *stateTransition) getTreasuryAddress() common.Address {
 	)
 }
 
+// CHANGE(taiko): DecodeShastaBasefeeSharingPctg returns the basefee sharing pctg
+// stored in the first byte of extraData.
+func DecodeShastaBasefeeSharingPctg(extra []byte) uint8 {
+	if len(extra) == 0 {
+		return 0
+	}
+	return extra[params.ExtraDataBasefeeSharingPctgIndex]
+}
+
+// CHANGE(taiko): DecodeShastaProposalID decodes the proposalId from bytes 1..6.
+func DecodeShastaProposalID(extra []byte) (*big.Int, error) {
+	if len(extra) < params.ShastaExtraDataLen {
+		return nil, fmt.Errorf("extraData too short for proposalId: %d", len(extra))
+	}
+	start := params.ExtraDataProposalIDIndex
+	end := start + params.ExtraDataProposalIDLength
+	return new(big.Int).SetBytes(extra[start:end]), nil
+}
+
 // CHANGE(taiko): decodes an Ontake/Pacaya block's extradata, returns basefeeSharingPctg.
 // The corresponding encoding function in protocol is `LibProposing._encodeGasConfigs`.
-// Shasta blocks should use DecodeBasefeeSharingPctg (extra[0]).
+// Shasta blocks should use DecodeShastaBasefeeSharingPctg (extra[0]).
 func DecodeOntakeExtraData(extradata []byte) uint8 {
 	return uint8(new(big.Int).SetBytes(extradata).Uint64())
 }
