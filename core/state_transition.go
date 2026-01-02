@@ -709,7 +709,7 @@ func DecodeShastaBasefeeSharingPctg(extra []byte) uint8 {
 	if len(extra) == 0 {
 		return 0
 	}
-	return extra[params.ExtraDataBasefeeSharingPctgIndex]
+	return extra[params.ShastaExtraDataBasefeeSharingPctgIndex]
 }
 
 // CHANGE(taiko): DecodeShastaProposalID decodes the proposalId from bytes 1..6.
@@ -717,8 +717,8 @@ func DecodeShastaProposalID(extra []byte) (*big.Int, error) {
 	if len(extra) < params.ShastaExtraDataLen {
 		return nil, fmt.Errorf("extraData too short for proposalId: %d", len(extra))
 	}
-	start := params.ExtraDataProposalIDIndex
-	end := start + params.ExtraDataProposalIDLength
+	start := params.ShastaExtraDataProposalIDIndex
+	end := start + params.ShastaExtraDataProposalIDLength
 	return new(big.Int).SetBytes(extra[start:end]), nil
 }
 
