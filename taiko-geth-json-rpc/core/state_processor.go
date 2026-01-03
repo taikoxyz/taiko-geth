@@ -101,8 +101,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		if err != nil {
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
-		if p.config.IsShasta(block.Time()) {
-			msg.BasefeeSharingPctg, _ = DecodeShastaExtraData(header.Extra)
+		if p.config.IsShasta(header.Time) {
+			msg.BasefeeSharingPctg = DecodeShastaBasefeeSharingPctg(header.Extra)
 		} else if p.config.IsOntake(block.Number()) {
 			msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 		}
@@ -216,10 +216,9 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	if err != nil {
 		return nil, err
 	}
-	// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata, and
-	// add it to the Message, if its an ontake block.
+	// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata.
 	if evm.ChainConfig().IsShasta(header.Time) {
-		msg.BasefeeSharingPctg, _ = DecodeShastaExtraData(header.Extra)
+		msg.BasefeeSharingPctg = DecodeShastaBasefeeSharingPctg(header.Extra)
 	} else if evm.ChainConfig().IsOntake(header.Number) {
 		msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 	}
