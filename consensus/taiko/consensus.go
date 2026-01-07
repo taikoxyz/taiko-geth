@@ -189,7 +189,7 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		}
 		var parentBlockTime uint64
 		if header.Number.Cmp(common.Big1) > 0 {
-			if ancestorBlock := chain.GetHeaderByHash(parent.ParentHash); ancestorBlock != nil {
+			if ancestorBlock := chain.GetHeader(parent.ParentHash, parent.Number.Uint64()-1); ancestorBlock != nil {
 				parentBlockTime = parent.Time - ancestorBlock.Time
 			} else {
 				return fmt.Errorf("ancestor block not found for parent %s", parent.ParentHash.Hex())
