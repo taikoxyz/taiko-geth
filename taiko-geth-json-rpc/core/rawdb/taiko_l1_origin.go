@@ -6,6 +6,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -140,7 +141,7 @@ func WriteBatchToLastBlockID(db ethdb.KeyValueWriter, batch *big.Int, blockID *b
 }
 
 // ReadBatchToLastBlockID retrieves the block ID corresponding to the last block ID in this batch.
-func ReadBatchToLastBlockID(db ethdb.KeyValueReader, batch *big.Int) (*big.Int, error) {
+func ReadBatchToLastBlockID(db ethdb.KeyValueReader, batch *big.Int) (*hexutil.Big, error) {
 	data, _ := db.Get(batchToLastBlockKey(batch))
 	if len(data) == 0 {
 		return nil, nil
@@ -152,5 +153,5 @@ func ReadBatchToLastBlockID(db ethdb.KeyValueReader, batch *big.Int) (*big.Int, 
 		return nil, fmt.Errorf("invalid batch to block unmarshal: %w", err)
 	}
 
-	return (*big.Int)(blockID), nil
+	return (*hexutil.Big)(blockID), nil
 }

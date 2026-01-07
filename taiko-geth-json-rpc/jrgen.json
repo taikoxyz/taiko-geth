@@ -371,7 +371,7 @@
         "type": "object"
       },
       "result": {
-        "$ref": "#/definitions/*big.Int"
+        "$ref": "#/definitions/*hexutil.Big"
       }
     },
     "taiko_LastL1OriginByBatchID": {

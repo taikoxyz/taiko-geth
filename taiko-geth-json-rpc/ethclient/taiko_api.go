@@ -42,8 +42,8 @@ func (ec *Client) LastL1OriginByBatchID(ctx context.Context, batchID *big.Int) (
 }
 
 // LastBlockIDByBatchID returns the ID of the last block for the given batch.
-func (ec *Client) LastBlockIDByBatchID(ctx context.Context, batchID *big.Int) (*big.Int, error) {
-	var res *big.Int
+func (ec *Client) LastBlockIDByBatchID(ctx context.Context, batchID *big.Int) (*hexutil.Big, error) {
+	var res *hexutil.Big
 
 	if err := ec.c.CallContext(ctx, &res, "taiko_lastBlockIDByBatchID", hexutil.EncodeBig(batchID)); err != nil {
 		return nil, err
