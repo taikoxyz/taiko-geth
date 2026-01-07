@@ -82,7 +82,7 @@ func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (
 }
 
 // LastBlockIDByBatchID returns the ID of the last block for the given batch.
-func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*big.Int, error) {
+func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
 	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
 	if err != nil {
 		return nil, err
@@ -100,7 +100,7 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 }
 
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
-func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, error) {
+func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	currentBlock := s.eth.BlockChain().GetBlockByNumber(s.eth.blockchain.CurrentHeader().Number.Uint64())
 
 	for currentBlock != nil &&
@@ -114,7 +114,7 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*big.Int, err
 			return nil, err
 		}
 		if proposalID.Cmp(batchID) == 0 {
-			return currentBlock.Number(), nil
+			return (*hexutil.Big)(currentBlock.Number()), nil
 		}
 
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
