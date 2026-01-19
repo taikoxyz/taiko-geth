@@ -29,26 +29,26 @@
     },
     "*miner.PreBuiltTxList": {
       "properties": {
-        "BytesLength": {
+        "bytesLength": {
           "examples": [
             10000
           ],
           "type": "integer"
         },
-        "EstimatedGasUsed": {
+        "estimatedGasUsed": {
           "examples": [
             10000
           ],
           "type": "integer"
         },
-        "TxList": {
+        "txList": {
           "type": "array"
         }
       },
       "required": [
-        "TxList",
-        "EstimatedGasUsed",
-        "BytesLength"
+        "txList",
+        "estimatedGasUsed",
+        "bytesLength"
       ],
       "type": "object"
     },

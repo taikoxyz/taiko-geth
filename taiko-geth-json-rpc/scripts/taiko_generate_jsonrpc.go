@@ -276,11 +276,11 @@ func main() {
 			"*miner.PreBuiltTxList": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"TxList":           map[string]interface{}{"type": "array"},
-					"EstimatedGasUsed": map[string]interface{}{"type": "integer", "examples": []int{10000}},
-					"BytesLength":      map[string]interface{}{"type": "integer", "examples": []int{10000}},
+					"txList":           map[string]interface{}{"type": "array"},
+					"estimatedGasUsed": map[string]interface{}{"type": "integer", "examples": []int{10000}},
+					"bytesLength":      map[string]interface{}{"type": "integer", "examples": []int{10000}},
 				},
-				"required": []string{"TxList", "EstimatedGasUsed", "BytesLength"},
+				"required": []string{"txList", "estimatedGasUsed", "bytesLength"},
 			},
 			"*big.Int": map[string]interface{}{
 				"type":     "integer",
