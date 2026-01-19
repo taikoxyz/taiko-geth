@@ -11,9 +11,9 @@ import (
 // PreBuiltTxList is a pre-built transaction list based on the latest chain state,
 // with estimated gas used / bytes.
 type PreBuiltTxList struct {
-	TxList           types.Transactions
-	EstimatedGasUsed uint64
-	BytesLength      uint64
+	TxList           types.Transactions `json:"txList"`
+	EstimatedGasUsed uint64             `json:"estimatedGasUsed"`
+	BytesLength      uint64             `json:"bytesLength"`
 }
 
 // SealBlockWith mines and seals a block without changing the canonical chain.
