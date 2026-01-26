@@ -2,6 +2,7 @@ package eth
 
 import (
 	"bytes"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -66,31 +67,15 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 
 // LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.
 func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
-	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
+	blockID, err := s.LastBlockIDByBatchID(batchID)
 	if err != nil {
 		return nil, err
-	}
-	if blockID == nil {
-		if blockID, err = s.getLastBlockByBatchId((*big.Int)(batchID)); err != nil {
-			return nil, err
-		}
-		if blockID == nil {
-			return nil, ethereum.NotFound
-		}
 	}
 	return s.L1OriginByID((*math.HexOrDecimal256)(blockID))
 }
 
 // LastBlockIDByBatchID returns the ID of the last block for the given batch.
 func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
-	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil {
-		return nil, err
-	}
-	if blockID != nil {
-		return blockID, nil
-	}
-
 	return s.getLastBlockByBatchId((*big.Int)(batchID))
 }
 
@@ -109,11 +94,19 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
-		proposalID, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
+		proposalID, endOfProposal, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
 		if err != nil {
 			return nil, err
 		}
+		// If the given batchID is greater than the current proposalID,
+		// it means the batch does not exist.
+		if batchID.Cmp(proposalID) > 0 {
+			return nil, fmt.Errorf("batchID %s greater than head proposalID %s", batchID.String(), proposalID.String())
+		}
 		if proposalID.Cmp(batchID) == 0 {
+			if !endOfProposal {
+				return nil, fmt.Errorf("endOfProposal flag not set for batch %s", batchID.String())
+			}
 			return (*hexutil.Big)(currentBlock.Number()), nil
 		}
 
@@ -136,15 +129,6 @@ func NewTaikoAuthAPIBackend(eth *Ethereum) *TaikoAuthAPIBackend {
 func (a *TaikoAuthAPIBackend) SetHeadL1Origin(blockID *math.HexOrDecimal256) *hexutil.Big {
 	rawdb.WriteHeadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
 	return (*hexutil.Big)(blockID)
-}
-
-// SetBatchToLastBlock sets the mapping from batch ID to the last block ID in this batch.
-func (a *TaikoAuthAPIBackend) SetBatchToLastBlock(
-	batchID *math.HexOrDecimal256,
-	blockID *math.HexOrDecimal256,
-) *hexutil.Big {
-	rawdb.WriteBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID), (*big.Int)(blockID))
-	return (*hexutil.Big)(batchID)
 }
 
 // UpdateL1Origin updates the L2 block's corresponding L1 origin.
