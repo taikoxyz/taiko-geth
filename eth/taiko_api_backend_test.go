@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
@@ -64,23 +65,23 @@ func TestShastaProposalIDFromExtraDataInvalid(t *testing.T) {
 	}
 }
 
-func TestGetLastBlockByBatchIdRequiresEndOfProposal(t *testing.T) {
+func TestLastBlockIDByBatchIDRequiresEndOfProposal(t *testing.T) {
 	extra := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00}
 	chain := newShastaTestChain(t, extra)
 	defer chain.Stop()
 	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain}}
-	if _, err := backend.getLastBlockByBatchId(big.NewInt(1)); err == nil {
+	if _, err := backend.LastBlockIDByBatchID((*math.HexOrDecimal256)(big.NewInt(1))); err == nil {
 		t.Fatal("expected error when endOfProposal is false")
 	}
 }
 
-func TestGetLastBlockByBatchIdTooLarge(t *testing.T) {
+func TestLastBlockIDByBatchIDTooLarge(t *testing.T) {
 	extra := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01}
 	chain := newShastaTestChain(t, extra)
 	defer chain.Stop()
 
 	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain}}
-	if _, err := backend.getLastBlockByBatchId(big.NewInt(2)); err == nil {
+	if _, err := backend.LastBlockIDByBatchID((*math.HexOrDecimal256)(big.NewInt(2))); err == nil {
 		t.Fatal("expected error when batchID is greater than head proposalID")
 	} else if errors.Is(err, ethereum.NotFound) {
 		t.Fatal("expected direct error, got NotFound")

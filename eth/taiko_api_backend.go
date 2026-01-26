@@ -76,17 +76,8 @@ func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (
 
 // LastBlockIDByBatchID returns the ID of the last block for the given batch.
 func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
-	return s.getLastBlockByBatchId((*big.Int)(batchID))
-}
-
-// GetSyncMode returns the node sync mode.
-func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
-	return s.eth.config.SyncMode.String(), nil
-}
-
-// getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
-func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	currentBlock := s.eth.BlockChain().GetBlockByNumber(s.eth.blockchain.CurrentHeader().Number.Uint64())
+	targetBatchID := (*big.Int)(batchID)
 
 	for currentBlock != nil &&
 		currentBlock.Transactions().Len() > 0 &&
@@ -100,12 +91,12 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 		}
 		// If the given batchID is greater than the current proposalID,
 		// it means the batch does not exist.
-		if batchID.Cmp(proposalID) > 0 {
-			return nil, fmt.Errorf("batchID %s greater than head proposalID %s", batchID.String(), proposalID.String())
+		if targetBatchID.Cmp(proposalID) > 0 {
+			return nil, fmt.Errorf("batchID %s greater than head proposalID %s", targetBatchID.String(), proposalID.String())
 		}
-		if proposalID.Cmp(batchID) == 0 {
+		if proposalID.Cmp(targetBatchID) == 0 {
 			if !endOfProposal {
-				return nil, fmt.Errorf("endOfProposal flag not set for batch %s", batchID.String())
+				return nil, fmt.Errorf("endOfProposal flag not set for batch %s", targetBatchID.String())
 			}
 			return (*hexutil.Big)(currentBlock.Number()), nil
 		}
@@ -113,6 +104,11 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
 	}
 	return nil, ethereum.NotFound
+}
+
+// GetSyncMode returns the node sync mode.
+func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
+	return s.eth.config.SyncMode.String(), nil
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
