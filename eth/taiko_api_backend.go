@@ -3,10 +3,13 @@ package eth
 import (
 	"bytes"
 	"math/big"
+	"sync"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
@@ -16,15 +19,23 @@ import (
 	"github.com/ethereum/go-ethereum/miner"
 )
 
+const lastBlockByBatchCacheSize = 1024 // CHANGE(taiko): cache last-block lookups by batch ID.
+
 // TaikoAPIBackend handles L2 node related RPC calls.
 type TaikoAPIBackend struct {
 	eth *Ethereum
+
+	lastBlockByBatchCache     *lru.Cache[string, *big.Int]
+	lastBlockByBatchCacheHead atomic.Value // common.Hash
+	lastBlockByBatchCacheInit sync.Once
 }
 
 // NewTaikoAPIBackend creates a new TaikoAPIBackend instance.
 func NewTaikoAPIBackend(eth *Ethereum) *TaikoAPIBackend {
 	return &TaikoAPIBackend{
-		eth: eth,
+		eth:                       eth,
+		lastBlockByBatchCache:     lru.NewCache[string, *big.Int](lastBlockByBatchCacheSize),
+		lastBlockByBatchCacheInit: sync.Once{},
 	}
 }
 
@@ -76,8 +87,28 @@ func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (
 
 // LastBlockIDByBatchID returns the ID of the last block for the given batch.
 func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
-	currentBlock := s.eth.BlockChain().GetBlockByNumber(s.eth.blockchain.CurrentHeader().Number.Uint64())
+	s.lastBlockByBatchCacheInit.Do(func() {
+		if s.lastBlockByBatchCache == nil {
+			s.lastBlockByBatchCache = lru.NewCache[string, *big.Int](lastBlockByBatchCacheSize)
+		}
+	})
+
+	head := s.eth.blockchain.CurrentHeader()
+	if head == nil {
+		return nil, ethereum.NotFound
+	}
+	headHash := head.Hash()
+	if cachedHead, ok := s.lastBlockByBatchCacheHead.Load().(common.Hash); !ok || cachedHead != headHash {
+		s.lastBlockByBatchCache.Purge()
+		s.lastBlockByBatchCacheHead.Store(headHash)
+	}
+
+	currentBlock := s.eth.BlockChain().GetBlockByNumber(head.Number.Uint64())
 	targetBatchID := (*big.Int)(batchID)
+	cacheKey := targetBatchID.String()
+	if cached, ok := s.lastBlockByBatchCache.Get(cacheKey); ok {
+		return (*hexutil.Big)(new(big.Int).Set(cached)), nil
+	}
 
 	// If the given batchID is greater than the head proposalID,
 	// it means the batch does not exist.
@@ -104,7 +135,9 @@ func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*
 			if !endOfProposal {
 				return nil, ethereum.NotFound
 			}
-			return (*hexutil.Big)(currentBlock.Number()), nil
+			result := new(big.Int).Set(currentBlock.Number())
+			s.lastBlockByBatchCache.Add(cacheKey, result)
+			return (*hexutil.Big)(new(big.Int).Set(result)), nil
 		}
 
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
