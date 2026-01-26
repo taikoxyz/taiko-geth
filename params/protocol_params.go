@@ -137,8 +137,7 @@ const (
 	ShastaExtraDataBasefeeSharingPctgIndex = 0
 	ShastaExtraDataProposalIDIndex         = 1
 	ShastaExtraDataProposalIDLength        = 6
-	ShastaExtraDataEndOfProposalIndex      = 7
-	ShastaExtraDataLen                     = 8
+	ShastaExtraDataLen                     = 1 + ShastaExtraDataProposalIDLength
 
 	MaxCodeSize     = 24576           // Maximum bytecode to permit for a contract
 	MaxInitCodeSize = 2 * MaxCodeSize // Maximum initcode to permit in a creation transaction and create instructions

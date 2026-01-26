@@ -712,15 +712,14 @@ func DecodeShastaBasefeeSharingPctg(extra []byte) uint8 {
 	return extra[params.ShastaExtraDataBasefeeSharingPctgIndex]
 }
 
-// CHANGE(taiko): DecodeShastaProposalID decodes the proposalId from bytes 1..6 and endOfProposal from byte 7.
-func DecodeShastaProposalID(extra []byte) (*big.Int, bool, error) {
-	if len(extra) != params.ShastaExtraDataLen {
-		return nil, false, fmt.Errorf("extraData length invalid for proposalId: %d != %d", len(extra), params.ShastaExtraDataLen)
+// CHANGE(taiko): DecodeShastaProposalID decodes the proposalId from bytes 1..6.
+func DecodeShastaProposalID(extra []byte) (*big.Int, error) {
+	if len(extra) < params.ShastaExtraDataLen {
+		return nil, fmt.Errorf("extraData too short for proposalId: %d", len(extra))
 	}
 	start := params.ShastaExtraDataProposalIDIndex
 	end := start + params.ShastaExtraDataProposalIDLength
-	endOfProposal := extra[params.ShastaExtraDataEndOfProposalIndex] != 0
-	return new(big.Int).SetBytes(extra[start:end]), endOfProposal, nil
+	return new(big.Int).SetBytes(extra[start:end]), nil
 }
 
 // CHANGE(taiko): decodes an Ontake/Pacaya block's extradata, returns basefeeSharingPctg.

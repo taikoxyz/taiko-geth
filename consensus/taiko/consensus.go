@@ -184,8 +184,8 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 
 	// Verify the header's EIP-4396 attributes.
 	if t.chainConfig.IsShasta(header.Time) {
-		if len(header.Extra) != params.ShastaExtraDataLen {
-			return fmt.Errorf("Shasta extra-data length invalid: %d != %d", len(header.Extra), params.ShastaExtraDataLen)
+		if len(header.Extra) < params.ShastaExtraDataLen {
+			return fmt.Errorf("Shasta extra-data too short: %d < %d", len(header.Extra), params.ShastaExtraDataLen)
 		}
 		var parentBlockTime uint64
 		if header.Number.Cmp(common.Big1) > 0 {
