@@ -45,6 +45,7 @@ type BuildPayloadArgs struct {
 	BeaconRoot   *common.Hash          // The provided beaconRoot (Cancun)
 	Version      engine.PayloadVersion // Versioning byte for payload id calculation.
 	TxListHash   *common.Hash          // CHANGE(taiko): The hash of the transaction list
+	Extra        []byte                // CHANGE(taiko): The extra data of the block
 }
 
 // Id computes an 8-byte identifier by hashing the components of the payload arguments.
@@ -61,6 +62,10 @@ func (args *BuildPayloadArgs) Id() engine.PayloadID {
 	// CHANGE(taiko): include the transaction list hash in the payload id calculation
 	if args.TxListHash != nil {
 		hasher.Write(args.TxListHash[:])
+	}
+	// CHANGE(taiko): include the extra data in the payload id calculation
+	if args.Extra != nil {
+		hasher.Write(args.Extra[:])
 	}
 	var out engine.PayloadID
 	copy(out[:], hasher.Sum(nil)[:8])

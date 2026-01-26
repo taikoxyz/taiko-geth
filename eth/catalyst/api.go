@@ -477,6 +477,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				Withdrawals:  block.Withdrawals(),
 				Version:      payloadVersion,
 				TxListHash:   &txListHash,
+				Extra:        block.Header().Extra,
 			}
 			id := args.Id()
 
@@ -490,6 +491,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				"version", args.Version,
 				"id", id.String(),
 				"txListHash", txListHash.Hex(),
+				"extra", args.Extra,
 			)
 
 			// If we already are busy generating this work, then we do not need
