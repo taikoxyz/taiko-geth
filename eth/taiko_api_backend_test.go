@@ -72,6 +72,8 @@ func TestLastBlockIDByBatchIDRequiresEndOfProposal(t *testing.T) {
 	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain}}
 	if _, err := backend.LastBlockIDByBatchID((*math.HexOrDecimal256)(big.NewInt(1))); err == nil {
 		t.Fatal("expected error when endOfProposal is false")
+	} else if !errors.Is(err, ethereum.NotFound) {
+		t.Fatalf("expected NotFound, got %v", err)
 	}
 }
 
@@ -83,8 +85,8 @@ func TestLastBlockIDByBatchIDTooLarge(t *testing.T) {
 	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain}}
 	if _, err := backend.LastBlockIDByBatchID((*math.HexOrDecimal256)(big.NewInt(2))); err == nil {
 		t.Fatal("expected error when batchID is greater than head proposalID")
-	} else if errors.Is(err, ethereum.NotFound) {
-		t.Fatal("expected direct error, got NotFound")
+	} else if !errors.Is(err, ethereum.NotFound) {
+		t.Fatalf("expected NotFound, got %v", err)
 	}
 }
 
