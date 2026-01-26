@@ -2,7 +2,6 @@ package eth
 
 import (
 	"bytes"
-	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -14,11 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
-)
-
-// ErrProposalLastBlockUncertain indicates the last block for the proposal is not yet deterministic.
-var ErrProposalLastBlockUncertain = errors.New(
-	"proposal last block uncertain: BatchToLastBlockID missing and no newer proposal observed",
 )
 
 // TaikoAPIBackend handles L2 node related RPC calls.
@@ -107,10 +101,7 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
 func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
-	var (
-		headNumber   = s.eth.blockchain.CurrentHeader().Number.Uint64()
-		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber)
-	)
+	currentBlock := s.eth.BlockChain().GetBlockByNumber(s.eth.blockchain.CurrentHeader().Number.Uint64())
 
 	for currentBlock != nil &&
 		currentBlock.Transactions().Len() > 0 &&
@@ -123,10 +114,6 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 			return nil, err
 		}
 		if proposalID.Cmp(batchID) == 0 {
-			if currentBlock.NumberU64() == headNumber {
-				// Head block match without BatchToLastBlockID mapping is not definitive.
-				return nil, ErrProposalLastBlockUncertain
-			}
 			return (*hexutil.Big)(currentBlock.Number()), nil
 		}
 
