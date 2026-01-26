@@ -2,6 +2,7 @@ package eth
 
 import (
 	"bytes"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -87,7 +88,7 @@ func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*
 			return nil, err
 		}
 		if targetBatchID.Cmp(proposalID) > 0 {
-			return nil, ethereum.NotFound
+			return nil, fmt.Errorf("batchID %s greater than head proposalID %s", targetBatchID.String(), proposalID.String())
 		}
 	}
 
@@ -102,7 +103,7 @@ func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*
 		}
 		if proposalID.Cmp(targetBatchID) == 0 {
 			if !endOfProposal {
-				return nil, ethereum.NotFound
+				return nil, fmt.Errorf("endOfProposal flag not set for batch %s", targetBatchID.String())
 			}
 			return (*hexutil.Big)(currentBlock.Number()), nil
 		}
