@@ -101,7 +101,13 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
 func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
-	currentBlock := s.eth.BlockChain().GetBlockByNumber(s.eth.blockchain.CurrentHeader().Number.Uint64())
+	// Start from head L1 origin block ID to bound the scan.
+	l1Origin, err := s.HeadL1Origin()
+	if err != nil {
+		return nil, err
+	}
+
+	currentBlock := s.eth.BlockChain().GetBlockByNumber(l1Origin.BlockID.Uint64())
 
 	for currentBlock != nil &&
 		currentBlock.Transactions().Len() > 0 &&
