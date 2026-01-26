@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 )
@@ -79,20 +80,26 @@ func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*
 	currentBlock := s.eth.BlockChain().GetBlockByNumber(s.eth.blockchain.CurrentHeader().Number.Uint64())
 	targetBatchID := (*big.Int)(batchID)
 
-	for currentBlock != nil &&
-		currentBlock.Transactions().Len() > 0 &&
-		bytes.HasPrefix(currentBlock.Transactions()[0].Data(), taiko.AnchorV4Selector) {
+	// If the given batchID is greater than the head proposalID,
+	// it means the batch does not exist.
+	if isShastaBlock(currentBlock) {
+		proposalID, _, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
+		if err != nil {
+			return nil, err
+		}
+		if targetBatchID.Cmp(proposalID) > 0 {
+			return nil, fmt.Errorf("batchID %s greater than head proposalID %s", targetBatchID.String(), proposalID.String())
+		}
+	}
+
+	// Traverse backwards to find the last block of the given batchID.
+	for isShastaBlock(currentBlock) {
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
 		proposalID, endOfProposal, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
 		if err != nil {
 			return nil, err
-		}
-		// If the given batchID is greater than the current proposalID,
-		// it means the batch does not exist.
-		if targetBatchID.Cmp(proposalID) > 0 {
-			return nil, fmt.Errorf("batchID %s greater than head proposalID %s", targetBatchID.String(), proposalID.String())
 		}
 		if proposalID.Cmp(targetBatchID) == 0 {
 			if !endOfProposal {
@@ -104,6 +111,18 @@ func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
 	}
 	return nil, ethereum.NotFound
+}
+
+// isShastaBlock checks if the given block is a Shasta block by inspecting its first transaction's data.
+func isShastaBlock(block *types.Block) bool {
+	if block == nil {
+		return false
+	}
+	txs := block.Transactions()
+	if txs.Len() == 0 {
+		return false
+	}
+	return bytes.HasPrefix(txs[0].Data(), taiko.AnchorV4Selector)
 }
 
 // GetSyncMode returns the node sync mode.
