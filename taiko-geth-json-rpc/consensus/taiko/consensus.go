@@ -187,16 +187,18 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		if len(header.Extra) < params.ShastaExtraDataLen {
 			return fmt.Errorf("Shasta extra-data too short: %d < %d", len(header.Extra), params.ShastaExtraDataLen)
 		}
-		var parentBlockTime uint64
 		if header.Number.Cmp(common.Big1) > 0 {
 			if ancestorBlock := chain.GetHeader(parent.ParentHash, parent.Number.Uint64()-1); ancestorBlock != nil {
-				parentBlockTime = parent.Time - ancestorBlock.Time
+				if err := misc.VerifyEIP4396Header(t.chainConfig, parent, parent.Time-ancestorBlock.Time, header); err != nil {
+					return err
+				}
 			} else {
-				return fmt.Errorf("ancestor block not found for parent %s", parent.ParentHash.Hex())
+				log.Warn(
+					"Skipping EIP-4396 verification due to unknown ancestor",
+					"parent", parent.Hash(),
+					"number", parent.Number,
+				)
 			}
-		}
-		if err := misc.VerifyEIP4396Header(t.chainConfig, parent, parentBlockTime, header); err != nil {
-			return err
 		}
 	}
 
