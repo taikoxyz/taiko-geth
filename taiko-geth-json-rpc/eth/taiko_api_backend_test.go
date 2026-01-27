@@ -77,6 +77,88 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 	}
 }
 
+func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
+	chainLength := int(maxBatchLookupBlocks + 2)
+
+	proposalBytes := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	proposalID := new(big.Int).SetBytes(proposalBytes)
+	matchExtra := append([]byte{0x00}, proposalBytes...)
+	otherExtra := append([]byte{0x00}, []byte{0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}...)
+	data := make([]byte, len(taiko.AnchorV4Selector))
+	copy(data, taiko.AnchorV4Selector)
+
+	genesis := &core.Genesis{
+		Config: params.TestChainConfig,
+		Alloc: types.GenesisAlloc{
+			testAddr: {Balance: big.NewInt(1_000_000_000_000_000_000)},
+		},
+	}
+	engine := ethash.NewFaker()
+
+	db := rawdb.NewMemoryDatabase()
+	chain, err := core.NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil)
+	if err != nil {
+		t.Fatalf("failed to create chain: %v", err)
+	}
+	genesisBlock := chain.Genesis()
+	if genesisBlock == nil {
+		t.Fatal("missing genesis block")
+	}
+
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    0,
+		To:       &common.Address{1},
+		Value:    big.NewInt(0),
+		Gas:      50_000,
+		GasPrice: big.NewInt(1),
+		Data:     data,
+	})
+
+	parentHash := genesisBlock.Hash()
+	var headBlock *types.Block
+	for i := 1; i <= chainLength; i++ {
+		extra := otherExtra
+		if i == 1 {
+			extra = matchExtra
+		}
+		header := &types.Header{
+			ParentHash: parentHash,
+			Number:     new(big.Int).SetUint64(uint64(i)),
+			Time:       uint64(i),
+			Difficulty: big.NewInt(1),
+			GasLimit:   30_000_000,
+			GasUsed:    0,
+			BaseFee:    big.NewInt(0),
+			Extra:      extra,
+		}
+		block := types.NewBlockWithHeader(header).WithBody(types.Body{
+			Transactions: types.Transactions{tx},
+		})
+		rawdb.WriteBlock(db, block)
+		rawdb.WriteCanonicalHash(db, block.Hash(), block.NumberU64())
+		parentHash = block.Hash()
+		headBlock = block
+	}
+	if headBlock == nil {
+		t.Fatal("failed to build test chain")
+	}
+
+	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
+	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
+		BlockID:     headBlock.Number(),
+		L2BlockHash: headBlock.Hash(),
+	})
+	rawdb.WriteHeadL1Origin(db, headBlock.Number())
+
+	blockID, err := backend.getLastBlockByBatchId(proposalID)
+	if !errors.Is(err, ErrProposalLastBlockLookbackExceeded) {
+		t.Fatalf("expected ErrProposalLastBlockLookbackExceeded, got %v", err)
+	}
+	if blockID != nil {
+		t.Fatalf("expected nil blockID, got %v", blockID)
+	}
+}
+
 func newShastaTestChain(t *testing.T) (ethdb.Database, *core.BlockChain, *big.Int, []*types.Block) {
 	t.Helper()
 

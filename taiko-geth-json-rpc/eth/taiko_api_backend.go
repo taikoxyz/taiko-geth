@@ -21,6 +21,11 @@ var ErrProposalLastBlockUncertain = errors.New(
 	"proposal last block uncertain: BatchToLastBlockID missing and no newer proposal observed",
 )
 
+// ErrProposalLastBlockLookbackExceeded indicates the last block for the proposal is beyond the max lookback window.
+var ErrProposalLastBlockLookbackExceeded = errors.New(
+	"proposal last block lookback exceeded: BatchToLastBlockID missing and lookback limit reached",
+)
+
 // TaikoAPIBackend handles L2 node related RPC calls.
 type TaikoAPIBackend struct {
 	eth *Ethereum
@@ -105,6 +110,10 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 	return s.eth.config.SyncMode.String(), nil
 }
 
+// maxBatchLookupBlocks defines the maximum number of blocks to look back
+// when searching for the last block of a given batch ID.
+const maxBatchLookupBlocks = 192 * 1024
+
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
 func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	// We start from the head L1 origin and traverse backwards until we find
@@ -117,11 +126,16 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 	var (
 		headNumber   = headL1Origin.BlockID.Uint64()
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber)
+		lookedBack   uint64
 	)
 
 	for currentBlock != nil &&
 		currentBlock.Transactions().Len() > 0 &&
 		bytes.HasPrefix(currentBlock.Transactions()[0].Data(), taiko.AnchorV4Selector) {
+		if lookedBack >= maxBatchLookupBlocks {
+			return nil, ErrProposalLastBlockLookbackExceeded
+		}
+		lookedBack++
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
