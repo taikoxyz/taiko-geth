@@ -151,6 +151,8 @@ func randomBigInt() *big.Int {
 	if err != nil {
 		log.Crit(err.Error())
 	}
-
+	if randomBigInt.Sign() == 0 {
+		return big.NewInt(1)
+	}
 	return randomBigInt
 }
