@@ -78,8 +78,7 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 }
 
 func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
-	const maxLookbackBlocks = 192 * 12
-	chainLength := maxLookbackBlocks + 2
+	chainLength := int(maxBatchLookupBlocks + 2)
 
 	proposalBytes := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
 	proposalID := new(big.Int).SetBytes(proposalBytes)
@@ -96,38 +95,55 @@ func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
 	}
 	engine := ethash.NewFaker()
 
-	_, blocks, _ := core.GenerateChainWithGenesis(genesis, engine, chainLength, func(i int, b *core.BlockGen) {
-		if i == 0 {
-			b.SetExtra(matchExtra)
-		} else {
-			b.SetExtra(otherExtra)
-		}
-		tx := types.NewTx(&types.LegacyTx{
-			Nonce:    uint64(i),
-			To:       &common.Address{1},
-			Value:    big.NewInt(0),
-			Gas:      50_000,
-			GasPrice: b.BaseFee(),
-			Data:     data,
-		})
-		signed, err := types.SignTx(tx, types.HomesteadSigner{}, testKey)
-		if err != nil {
-			t.Fatalf("failed to sign tx: %v", err)
-		}
-		b.AddTx(signed)
-	})
-
 	db := rawdb.NewMemoryDatabase()
 	chain, err := core.NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil)
 	if err != nil {
 		t.Fatalf("failed to create chain: %v", err)
 	}
-	if _, err := chain.InsertChain(blocks); err != nil {
-		t.Fatalf("failed to insert chain: %v", err)
+	genesisBlock := chain.Genesis()
+	if genesisBlock == nil {
+		t.Fatal("missing genesis block")
+	}
+
+	tx := types.NewTx(&types.LegacyTx{
+		Nonce:    0,
+		To:       &common.Address{1},
+		Value:    big.NewInt(0),
+		Gas:      50_000,
+		GasPrice: big.NewInt(1),
+		Data:     data,
+	})
+
+	parentHash := genesisBlock.Hash()
+	var headBlock *types.Block
+	for i := 1; i <= chainLength; i++ {
+		extra := otherExtra
+		if i == 1 {
+			extra = matchExtra
+		}
+		header := &types.Header{
+			ParentHash: parentHash,
+			Number:     new(big.Int).SetUint64(uint64(i)),
+			Time:       uint64(i),
+			Difficulty: big.NewInt(1),
+			GasLimit:   30_000_000,
+			GasUsed:    0,
+			BaseFee:    big.NewInt(0),
+			Extra:      extra,
+		}
+		block := types.NewBlockWithHeader(header).WithBody(types.Body{
+			Transactions: types.Transactions{tx},
+		})
+		rawdb.WriteBlock(db, block)
+		rawdb.WriteCanonicalHash(db, block.Hash(), block.NumberU64())
+		parentHash = block.Hash()
+		headBlock = block
+	}
+	if headBlock == nil {
+		t.Fatal("failed to build test chain")
 	}
 
 	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
-	headBlock := blocks[len(blocks)-1]
 	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
 		BlockID:     headBlock.Number(),
 		L2BlockHash: headBlock.Hash(),
