@@ -105,6 +105,10 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 	return s.eth.config.SyncMode.String(), nil
 }
 
+// maxBatchLookupBlocks defines the maximum number of blocks to look back
+// when searching for the last block of a given batch ID, 1024 * DERIVATION_SOURCE_MAX_BLOCKS.
+const maxBatchLookupBlocks = 192 * 1024
+
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
 func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	// We start from the head L1 origin and traverse backwards until we find
@@ -117,11 +121,16 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 	var (
 		headNumber   = headL1Origin.BlockID.Uint64()
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber)
+		lookedBack   uint64
 	)
 
 	for currentBlock != nil &&
 		currentBlock.Transactions().Len() > 0 &&
 		bytes.HasPrefix(currentBlock.Transactions()[0].Data(), taiko.AnchorV4Selector) {
+		if lookedBack >= maxBatchLookupBlocks {
+			return nil, ethereum.NotFound
+		}
+		lookedBack++
 		if currentBlock.NumberU64() == 0 {
 			break
 		}

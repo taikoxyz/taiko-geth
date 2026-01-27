@@ -77,6 +77,72 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 	}
 }
 
+func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
+	const maxLookbackBlocks = 192 * 12
+	chainLength := maxLookbackBlocks + 2
+
+	proposalBytes := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	proposalID := new(big.Int).SetBytes(proposalBytes)
+	matchExtra := append([]byte{0x00}, proposalBytes...)
+	otherExtra := append([]byte{0x00}, []byte{0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f}...)
+	data := make([]byte, len(taiko.AnchorV4Selector))
+	copy(data, taiko.AnchorV4Selector)
+
+	genesis := &core.Genesis{
+		Config: params.TestChainConfig,
+		Alloc: types.GenesisAlloc{
+			testAddr: {Balance: big.NewInt(1_000_000_000_000_000_000)},
+		},
+	}
+	engine := ethash.NewFaker()
+
+	_, blocks, _ := core.GenerateChainWithGenesis(genesis, engine, chainLength, func(i int, b *core.BlockGen) {
+		if i == 0 {
+			b.SetExtra(matchExtra)
+		} else {
+			b.SetExtra(otherExtra)
+		}
+		tx := types.NewTx(&types.LegacyTx{
+			Nonce:    uint64(i),
+			To:       &common.Address{1},
+			Value:    big.NewInt(0),
+			Gas:      50_000,
+			GasPrice: b.BaseFee(),
+			Data:     data,
+		})
+		signed, err := types.SignTx(tx, types.HomesteadSigner{}, testKey)
+		if err != nil {
+			t.Fatalf("failed to sign tx: %v", err)
+		}
+		b.AddTx(signed)
+	})
+
+	db := rawdb.NewMemoryDatabase()
+	chain, err := core.NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil)
+	if err != nil {
+		t.Fatalf("failed to create chain: %v", err)
+	}
+	if _, err := chain.InsertChain(blocks); err != nil {
+		t.Fatalf("failed to insert chain: %v", err)
+	}
+
+	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
+	headBlock := blocks[len(blocks)-1]
+	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
+		BlockID:     headBlock.Number(),
+		L2BlockHash: headBlock.Hash(),
+	})
+	rawdb.WriteHeadL1Origin(db, headBlock.Number())
+
+	blockID, err := backend.getLastBlockByBatchId(proposalID)
+	if !errors.Is(err, ethereum.NotFound) {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+	if blockID != nil {
+		t.Fatalf("expected nil blockID, got %v", blockID)
+	}
+}
+
 func newShastaTestChain(t *testing.T) (ethdb.Database, *core.BlockChain, *big.Int, []*types.Block) {
 	t.Helper()
 
