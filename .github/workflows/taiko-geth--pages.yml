@@ -4,6 +4,8 @@ on:
   push:
     branches: [taiko]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
 jobs:
     generate-and-deploy:
         runs-on: [arc-runner-set]
