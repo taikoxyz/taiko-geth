@@ -83,6 +83,31 @@
     }
   },
   "methods": {
+    "taikoAuth_SetBatchToLastBlock": {
+      "summary": "RPC method SetBatchToLastBlock",
+      "description": "SetBatchToLastBlock sets the mapping from batch ID to the last block ID in this batch.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "batchID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          },
+          "blockID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "batchID",
+          "blockID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*hexutil.Big"
+      }
+    },
     "taikoAuth_SetHeadL1Origin": {
       "summary": "RPC method SetHeadL1Origin",
       "description": "SetHeadL1Origin sets the latest L2 block's corresponding L1 origin.",

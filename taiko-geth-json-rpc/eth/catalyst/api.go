@@ -501,6 +501,10 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 				rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
 				if !l1Origin.IsPreconfBlock() {
 					rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
+					// Write the batch to block mapping if the batch ID is given.
+					if payloadAttributes.BlockMetadata.BatchID != nil {
+						rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
+					}
 				}
 				return valid(&id), nil
 			}
@@ -520,6 +524,10 @@ func (api *ConsensusAPI) forkchoiceUpdated(update engine.ForkchoiceStateV1, payl
 			// Write the head L1Origin, only when it's not a preconfirmation block.
 			if !l1Origin.IsPreconfBlock() {
 				rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
+				// Write the batch to block mapping if the batch ID is given.
+				if payloadAttributes.BlockMetadata.BatchID != nil {
+					rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
+				}
 			}
 
 			return valid(&id), nil
