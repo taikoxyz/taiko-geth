@@ -21,7 +21,6 @@ var ErrProposalLastBlockUncertain = errors.New(
 	"proposal last block uncertain: BatchToLastBlockID missing and no newer proposal observed",
 )
 
-// CHANGE(taiko): cap lookback and surface a distinct error when the limit is hit.
 // ErrProposalLastBlockLookbackExceeded indicates the last block for the proposal is beyond the max lookback window.
 var ErrProposalLastBlockLookbackExceeded = errors.New(
 	"proposal last block lookback exceeded: BatchToLastBlockID missing and lookback limit reached",
@@ -111,7 +110,6 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 	return s.eth.config.SyncMode.String(), nil
 }
 
-// CHANGE(taiko): limit lookup to 1024 * DERIVATION_SOURCE_MAX_BLOCKS.
 // maxBatchLookupBlocks defines the maximum number of blocks to look back
 // when searching for the last block of a given batch ID.
 const maxBatchLookupBlocks = 192 * 1024
