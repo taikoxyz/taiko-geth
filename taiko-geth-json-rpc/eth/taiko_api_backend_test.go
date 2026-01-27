@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -43,7 +45,41 @@ func TestShastaProposalIDFromExtraDataInvalid(t *testing.T) {
 	}
 }
 
+func TestGetLastBlockByBatchIdNoHeadL1Origin(t *testing.T) {
+	db, chain, proposalID, _ := newShastaTestChain(t)
+	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
+
+	blockID, err := backend.getLastBlockByBatchId(proposalID)
+	if !errors.Is(err, ethereum.NotFound) {
+		t.Fatalf("expected NotFound, got %v", err)
+	}
+	if blockID != nil {
+		t.Fatalf("expected nil blockID, got %v", blockID)
+	}
+}
+
 func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
+	db, chain, proposalID, blocks := newShastaTestChain(t)
+	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
+	headBlock := blocks[len(blocks)-1]
+	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
+		BlockID:     headBlock.Number(),
+		L2BlockHash: headBlock.Hash(),
+	})
+	rawdb.WriteHeadL1Origin(db, headBlock.Number())
+
+	blockID, err := backend.getLastBlockByBatchId(proposalID)
+	if !errors.Is(err, ErrProposalLastBlockUncertain) {
+		t.Fatalf("expected ErrProposalLastBlockUncertain, got %v", err)
+	}
+	if blockID != nil {
+		t.Fatalf("expected nil blockID, got %v", blockID)
+	}
+}
+
+func newShastaTestChain(t *testing.T) (ethdb.Database, *core.BlockChain, *big.Int, []*types.Block) {
+	t.Helper()
+
 	proposalBytes := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
 	proposalID := new(big.Int).SetBytes(proposalBytes)
 	extra := append([]byte{0x00}, proposalBytes...)
@@ -75,7 +111,8 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 		b.AddTx(signed)
 	})
 
-	chain, err := core.NewBlockChain(rawdb.NewMemoryDatabase(), nil, genesis, nil, engine, vm.Config{}, nil)
+	db := rawdb.NewMemoryDatabase()
+	chain, err := core.NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil)
 	if err != nil {
 		t.Fatalf("failed to create chain: %v", err)
 	}
@@ -83,12 +120,5 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 		t.Fatalf("failed to insert chain: %v", err)
 	}
 
-	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain}}
-	blockID, err := backend.getLastBlockByBatchId(proposalID)
-	if !errors.Is(err, ErrProposalLastBlockUncertain) {
-		t.Fatalf("expected ErrProposalLastBlockUncertain, got %v", err)
-	}
-	if blockID != nil {
-		t.Fatalf("expected nil blockID, got %v", blockID)
-	}
+	return db, chain, proposalID, blocks
 }
