@@ -187,7 +187,6 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		if len(header.Extra) < params.ShastaExtraDataLen {
 			return fmt.Errorf("Shasta extra-data too short: %d < %d", len(header.Extra), params.ShastaExtraDataLen)
 		}
-
 		if header.Number.Cmp(common.Big1) > 0 {
 			if ancestorBlock := chain.GetHeader(parent.ParentHash, parent.Number.Uint64()-1); ancestorBlock != nil {
 				if err := misc.VerifyEIP4396Header(t.chainConfig, parent, parent.Time-ancestorBlock.Time, header); err != nil {
