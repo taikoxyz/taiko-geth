@@ -135,8 +135,8 @@ func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
 	rawdb.WriteHeadL1Origin(db, headBlock.Number())
 
 	blockID, err := backend.getLastBlockByBatchId(proposalID)
-	if !errors.Is(err, ethereum.NotFound) {
-		t.Fatalf("expected NotFound, got %v", err)
+	if !errors.Is(err, ErrProposalLastBlockLookbackExceeded) {
+		t.Fatalf("expected ErrProposalLastBlockLookbackExceeded, got %v", err)
 	}
 	if blockID != nil {
 		t.Fatalf("expected nil blockID, got %v", blockID)
