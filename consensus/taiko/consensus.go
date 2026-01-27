@@ -200,7 +200,6 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 				)
 			}
 		}
-
 	}
 
 	// WithdrawalsHash should not be empty
