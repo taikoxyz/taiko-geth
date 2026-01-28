@@ -4,6 +4,10 @@ on:
   push:
     branches: [taiko]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
     generate-and-deploy:
         runs-on: [arc-runner-set]
