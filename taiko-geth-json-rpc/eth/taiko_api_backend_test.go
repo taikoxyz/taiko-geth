@@ -5,7 +5,6 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
@@ -50,8 +49,8 @@ func TestGetLastBlockByBatchIdNoHeadL1Origin(t *testing.T) {
 	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
 
 	blockID, err := backend.getLastBlockByBatchId(proposalID)
-	if !errors.Is(err, ethereum.NotFound) {
-		t.Fatalf("expected NotFound, got %v", err)
+	if !errors.Is(err, ErrProposalLastBlockUncertain) {
+		t.Fatalf("expected ErrProposalLastBlockUncertain, got %v", err)
 	}
 	if blockID != nil {
 		t.Fatalf("expected nil blockID, got %v", blockID)
@@ -63,8 +62,9 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
 	headBlock := blocks[len(blocks)-1]
 	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
-		BlockID:     headBlock.Number(),
-		L2BlockHash: headBlock.Hash(),
+		BlockID:       headBlock.Number(),
+		L2BlockHash:   headBlock.Hash(),
+		L1BlockHeight: big.NewInt(1),
 	})
 	rawdb.WriteHeadL1Origin(db, headBlock.Number())
 
@@ -145,10 +145,12 @@ func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
 
 	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
 	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
-		BlockID:     headBlock.Number(),
-		L2BlockHash: headBlock.Hash(),
+		BlockID:       headBlock.Number(),
+		L2BlockHash:   headBlock.Hash(),
+		L1BlockHeight: big.NewInt(1),
 	})
 	rawdb.WriteHeadL1Origin(db, headBlock.Number())
+	chain.HeaderChain().SetCurrentHeader(headBlock.Header())
 
 	blockID, err := backend.getLastBlockByBatchId(proposalID)
 	if !errors.Is(err, ErrProposalLastBlockLookbackExceeded) {

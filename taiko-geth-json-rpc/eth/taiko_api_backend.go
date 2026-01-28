@@ -78,7 +78,7 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 // LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.
 func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
 	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil {
+	if err != nil && !errors.Is(err, ethereum.NotFound) {
 		return nil, err
 	}
 	if blockID == nil {
@@ -95,7 +95,7 @@ func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (
 // LastBlockIDByBatchID returns the ID of the last block for the given batch.
 func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
 	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil {
+	if err != nil && !errors.Is(err, ethereum.NotFound) {
 		return nil, err
 	}
 	if blockID != nil {
@@ -118,14 +118,9 @@ const maxBatchLookupBlocks = 192 * 1024
 func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	// We start from the head L1 origin and traverse backwards until we find
 	// the matching batch ID, to ignore all preconfirmation blocks at the chain tip.
-	headL1Origin, err := s.HeadL1Origin()
-	if err != nil {
-		return nil, err
-	}
-
 	var (
-		headNumber   = headL1Origin.BlockID.Uint64()
-		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber)
+		headNumber   = s.eth.BlockChain().CurrentHeader().Number
+		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber.Uint64())
 		lookedBack   uint64
 	)
 
@@ -139,12 +134,22 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
+		l1Origin, err := rawdb.ReadL1Origin(s.eth.ChainDb(), currentBlock.Number())
+		if err != nil && !errors.Is(err, ethereum.NotFound) {
+			return nil, err
+		}
+		// Skip preconfirmation blocks.
+		if l1Origin != nil && l1Origin.IsPreconfBlock() {
+			currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
+			continue
+		}
+
 		proposalID, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
 		if err != nil {
 			return nil, err
 		}
 		if proposalID.Cmp(batchID) == 0 {
-			if currentBlock.NumberU64() == headNumber {
+			if currentBlock.Number().Cmp(headNumber) == 0 {
 				// Head block match without BatchToLastBlockID mapping is not definitive.
 				return nil, ErrProposalLastBlockUncertain
 			}
