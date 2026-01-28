@@ -118,14 +118,14 @@ const maxBatchLookupBlocks = 192 * 1024
 func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	// We start from the head L1 origin and traverse backwards until we find
 	// the matching batch ID, to ignore all preconfirmation blocks at the chain tip.
-	headL1Origin, err := s.HeadL1Origin()
-	if err != nil {
-		return nil, err
+	headNumber := s.eth.BlockChain().CurrentHeader().Number
+	headL1Origin, _ := s.HeadL1Origin()
+	if headL1Origin != nil {
+		headNumber = headL1Origin.BlockID
 	}
 
 	var (
-		headNumber   = headL1Origin.BlockID.Uint64()
-		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber)
+		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber.Uint64())
 		lookedBack   uint64
 	)
 
@@ -144,7 +144,7 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 			return nil, err
 		}
 		if proposalID.Cmp(batchID) == 0 {
-			if currentBlock.NumberU64() == headNumber {
+			if currentBlock.Number().Cmp(headNumber) == 0 {
 				// Head block match without BatchToLastBlockID mapping is not definitive.
 				return nil, ErrProposalLastBlockUncertain
 			}
