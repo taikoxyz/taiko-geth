@@ -139,7 +139,7 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 			return nil, err
 		}
 		// Skip preconfirmation blocks.
-		if l1Origin != nil && l1Origin.L1BlockHeight == nil {
+		if l1Origin != nil && l1Origin.IsPreconfBlock() {
 			currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
 			continue
 		}
