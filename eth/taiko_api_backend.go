@@ -118,13 +118,8 @@ const maxBatchLookupBlocks = 192 * 1024
 func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	// We start from the head L1 origin and traverse backwards until we find
 	// the matching batch ID, to ignore all preconfirmation blocks at the chain tip.
-	headNumber := s.eth.BlockChain().CurrentHeader().Number
-	headL1Origin, _ := s.HeadL1Origin()
-	if headL1Origin != nil {
-		headNumber = headL1Origin.BlockID
-	}
-
 	var (
+		headNumber   = s.eth.BlockChain().CurrentHeader().Number
 		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber.Uint64())
 		lookedBack   uint64
 	)
@@ -139,6 +134,16 @@ func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big,
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
+		l1Origin, err := rawdb.ReadL1Origin(s.eth.ChainDb(), currentBlock.Number())
+		if err != nil && !errors.Is(err, ethereum.NotFound) {
+			return nil, err
+		}
+		// Skip preconfirmation blocks.
+		if l1Origin != nil && l1Origin.L1BlockHeight == nil {
+			currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
+			continue
+		}
+
 		proposalID, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
 		if err != nil {
 			return nil, err
