@@ -34,7 +34,7 @@ func (ec *Client) L1OriginByID(ctx context.Context, blockID *big.Int) (*rawdb.L1
 func (ec *Client) LastL1OriginByBatchID(ctx context.Context, batchID *big.Int) (*rawdb.L1Origin, error) {
 	var res *rawdb.L1Origin
 
-	if err := ec.c.CallContext(ctx, &res, "taiko_lastL1OriginByBatchID", hexutil.EncodeBig(batchID)); err != nil {
+	if err := ec.c.CallContext(ctx, &res, "taikoAuth_lastL1OriginByBatchID", hexutil.EncodeBig(batchID)); err != nil {
 		return nil, err
 	}
 
@@ -45,7 +45,7 @@ func (ec *Client) LastL1OriginByBatchID(ctx context.Context, batchID *big.Int) (
 func (ec *Client) LastBlockIDByBatchID(ctx context.Context, batchID *big.Int) (*hexutil.Big, error) {
 	var res *hexutil.Big
 
-	if err := ec.c.CallContext(ctx, &res, "taiko_lastBlockIDByBatchID", hexutil.EncodeBig(batchID)); err != nil {
+	if err := ec.c.CallContext(ctx, &res, "taikoAuth_lastBlockIDByBatchID", hexutil.EncodeBig(batchID)); err != nil {
 		return nil, err
 	}
 

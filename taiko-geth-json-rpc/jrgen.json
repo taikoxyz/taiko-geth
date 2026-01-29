@@ -83,6 +83,48 @@
     }
   },
   "methods": {
+    "taikoAuth_LastBlockIDByBatchID": {
+      "summary": "RPC method LastBlockIDByBatchID",
+      "description": "LastBlockIDByBatchID returns the ID of the last block for the given batch.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "batchID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "batchID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*hexutil.Big"
+      }
+    },
+    "taikoAuth_LastL1OriginByBatchID": {
+      "summary": "RPC method LastL1OriginByBatchID",
+      "description": "LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "batchID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "batchID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*rawdb.L1Origin"
+      }
+    },
     "taikoAuth_SetBatchToLastBlock": {
       "summary": "RPC method SetBatchToLastBlock",
       "description": "SetBatchToLastBlock sets the mapping from batch ID to the last block ID in this batch.",
@@ -346,48 +388,6 @@
         },
         "required": [
           "blockID"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "$ref": "#/definitions/*rawdb.L1Origin"
-      }
-    },
-    "taiko_LastBlockIDByBatchID": {
-      "summary": "RPC method LastBlockIDByBatchID",
-      "description": "LastBlockIDByBatchID returns the ID of the last block for the given batch.",
-      "tags": [
-        "taiko_"
-      ],
-      "params": {
-        "properties": {
-          "batchID": {
-            "$ref": "#/definitions/*math.HexOrDecimal256"
-          }
-        },
-        "required": [
-          "batchID"
-        ],
-        "type": "object"
-      },
-      "result": {
-        "$ref": "#/definitions/*hexutil.Big"
-      }
-    },
-    "taiko_LastL1OriginByBatchID": {
-      "summary": "RPC method LastL1OriginByBatchID",
-      "description": "LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.",
-      "tags": [
-        "taiko_"
-      ],
-      "params": {
-        "properties": {
-          "batchID": {
-            "$ref": "#/definitions/*math.HexOrDecimal256"
-          }
-        },
-        "required": [
-          "batchID"
         ],
         "type": "object"
       },

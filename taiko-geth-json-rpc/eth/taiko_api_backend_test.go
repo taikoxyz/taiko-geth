@@ -3,6 +3,7 @@ package eth
 import (
 	"errors"
 	"math/big"
+	"reflect"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -44,9 +45,27 @@ func TestShastaProposalIDFromExtraDataInvalid(t *testing.T) {
 	}
 }
 
+func TestTaikoAuthBackendExposesBatchLookupMethods(t *testing.T) {
+	backendType := reflect.TypeOf(&TaikoAuthAPIBackend{})
+	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID"} {
+		if _, ok := backendType.MethodByName(name); !ok {
+			t.Fatalf("expected TaikoAuthAPIBackend to expose %s", name)
+		}
+	}
+}
+
+func TestTaikoAPIBackendHidesBatchLookupMethods(t *testing.T) {
+	backendType := reflect.TypeOf(&TaikoAPIBackend{})
+	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID"} {
+		if _, ok := backendType.MethodByName(name); ok {
+			t.Fatalf("expected TaikoAPIBackend to hide %s", name)
+		}
+	}
+}
+
 func TestGetLastBlockByBatchIdNoHeadL1Origin(t *testing.T) {
 	db, chain, proposalID, _ := newShastaTestChain(t)
-	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
+	backend := &TaikoAuthAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
 
 	blockID, err := backend.getLastBlockByBatchId(proposalID)
 	if !errors.Is(err, ErrProposalLastBlockUncertain) {
@@ -59,7 +78,7 @@ func TestGetLastBlockByBatchIdNoHeadL1Origin(t *testing.T) {
 
 func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 	db, chain, proposalID, blocks := newShastaTestChain(t)
-	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
+	backend := &TaikoAuthAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
 	headBlock := blocks[len(blocks)-1]
 	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
 		BlockID:       headBlock.Number(),
@@ -143,7 +162,7 @@ func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
 		t.Fatal("failed to build test chain")
 	}
 
-	backend := &TaikoAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
+	backend := &TaikoAuthAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
 	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
 		BlockID:       headBlock.Number(),
 		L2BlockHash:   headBlock.Hash(),
