@@ -3,6 +3,7 @@ package eth
 import (
 	"errors"
 	"math/big"
+	"reflect"
 	"testing"
 
 	"github.com/ethereum/go-ethereum"
@@ -42,6 +43,24 @@ func TestShastaBasefeeSharingPctgFromExtraData(t *testing.T) {
 func TestShastaProposalIDFromExtraDataInvalid(t *testing.T) {
 	if _, err := core.DecodeShastaProposalID([]byte{0x01}); err == nil {
 		t.Fatal("expected error for short extradata")
+	}
+}
+
+func TestTaikoAuthBackendExposesBatchLookupMethods(t *testing.T) {
+	backendType := reflect.TypeOf(&TaikoAuthAPIBackend{})
+	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID"} {
+		if _, ok := backendType.MethodByName(name); !ok {
+			t.Fatalf("expected TaikoAuthAPIBackend to expose %s", name)
+		}
+	}
+}
+
+func TestTaikoAPIBackendHidesBatchLookupMethods(t *testing.T) {
+	backendType := reflect.TypeOf(&TaikoAPIBackend{})
+	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID"} {
+		if _, ok := backendType.MethodByName(name); ok {
+			t.Fatalf("expected TaikoAPIBackend to hide %s", name)
+		}
 	}
 }
 

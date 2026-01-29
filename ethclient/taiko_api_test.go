@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -86,6 +87,37 @@ func newTaikoAPITestClient(t *testing.T) (*Client, []*types.Block, ethdb.Databas
 	return NewClient(n.Attach()), blocks, ethservice.ChainDb()
 }
 
+func newTaikoAuthAPITestClient(t *testing.T) (*Client, []*types.Block, ethdb.Database) {
+	// Generate test chain.
+	genesis, blocks := generateTestChain()
+
+	// Create node
+	n, err := node.New(&node.Config{})
+	require.Nil(t, err)
+
+	// Create Ethereum Service
+	config := &ethconfig.Config{Genesis: genesis}
+	ethservice, err := eth.New(n, config)
+	require.Nil(t, err)
+
+	n.RegisterAPIs([]rpc.API{
+		{
+			Namespace:     "taikoAuth",
+			Service:       eth.NewTaikoAuthAPIBackend(ethservice),
+			Authenticated: true,
+		},
+	})
+
+	// Start node
+	require.Nil(t, n.Start())
+
+	// Insert test blocks
+	_, err = ethservice.BlockChain().InsertChain(blocks[1:])
+	require.Nil(t, err)
+
+	return NewClient(n.Attach()), blocks, ethservice.ChainDb()
+}
+
 func TestHeadL1Origin(t *testing.T) {
 	ec, blocks, db := newTaikoAPITestClient(t)
 
@@ -134,6 +166,38 @@ func TestL1OriginByID(t *testing.T) {
 
 	require.Nil(t, err)
 	require.Equal(t, testL1Origin, l1OriginFound)
+}
+
+func TestLastBlockIDByBatchID(t *testing.T) {
+	ec, blocks, db := newTaikoAuthAPITestClient(t)
+
+	batchID := big.NewInt(1)
+	blockID := blocks[len(blocks)-1].Number()
+
+	rawdb.WriteBatchToLastBlockID(db, batchID, blockID)
+
+	found, err := ec.LastBlockIDByBatchID(context.Background(), batchID)
+	require.Nil(t, err)
+	require.Equal(t, (*hexutil.Big)(blockID), found)
+}
+
+func TestLastL1OriginByBatchID(t *testing.T) {
+	ec, blocks, db := newTaikoAuthAPITestClient(t)
+
+	batchID := big.NewInt(1)
+	block := blocks[len(blocks)-1]
+
+	testL1Origin := &rawdb.L1Origin{
+		BlockID:     block.Number(),
+		L2BlockHash: block.Hash(),
+	}
+
+	rawdb.WriteBatchToLastBlockID(db, batchID, block.Number())
+	rawdb.WriteL1Origin(db, block.Number(), testL1Origin)
+
+	found, err := ec.LastL1OriginByBatchID(context.Background(), batchID)
+	require.Nil(t, err)
+	require.Equal(t, testL1Origin, found)
 }
 
 // randomHash generates a random blob of data and returns it as a hash.
