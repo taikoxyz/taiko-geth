@@ -75,36 +75,6 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	return l1Origin, nil
 }
 
-// LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.
-func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
-	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil && !errors.Is(err, ethereum.NotFound) {
-		return nil, err
-	}
-	if blockID == nil {
-		if blockID, err = s.getLastBlockByBatchId((*big.Int)(batchID)); err != nil {
-			return nil, err
-		}
-		if blockID == nil {
-			return nil, ethereum.NotFound
-		}
-	}
-	return s.L1OriginByID((*math.HexOrDecimal256)(blockID))
-}
-
-// LastBlockIDByBatchID returns the ID of the last block for the given batch.
-func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
-	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil && !errors.Is(err, ethereum.NotFound) {
-		return nil, err
-	}
-	if blockID != nil {
-		return blockID, nil
-	}
-
-	return s.getLastBlockByBatchId((*big.Int)(batchID))
-}
-
 // GetSyncMode returns the node sync mode.
 func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 	return s.eth.config.SyncMode.String(), nil
@@ -175,7 +145,7 @@ func NewTaikoAuthAPIBackend(eth *Ethereum) *TaikoAuthAPIBackend {
 func (a *TaikoAuthAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
 	apiBackend := &TaikoAPIBackend{eth: a.eth}
 	blockID, err := rawdb.ReadBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil {
+	if err != nil && !errors.Is(err, ethereum.NotFound) {
 		return nil, err
 	}
 	if blockID == nil {
@@ -193,7 +163,7 @@ func (a *TaikoAuthAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal25
 func (a *TaikoAuthAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
 	apiBackend := &TaikoAPIBackend{eth: a.eth}
 	blockID, err := rawdb.ReadBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil {
+	if err != nil && !errors.Is(err, ethereum.NotFound) {
 		return nil, err
 	}
 	if blockID != nil {
