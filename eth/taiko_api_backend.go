@@ -75,6 +75,36 @@ func (s *TaikoAPIBackend) L1OriginByID(blockID *math.HexOrDecimal256) (*rawdb.L1
 	return l1Origin, nil
 }
 
+// LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.
+func (s *TaikoAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
+	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
+	if err != nil && !errors.Is(err, ethereum.NotFound) {
+		return nil, err
+	}
+	if blockID == nil {
+		if blockID, err = s.getLastBlockByBatchId((*big.Int)(batchID)); err != nil {
+			return nil, err
+		}
+		if blockID == nil {
+			return nil, ethereum.NotFound
+		}
+	}
+	return s.L1OriginByID((*math.HexOrDecimal256)(blockID))
+}
+
+// LastBlockIDByBatchID returns the ID of the last block for the given batch.
+func (s *TaikoAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
+	blockID, err := rawdb.ReadBatchToLastBlockID(s.eth.ChainDb(), (*big.Int)(batchID))
+	if err != nil && !errors.Is(err, ethereum.NotFound) {
+		return nil, err
+	}
+	if blockID != nil {
+		return blockID, nil
+	}
+
+	return s.getLastBlockByBatchId((*big.Int)(batchID))
+}
+
 // GetSyncMode returns the node sync mode.
 func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 	return s.eth.config.SyncMode.String(), nil
@@ -84,54 +114,13 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 // when searching for the last block of a given batch ID.
 const maxBatchLookupBlocks = 192 * 1024
 
-// TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
-type TaikoAuthAPIBackend struct {
-	eth *Ethereum
-}
-
-// NewTaikoAuthAPIBackend creates a new TaikoAuthAPIBackend instance.
-func NewTaikoAuthAPIBackend(eth *Ethereum) *TaikoAuthAPIBackend {
-	return &TaikoAuthAPIBackend{eth}
-}
-
-// LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.
-func (a *TaikoAuthAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal256) (*rawdb.L1Origin, error) {
-	blockID, err := rawdb.ReadBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil && !errors.Is(err, ethereum.NotFound) {
-		return nil, err
-	}
-	if blockID == nil {
-		if blockID, err = a.getLastBlockByBatchId((*big.Int)(batchID)); err != nil {
-			return nil, err
-		}
-		if blockID == nil {
-			return nil, ethereum.NotFound
-		}
-	}
-
-	return rawdb.ReadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
-}
-
-// LastBlockIDByBatchID returns the ID of the last block for the given batch.
-func (a *TaikoAuthAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
-	blockID, err := rawdb.ReadBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID))
-	if err != nil && !errors.Is(err, ethereum.NotFound) {
-		return nil, err
-	}
-	if blockID != nil {
-		return blockID, nil
-	}
-
-	return a.getLastBlockByBatchId((*big.Int)(batchID))
-}
-
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
-func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
+func (s *TaikoAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	// We start from the head L1 origin and traverse backwards until we find
 	// the matching batch ID, to ignore all preconfirmation blocks at the chain tip.
 	var (
-		headNumber   = a.eth.BlockChain().CurrentHeader().Number
-		currentBlock = a.eth.BlockChain().GetBlockByNumber(headNumber.Uint64())
+		headNumber   = s.eth.BlockChain().CurrentHeader().Number
+		currentBlock = s.eth.BlockChain().GetBlockByNumber(headNumber.Uint64())
 		lookedBack   uint64
 	)
 
@@ -145,13 +134,13 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
-		l1Origin, err := rawdb.ReadL1Origin(a.eth.ChainDb(), currentBlock.Number())
+		l1Origin, err := rawdb.ReadL1Origin(s.eth.ChainDb(), currentBlock.Number())
 		if err != nil && !errors.Is(err, ethereum.NotFound) {
 			return nil, err
 		}
 		// Skip preconfirmation blocks.
 		if l1Origin != nil && l1Origin.IsPreconfBlock() {
-			currentBlock = a.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
+			currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
 			continue
 		}
 
@@ -167,9 +156,19 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.
 			return (*hexutil.Big)(currentBlock.Number()), nil
 		}
 
-		currentBlock = a.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
+		currentBlock = s.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
 	}
 	return nil, ethereum.NotFound
+}
+
+// TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
+type TaikoAuthAPIBackend struct {
+	eth *Ethereum
+}
+
+// NewTaikoAuthAPIBackend creates a new TaikoAuthAPIBackend instance.
+func NewTaikoAuthAPIBackend(eth *Ethereum) *TaikoAuthAPIBackend {
+	return &TaikoAuthAPIBackend{eth}
 }
 
 // SetHeadL1Origin sets the latest L2 block's corresponding L1 origin.
