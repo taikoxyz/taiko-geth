@@ -23,7 +23,7 @@ var (
 	InternalShastaTime uint64 = 0
 	MasayaShastaTime   uint64 = 0
 	MainnetShastaTime  uint64 = 999_999_999_999
-	HoodiShastaTime    uint64 = 999_999_999_999
+	HoodiShastaTime    uint64 = 1_770_210_000
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
