@@ -172,7 +172,6 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.
 			return nil, ErrProposalLastBlockUncertain
 		}
 		return (*hexutil.Big)(currentBlock.Number()), nil
-
 	}
 	return nil, ethereum.NotFound
 }
