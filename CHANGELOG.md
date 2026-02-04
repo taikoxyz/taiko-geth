@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.2.1](https://github.com/taikoxyz/taiko-geth/compare/v2.2.0...v2.2.1) (2026-02-04)
+
+
+### Chores
+
+* **taiko_api_backend:** improve `ErrProposalLastBlockUncertain` checks ([#520](https://github.com/taikoxyz/taiko-geth/issues/520)) ([c488d32](https://github.com/taikoxyz/taiko-geth/commit/c488d324bc314d57e9a78c7dd3fea0e22dbf4aff))
+
+
+### Performance Improvements
+
+* **taiko_api_backend:** optimize `getLastBlockByBatchId` scan ([#518](https://github.com/taikoxyz/taiko-geth/issues/518)) ([24e18fc](https://github.com/taikoxyz/taiko-geth/commit/24e18fc77e6f5b8d53c46b095414ce517442875e))
+
 ## [2.2.0](https://github.com/taikoxyz/taiko-geth/compare/v2.1.0...v2.2.0) (2026-02-04)
 
 
