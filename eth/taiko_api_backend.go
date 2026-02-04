@@ -82,7 +82,7 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 
 // maxBatchLookupBlocks defines the maximum number of blocks to look back
 // when searching for the last block of a given batch ID.
-const maxBatchLookupBlocks = 192 * 1024
+const maxBatchLookupBlocks = 192 * 21_600
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
 type TaikoAuthAPIBackend struct {
