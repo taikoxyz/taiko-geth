@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.2.0](https://github.com/taikoxyz/taiko-geth/compare/v2.1.0...v2.2.0) (2026-02-04)
+
+
+### Features
+
+* **taiko_genesis:** update `HoodiShastaTime` ([#515](https://github.com/taikoxyz/taiko-geth/issues/515)) ([f23c7a3](https://github.com/taikoxyz/taiko-geth/commit/f23c7a3505a69647a0a881ead22a1d1fbb7f0e20))
+
+
+### Chores
+
+* **core:** add shasta fork time on Hoodi ([#512](https://github.com/taikoxyz/taiko-geth/issues/512)) ([7090de7](https://github.com/taikoxyz/taiko-geth/commit/7090de77bcb4a99816b8df2014dc79b8cbc68ca0))
+* **eth:** set `maxBatchLookupBlocks` to upper limit ([#517](https://github.com/taikoxyz/taiko-geth/issues/517)) ([a13a79d](https://github.com/taikoxyz/taiko-geth/commit/a13a79d05f9048122efb8024690bba7c1fc3af26))
+* **taiko:** release 2.1.0 ([#514](https://github.com/taikoxyz/taiko-geth/issues/514)) ([0de4018](https://github.com/taikoxyz/taiko-geth/commit/0de4018d9d0901befc122ae3941e3c64f562b58b))
+
 ## [2.1.0](https://github.com/taikoxyz/taiko-geth/compare/v2.0.0...v2.1.0) (2026-02-02)
 
 
