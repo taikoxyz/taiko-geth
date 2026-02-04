@@ -145,6 +145,18 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.
 		if currentBlock.NumberU64() == 0 {
 			break
 		}
+		proposalID, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
+		if err != nil {
+			return nil, err
+		}
+		if proposalID.Cmp(batchID) < 0 {
+			return nil, ethereum.NotFound
+		}
+		if proposalID.Cmp(batchID) > 0 {
+			currentBlock = a.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
+			continue
+		}
+
 		l1Origin, err := rawdb.ReadL1Origin(a.eth.ChainDb(), currentBlock.Number())
 		if err != nil && !errors.Is(err, ethereum.NotFound) {
 			return nil, err
@@ -155,19 +167,11 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.
 			continue
 		}
 
-		proposalID, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
-		if err != nil {
-			return nil, err
+		if currentBlock.Number().Cmp(headNumber) == 0 {
+			// Head block match without BatchToLastBlockID mapping is not definitive.
+			return nil, ErrProposalLastBlockUncertain
 		}
-		if proposalID.Cmp(batchID) == 0 {
-			if currentBlock.Number().Cmp(headNumber) == 0 {
-				// Head block match without BatchToLastBlockID mapping is not definitive.
-				return nil, ErrProposalLastBlockUncertain
-			}
-			return (*hexutil.Big)(currentBlock.Number()), nil
-		}
-
-		currentBlock = a.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
+		return (*hexutil.Big)(currentBlock.Number()), nil
 	}
 	return nil, ethereum.NotFound
 }
