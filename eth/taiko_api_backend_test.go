@@ -83,7 +83,7 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
 		BlockID:       headBlock.Number(),
 		L2BlockHash:   headBlock.Hash(),
-		L1BlockHeight: big.NewInt(1),
+		L1BlockHeight: nil,
 	})
 	rawdb.WriteHeadL1Origin(db, headBlock.Number())
 
