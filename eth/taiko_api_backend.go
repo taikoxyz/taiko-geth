@@ -168,8 +168,9 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.
 		}
 
 		if currentBlock.Number().Cmp(headNumber) == 0 {
-			// Head block match without BatchToLastBlockID mapping is not definitive.
-			return nil, ErrProposalLastBlockUncertain
+			if l1Origin == nil || l1Origin.IsPreconfBlock() {
+				return nil, ErrProposalLastBlockUncertain
+			}
 		}
 		return (*hexutil.Big)(currentBlock.Number()), nil
 	}
