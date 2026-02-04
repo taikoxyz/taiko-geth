@@ -168,6 +168,7 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.
 		}
 
 		if currentBlock.Number().Cmp(headNumber) == 0 {
+			// If we are at the chain tip, ensure the L1 origin is there and not a preconfirmation block.
 			if l1Origin == nil || l1Origin.IsPreconfBlock() {
 				return nil, ErrProposalLastBlockUncertain
 			}
