@@ -80,11 +80,6 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 	db, chain, proposalID, blocks := newShastaTestChain(t)
 	backend := &TaikoAuthAPIBackend{eth: &Ethereum{blockchain: chain, chainDb: db}}
 	headBlock := blocks[len(blocks)-1]
-	rawdb.WriteL1Origin(db, headBlock.Number(), &rawdb.L1Origin{
-		BlockID:       headBlock.Number(),
-		L2BlockHash:   headBlock.Hash(),
-		L1BlockHeight: big.NewInt(1),
-	})
 	rawdb.WriteHeadL1Origin(db, headBlock.Number())
 
 	blockID, err := backend.getLastBlockByBatchId(proposalID)
