@@ -292,6 +292,10 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	if err != nil {
 		return nil, err
 	}
+	// CHANGE(taiko): check the chain config.
+	if aware, ok := engine.(interface{ SetChainConfig(*params.ChainConfig) }); ok {
+		aware.SetChainConfig(chainConfig)
+	}
 	log.Info("")
 	log.Info(strings.Repeat("-", 153))
 	for _, line := range strings.Split(chainConfig.Description(), "\n") {

@@ -72,6 +72,21 @@ func New(chainConfig *params.ChainConfig, chainDB ethdb.Database) *Taiko {
 	}
 }
 
+// CHANGE(taiko): SetChainConfig updates chain config used by this engine and refreshes derived fields.
+func (t *Taiko) SetChainConfig(chainConfig *params.ChainConfig) {
+	if chainConfig == nil {
+		return
+	}
+	taikoL2AddressPrefix := strings.TrimPrefix(chainConfig.ChainID.String(), "0")
+	t.chainConfig = chainConfig
+	t.taikoL2Address = common.HexToAddress(
+		"0x" +
+			taikoL2AddressPrefix +
+			strings.Repeat("0", common.AddressLength*2-len(taikoL2AddressPrefix)-len(TaikoL2AddressSuffix)) +
+			TaikoL2AddressSuffix,
+	)
+}
+
 // check all method stubs for interface `Engine` without affect performance.
 var _ consensus.Engine = (*Taiko)(nil)
 
