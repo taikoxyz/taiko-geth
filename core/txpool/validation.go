@@ -36,8 +36,8 @@ var (
 	// blobTxMinBlobGasPrice is the big.Int version of the configured protocol
 	// parameter to avoid constructing a new big integer for every transaction.
 	blobTxMinBlobGasPrice = big.NewInt(params.BlobTxMinBlobGasprice)
-	// CHANGE(taiko): the miniumum baseFee defined in TaikoL2 (0.008847185 GWei).
-	minL2BaseFee = new(big.Int).SetUint64(8847185)
+	// CHANGE(taiko): the minimum baseFee defined in derivation pipeline (0.005 GWei).
+	minL2BaseFee = new(big.Int).SetUint64(5_000_000)
 )
 
 // ValidationOptions define certain differences between transaction validation
@@ -112,7 +112,7 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 	// CHANGE(taiko): check gasFeeCap.
 	if os.Getenv("TAIKO_TEST") == "" {
 		if opts.Config.IsOntake(head.Number) && tx.GasFeeCap().Cmp(minL2BaseFee) < 0 {
-			return errors.New("max fee per gas is less than the minimum base fee (0.008847185 GWei)")
+			return errors.New("max fee per gas is less than the minimum base fee (0.005 GWei)")
 		} else if tx.GasFeeCap().Cmp(common.Big0) == 0 {
 			return errors.New("max fee per gas is zero")
 		}
