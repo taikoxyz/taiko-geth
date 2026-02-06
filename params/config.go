@@ -510,8 +510,11 @@ func (c *ChainConfig) Description() string {
 	if c.VerkleTime != nil {
 		banner += fmt.Sprintf(" - Verkle:                      @%-10v\n", *c.VerkleTime)
 	}
+	banner += "\n"
 
 	// CHANGE(taiko): add Taiko forks to banner.
+	banner += "Taiko network hard forks:\n"
+
 	if c.OntakeBlock != nil {
 		banner += fmt.Sprintf(" - Ontake:                      #%-8v\n", c.OntakeBlock)
 	}
