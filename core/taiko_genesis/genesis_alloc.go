@@ -15,3 +15,6 @@ var MasayaGenesisAllocJSON []byte
 
 //go:embed taiko_hoodi.json
 var TaikoHoodiGenesisAllocJSON []byte
+
+//go:embed shasta_transition_devnet.json
+var STDGenesisAllocJSON []byte

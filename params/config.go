@@ -343,6 +343,7 @@ var NetworkNames = map[string]string{
 	TaikoInternalNetworkID.String(): "Taiko Internal Devnet",
 	TaikoHoodiNetworkID.String():    "Taiko Hoodi L2",
 	MasayaDevnetNetworkID.String():  "Taiko Shared Devnet-Masaya",
+	STDNetworkID.String():           "Taiko Shasta Transition Devnet",
 }
 
 // ChainConfig is the core config which determines the blockchain settings.

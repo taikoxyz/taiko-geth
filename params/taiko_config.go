@@ -41,6 +41,7 @@ var (
 	TaikoInternalNetworkID = big.NewInt(167001)
 	MasayaDevnetNetworkID  = big.NewInt(167011)
 	TaikoHoodiNetworkID    = big.NewInt(167013)
+	STDNetworkID           = big.NewInt(167014)
 )
 
 var networkIDToChainConfig = map[*big.Int]*ChainConfig{
@@ -48,6 +49,7 @@ var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	TaikoInternalNetworkID:     TaikoChainConfig,
 	TaikoHoodiNetworkID:        TaikoChainConfig,
 	MasayaDevnetNetworkID:      TaikoChainConfig,
+	STDNetworkID:               TaikoChainConfig,
 	MainnetChainConfig.ChainID: MainnetChainConfig,
 	SepoliaChainConfig.ChainID: SepoliaChainConfig,
 	TestChainConfig.ChainID:    TestChainConfig,
