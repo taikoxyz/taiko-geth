@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-func TestCalcEIP4396BaseFee_MinClampTaikoMainnet(t *testing.T) {
+func TestCalcEIP4396BaseFeeMinClampTaikoMainnet(t *testing.T) {
 	parent := &types.Header{
 		Number:   big.NewInt(1),
 		GasLimit: 20_000_000,
@@ -24,7 +24,7 @@ func TestCalcEIP4396BaseFee_MinClampTaikoMainnet(t *testing.T) {
 	}
 }
 
-func TestCalcEIP4396BaseFee_MinClampNonMainnetTaiko(t *testing.T) {
+func TestCalcEIP4396BaseFeeMinClampNonMainnetTaiko(t *testing.T) {
 	parent := &types.Header{
 		Number:   big.NewInt(1),
 		GasLimit: 20_000_000,
@@ -40,7 +40,7 @@ func TestCalcEIP4396BaseFee_MinClampNonMainnetTaiko(t *testing.T) {
 	}
 }
 
-func TestCalcEIP4396BaseFee_MaxClampUnchanged(t *testing.T) {
+func TestCalcEIP4396BaseFeeMaxClampUnchanged(t *testing.T) {
 	parent := &types.Header{
 		Number:   big.NewInt(1),
 		GasLimit: 20_000_000,
@@ -54,12 +54,12 @@ func TestCalcEIP4396BaseFee_MaxClampUnchanged(t *testing.T) {
 		expect *big.Int
 	}{
 		{
-			name:   "taiko_mainnet",
+			name:   "taikoMainnet",
 			chain:  params.TaikoMainnetNetworkID,
 			expect: big.NewInt(1_000_000_000),
 		},
 		{
-			name:   "taiko_non_mainnet",
+			name:   "taikoNonMainnet",
 			chain:  params.TaikoHoodiNetworkID,
 			expect: big.NewInt(1_000_000_000),
 		},
