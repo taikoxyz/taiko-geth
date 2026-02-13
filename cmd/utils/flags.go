@@ -1528,6 +1528,14 @@ func setRequiredBlocks(ctx *cli.Context, cfg *ethconfig.Config) {
 	}
 }
 
+// applyTaikoInternalShastaTimeOverride applies the internal Shasta time override
+// only when the dedicated flag (or its env var) is explicitly set.
+func applyTaikoInternalShastaTimeOverride(ctx *cli.Context) {
+	if ctx.IsSet(TaikoInternalShastaTimeFlag.Name) {
+		core.InternalShastaTime = ctx.Uint64(TaikoInternalShastaTimeFlag.Name)
+	}
+}
+
 // SetEthConfig applies eth-related command line flags to the config.
 func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	// Avoid conflicting network flags
@@ -1681,7 +1689,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	switch {
 	// CHANGE(taiko): when `--taiko` flag is set, use the Taiko genesis.
 	case ctx.IsSet(TaikoFlag.Name):
-		core.InternalShastaTime = ctx.Uint64(TaikoInternalShastaTimeFlag.Name)
+		applyTaikoInternalShastaTimeOverride(ctx)
 		cfg.Genesis = core.TaikoGenesisBlock(cfg.NetworkId)
 	case ctx.Bool(MainnetFlag.Name):
 		if !ctx.IsSet(NetworkIdFlag.Name) {
