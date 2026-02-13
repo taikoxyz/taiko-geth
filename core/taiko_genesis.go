@@ -22,7 +22,7 @@ var (
 	STDPacayaBlock            = common.Big0
 	MainnetPacayaBlock        = new(big.Int).SetUint64(1_166_000)
 
-	InternalShastaTime uint64 = 0
+	InternalShastaTime uint64 = 1770966750
 	MasayaShastaTime   uint64 = 0
 	STDShastaTime      uint64 = 1_770_987_600
 	MainnetShastaTime  uint64 = 999_999_999_999
