@@ -19,6 +19,7 @@ Write `_test.go` files beside the code they cover. Run focused suites with `go t
 
 ## Commit & Pull Request Guidelines
 Commits follow Conventional Commit syntax (`type(scope): summary`) and typically cite the PR, e.g. `feat(consensus): introduce Shasta fork (#431)`. Squash fixups before pushing. PRs should describe protocol impact, link Taiko issues, capture validation steps for RPC changes, and update `docs/` or operator guidance when behavior shifts. Call out any security-relevant notes, especially if `SECURITY.md` needs updates.
+When `core/taiko_genesis/` changes, the PR must print the corresponding chain ID and genesis hash.
 
 ## Security & Configuration Tips
 Review `SECURITY.md` before reporting vulnerabilities. For configuration changes, include the flag or TOML snippet (`geth --config path/to/config.toml`) and note RPC exposure adjustments. Align Docker guidance with the repository `Dockerfile`, including required port mappings and volume mounts.
