@@ -89,6 +89,12 @@ static int secp256k1_ext_reencode_pubkey(
 	return secp256k1_ec_pubkey_serialize(ctx, out, &outlen, &pubkey, flag);
 }
 
+// Compatibility shim for newer secp256k1 versions where the *_limit helper
+// is no longer exposed under that name.
+static int secp256k1_fe_set_b32_limit(secp256k1_fe *r, const unsigned char *a) {
+	return secp256k1_fe_set_b32(r, a);
+}
+
 // secp256k1_ext_scalar_mul multiplies a point by a scalar in constant time.
 //
 // Returns: 1: multiplication was successful
@@ -109,8 +115,10 @@ int secp256k1_ext_scalar_mul(const secp256k1_context* ctx, unsigned char *point,
 	ARG_CHECK(scalar != NULL);
 	(void)ctx;
 
-	secp256k1_fe_set_b32(&feX, point);
-	secp256k1_fe_set_b32(&feY, point+32);
+	if (!secp256k1_fe_set_b32_limit(&feX, point) ||
+		!secp256k1_fe_set_b32_limit(&feY, point+32)) {
+		return 0;
+	}
 	secp256k1_ge_set_xy(&ge, &feX, &feY);
 	secp256k1_scalar_set_b32(&s, scalar, &overflow);
 	if (overflow || secp256k1_scalar_is_zero(&s)) {
