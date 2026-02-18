@@ -1,5 +1,27 @@
 # Changelog
 
+## [2.3.0](https://github.com/taikoxyz/taiko-geth/compare/v2.2.1...v2.3.0) (2026-02-18)
+
+
+### Features
+
+* **consensus:** set Shasta EIP-4396 min basefee clamp to `0.01` Gwei on Mainnet ([#528](https://github.com/taikoxyz/taiko-geth/issues/528)) ([7f74d5d](https://github.com/taikoxyz/taiko-geth/commit/7f74d5dcbf4b49491afee9af53bb284ccbb4ab08))
+* **taiko:** introduce new network named `shasta-transition-devnet` ([#525](https://github.com/taikoxyz/taiko-geth/issues/525)) ([f5c213e](https://github.com/taikoxyz/taiko-geth/commit/f5c213e2ef1be77fa08016f37a567ca2277aeae8))
+* **txpool:** update `minL2BaseFee` to `0.005 GWei` ([#524](https://github.com/taikoxyz/taiko-geth/issues/524)) ([dec5974](https://github.com/taikoxyz/taiko-geth/commit/dec59749627c7e9bb4fcd8df0118539d548752eb))
+
+
+### Bug Fixes
+
+* **consensus:** refresh engine chain config after genesis config migration ([#521](https://github.com/taikoxyz/taiko-geth/issues/521)) ([db81096](https://github.com/taikoxyz/taiko-geth/commit/db81096359ed522899d4f7bd2aede4d3ba4ccf1d))
+* **crypto:** validate `secp256k1` points and `ECIES` handshake curve handling ([#530](https://github.com/taikoxyz/taiko-geth/issues/530)) ([29fa1d9](https://github.com/taikoxyz/taiko-geth/commit/29fa1d99836f266f6520f84963b136eaa9071b58))
+
+
+### Chores
+
+* **params:** include Taiko forks in `ChainConfig` description ([#522](https://github.com/taikoxyz/taiko-geth/issues/522)) ([2613ba7](https://github.com/taikoxyz/taiko-geth/commit/2613ba7da853cc4e246f3124571dc542cc0464a3))
+* **taiko:** set `STDShastaTime` to `1_770_987_600` ([#527](https://github.com/taikoxyz/taiko-geth/issues/527)) ([a46ba7e](https://github.com/taikoxyz/taiko-geth/commit/a46ba7e3a2758b5e8961c7558ef2053c2b7dcdce))
+* **taiko:** update AGENTS rules ([#526](https://github.com/taikoxyz/taiko-geth/issues/526)) ([68767f3](https://github.com/taikoxyz/taiko-geth/commit/68767f3b4d73f7462b3deac2d90b67e801e64fd9))
+
 ## [2.2.1](https://github.com/taikoxyz/taiko-geth/compare/v2.2.0...v2.2.1) (2026-02-04)
 
 
