@@ -3,6 +3,7 @@ package eth
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum"
@@ -200,14 +201,20 @@ func (a *TaikoAuthAPIBackend) UpdateL1Origin(l1Origin *rawdb.L1Origin) *rawdb.L1
 }
 
 // SetL1OriginSignature sets the L1 origin signature for the given block ID.
-func (a *TaikoAuthAPIBackend) SetL1OriginSignature(blockID *big.Int, signature [65]byte) (*rawdb.L1Origin, error) {
-	l1Origin, err := rawdb.ReadL1Origin(a.eth.ChainDb(), blockID)
+func (a *TaikoAuthAPIBackend) SetL1OriginSignature(blockID *math.HexOrDecimal256, signature hexutil.Bytes) (*rawdb.L1Origin, error) {
+	if len(signature) != 65 {
+		return nil, fmt.Errorf("invalid signature length: expected 65, got %d", len(signature))
+	}
+
+	l1Origin, err := rawdb.ReadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
 	if err != nil {
 		return nil, err
 	}
 
-	l1Origin.Signature = signature
-	rawdb.WriteL1Origin(a.eth.ChainDb(), blockID, l1Origin)
+	var sig [65]byte
+	copy(sig[:], signature)
+	l1Origin.Signature = sig
+	rawdb.WriteL1Origin(a.eth.ChainDb(), (*big.Int)(blockID), l1Origin)
 
 	return l1Origin, nil
 }
