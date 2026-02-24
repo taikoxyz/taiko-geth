@@ -58,7 +58,8 @@ type PayloadAttributes struct {
 
 // JSON type overrides for PayloadAttributes.
 type payloadAttributesMarshaling struct {
-	Timestamp hexutil.Uint64
+	Timestamp     hexutil.Uint64
+	BaseFeePerGas *hexutil.Big
 }
 
 //go:generate go run github.com/fjl/gencodec -type BlockMetadata -field-override blockMetadataMarshaling -out gen_blockmetadata.go

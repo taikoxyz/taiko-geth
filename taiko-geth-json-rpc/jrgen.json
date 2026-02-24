@@ -180,13 +180,16 @@
       "params": {
         "properties": {
           "blockID": {
-            "$ref": "#/definitions/*big.Int"
+            "$ref": "#/definitions/*math.HexOrDecimal256"
           },
           "signature": {
-            "examples": [
-              "0x123456"
-            ],
-            "type": "string"
+            "items": {
+              "examples": [
+                "0x123456"
+              ],
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [

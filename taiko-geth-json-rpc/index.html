@@ -666,10 +666,18 @@
                           <td>params.blockID</td>
                           <td>integer</td>
                           <td></td>
-                          <td></td>
+                          <td>
+                            Hexadecimal or decimal representation of a number.
+                          </td>
                         </tr>
                         <tr>
                           <td>params.signature</td>
+                          <td>array</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.signature[]</td>
                           <td>string</td>
                           <td></td>
                           <td></td>
@@ -729,7 +737,9 @@
   "method": "taikoAuth_SetL1OriginSignature",
   "params": {
     "blockID": 10000,
-    "signature": "0x123456"
+    "signature": [
+      "0x123456"
+    ]
   }
 }</pre
                     >
