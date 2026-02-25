@@ -32,7 +32,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -294,14 +293,6 @@ func newBackendMock() *backendMock {
 		},
 		config: config,
 	}
-}
-
-func (b *backendMock) GetTd(ctx context.Context, hash common.Hash) *big.Int {
-	return big.NewInt(0) // Return 0 for test purposes
-}
-
-func (b *backendMock) TxPool() *txpool.TxPool {
-	return nil // Return nil since this is a test backend
 }
 
 func (b *backendMock) setFork(fork string) error {

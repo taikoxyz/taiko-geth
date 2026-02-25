@@ -60,81 +60,6 @@ type environment struct {
 	blobs    int
 
 	witness *stateless.Witness
-
-	// CHANGE(taiko): simulator fields for managing pre-confirmed state and builder payments.
-	initialCoinbaseBalance *uint256.Int
-	sealedBlock            *types.Block
-}
-
-// copy creates a deep copy of environment.
-func (env *environment) copy(chain core.ChainContext, config *params.ChainConfig) *environment {
-	cpy := &environment{
-		signer:                 env.signer,
-		state:                  env.state.Copy(),
-		tcount:                 env.tcount,
-		coinbase:               env.coinbase,
-		header:                 types.CopyHeader(env.header),
-		receipts:               copyReceipts(env.receipts),
-		initialCoinbaseBalance: env.initialCoinbaseBalance,
-	}
-	if env.gasPool != nil {
-		gasPool := *env.gasPool
-		cpy.gasPool = &gasPool
-	}
-	cpy.txs = make([]*types.Transaction, len(env.txs))
-	copy(cpy.txs, env.txs)
-
-	cpy.sidecars = make([]*types.BlobTxSidecar, len(env.sidecars))
-	copy(cpy.sidecars, env.sidecars)
-
-	cpy.evm = vm.NewEVM(core.NewEVMBlockContext(cpy.header, chain, &cpy.coinbase), cpy.state, config, vm.Config{})
-
-	return cpy
-}
-
-func (env *environment) reset() {
-	env.txs = make([]*types.Transaction, 0)
-	env.receipts = make([]*types.Receipt, 0)
-	env.sidecars = make([]*types.BlobTxSidecar, 0)
-	env.blobs = 0
-	env.tcount = 0
-	env.gasPool = new(core.GasPool).AddGas(30_000_000)
-	env.header.GasLimit = 240_250_000
-	env.header.GasUsed = 0
-	env.initialCoinbaseBalance = new(uint256.Int).SetUint64(0)
-	env.evm = nil
-}
-
-// copy creates a deep copy of environment.
-// resets all params that are updated when we add txs and sets the new header
-// params to match the new environment we are sent
-func (env *environment) copyAtNewEnvironment(newEnvParams common.BlockEnv, chain core.ChainContext, config *params.ChainConfig) *environment {
-	newEnv := env.copy(chain, config)
-	newEnv.reset()
-
-	// Set new env params in header
-	newEnv.header.Number = newEnvParams.Number.ToInt()
-	newEnv.header.Coinbase = newEnvParams.Coinbase
-	newEnv.header.MixDigest = *newEnvParams.PrevRandao
-	newEnv.gasPool = new(core.GasPool).AddGas(newEnvParams.GasLimit.ToInt().Uint64())
-	newEnv.header.GasLimit = newEnvParams.GasLimit.ToInt().Uint64()
-	newEnv.header.BaseFee = newEnvParams.BaseFee.ToInt()
-	newEnv.header.Time = newEnvParams.Timestamp.ToInt().Uint64()
-	newEnv.coinbase = newEnvParams.Coinbase
-
-	// If we took the env from the head (no sealed block) then we can take the hash from the header.
-	if env.sealedBlock == nil {
-		newEnv.header.ParentHash = env.header.Hash()
-	} else {
-		newEnv.header.ParentHash = env.sealedBlock.Hash()
-	}
-
-	// Store initial coinbase balance
-	initialBalance := newEnv.state.GetBalance(newEnv.coinbase)
-	newEnv.initialCoinbaseBalance = new(uint256.Int).Set(initialBalance)
-
-	newEnv.evm = vm.NewEVM(core.NewEVMBlockContext(newEnv.header, chain, &newEnv.coinbase), newEnv.state, config, vm.Config{})
-	return newEnv
 }
 
 const (
@@ -591,14 +516,4 @@ func signalToErr(signal int32) error {
 	default:
 		panic(fmt.Errorf("undefined signal %d", signal))
 	}
-}
-
-// copyReceipts makes a deep copy of the given receipts.
-func copyReceipts(receipts []*types.Receipt) []*types.Receipt {
-	result := make([]*types.Receipt, len(receipts))
-	for i, l := range receipts {
-		cpy := *l
-		result[i] = &cpy
-	}
-	return result
 }

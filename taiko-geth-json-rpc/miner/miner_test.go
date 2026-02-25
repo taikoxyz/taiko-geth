@@ -164,6 +164,6 @@ func createMiner(t *testing.T) *Miner {
 
 	// Create Miner
 	backend := NewMockBackend(bc, txpool)
-	miner := New(backend, config, chainConfig, engine, nil)
+	miner := New(backend, config, engine)
 	return miner
 }

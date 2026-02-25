@@ -48,7 +48,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
-	"github.com/ethereum/go-ethereum/internal/ethapi/simulator"
 	"github.com/ethereum/go-ethereum/internal/shutdowncheck"
 	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/log"
@@ -267,43 +266,21 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		return nil, err
 	}
 
-	// CHANGE(taiko): Initialize preconfState and miner based on API configuration
-	simulatorApiEnabled := stack.Config().HasSimulatorAPI()
-	var preconfState *miner.PreconfState
-	if simulatorApiEnabled {
-		preconfState = miner.NewPreconfState(eth.blockchain)
-	}
-
-	eth.miner = miner.New(eth, config.Miner, eth.blockchain.Config(), eth.engine, preconfState)
+	eth.miner = miner.New(eth, config.Miner, eth.engine)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
 	eth.miner.SetPrioAddresses(config.TxPool.Locals)
 
-	if stack.Config().AllowUnprotectedTxs {
+	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
+	if eth.APIBackend.allowUnprotectedTxs {
 		log.Info("Unprotected transactions allowed")
 	}
-
-	backend := &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
-	backend.gpo = gasprice.NewOracle(backend, config.GPO, config.Miner.GasPrice)
-	eth.APIBackend = backend
+	eth.APIBackend.gpo = gasprice.NewOracle(eth.APIBackend, config.GPO, config.Miner.GasPrice)
 
 	// Start the RPC service
 	eth.netRPCService = ethapi.NewNetAPI(eth.p2pServer, networkID)
 
 	// Register the backend on the node
-	apis := eth.APIs()
-
-	// CHANGE(taiko): register the simulator API if it is enabled for simulation support.
-	if simulatorApiEnabled {
-		log.Info("Simulator-API: Registering simulator API")
-		apis = append(apis, rpc.API{
-			Namespace: "simulator",
-			Service:   simulator.NewSimulatorAPI(eth.APIBackend),
-		})
-	} else {
-		log.Info("Simulator-API: Simulator API is disabled")
-	}
-
-	stack.RegisterAPIs(apis)
+	stack.RegisterAPIs(eth.APIs())
 	stack.RegisterProtocols(eth.Protocols())
 	stack.RegisterLifecycle(eth)
 
