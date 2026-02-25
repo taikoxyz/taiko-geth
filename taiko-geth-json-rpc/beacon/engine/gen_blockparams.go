@@ -5,6 +5,7 @@ package engine
 import (
 	"encoding/json"
 	"errors"
+	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -75,7 +76,7 @@ func (p *PayloadAttributes) UnmarshalJSON(input []byte) error {
 	if dec.BaseFeePerGas == nil {
 		return errors.New("missing required field 'baseFeePerGas' for PayloadAttributes")
 	}
-	p.BaseFeePerGas = dec.BaseFeePerGas.ToInt()
+	p.BaseFeePerGas = (*big.Int)(dec.BaseFeePerGas)
 	if dec.BlockMetadata == nil {
 		return errors.New("missing required field 'blockMetadata' for PayloadAttributes")
 	}
