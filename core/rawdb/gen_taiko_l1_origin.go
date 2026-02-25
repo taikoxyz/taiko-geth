@@ -8,6 +8,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 )
 
@@ -22,7 +23,7 @@ func (l L1Origin) MarshalJSON() ([]byte, error) {
 		L1BlockHash        common.Hash           `json:"l1BlockHash" rlp:"optional"`
 		BuildPayloadArgsID [8]byte               `json:"buildPayloadArgsID" rlp:"optional"`
 		IsForcedInclusion  bool                  `json:"isForcedInclusion" rlp:"optional"`
-		Signature          [65]byte              `json:"signature"         rlp:"optional"`
+		Signature          hexutil.Bytes         `json:"signature"         rlp:"optional"`
 	}
 	var enc L1Origin
 	enc.BlockID = (*math.HexOrDecimal256)(l.BlockID)
@@ -31,7 +32,7 @@ func (l L1Origin) MarshalJSON() ([]byte, error) {
 	enc.L1BlockHash = l.L1BlockHash
 	enc.BuildPayloadArgsID = l.BuildPayloadArgsID
 	enc.IsForcedInclusion = l.IsForcedInclusion
-	enc.Signature = l.Signature
+	enc.Signature = l.Signature[:]
 	return json.Marshal(&enc)
 }
 
@@ -44,7 +45,7 @@ func (l *L1Origin) UnmarshalJSON(input []byte) error {
 		L1BlockHash        *common.Hash          `json:"l1BlockHash" rlp:"optional"`
 		BuildPayloadArgsID *[8]byte              `json:"buildPayloadArgsID" rlp:"optional"`
 		IsForcedInclusion  *bool                 `json:"isForcedInclusion" rlp:"optional"`
-		Signature          *[65]byte             `json:"signature"         rlp:"optional"`
+		Signature          *hexutil.Bytes        `json:"signature"         rlp:"optional"`
 	}
 	var dec L1Origin
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -70,7 +71,10 @@ func (l *L1Origin) UnmarshalJSON(input []byte) error {
 		l.IsForcedInclusion = *dec.IsForcedInclusion
 	}
 	if dec.Signature != nil {
-		l.Signature = *dec.Signature
+		if len(*dec.Signature) != len(l.Signature) {
+			return errors.New("field 'signature' has wrong length, need 65 items")
+		}
+		copy(l.Signature[:], *dec.Signature)
 	}
 	return nil
 }

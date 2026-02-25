@@ -58,6 +58,7 @@ type L1OriginLegacy struct {
 type l1OriginMarshaling struct {
 	BlockID       *math.HexOrDecimal256
 	L1BlockHeight *math.HexOrDecimal256
+	Signature     hexutil.Bytes
 }
 
 // IsPreconfBlock returns true if the L1Origin is for a preconfirmation block.
