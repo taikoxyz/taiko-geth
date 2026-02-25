@@ -49,7 +49,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/bloombits"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -440,14 +439,6 @@ type testBackend struct {
 	pending *types.Block
 	accman  *accounts.Manager
 	acc     accounts.Account
-}
-
-func (b testBackend) TxPool() *txpool.TxPool {
-	return nil // Return nil since this is a test backend
-}
-
-func (b testBackend) GetTd(ctx context.Context, hash common.Hash) *big.Int {
-	return big.NewInt(0) // Return 0 for test purposes
 }
 
 func newTestBackend(t *testing.T, n int, gspec *core.Genesis, engine consensus.Engine, generator func(i int, b *core.BlockGen)) *testBackend {

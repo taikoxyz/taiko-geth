@@ -74,25 +74,17 @@ type Miner struct {
 	chain       *core.BlockChain
 	pending     *pending
 	pendingMu   sync.Mutex // Lock protects the pending block
-
-	// CHANGE(taiko): simulationApiWorker manages worker state and provides API overrides for simulation support.
-	simulationApiWorker *SimulationAPIWorker
 }
 
-// CHANGE(taiko): New creates a new miner with provided config and simulation support.
-func New(eth Backend, config Config, chainConfig *params.ChainConfig, engine consensus.Engine, preconfState *PreconfState) *Miner {
-	simulationApiWorker, err := NewSimulationApiWorker(chainConfig, eth.BlockChain(), &config, engine, preconfState)
-	if err != nil {
-		panic(err)
-	}
+// New creates a new miner with provided config.
+func New(eth Backend, config Config, engine consensus.Engine) *Miner {
 	return &Miner{
-		config:              &config,
-		chainConfig:         eth.BlockChain().Config(),
-		engine:              engine,
-		txpool:              eth.TxPool(),
-		chain:               eth.BlockChain(),
-		pending:             &pending{},
-		simulationApiWorker: simulationApiWorker,
+		config:      &config,
+		chainConfig: eth.BlockChain().Config(),
+		engine:      engine,
+		txpool:      eth.TxPool(),
+		chain:       eth.BlockChain(),
+		pending:     &pending{},
 	}
 }
 
