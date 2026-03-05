@@ -22,7 +22,7 @@ var (
 
 	InternalShastaTime uint64 = 0
 	MasayaShastaTime   uint64 = 0
-	MainnetShastaTime  uint64 = 999_999_999_999
+	MainnetShastaTime  uint64 = 1_775_135_700
 	HoodiShastaTime    uint64 = 1_770_296_400
 )
 
