@@ -76,7 +76,6 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	if err := alloc.UnmarshalJSON(allocJSON); err != nil {
 		log.Crit("unmarshal alloc json error", "error", err)
 	}
-
 	return &Genesis{
 		Config:     chainConfig,
 		ExtraData:  []byte{},

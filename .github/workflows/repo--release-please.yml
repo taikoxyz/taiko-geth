@@ -3,7 +3,7 @@ name: Release Please
 on:
   push:
     branches:
-      - [taiko,feature/introduce_new_network_2]
+      - taiko
 
 permissions:
   contents: write
