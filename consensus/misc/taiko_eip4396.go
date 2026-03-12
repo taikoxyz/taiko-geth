@@ -97,7 +97,7 @@ func clampEIP4396BaseFeeShasta(config *params.ChainConfig, baseFee *big.Int) *bi
 		return nil
 	}
 	minBaseFee := minBaseFeeShastaDefault
-	if isTaikoMainnet(config) || config.ChainID.Cmp(big.NewInt(167014)) == 0 {
+	if isTaikoMainnet(config) || config.ChainID.Cmp(big.NewInt(167001)) == 0 {
 		minBaseFee = minBaseFeeShastaMainnet
 	}
 	if baseFee.Cmp(minBaseFee) < 0 {
