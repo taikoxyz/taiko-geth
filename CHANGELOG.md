@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.4.0](https://github.com/taikoxyz/taiko-geth/compare/v2.3.0...v2.4.0) (2026-03-24)
+
+
+### Features
+
+* **miner:** revert Gattaca preconfirmation simulator API ([#533](https://github.com/taikoxyz/taiko-geth/issues/533)) ([2c45f27](https://github.com/taikoxyz/taiko-geth/commit/2c45f2787b30db6f3b9973eeeff8df8443538fcd))
+* **taiko_genesis:** remove `shasta-transition-devnet` network ([#529](https://github.com/taikoxyz/taiko-geth/issues/529)) ([a280c91](https://github.com/taikoxyz/taiko-geth/commit/a280c912e03d881ceaf139efb9d92071cb3ff400))
+* **taiko:** introduce auth api `taikoAuth_lastCertainBlockIDByBatchID` ([#536](https://github.com/taikoxyz/taiko-geth/issues/536)) ([f3f42a9](https://github.com/taikoxyz/taiko-geth/commit/f3f42a9813acd1a74fe6c5ce2d3f4a6ed75d26e2))
+
+
+### Bug Fixes
+
+* **rawdb:** add `hexutil.Bytes` marshaling override for `L1Origin.Signature` ([#534](https://github.com/taikoxyz/taiko-geth/issues/534)) ([01dfc26](https://github.com/taikoxyz/taiko-geth/commit/01dfc264ab781b98d89dd45cdfddb9c59a1dfa75))
+
+
+### Chores
+
+* **taiko_api_backend:** adjust payload attributes `baseFee` encoding and `L1Origin` signature ID type ([#531](https://github.com/taikoxyz/taiko-geth/issues/531)) ([3c2eee1](https://github.com/taikoxyz/taiko-geth/commit/3c2eee10ddf0749de9dee3636fb8f9fceca3ecfe))
+* **taiko_genesis:** set `MainnetShastaTime` ([#535](https://github.com/taikoxyz/taiko-geth/issues/535)) ([1fda81a](https://github.com/taikoxyz/taiko-geth/commit/1fda81a9372dd79056427487caef38cee2be75b5))
+
 ## [2.3.0](https://github.com/taikoxyz/taiko-geth/compare/v2.2.1...v2.3.0) (2026-02-18)
 
 
