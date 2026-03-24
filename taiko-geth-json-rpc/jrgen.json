@@ -104,6 +104,27 @@
         "$ref": "#/definitions/*hexutil.Big"
       }
     },
+    "taikoAuth_LastCertainBlockIDByBatchID": {
+      "summary": "RPC method LastCertainBlockIDByBatchID",
+      "description": "LastCertainBlockIDByBatchID returns the ID of the last block for the given batch in the rawdb.",
+      "tags": [
+        "taikoAuth_"
+      ],
+      "params": {
+        "properties": {
+          "batchID": {
+            "$ref": "#/definitions/*math.HexOrDecimal256"
+          }
+        },
+        "required": [
+          "batchID"
+        ],
+        "type": "object"
+      },
+      "result": {
+        "$ref": "#/definitions/*hexutil.Big"
+      }
+    },
     "taikoAuth_LastL1OriginByBatchID": {
       "summary": "RPC method LastL1OriginByBatchID",
       "description": "LastL1OriginByBatchID returns the L1 origin of the last block for the given batch.",

@@ -181,6 +181,23 @@ func TestLastBlockIDByBatchID(t *testing.T) {
 	require.Equal(t, (*hexutil.Big)(blockID), found)
 }
 
+func TestLastCertainBlockIDByBatchID(t *testing.T) {
+	ec, blocks, db := newTaikoAuthAPITestClient(t)
+
+	batchID := big.NewInt(1)
+
+	found, err := ec.LastCertainBlockIDByBatchID(context.Background(), batchID)
+	require.Nil(t, err)
+	require.Nil(t, found)
+
+	blockID := blocks[len(blocks)-1].Number()
+	rawdb.WriteBatchToLastBlockID(db, batchID, blockID)
+
+	found, err = ec.LastCertainBlockIDByBatchID(context.Background(), batchID)
+	require.Nil(t, err)
+	require.Equal(t, (*hexutil.Big)(blockID), found)
+}
+
 func TestLastL1OriginByBatchID(t *testing.T) {
 	ec, blocks, db := newTaikoAuthAPITestClient(t)
 

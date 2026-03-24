@@ -110,6 +110,13 @@
                 >
               </li>
               <li class="nav-item">
+                <a
+                  class="nav-link"
+                  href="#taikoAuth_LastCertainBlockIDByBatchID"
+                  >taikoAuth_LastCertainBlockIDByBatchID</a
+                >
+              </li>
+              <li class="nav-item">
                 <a class="nav-link" href="#taikoAuth_LastL1OriginByBatchID"
                   >taikoAuth_LastL1OriginByBatchID</a
                 >
@@ -253,6 +260,108 @@
   "jsonrpc": "2.0",
   "id": "1234567890",
   "method": "taikoAuth_LastBlockIDByBatchID",
+  "params": {
+    "batchID": 10000
+  }
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": "0x1234"
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card method" id="taikoAuth_LastCertainBlockIDByBatchID">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taikoAuth_LastCertainBlockIDByBatchID-content"
+            >
+              <h4>
+                <span>taikoAuth_LastCertainBlockIDByBatchID</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taikoAuth_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taikoAuth_LastCertainBlockIDByBatchID-content"
+            >
+              <p>RPC method LastCertainBlockIDByBatchID</p>
+
+              <p>
+                LastCertainBlockIDByBatchID returns the ID of the last block for
+                the given batch in the rawdb.
+              </p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Parameters</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>params</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.batchID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td>
+                            Hexadecimal or decimal representation of a number.
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>string</td>
+                          <td></td>
+                          <td>Hexadecimal representation of a big integer.</td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taikoAuth_LastCertainBlockIDByBatchID",
   "params": {
     "batchID": 10000
   }
