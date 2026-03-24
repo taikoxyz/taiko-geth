@@ -126,6 +126,15 @@ func (a *TaikoAuthAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256
 	return a.getLastBlockByBatchId((*big.Int)(batchID))
 }
 
+// LastCertainBlockIDByBatchID returns the ID of the last block for the given batch in the rawdb.
+func (a *TaikoAuthAPIBackend) LastCertainBlockIDByBatchID(batchID *math.HexOrDecimal256) (*hexutil.Big, error) {
+	blockID, err := rawdb.ReadBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID))
+	if err != nil && !errors.Is(err, ethereum.NotFound) {
+		return nil, err
+	}
+	return blockID, nil
+}
+
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
 func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
 	// We start from the head L1 origin and traverse backwards until we find

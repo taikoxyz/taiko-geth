@@ -47,7 +47,7 @@ func TestShastaProposalIDFromExtraDataInvalid(t *testing.T) {
 
 func TestTaikoAuthBackendExposesBatchLookupMethods(t *testing.T) {
 	backendType := reflect.TypeOf(&TaikoAuthAPIBackend{})
-	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID"} {
+	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID", "LastCertainBlockIDByBatchID"} {
 		if _, ok := backendType.MethodByName(name); !ok {
 			t.Fatalf("expected TaikoAuthAPIBackend to expose %s", name)
 		}
@@ -56,7 +56,7 @@ func TestTaikoAuthBackendExposesBatchLookupMethods(t *testing.T) {
 
 func TestTaikoAPIBackendHidesBatchLookupMethods(t *testing.T) {
 	backendType := reflect.TypeOf(&TaikoAPIBackend{})
-	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID"} {
+	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID", "LastCertainBlockIDByBatchID"} {
 		if _, ok := backendType.MethodByName(name); ok {
 			t.Fatalf("expected TaikoAPIBackend to hide %s", name)
 		}

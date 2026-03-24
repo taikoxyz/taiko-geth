@@ -52,6 +52,17 @@ func (ec *Client) LastBlockIDByBatchID(ctx context.Context, batchID *big.Int) (*
 	return res, nil
 }
 
+// LastCertainBlockIDByBatchID returns the ID of the last block for the given batch in the rawdb.
+func (ec *Client) LastCertainBlockIDByBatchID(ctx context.Context, batchID *big.Int) (*hexutil.Big, error) {
+	var res *hexutil.Big
+
+	if err := ec.c.CallContext(ctx, &res, "taikoAuth_lastCertainBlockIDByBatchID", hexutil.EncodeBig(batchID)); err != nil {
+		return nil, err
+	}
+
+	return res, nil
+}
+
 // GetSyncMode returns the current sync mode of the L2 node.
 func (ec *Client) GetSyncMode(ctx context.Context) (string, error) {
 	var res string
