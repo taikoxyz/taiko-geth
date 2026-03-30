@@ -217,6 +217,29 @@ func TestLastL1OriginByBatchID(t *testing.T) {
 	require.Equal(t, testL1Origin, found)
 }
 
+func TestLastCertainL1OriginByBatchID(t *testing.T) {
+	ec, blocks, db := newTaikoAuthAPITestClient(t)
+
+	batchID := big.NewInt(1)
+
+	found, err := ec.LastCertainL1OriginByBatchID(context.Background(), batchID)
+	require.Nil(t, err)
+	require.Nil(t, found)
+
+	block := blocks[len(blocks)-1]
+	testL1Origin := &rawdb.L1Origin{
+		BlockID:     block.Number(),
+		L2BlockHash: block.Hash(),
+	}
+
+	rawdb.WriteBatchToLastBlockID(db, batchID, block.Number())
+	rawdb.WriteL1Origin(db, block.Number(), testL1Origin)
+
+	found, err = ec.LastCertainL1OriginByBatchID(context.Background(), batchID)
+	require.Nil(t, err)
+	require.Equal(t, testL1Origin, found)
+}
+
 // randomHash generates a random blob of data and returns it as a hash.
 func randomHash() common.Hash {
 	var hash common.Hash
