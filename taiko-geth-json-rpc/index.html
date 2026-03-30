@@ -117,6 +117,13 @@
                 >
               </li>
               <li class="nav-item">
+                <a
+                  class="nav-link"
+                  href="#taikoAuth_LastCertainL1OriginByBatchID"
+                  >taikoAuth_LastCertainL1OriginByBatchID</a
+                >
+              </li>
+              <li class="nav-item">
                 <a class="nav-link" href="#taikoAuth_LastL1OriginByBatchID"
                   >taikoAuth_LastL1OriginByBatchID</a
                 >
@@ -374,6 +381,137 @@
   "jsonrpc": "2.0",
   "id": "1234567890",
   "result": "0x1234"
+}</pre
+                    >
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="card method" id="taikoAuth_LastCertainL1OriginByBatchID">
+            <div
+              class="card-header text-light bg-dark"
+              data-toggle="collapse"
+              href="#taikoAuth_LastCertainL1OriginByBatchID-content"
+            >
+              <h4>
+                <span>taikoAuth_LastCertainL1OriginByBatchID</span>
+
+                <div class="float-right">
+                  <span class="badge badge-light">taikoAuth_</span>
+                </div>
+              </h4>
+            </div>
+
+            <div
+              class="card-block collapse show"
+              id="taikoAuth_LastCertainL1OriginByBatchID-content"
+            >
+              <p>RPC method LastCertainL1OriginByBatchID</p>
+
+              <p>
+                LastCertainL1OriginByBatchID returns the L1 origin of the last
+                block for the given batch in the rawdb.
+              </p>
+
+              <hr />
+
+              <div class="container-fluid">
+                <div class="row">
+                  <div class="col-8 border-right">
+                    <h5>Parameters</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>params</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>params.batchID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td>
+                            Hexadecimal or decimal representation of a number.
+                          </td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <h5>Result</h5>
+                    <div class="table-responsive">
+                      <table class="table table-striped table-hover table-sm">
+                        <tr>
+                          <th>Name</th>
+                          <th>Type</th>
+                          <th>Constraints</th>
+                          <th>Description</th>
+                        </tr>
+                        <tr>
+                          <td>result</td>
+                          <td>object</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.blockID</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l1BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l1BlockHeight</td>
+                          <td>integer</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                        <tr>
+                          <td>result.l2BlockHash</td>
+                          <td>string</td>
+                          <td></td>
+                          <td></td>
+                        </tr>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div class="col-4">
+                    <h5>Request example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "method": "taikoAuth_LastCertainL1OriginByBatchID",
+  "params": {
+    "batchID": 10000
+  }
+}</pre
+                    >
+
+                    <h5>Response example</h5>
+                    <pre class="bg-light">
+{
+  "jsonrpc": "2.0",
+  "id": "1234567890",
+  "result": {
+    "blockID": 10000,
+    "l1BlockHash": "0x123456",
+    "l1BlockHeight": 10000,
+    "l2BlockHash": "0x123456"
+  }
 }</pre
                     >
                   </div>

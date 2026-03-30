@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
@@ -47,7 +49,12 @@ func TestShastaProposalIDFromExtraDataInvalid(t *testing.T) {
 
 func TestTaikoAuthBackendExposesBatchLookupMethods(t *testing.T) {
 	backendType := reflect.TypeOf(&TaikoAuthAPIBackend{})
-	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID", "LastCertainBlockIDByBatchID"} {
+	for _, name := range []string{
+		"LastL1OriginByBatchID",
+		"LastBlockIDByBatchID",
+		"LastCertainBlockIDByBatchID",
+		"LastCertainL1OriginByBatchID",
+	} {
 		if _, ok := backendType.MethodByName(name); !ok {
 			t.Fatalf("expected TaikoAuthAPIBackend to expose %s", name)
 		}
@@ -56,7 +63,12 @@ func TestTaikoAuthBackendExposesBatchLookupMethods(t *testing.T) {
 
 func TestTaikoAPIBackendHidesBatchLookupMethods(t *testing.T) {
 	backendType := reflect.TypeOf(&TaikoAPIBackend{})
-	for _, name := range []string{"LastL1OriginByBatchID", "LastBlockIDByBatchID", "LastCertainBlockIDByBatchID"} {
+	for _, name := range []string{
+		"LastL1OriginByBatchID",
+		"LastBlockIDByBatchID",
+		"LastCertainBlockIDByBatchID",
+		"LastCertainL1OriginByBatchID",
+	} {
 		if _, ok := backendType.MethodByName(name); ok {
 			t.Fatalf("expected TaikoAPIBackend to hide %s", name)
 		}
@@ -172,6 +184,41 @@ func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
 	}
 	if blockID != nil {
 		t.Fatalf("expected nil blockID, got %v", blockID)
+	}
+}
+
+func TestLastCertainL1OriginByBatchID(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	backend := &TaikoAuthAPIBackend{eth: &Ethereum{chainDb: db}}
+	batchID := (*hexutil.Big)(big.NewInt(1))
+
+	l1Origin, err := backend.LastCertainL1OriginByBatchID((*math.HexOrDecimal256)(batchID))
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if l1Origin != nil {
+		t.Fatalf("expected nil l1Origin, got %v", l1Origin)
+	}
+
+	blockID := big.NewInt(2)
+	expected := &rawdb.L1Origin{
+		BlockID:       blockID,
+		L2BlockHash:   common.HexToHash("0x1"),
+		L1BlockHeight: big.NewInt(3),
+		L1BlockHash:   common.HexToHash("0x2"),
+	}
+	rawdb.WriteBatchToLastBlockID(db, big.NewInt(1), blockID)
+	rawdb.WriteL1Origin(db, blockID, expected)
+
+	l1Origin, err = backend.LastCertainL1OriginByBatchID((*math.HexOrDecimal256)(batchID))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if l1Origin == nil {
+		t.Fatal("expected l1Origin, got nil")
+	}
+	if !reflect.DeepEqual(expected, l1Origin) {
+		t.Fatalf("expected %v, got %v", expected, l1Origin)
 	}
 }
 
