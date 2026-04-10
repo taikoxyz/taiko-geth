@@ -32,7 +32,22 @@ type DepositTx struct {
 
 // copy creates a deep copy of the transaction data and initializes all fields.
 func (tx *DepositTx) copy() TxData {
-	return nil
+	cpy := &DepositTx{
+		SourceHash:          tx.SourceHash,
+		From:                tx.From,
+		To:                  copyAddressPtr(tx.To),
+		Gas:                 tx.Gas,
+		IsSystemTransaction: tx.IsSystemTransaction,
+		Data:                common.CopyBytes(tx.Data),
+		Value:               new(big.Int),
+	}
+	if tx.Value != nil {
+		cpy.Value.Set(tx.Value)
+	}
+	if tx.Mint != nil {
+		cpy.Mint = new(big.Int).Set(tx.Mint)
+	}
+	return cpy
 }
 
 // accessors for innerTx.
@@ -56,6 +71,10 @@ func (tx *DepositTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int 
 }
 
 func (tx *DepositTx) effectiveNonce() *uint64 { return nil } // nolint:unused
+
+func (tx *DepositTx) sigHash(*big.Int) common.Hash {
+	panic("deposit cannot be signed")
+}
 
 func (tx *DepositTx) rawSignatureValues() (v, r, s *big.Int) {
 	return common.Big0, common.Big0, common.Big0

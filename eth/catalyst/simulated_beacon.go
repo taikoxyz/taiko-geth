@@ -17,6 +17,7 @@
 package catalyst
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"errors"
@@ -108,7 +109,7 @@ func payloadVersion(config *params.ChainConfig, time uint64) engine.PayloadVersi
 }
 
 // NewSimulatedBeacon constructs a new simulated beacon chain.
-func NewSimulatedBeacon(period uint64, eth *eth.Ethereum) (*SimulatedBeacon, error) {
+func NewSimulatedBeacon(period uint64, feeRecipient common.Address, eth *eth.Ethereum) (*SimulatedBeacon, error) {
 	block := eth.BlockChain().CurrentBlock()
 	current := engine.ForkchoiceStateV1{
 		HeadBlockHash:      block.Hash(),
@@ -120,12 +121,13 @@ func NewSimulatedBeacon(period uint64, eth *eth.Ethereum) (*SimulatedBeacon, err
 	// if genesis block, send forkchoiceUpdated to trigger transition to PoS
 	if block.Number.Sign() == 0 {
 		version := payloadVersion(eth.BlockChain().Config(), block.Time)
-		if _, err := engineAPI.forkchoiceUpdated(current, nil, version, false); err != nil {
+		if _, err := engineAPI.forkchoiceUpdated(context.Background(), current, nil, version, false); err != nil {
 			return nil, err
 		}
 	}
 	return &SimulatedBeacon{
 		eth:                eth,
+		feeRecipient:       feeRecipient,
 		period:             period,
 		shutdownCh:         make(chan struct{}),
 		engineAPI:          engineAPI,
@@ -188,7 +190,7 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal, timestamp u
 
 	var random [32]byte
 	rand.Read(random[:])
-	fcResponse, err := c.engineAPI.forkchoiceUpdated(c.curForkchoiceState, &engine.PayloadAttributes{
+	fcResponse, err := c.engineAPI.forkchoiceUpdated(context.Background(), c.curForkchoiceState, &engine.PayloadAttributes{
 		Timestamp:             timestamp,
 		SuggestedFeeRecipient: feeRecipient,
 		Withdrawals:           withdrawals,
@@ -202,7 +204,7 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal, timestamp u
 		return errors.New("chain rewind prevented invocation of payload creation")
 	}
 
-	envelope, err := c.engineAPI.getPayload(*fcResponse.PayloadID, true)
+	envelope, err := c.engineAPI.getPayload(*fcResponse.PayloadID, true, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -244,14 +246,14 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal, timestamp u
 	}
 
 	// Mark the payload as canon
-	_, err = c.engineAPI.newPayload(*payload, blobHashes, beaconRoot, requests, false)
+	_, err = c.engineAPI.newPayload(context.Background(), *payload, blobHashes, beaconRoot, requests, false)
 	if err != nil {
 		return err
 	}
 	c.setCurrentState(payload.BlockHash, finalizedHash)
 
 	// Mark the block containing the payload as canonical
-	if _, err = c.engineAPI.forkchoiceUpdated(c.curForkchoiceState, nil, version, false); err != nil {
+	if _, err = c.engineAPI.forkchoiceUpdated(context.Background(), c.curForkchoiceState, nil, version, false); err != nil {
 		return err
 	}
 	c.lastBlockTime = payload.Timestamp
@@ -318,7 +320,8 @@ func (c *SimulatedBeacon) Rollback() {
 func (c *SimulatedBeacon) Fork(parentHash common.Hash) error {
 	// Ensure no pending transactions.
 	c.eth.TxPool().Sync()
-	if len(c.eth.TxPool().Pending(txpool.PendingFilter{})) != 0 {
+	pending, _ := c.eth.TxPool().Pending(txpool.PendingFilter{})
+	if len(pending) != 0 {
 		return errors.New("pending block dirty")
 	}
 
@@ -332,7 +335,8 @@ func (c *SimulatedBeacon) Fork(parentHash common.Hash) error {
 
 // AdjustTime creates a new block with an adjusted timestamp.
 func (c *SimulatedBeacon) AdjustTime(adjustment time.Duration) error {
-	if len(c.eth.TxPool().Pending(txpool.PendingFilter{})) != 0 {
+	pending, _ := c.eth.TxPool().Pending(txpool.PendingFilter{})
+	if len(pending) != 0 {
 		return errors.New("could not adjust time on non-empty block")
 	}
 	parent := c.eth.BlockChain().CurrentBlock()

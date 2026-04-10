@@ -89,11 +89,14 @@ static int secp256k1_ext_reencode_pubkey(
 	return secp256k1_ec_pubkey_serialize(ctx, out, &outlen, &pubkey, flag);
 }
 
-// Compatibility shim for newer secp256k1 versions where the *_limit helper
-// is no longer exposed under that name.
+// Compatibility shim for older secp256k1 versions that only expose the
+// non-_limit helper. Newer vendored libsecp versions already provide
+// secp256k1_fe_set_b32_limit internally.
+#ifndef secp256k1_fe_set_b32_limit
 static int secp256k1_fe_set_b32_limit(secp256k1_fe *r, const unsigned char *a) {
 	return secp256k1_fe_set_b32(r, a);
 }
+#endif
 
 // secp256k1_ext_scalar_mul multiplies a point by a scalar in constant time.
 //

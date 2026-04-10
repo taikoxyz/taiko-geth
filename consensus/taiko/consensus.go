@@ -2,6 +2,7 @@ package taiko
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -282,7 +283,7 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 //
 // Note: The block header and state database might be updated to reflect any
 // consensus rules that happen at finalization (e.g. block rewards).
-func (t *Taiko) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
+func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
 	if body.Withdrawals == nil {
 		body.Withdrawals = make([]*types.Withdrawal, 0)
 	}

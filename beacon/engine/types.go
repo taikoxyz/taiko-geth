@@ -105,7 +105,6 @@ type ExecutableData struct {
 	Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 	BlobGasUsed      *uint64                 `json:"blobGasUsed"`
 	ExcessBlobGas    *uint64                 `json:"excessBlobGas"`
-	ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
 
 	TxHash          common.Hash `json:"txHash"`          // CHANGE(taiko): allow passing txHash directly instead of transactions list
 	WithdrawalsHash common.Hash `json:"withdrawalsHash"` // CHANGE(taiko): allow passing WithdrawalsHash directly instead of withdrawals
@@ -325,8 +324,7 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 		RequestsHash:     requestsHash,
 	}
 	return types.NewBlockWithHeader(header).
-			WithBody(types.Body{Transactions: txs, Uncles: nil, Withdrawals: data.Withdrawals}).
-			WithWitness(data.ExecutionWitness),
+			WithBody(types.Body{Transactions: txs, Uncles: nil, Withdrawals: data.Withdrawals}),
 		nil
 }
 
@@ -351,7 +349,6 @@ func BlockToExecutableData(block *types.Block, fees *big.Int, sidecars []*types.
 		Withdrawals:      block.Withdrawals(),
 		BlobGasUsed:      block.BlobGasUsed(),
 		ExcessBlobGas:    block.ExcessBlobGas(),
-		ExecutionWitness: block.ExecutionWitness(),
 	}
 
 	// Add blobs.

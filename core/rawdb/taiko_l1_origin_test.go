@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -172,4 +173,31 @@ func TestL1Origin_OptionalFields(t *testing.T) {
 			assert.Equal(t, tt.origin.Signature, got.Signature, "Signature")
 		})
 	}
+}
+
+func TestL1Origin_LegacyFallback(t *testing.T) {
+	db := NewMemoryDatabase()
+	blockID := randomBigInt()
+	legacy := &L1OriginLegacy{
+		BlockID:       blockID,
+		L2BlockHash:   randomHash(),
+		L1BlockHeight: big.NewInt(123),
+		L1BlockHash:   randomHash(),
+	}
+
+	data, err := rlp.EncodeToBytes(legacy)
+	require.NoError(t, err)
+	require.NoError(t, db.Put(l1OriginKey(blockID), data))
+
+	got, err := ReadL1Origin(db, blockID)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+
+	assert.Equal(t, legacy.BlockID, got.BlockID)
+	assert.Equal(t, legacy.L2BlockHash, got.L2BlockHash)
+	assert.Equal(t, legacy.L1BlockHeight, got.L1BlockHeight)
+	assert.Equal(t, legacy.L1BlockHash, got.L1BlockHash)
+	assert.Equal(t, [8]byte{}, got.BuildPayloadArgsID)
+	assert.False(t, got.IsForcedInclusion)
+	assert.Equal(t, [65]byte{}, got.Signature)
 }

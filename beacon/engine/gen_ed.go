@@ -34,7 +34,6 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
-		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
 		TxHash           common.Hash             `json:"txHash"`
 		WithdrawalsHash  common.Hash             `json:"withdrawalsHash"`
 		TaikoBlock       bool
@@ -62,7 +61,6 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 	enc.Withdrawals = e.Withdrawals
 	enc.BlobGasUsed = (*hexutil.Uint64)(e.BlobGasUsed)
 	enc.ExcessBlobGas = (*hexutil.Uint64)(e.ExcessBlobGas)
-	enc.ExecutionWitness = e.ExecutionWitness
 	enc.TxHash = e.TxHash
 	enc.WithdrawalsHash = e.WithdrawalsHash
 	enc.TaikoBlock = e.TaikoBlock
@@ -89,7 +87,6 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
-		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
 		TxHash           *common.Hash            `json:"txHash"`
 		WithdrawalsHash  *common.Hash            `json:"withdrawalsHash"`
 		TaikoBlock       *bool
@@ -164,9 +161,6 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 	}
 	if dec.ExcessBlobGas != nil {
 		e.ExcessBlobGas = (*uint64)(dec.ExcessBlobGas)
-	}
-	if dec.ExecutionWitness != nil {
-		e.ExecutionWitness = dec.ExecutionWitness
 	}
 	if dec.TxHash != nil {
 		e.TxHash = *dec.TxHash

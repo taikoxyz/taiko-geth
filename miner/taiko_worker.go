@@ -3,6 +3,7 @@ package miner
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -70,13 +71,12 @@ func (w *Miner) buildTransactionsLists(
 	}
 
 	// Check if tx pool is empty at first.
-	pendingTxs := removeGoldenTouchPendingTxs(w.txpool.Pending(
-		txpool.PendingFilter{
-			MinTip:       uint256.NewInt(minTip),
-			BaseFee:      uint256.MustFromBig(baseFee),
-			OnlyPlainTxs: true,
-		},
-	))
+	pendingRaw, _ := w.txpool.Pending(txpool.PendingFilter{
+		MinTip:  uint256.NewInt(minTip),
+		BaseFee: uint256.MustFromBig(baseFee),
+		BlobTxs: false,
+	})
+	pendingTxs := removeGoldenTouchPendingTxs(pendingRaw)
 	if len(pendingTxs) == 0 {
 		log.Warn(
 			"Transaction pool for building transactions lists is empty",
@@ -124,7 +124,7 @@ func (w *Miner) buildTransactionsLists(
 	commitTxs := func(pruningResult *txsPruningResult) (*txsPruningResult, *PreBuiltTxList, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
-		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
+		env.gasPool = core.NewGasPool(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
 		env.header.GasLimit = blockMaxGasLimit
 
 		result, err := w.commitL2Transactions(
@@ -254,7 +254,7 @@ func (w *Miner) sealBlockWith(
 	gasLimit := env.header.GasLimit
 	rules := w.chain.Config().Rules(env.header.Number, true, timestamp)
 
-	env.gasPool = new(core.GasPool).AddGas(gasLimit)
+	env.gasPool = core.NewGasPool(gasLimit)
 
 	for i, tx := range txs {
 		if i == 0 {
@@ -283,6 +283,7 @@ func (w *Miner) sealBlockWith(
 	}
 
 	block, err := w.engine.FinalizeAndAssemble(
+		context.Background(),
 		w.chain,
 		env.header,
 		env.state,
@@ -307,9 +308,8 @@ func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 	map[common.Address][]*txpool.LazyTransaction,
 	map[common.Address][]*txpool.LazyTransaction,
 ) {
-	pending := removeGoldenTouchPendingTxs(
-		w.txpool.Pending(txpool.PendingFilter{OnlyPlainTxs: true, BaseFee: uint256.MustFromBig(baseFee)}),
-	)
+	pendingRaw, _ := w.txpool.Pending(txpool.PendingFilter{BlobTxs: false, BaseFee: uint256.MustFromBig(baseFee)})
+	pending := removeGoldenTouchPendingTxs(pendingRaw)
 	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
 
 	for _, local := range localAccounts {

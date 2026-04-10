@@ -22,7 +22,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth"
-	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 )
@@ -60,9 +59,13 @@ func (tester *FullSyncTester) Start() error {
 	go func() {
 		defer tester.wg.Done()
 
-		// Trigger beacon sync with the provided block hash as trusted
-		// chain head.
-		err := tester.backend.Downloader().BeaconDevSync(ethconfig.FullSync, tester.target, tester.closed)
+		// Trigger beacon sync with the provided block hash as trusted chain head.
+		header := tester.backend.BlockChain().GetHeaderByHash(tester.target)
+		if header == nil {
+			log.Info("Failed to trigger beacon sync", "err", "target header not found")
+			return
+		}
+		err := tester.backend.Downloader().BeaconDevSync(header)
 		if err != nil {
 			log.Info("Failed to trigger beacon sync", "err", err)
 		}
