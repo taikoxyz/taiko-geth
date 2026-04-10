@@ -43,7 +43,7 @@ func newTestingAPI(backend *eth.Ethereum) rpc.API {
 	}
 }
 
-func decodeTransactions(raws []hexutil.Bytes) ([]*types.Transaction, error) {
+func decodeTransactionsHex(raws []hexutil.Bytes) ([]*types.Transaction, error) {
 	txs := make([]*types.Transaction, len(raws))
 	for i, raw := range raws {
 		tx := new(types.Transaction)
@@ -63,7 +63,7 @@ func (api *testingAPI) BuildBlockV1(parentHash common.Hash, payloadAttributes en
 	var txs []*types.Transaction
 	if transactions != nil {
 		var err error
-		txs, err = decodeTransactions(*transactions)
+		txs, err = decodeTransactionsHex(*transactions)
 		if err != nil {
 			return nil, err
 		}

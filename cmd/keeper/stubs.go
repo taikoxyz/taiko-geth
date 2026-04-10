@@ -1,8 +1,4 @@
-<<<<<<<< HEAD:ethclient/example_test.go
-// Copyright 2024 The go-ethereum Authors
-========
 // Copyright 2025 The go-ethereum Authors
->>>>>>>> upstream-v1.17.2:cmd/keeper/stubs.go
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -18,35 +14,13 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-<<<<<<<< HEAD:ethclient/example_test.go
-package ethclient_test
-
-import (
-	"github.com/ethereum/go-ethereum/node"
-)
-
-var exampleNode *node.Node
-
-// launch example server
-func init() {
-	config := &node.Config{
-		HTTPHost: "127.0.0.1",
-	}
-	n, _, err := newTestBackend(config)
-	if err != nil {
-		panic("can't launch node: " + err.Error())
-	}
-	exampleNode = n
-========
 //go:build !example && !ziren && !wasm && !womir
 // +build !example,!ziren,!wasm,!womir
 
 package main
 
-// getInput is a stub implementation for when no platform-specific build tags are set.
-// This allows golangci-lint to typecheck the code without errors.
-// The actual implementations are provided in platform-specific files.
+// getInput is a stub implementation for when no platform-specific build tags
+// are set. The actual implementations are provided in platform-specific files.
 func getInput() []byte {
 	panic("stub")
->>>>>>>> upstream-v1.17.2:cmd/keeper/stubs.go
 }

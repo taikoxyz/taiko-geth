@@ -104,10 +104,6 @@ func (l *logger) Handler() slog.Handler {
 	return l.l.Handler()
 }
 
-func (l *logger) Handler() slog.Handler {
-	return l.l.Handler()
-}
-
 func (l *logger) Write(level slog.Level, msg string, ctx ...interface{}) {}
 
 func (l *logger) Enabled(ctx context.Context, level slog.Level) bool {
