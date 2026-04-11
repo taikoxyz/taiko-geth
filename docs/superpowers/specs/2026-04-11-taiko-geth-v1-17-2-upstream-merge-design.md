@@ -270,8 +270,22 @@ vanilla go-ethereum v1.17.2. Taiko tests exercise `TaikoChainConfig` and
 ### `L1Origin` JSON shape
 
 ```
-{blockID, l1BlockHash, l1BlockHeight, l2BlockHash, signature (hexutil.Bytes)}
+{
+  blockID,            // *big.Int → *math.HexOrDecimal256 in JSON
+  l2BlockHash,        // common.Hash
+  l1BlockHeight,      // *big.Int → *math.HexOrDecimal256 in JSON
+  l1BlockHash,        // common.Hash
+  buildPayloadArgsID, // [8]byte
+  isForcedInclusion,  // bool
+  signature,          // [65]byte on the struct; marshaled as hexutil.Bytes
+                      // via the gencodec override (commit 01dfc264a)
+}
 ```
+
+Struct definition lives in `core/rawdb/taiko_l1_origin.go` as
+`type L1Origin struct`. The JSON marshaling override in
+`core/rawdb/gen_taiko_l1_origin.go` transforms the fixed-size `[65]byte`
+signature into a `hexutil.Bytes` string on the wire.
 
 ### Taiko protocol concepts preserved
 
