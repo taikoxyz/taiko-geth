@@ -782,11 +782,15 @@ func (api *ConsensusAPI) NewPayloadV2(ctx context.Context, params engine.Executa
 	var (
 		cancun   = api.config().IsCancun(api.config().LondonBlock, params.Timestamp)
 		shanghai = api.config().IsShanghai(api.config().LondonBlock, params.Timestamp)
+		// CHANGE(taiko): Taiko drivers may submit L2 payloads with nil Withdrawals
+		// and a non-zero WithdrawalsHash (the txHash-only optimization path). Allow
+		// that case through the Shanghai post-fork validation.
+		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
 	)
 	switch {
 	case cancun:
 		return invalidStatus, paramsErr("can't use newPayloadV2 post-cancun")
-	case shanghai && params.Withdrawals == nil:
+	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
 		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return invalidStatus, paramsErr("non-nil withdrawals pre-shanghai")

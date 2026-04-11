@@ -100,11 +100,14 @@ func (api *ConsensusAPI) NewPayloadWithWitnessV2(ctx context.Context, params eng
 	var (
 		cancun   = api.config().IsCancun(api.config().LondonBlock, params.Timestamp)
 		shanghai = api.config().IsShanghai(api.config().LondonBlock, params.Timestamp)
+		// CHANGE(taiko): see comment on NewPayloadV2 — Taiko drivers may submit
+		// nil Withdrawals with a non-zero WithdrawalsHash.
+		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
 	)
 	switch {
 	case cancun:
 		return invalidStatus, paramsErr("can't use newPayloadV2 post-cancun")
-	case shanghai && params.Withdrawals == nil:
+	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
 		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return invalidStatus, paramsErr("non-nil withdrawals pre-shanghai")
@@ -177,11 +180,14 @@ func (api *ConsensusAPI) ExecuteStatelessPayloadV2(params engine.ExecutableData,
 	var (
 		cancun   = api.config().IsCancun(api.config().LondonBlock, params.Timestamp)
 		shanghai = api.config().IsShanghai(api.config().LondonBlock, params.Timestamp)
+		// CHANGE(taiko): see comment on NewPayloadV2 — Taiko drivers may submit
+		// nil Withdrawals with a non-zero WithdrawalsHash.
+		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
 	)
 	switch {
 	case cancun:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("can't use newPayloadV2 post-cancun")
-	case shanghai && params.Withdrawals == nil:
+	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("non-nil withdrawals pre-shanghai")
