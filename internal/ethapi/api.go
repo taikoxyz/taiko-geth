@@ -2104,12 +2104,19 @@ func (api *DebugAPI) ChaindbCompact() error {
 
 // SetHead rewinds the head of the blockchain to a previous block.
 func (api *DebugAPI) SetHead(number hexutil.Uint64) error {
-	header := api.b.CurrentHeader()
-	if header == nil {
-		return errors.New("current header is not available")
-	}
-	if header.Number.Uint64() <= uint64(number) {
-		return errors.New("not allowed to rewind to a future block")
+	// CHANGE(taiko): Taiko networks need to allow debug_setHead with the
+	// current or a future block number — the taiko-client driver uses this
+	// RPC for state-reset scenarios in tests and operational tooling where
+	// the requested target may equal or exceed the current head. The
+	// upstream "no future rewind" guard breaks those callers.
+	if !api.b.ChainConfig().Taiko {
+		header := api.b.CurrentHeader()
+		if header == nil {
+			return errors.New("current header is not available")
+		}
+		if header.Number.Uint64() <= uint64(number) {
+			return errors.New("not allowed to rewind to a future block")
+		}
 	}
 	api.b.SetHead(uint64(number))
 	return nil
