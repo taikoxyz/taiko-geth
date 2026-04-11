@@ -336,12 +336,21 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction)
 	if b.eth.localTxTracker == nil {
 		return err
 	}
-	// If the transaction fails with an error indicating it is invalid, or if there is
-	// very little chance it will be accepted later (e.g., the gas price is below the
-	// configured minimum, or the sender has insufficient funds to cover the cost),
-	// propagate the error to the user.
-	if err != nil && !locals.IsTemporaryReject(err) {
-		return err
+	// CHANGE(taiko): Taiko networks match the historical baseline behavior of
+	// swallowing all txpool errors when a local tracker is present. taiko-client
+	// flows resubmit the same transaction (forced inclusion, preconfirmation,
+	// driver retry paths) and rely on `eth_sendRawTransaction` returning success
+	// when the txpool already knows the transaction. The upstream behavior of
+	// surfacing non-temporary errors (added in v1.17.x) breaks those flows
+	// with `ErrAlreadyKnown` ("already known", code -32000).
+	if !b.ChainConfig().Taiko {
+		// If the transaction fails with an error indicating it is invalid, or if there is
+		// very little chance it will be accepted later (e.g., the gas price is below the
+		// configured minimum, or the sender has insufficient funds to cover the cost),
+		// propagate the error to the user.
+		if err != nil && !locals.IsTemporaryReject(err) {
+			return err
+		}
 	}
 	// No error will be returned to user if the transaction fails with a temporary
 	// error and might be accepted later (e.g., the transaction pool is full).
