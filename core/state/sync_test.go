@@ -46,7 +46,9 @@ func makeTestState(scheme string) (ethdb.Database, Database, *triedb.Database, c
 	// Create an empty state
 	config := &triedb.Config{Preimages: true}
 	if scheme == rawdb.PathScheme {
-		config.PathDB = pathdb.Defaults
+		pconfig := *pathdb.Defaults
+		pconfig.NoAsyncFlush = true
+		config.PathDB = &pconfig
 	} else {
 		config.HashDB = hashdb.Defaults
 	}
@@ -220,8 +222,8 @@ func testIterativeStateSync(t *testing.T, count int, commit bool, bypath bool, s
 			codeResults = make([]trie.CodeSyncResult, len(codeElements))
 		)
 		for i, element := range codeElements {
-			data, err := cReader.Code(common.Address{}, element.code)
-			if err != nil || len(data) == 0 {
+			data := cReader.Code(common.Address{}, element.code)
+			if len(data) == 0 {
 				t.Fatalf("failed to retrieve contract bytecode for hash %x", element.code)
 			}
 			codeResults[i] = trie.CodeSyncResult{Hash: element.code, Data: data}
@@ -344,8 +346,8 @@ func testIterativeDelayedStateSync(t *testing.T, scheme string) {
 		if len(codeElements) > 0 {
 			codeResults := make([]trie.CodeSyncResult, len(codeElements)/2+1)
 			for i, element := range codeElements[:len(codeResults)] {
-				data, err := cReader.Code(common.Address{}, element.code)
-				if err != nil || len(data) == 0 {
+				data := cReader.Code(common.Address{}, element.code)
+				if len(data) == 0 {
 					t.Fatalf("failed to retrieve contract bytecode for %x", element.code)
 				}
 				codeResults[i] = trie.CodeSyncResult{Hash: element.code, Data: data}
@@ -450,8 +452,8 @@ func testIterativeRandomStateSync(t *testing.T, count int, scheme string) {
 		if len(codeQueue) > 0 {
 			results := make([]trie.CodeSyncResult, 0, len(codeQueue))
 			for hash := range codeQueue {
-				data, err := cReader.Code(common.Address{}, hash)
-				if err != nil || len(data) == 0 {
+				data := cReader.Code(common.Address{}, hash)
+				if len(data) == 0 {
 					t.Fatalf("failed to retrieve node data for %x", hash)
 				}
 				results = append(results, trie.CodeSyncResult{Hash: hash, Data: data})
@@ -549,8 +551,8 @@ func testIterativeRandomDelayedStateSync(t *testing.T, scheme string) {
 			for hash := range codeQueue {
 				delete(codeQueue, hash)
 
-				data, err := cReader.Code(common.Address{}, hash)
-				if err != nil || len(data) == 0 {
+				data := cReader.Code(common.Address{}, hash)
+				if len(data) == 0 {
 					t.Fatalf("failed to retrieve node data for %x", hash)
 				}
 				results = append(results, trie.CodeSyncResult{Hash: hash, Data: data})
@@ -669,8 +671,8 @@ func testIncompleteStateSync(t *testing.T, scheme string) {
 		if len(codeQueue) > 0 {
 			results := make([]trie.CodeSyncResult, 0, len(codeQueue))
 			for hash := range codeQueue {
-				data, err := cReader.Code(common.Address{}, hash)
-				if err != nil || len(data) == 0 {
+				data := cReader.Code(common.Address{}, hash)
+				if len(data) == 0 {
 					t.Fatalf("failed to retrieve node data for %x", hash)
 				}
 				results = append(results, trie.CodeSyncResult{Hash: hash, Data: data})

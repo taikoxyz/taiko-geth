@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum"
@@ -45,11 +46,11 @@ func newFilterTestSuite(cfg testConfig) *filterTestSuite {
 	return s
 }
 
-func (s *filterTestSuite) allTests() []utesting.Test {
-	return []utesting.Test{
-		{Name: "Filter/ShortRange", Fn: s.filterShortRange},
-		{Name: "Filter/LongRange", Fn: s.filterLongRange, Slow: true},
-		{Name: "Filter/FullRange", Fn: s.filterFullRange, Slow: true},
+func (s *filterTestSuite) allTests() []workloadTest {
+	return []workloadTest{
+		newWorkLoadTest("Filter/ShortRange", s.filterShortRange),
+		newSlowWorkloadTest("Filter/LongRange", s.filterLongRange),
+		newSlowWorkloadTest("Filter/FullRange", s.filterFullRange),
 	}
 }
 
@@ -91,7 +92,7 @@ func (s *filterTestSuite) filterShortRange(t *utesting.T) {
 	}, s.queryAndCheck)
 }
 
-// filterShortRange runs all long-range filter tests.
+// filterLongRange runs all long-range filter tests.
 func (s *filterTestSuite) filterLongRange(t *utesting.T) {
 	s.filterRange(t, func(query *filterQuery) bool {
 		return query.ToBlock+1-query.FromBlock > filterRangeThreshold
@@ -108,7 +109,10 @@ func (s *filterTestSuite) filterFullRange(t *utesting.T) {
 }
 
 func (s *filterTestSuite) queryAndCheck(t *utesting.T, query *filterQuery) {
-	query.run(s.cfg.client)
+	query.run(s.cfg.client, s.cfg.historyPruneBlock)
+	if query.Err == errPrunedHistory {
+		return
+	}
 	if query.Err != nil {
 		t.Errorf("Filter query failed (fromBlock: %d toBlock: %d addresses: %v topics: %v error: %v)", query.FromBlock, query.ToBlock, query.Address, query.Topics, query.Err)
 		return
@@ -125,7 +129,10 @@ func (s *filterTestSuite) fullRangeQueryAndCheck(t *utesting.T, query *filterQue
 		Address:   query.Address,
 		Topics:    query.Topics,
 	}
-	frQuery.run(s.cfg.client)
+	frQuery.run(s.cfg.client, s.cfg.historyPruneBlock)
+	if frQuery.Err == errPrunedHistory {
+		return
+	}
 	if frQuery.Err != nil {
 		t.Errorf("Full range filter query failed (addresses: %v topics: %v error: %v)", frQuery.Address, frQuery.Topics, frQuery.Err)
 		return
@@ -147,7 +154,14 @@ func (s *filterTestSuite) fullRangeQueryAndCheck(t *utesting.T, query *filterQue
 func (s *filterTestSuite) loadQueries() error {
 	file, err := s.cfg.fsys.Open(s.cfg.filterQueryFile)
 	if err != nil {
-		return fmt.Errorf("can't open filterQueryFile: %v", err)
+		// If not found in embedded FS, try to load it from disk
+		if !os.IsNotExist(err) {
+			return err
+		}
+		file, err = os.OpenFile(s.cfg.filterQueryFile, os.O_RDONLY, 0666)
+		if err != nil {
+			return fmt.Errorf("can't open filterQueryFile: %v", err)
+		}
 	}
 	defer file.Close()
 
@@ -168,13 +182,14 @@ func (s *filterTestSuite) loadQueries() error {
 
 // filterQuery is a single query for testing.
 type filterQuery struct {
-	FromBlock  int64            `json:"fromBlock"`
-	ToBlock    int64            `json:"toBlock"`
-	Address    []common.Address `json:"address"`
-	Topics     [][]common.Hash  `json:"topics"`
-	ResultHash *common.Hash     `json:"resultHash,omitempty"`
-	results    []types.Log
-	Err        error `json:"error,omitempty"`
+	FromBlock     int64 `json:"fromBlock"`
+	ToBlock       int64 `json:"toBlock"`
+	lastBlockHash common.Hash
+	Address       []common.Address `json:"address"`
+	Topics        [][]common.Hash  `json:"topics"`
+	ResultHash    *common.Hash     `json:"resultHash,omitempty"`
+	results       []types.Log
+	Err           error `json:"error,omitempty"`
 }
 
 func (fq *filterQuery) isWildcard() bool {
@@ -197,7 +212,7 @@ func (fq *filterQuery) calculateHash() common.Hash {
 	return crypto.Keccak256Hash(enc)
 }
 
-func (fq *filterQuery) run(client *client) {
+func (fq *filterQuery) run(client *client, historyPruneBlock *uint64) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	logs, err := client.Eth.FilterLogs(ctx, ethereum.FilterQuery{
@@ -206,11 +221,11 @@ func (fq *filterQuery) run(client *client) {
 		Addresses: fq.Address,
 		Topics:    fq.Topics,
 	})
-	if err != nil {
-		fq.Err = err
-		fmt.Printf("Filter query failed: fromBlock: %d toBlock: %d addresses: %v topics: %v error: %v\n",
-			fq.FromBlock, fq.ToBlock, fq.Address, fq.Topics, err)
-		return
-	}
 	fq.results = logs
+	fq.Err = validateHistoryPruneErr(err, uint64(fq.FromBlock), historyPruneBlock)
+}
+
+func (fq *filterQuery) printError() {
+	fmt.Printf("Filter query failed: fromBlock: %d toBlock: %d addresses: %v topics: %v error: %v\n",
+		fq.FromBlock, fq.ToBlock, fq.Address, fq.Topics, fq.Err)
 }

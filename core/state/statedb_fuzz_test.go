@@ -89,7 +89,7 @@ func newStateTestAction(addr common.Address, r *rand.Rand, index int) testAction
 				code := make([]byte, 16)
 				binary.BigEndian.PutUint64(code, uint64(a.args[0]))
 				binary.BigEndian.PutUint64(code[8:], uint64(a.args[1]))
-				s.SetCode(addr, code)
+				s.SetCode(addr, code, tracing.CodeChangeUnspecified)
 			},
 			args: make([]int64, 2),
 		},
@@ -209,7 +209,7 @@ func (test *stateTest) run() bool {
 		if i != 0 {
 			root = roots[len(roots)-1]
 		}
-		state, err := New(root, NewDatabase(tdb, snaps))
+		state, err := New(root, NewDatabase(tdb, nil).WithSnapshot(snaps))
 		if err != nil {
 			panic(err)
 		}
@@ -228,7 +228,7 @@ func (test *stateTest) run() bool {
 		} else {
 			state.IntermediateRoot(true) // call intermediateRoot at the transaction boundary
 		}
-		ret, err := state.commitAndFlush(0, true, false) // call commit at the block boundary
+		ret, err := state.commitAndFlush(0, true, false, false) // call commit at the block boundary
 		if err != nil {
 			panic(err)
 		}

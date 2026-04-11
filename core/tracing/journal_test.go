@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 )
 
 type testTracer struct {
@@ -53,6 +54,11 @@ func (t *testTracer) OnNonceChangeV2(addr common.Address, prev uint64, new uint6
 
 func (t *testTracer) OnCodeChange(addr common.Address, prevCodeHash common.Hash, prevCode []byte, codeHash common.Hash, code []byte) {
 	t.t.Logf("OnCodeChange(%v, %v -> %v)", addr, prevCodeHash, codeHash)
+	t.code = code
+}
+
+func (t *testTracer) OnCodeChangeV2(addr common.Address, prevCodeHash common.Hash, prevCode []byte, codeHash common.Hash, code []byte, reason CodeChangeReason) {
+	t.t.Logf("OnCodeChangeV2(%v, %v -> %v, %v)", addr, prevCodeHash, codeHash, reason)
 	t.code = code
 }
 
@@ -213,6 +219,42 @@ func TestNonceIncOnCreate(t *testing.T) {
 	}
 }
 
+// TestNonceIncOnCreateParentReverts checks that the creator's nonce increment
+// from CREATE survives the CREATE frame's own revert but is properly reverted
+// when the parent call frame reverts.
+func TestNonceIncOnCreateParentReverts(t *testing.T) {
+	const opCREATE = 0xf0
+
+	tr := &testTracer{t: t}
+	wr, err := WrapWithJournal(&Hooks{OnNonceChange: tr.OnNonceChange})
+	if err != nil {
+		t.Fatalf("failed to wrap test tracer: %v", err)
+	}
+
+	addr := common.HexToAddress("0x1234")
+	{
+		// Parent call frame
+		wr.OnEnter(0, 0, addr, addr, nil, 1000, big.NewInt(0))
+		{
+			// CREATE frame — creator nonce incremented, then CREATE reverts
+			wr.OnEnter(1, opCREATE, addr, addr, nil, 1000, big.NewInt(0))
+			wr.OnNonceChangeV2(addr, 0, 1, NonceChangeContractCreator)
+			wr.OnExit(1, nil, 100, errors.New("revert"), true)
+		}
+		// After CREATE reverts, nonce should still be 1
+		if tr.nonce != 1 {
+			t.Fatalf("nonce after CREATE revert: got %v, want 1", tr.nonce)
+		}
+		// Parent frame also reverts
+		wr.OnExit(0, nil, 150, errors.New("revert"), true)
+	}
+
+	// After parent reverts, nonce should be back to 0
+	if tr.nonce != 0 {
+		t.Fatalf("nonce after parent revert: got %v, want 0", tr.nonce)
+	}
+}
+
 func TestOnNonceChangeV2(t *testing.T) {
 	tr := &testTracer{t: t}
 	wr, err := WrapWithJournal(&Hooks{OnNonceChangeV2: tr.OnNonceChangeV2})
@@ -229,6 +271,27 @@ func TestOnNonceChangeV2(t *testing.T) {
 
 	if tr.nonce != 0 {
 		t.Fatalf("unexpected nonce: %v", tr.nonce)
+	}
+}
+
+func TestOnCodeChangeV2(t *testing.T) {
+	tr := &testTracer{t: t}
+	wr, err := WrapWithJournal(&Hooks{OnCodeChangeV2: tr.OnCodeChangeV2})
+	if err != nil {
+		t.Fatalf("failed to wrap test tracer: %v", err)
+	}
+
+	addr := common.HexToAddress("0x1234")
+	code := []byte{1, 2, 3}
+	{
+		wr.OnEnter(2, 0, addr, addr, nil, 1000, big.NewInt(0))
+		wr.OnCodeChangeV2(addr, common.Hash{}, nil, crypto.Keccak256Hash(code), code, CodeChangeContractCreation)
+		wr.OnExit(2, nil, 100, nil, true)
+	}
+
+	// After revert, code should be nil
+	if tr.code != nil {
+		t.Fatalf("unexpected code after revert: %v", tr.code)
 	}
 }
 
@@ -251,10 +314,6 @@ func TestAllHooksCalled(t *testing.T) {
 
 		// Skip fields that are not function types
 		if field.Type.Kind() != reflect.Func {
-			continue
-		}
-		// Skip non-hooks, i.e. Copy
-		if field.Name == "copy" {
 			continue
 		}
 		// Skip if field is not set
@@ -293,11 +352,12 @@ func newTracerAllHooks() *tracerAllHooks {
 	t := &tracerAllHooks{hooksCalled: make(map[string]bool)}
 	// Initialize all hooks to false. We will use this to
 	// get total count of hooks.
-	hooksType := reflect.TypeOf((*Hooks)(nil)).Elem()
+	hooksType := reflect.TypeFor[Hooks]()
 	for i := 0; i < hooksType.NumField(); i++ {
 		t.hooksCalled[hooksType.Field(i).Name] = false
 	}
 	delete(t.hooksCalled, "OnNonceChange")
+	delete(t.hooksCalled, "OnCodeChange")
 	return t
 }
 
@@ -322,7 +382,7 @@ func (t *tracerAllHooks) hooks() *Hooks {
 	hooksValue := reflect.ValueOf(h).Elem()
 	for i := 0; i < hooksValue.NumField(); i++ {
 		field := hooksValue.Type().Field(i)
-		if field.Name == "OnNonceChange" {
+		if field.Name == "OnNonceChange" || field.Name == "OnCodeChange" {
 			continue
 		}
 		hookMethod := reflect.MakeFunc(field.Type, func(args []reflect.Value) []reflect.Value {

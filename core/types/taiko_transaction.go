@@ -34,17 +34,17 @@ func (tx *DynamicFeeTx) markAsAnchor() error {
 }
 
 func (tx *LegacyTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	return ErrTxTypeNotSupported
 }
 
 func (tx *AccessListTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	return ErrTxTypeNotSupported
 }
 
 func (tx *BlobTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	return ErrTxTypeNotSupported
 }
 
 func (tx *SetCodeTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	return ErrTxTypeNotSupported
 }

@@ -49,7 +49,7 @@ func (tx *DepositTx) nonce() uint64          { return 0 }
 func (tx *DepositTx) to() *common.Address    { return tx.To }
 func (tx *DepositTx) isSystemTx() bool       { return tx.IsSystemTransaction } // nolint:unused
 func (tx *DepositTx) isAnchor() bool         { return false }
-func (tx *DepositTx) markAsAnchor() error    { return ErrInvalidTxType }
+func (tx *DepositTx) markAsAnchor() error    { return ErrTxTypeNotSupported }
 
 func (tx *DepositTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
 	return dst.Set(new(big.Int))
