@@ -1597,6 +1597,55 @@ git merge-base upstream-v1.17.2-merge be4dc0c4b
 
 Each command must succeed / produce the expected output. If any fails, return to the relevant tier's tasks and fix.
 
+- [ ] **Step 25.4: Remove superpowers working docs**
+
+The spec, plan, triage document, and baseline test log are working artifacts for the merge execution. They do not ship with the upstream merge — remove them before opening the PR so the PR diff stays focused on source changes.
+
+```bash
+git rm -r docs/superpowers/
+```
+
+Expected: every file under `docs/superpowers/` is staged for deletion. This includes:
+- `docs/superpowers/specs/2026-04-11-taiko-geth-v1-17-2-upstream-merge-design.md`
+- `docs/superpowers/plans/2026-04-11-taiko-geth-v1-17-2-upstream-merge.md`
+- `docs/superpowers/plans/2026-04-11-upstream-v1-17-2-conflict-triage.md`
+- `docs/superpowers/plans/2026-04-11-baseline-test.log`
+- Any other files that accumulated under `docs/superpowers/` during execution
+
+The `docs/superpowers/` directory itself will be removed because it's empty after the `git rm -r`.
+
+- [ ] **Step 25.5: Verify no superpowers files remain in the working tree**
+
+```bash
+ls docs/superpowers/ 2>/dev/null
+find docs -name 'superpowers*' 2>/dev/null
+```
+
+Expected: both commands produce empty output.
+
+- [ ] **Step 25.6: Commit the cleanup**
+
+```bash
+git commit -m "chore(upstream-merge): remove superpowers working docs
+
+These files (design spec, implementation plan, conflict triage, baseline
+test log) were working artifacts for executing the v1.17.2 upstream
+merge. They are not part of the shipped source and are removed before
+opening the PR."
+```
+
+- [ ] **Step 25.7: Re-run the build and test gate one more time**
+
+After the docs cleanup, run the build and test one more time to confirm nothing broke (it shouldn't — these are docs, not source — but verify):
+
+```bash
+make geth
+go test ./params/... -run TestTaikoChainConfigShanghaiCap -v
+go test ./eth/... -run 'TestTaikoAPIBackendFullSurface|TestL1OriginJSONShape' -v
+```
+
+Expected: all pass.
+
 ### Task 26: Push the branch and open the PR
 
 - [ ] **Step 26.1: Push the integration branch**
