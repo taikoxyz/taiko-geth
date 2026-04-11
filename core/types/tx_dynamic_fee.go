@@ -42,7 +42,7 @@ type DynamicFeeTx struct {
 	S *big.Int
 
 	// CHANGE(taiko): if this transaction is the first TaikoL2.anchor transaction in a block
-	isAnhcor bool
+	isAnchor bool
 }
 
 // copy creates a deep copy of the transaction data and initializes all fields.
@@ -61,7 +61,7 @@ func (tx *DynamicFeeTx) copy() TxData {
 		V:          new(big.Int),
 		R:          new(big.Int),
 		S:          new(big.Int),
-		isAnhcor:   tx.isAnhcor,
+		isAnchor:   tx.isAnchor,
 	}
 	copy(cpy.AccessList, tx.AccessList)
 	if tx.Value != nil {

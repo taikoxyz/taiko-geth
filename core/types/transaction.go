@@ -89,7 +89,7 @@ type TxData interface {
 	to() *common.Address
 
 	// CHANGE(taiko): anchor transaction related.
-	isAnchor() bool
+	isAnchorTx() bool
 	markAsAnchor() error
 
 	rawSignatureValues() (v, r, s *big.Int)
