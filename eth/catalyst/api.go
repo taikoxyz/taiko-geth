@@ -201,7 +201,7 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.
 		switch {
 		case params.Withdrawals == nil:
 			return engine.STATUS_INVALID, attributesErr("missing withdrawals")
-		case params.BeaconRoot == nil:
+		case params.BeaconRoot == nil && !api.allowsNilUzenBeaconRoot(params.Timestamp):
 			return engine.STATUS_INVALID, attributesErr("missing beacon root")
 		case !api.checkFork(params.Timestamp, forks.Cancun, forks.Prague, forks.Osaka, forks.BPO1, forks.BPO2, forks.BPO3, forks.BPO4, forks.BPO5):
 			return engine.STATUS_INVALID, unsupportedForkErr("fcuV3 must only be called for cancun/prague/osaka payloads")
@@ -221,7 +221,7 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV4(ctx context.Context, update engine.
 		switch {
 		case params.Withdrawals == nil:
 			return engine.STATUS_INVALID, attributesErr("missing withdrawals")
-		case params.BeaconRoot == nil:
+		case params.BeaconRoot == nil && !api.allowsNilUzenBeaconRoot(params.Timestamp):
 			return engine.STATUS_INVALID, attributesErr("missing beacon root")
 		case params.SlotNumber == nil:
 			return engine.STATUS_INVALID, attributesErr("missing slot number")
@@ -234,6 +234,11 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV4(ctx context.Context, update engine.
 	// forkchoiceUpdate into a function that only updates the head and then a
 	// function that kicks off block construction.
 	return api.forkchoiceUpdated(ctx, update, params, engine.PayloadV4, false)
+}
+
+func (api *ConsensusAPI) allowsNilUzenBeaconRoot(timestamp uint64) bool {
+	// CHANGE(taiko): Uzen normalizes omitted parentBeaconBlockRoot to zero.
+	return api.config().Taiko && api.config().IsUzen(timestamp)
 }
 
 func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.ForkchoiceStateV1, payloadAttributes *engine.PayloadAttributes, payloadVersion engine.PayloadVersion, payloadWitness bool) (result engine.ForkChoiceResponse, err error) {
@@ -832,7 +837,7 @@ func (api *ConsensusAPI) NewPayloadV4(ctx context.Context, params engine.Executa
 		return invalidStatus, paramsErr("nil blobGasUsed post-cancun")
 	case versionedHashes == nil:
 		return invalidStatus, paramsErr("nil versionedHashes post-cancun")
-	case beaconRoot == nil:
+	case beaconRoot == nil && !api.allowsNilUzenBeaconRoot(params.Timestamp):
 		return invalidStatus, paramsErr("nil beaconRoot post-cancun")
 	case executionRequests == nil:
 		return invalidStatus, paramsErr("nil executionRequests post-prague")
@@ -857,7 +862,7 @@ func (api *ConsensusAPI) NewPayloadV5(ctx context.Context, params engine.Executa
 		return invalidStatus, paramsErr("nil blobGasUsed post-cancun")
 	case versionedHashes == nil:
 		return invalidStatus, paramsErr("nil versionedHashes post-cancun")
-	case beaconRoot == nil:
+	case beaconRoot == nil && !api.allowsNilUzenBeaconRoot(params.Timestamp):
 		return invalidStatus, paramsErr("nil beaconRoot post-cancun")
 	case executionRequests == nil:
 		return invalidStatus, paramsErr("nil executionRequests post-prague")

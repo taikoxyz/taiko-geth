@@ -72,7 +72,7 @@ func (api *ConsensusAPI) ForkchoiceUpdatedWithWitnessV3(ctx context.Context, upd
 		switch {
 		case params.Withdrawals == nil:
 			return engine.STATUS_INVALID, attributesErr("missing withdrawals")
-		case params.BeaconRoot == nil:
+		case params.BeaconRoot == nil && !api.allowsNilUzenBeaconRoot(params.Timestamp):
 			return engine.STATUS_INVALID, attributesErr("missing beacon root")
 		case !api.checkFork(params.Timestamp, forks.Cancun, forks.Prague, forks.Osaka, forks.BPO1, forks.BPO2, forks.BPO3, forks.BPO4, forks.BPO5):
 			return engine.STATUS_INVALID, unsupportedForkErr("fcuV3 must only be called for cancun/prague/osaka payloads")
@@ -151,7 +151,7 @@ func (api *ConsensusAPI) NewPayloadWithWitnessV4(ctx context.Context, params eng
 		return invalidStatus, paramsErr("nil blobGasUsed post-cancun")
 	case versionedHashes == nil:
 		return invalidStatus, paramsErr("nil versionedHashes post-cancun")
-	case beaconRoot == nil:
+	case beaconRoot == nil && !api.allowsNilUzenBeaconRoot(params.Timestamp):
 		return invalidStatus, paramsErr("nil beaconRoot post-cancun")
 	case executionRequests == nil:
 		return invalidStatus, paramsErr("nil executionRequests post-prague")
@@ -231,7 +231,7 @@ func (api *ConsensusAPI) ExecuteStatelessPayloadV4(params engine.ExecutableData,
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("nil blobGasUsed post-cancun")
 	case versionedHashes == nil:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("nil versionedHashes post-cancun")
-	case beaconRoot == nil:
+	case beaconRoot == nil && !api.allowsNilUzenBeaconRoot(params.Timestamp):
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("nil beaconRoot post-cancun")
 	case executionRequests == nil:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("nil executionRequests post-prague")
@@ -247,6 +247,12 @@ func (api *ConsensusAPI) ExecuteStatelessPayloadV4(params engine.ExecutableData,
 
 func (api *ConsensusAPI) executeStatelessPayload(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests [][]byte, opaqueWitness hexutil.Bytes) (engine.StatelessPayloadStatusV1, error) {
 	log.Trace("Engine API request received", "method", "ExecuteStatelessPayload", "number", params.Number, "hash", params.BlockHash)
+	params.TaikoBlock = api.config().Taiko
+	if params.TaikoBlock {
+		// CHANGE(taiko): keep stateless witness conversion aligned with newPayload.
+		params.UzenBlock = api.config().IsUzen(params.Timestamp)
+		beaconRoot = core.NormalizeUzenParentBeaconRoot(params.UzenBlock, beaconRoot)
+	}
 	block, err := engine.ExecutableDataToBlockNoHash(params, versionedHashes, beaconRoot, requests)
 	if err != nil {
 		bgu := "nil"
@@ -277,6 +283,11 @@ func (api *ConsensusAPI) executeStatelessPayload(params engine.ExecutableData, v
 			"beaconRoot", beaconRoot,
 			"len(requests)", len(requests),
 			"error", err)
+		errorMsg := err.Error()
+		return engine.StatelessPayloadStatusV1{Status: engine.INVALID, ValidationError: &errorMsg}, nil
+	}
+	if err := core.RejectUzenBlobTransactions(params.UzenBlock, block.Transactions()); err != nil {
+		log.Warn("ExecuteStatelessPayload: rejecting blob transactions after Uzen", "err", err)
 		errorMsg := err.Error()
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID, ValidationError: &errorMsg}, nil
 	}

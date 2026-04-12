@@ -27,6 +27,7 @@ import (
 	"math/big"
 	"math/rand"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -36,7 +37,9 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -48,6 +51,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
@@ -55,7 +59,8 @@ import (
 
 var (
 	// testKey is a private key to use for funding a tester account.
-	testKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	testKey, _        = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	goldenTouchKey, _ = crypto.HexToECDSA("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
 
 	// testAddr is the Ethereum address of the tester account.
 	testAddr = crypto.PubkeyToAddress(testKey.PublicKey)
@@ -1734,6 +1739,498 @@ func TestWitnessCreationAndConsumption(t *testing.T) {
 	if res.ReceiptsRoot != wantReceiptRoot {
 		t.Fatalf("stateless receipt root mismatch: have %v, want %v", res.ReceiptsRoot, wantReceiptRoot)
 	}
+}
+
+func TestUzenForkchoiceUpdatedAllowsNilBeaconRoot(t *testing.T) {
+	tests := []struct {
+		name       string
+		amsterdam  bool
+		uzenActive bool
+		call       func(*ConsensusAPI, engine.ForkchoiceStateV1, *engine.PayloadAttributes) (engine.ForkChoiceResponse, error)
+	}{
+		{
+			name:       "prague-v3-post-uzen",
+			uzenActive: true,
+			call: func(api *ConsensusAPI, update engine.ForkchoiceStateV1, attrs *engine.PayloadAttributes) (engine.ForkChoiceResponse, error) {
+				return api.ForkchoiceUpdatedV3(context.Background(), update, attrs)
+			},
+		},
+		{
+			name:       "prague-v3-with-witness-post-uzen",
+			uzenActive: true,
+			call: func(api *ConsensusAPI, update engine.ForkchoiceStateV1, attrs *engine.PayloadAttributes) (engine.ForkChoiceResponse, error) {
+				return api.ForkchoiceUpdatedWithWitnessV3(context.Background(), update, attrs)
+			},
+		},
+		{
+			name:       "amsterdam-v4-post-uzen",
+			amsterdam:  true,
+			uzenActive: true,
+			call: func(api *ConsensusAPI, update engine.ForkchoiceStateV1, attrs *engine.PayloadAttributes) (engine.ForkChoiceResponse, error) {
+				return api.ForkchoiceUpdatedV4(context.Background(), update, attrs)
+			},
+		},
+		{
+			name: "prague-v3-pre-uzen",
+			call: func(api *ConsensusAPI, update engine.ForkchoiceStateV1, attrs *engine.PayloadAttributes) (engine.ForkChoiceResponse, error) {
+				return api.ForkchoiceUpdatedV3(context.Background(), update, attrs)
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			n, ethservice, parent, timestamp := startTaikoUzenCatalystService(t, test.amsterdam, test.uzenActive)
+			defer n.Close()
+
+			api := newConsensusAPIWithoutHeartbeat(ethservice)
+			attrs := newTaikoPayloadAttributes(t, ethservice.BlockChain().Config(), parent, timestamp, test.amsterdam)
+			attrs.BeaconRoot = nil
+
+			resp, err := test.call(api, engine.ForkchoiceStateV1{HeadBlockHash: parent.Hash()}, attrs)
+			if test.uzenActive {
+				if err != nil {
+					if strings.Contains(describeEngineError(err), "missing beacon root") {
+						t.Fatalf("expected nil beacon root to get past top-level validation after Uzen, got %v (%s)", err, describeEngineError(err))
+					}
+					return
+				}
+				if resp.PayloadStatus.Status != engine.VALID {
+					t.Fatalf("unexpected status: got %s want %s", resp.PayloadStatus.Status, engine.VALID)
+				}
+				if resp.PayloadID == nil {
+					t.Fatal("expected payload id for accepted forkchoice update")
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected pre-Uzen nil beacon root to be rejected")
+			}
+			if !strings.Contains(describeEngineError(err), "missing beacon root") {
+				t.Fatalf("expected pre-Uzen missing beacon root error, got %v (%s)", err, describeEngineError(err))
+			}
+		})
+	}
+}
+
+func TestUzenNewPayloadAcceptsNilBeaconRoot(t *testing.T) {
+	tests := []struct {
+		name      string
+		amsterdam bool
+		execute   func(testing.TB, *ConsensusAPI, *engine.ExecutionPayloadEnvelope) (engine.PayloadStatusV1, error)
+	}{
+		{
+			name: "v4-prague",
+			execute: func(t testing.TB, api *ConsensusAPI, envelope *engine.ExecutionPayloadEnvelope) (engine.PayloadStatusV1, error) {
+				return api.NewPayloadV4(context.Background(), *envelope.ExecutionPayload, payloadVersionedHashes(t, envelope.ExecutionPayload), nil, payloadRequests(envelope.Requests))
+			},
+		},
+		{
+			name:      "v5-amsterdam",
+			amsterdam: true,
+			execute: func(t testing.TB, api *ConsensusAPI, envelope *engine.ExecutionPayloadEnvelope) (engine.PayloadStatusV1, error) {
+				return api.NewPayloadV5(context.Background(), *envelope.ExecutionPayload, payloadVersionedHashes(t, envelope.ExecutionPayload), nil, payloadRequests(envelope.Requests))
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run("post-uzen-"+test.name, func(t *testing.T) {
+			n, ethservice, parent, timestamp := startTaikoUzenCatalystService(t, test.amsterdam, true)
+			defer n.Close()
+
+			api := newConsensusAPIWithoutHeartbeat(ethservice)
+			payload := newSyntheticCatalystPayload(t, api.config(), parent, timestamp, test.amsterdam, false, true)
+
+			status, err := test.execute(t, api, &engine.ExecutionPayloadEnvelope{ExecutionPayload: payload})
+			if err != nil {
+				t.Fatalf("expected nil beacon root to be normalized after Uzen, got %v (%s)", err, describeEngineError(err))
+			}
+			if status.Status == "" {
+				t.Fatal("expected payload status after Uzen normalization")
+			}
+		})
+	}
+
+	t.Run("pre-uzen-v4-rejects-nil-beacon-root", func(t *testing.T) {
+		n, ethservice, parent, timestamp := startTaikoUzenCatalystService(t, false, false)
+		defer n.Close()
+
+		api := newConsensusAPIWithoutHeartbeat(ethservice)
+		payload := newSyntheticCatalystPayload(t, api.config(), parent, timestamp, false, false, false)
+
+		_, err := api.NewPayloadV4(context.Background(), *payload, payloadVersionedHashes(t, payload), nil, []hexutil.Bytes{})
+		if err == nil {
+			t.Fatal("expected pre-Uzen nil beacon root to be rejected")
+		}
+	})
+}
+
+func TestUzenCatalystRejectsBlobPayloads(t *testing.T) {
+	n, ethservice, parent, timestamp := startTaikoUzenCatalystService(t, false, true)
+	defer n.Close()
+
+	api := newConsensusAPIWithoutHeartbeat(ethservice)
+	payload := newSyntheticCatalystPayload(t, api.config(), parent, timestamp, false, true, true)
+
+	status, err := api.NewPayloadV4(context.Background(), *payload, payloadVersionedHashes(t, payload), nil, []hexutil.Bytes{})
+	if err != nil {
+		t.Fatalf("unexpected error rejecting blob payload: %v", err)
+	}
+	if status.Status != engine.INVALID {
+		t.Fatalf("unexpected status: got %s want %s", status.Status, engine.INVALID)
+	}
+	if status.ValidationError == nil {
+		t.Fatal("expected validation error for blob payload")
+	}
+}
+
+func TestUzenExecuteStatelessPayloadAcceptsNilBeaconRootAndRejectsBlobPayloads(t *testing.T) {
+	t.Run("accepts-nil-beacon-root", func(t *testing.T) {
+		n, ethservice, parent, timestamp := startTaikoUzenCatalystService(t, false, true)
+		defer n.Close()
+
+		api := newConsensusAPIWithoutHeartbeat(ethservice)
+		payload := newSyntheticCatalystPayload(t, api.config(), parent, timestamp, false, false, true)
+
+		status, err := api.ExecuteStatelessPayloadV4(*payload, payloadVersionedHashes(t, payload), nil, []hexutil.Bytes{}, hexutil.Bytes{0x80})
+		if err != nil {
+			t.Fatalf("expected nil beacon root to be normalized for stateless execution, got %v (%s)", err, describeEngineError(err))
+		}
+		if status.Status == "" {
+			t.Fatal("expected stateless payload status after Uzen normalization")
+		}
+		if status.ValidationError == nil {
+			t.Fatal("expected stateless path to continue beyond nil beacon-root validation")
+		}
+	})
+
+	t.Run("rejects-blob-payload", func(t *testing.T) {
+		n, ethservice, parent, timestamp := startTaikoUzenCatalystService(t, false, true)
+		defer n.Close()
+
+		api := newConsensusAPIWithoutHeartbeat(ethservice)
+		payload := newSyntheticCatalystPayload(t, api.config(), parent, timestamp, false, true, true)
+
+		status, err := api.ExecuteStatelessPayloadV4(*payload, payloadVersionedHashes(t, payload), nil, []hexutil.Bytes{}, hexutil.Bytes{0x80})
+		if err != nil {
+			t.Fatalf("unexpected error rejecting stateless blob payload: %v", err)
+		}
+		if status.Status != engine.INVALID {
+			t.Fatalf("unexpected status: got %s want %s", status.Status, engine.INVALID)
+		}
+		if status.ValidationError == nil {
+			t.Fatal("expected validation error for blob payload")
+		}
+	})
+}
+
+func startTaikoUzenCatalystService(t testing.TB, amsterdam bool, uzenActive bool) (*node.Node, *eth.Ethereum, *types.Header, uint64) {
+	t.Helper()
+
+	genesis, _ := generateMergeChain(0, true)
+	activationTime := genesis.Timestamp + 1000
+
+	genesis.Config.Taiko = true
+	genesis.Config.ShanghaiTime = &activationTime
+	genesis.Config.CancunTime = &activationTime
+	genesis.Config.PragueTime = &activationTime
+	if amsterdam {
+		genesis.Config.AmsterdamTime = &activationTime
+		blobConfig := *params.DefaultBlobSchedule
+		blobConfig.Amsterdam = blobConfig.Osaka
+		genesis.Config.BlobScheduleConfig = &blobConfig
+	} else {
+		genesis.Config.BlobScheduleConfig = params.DefaultBlobSchedule
+	}
+	if uzenActive {
+		genesis.Config.UzenTime = &activationTime
+	} else {
+		uzenTime := activationTime + 100
+		genesis.Config.UzenTime = &uzenTime
+	}
+
+	n, ethservice := startEthService(t, genesis, nil)
+	return n, ethservice, ethservice.BlockChain().CurrentHeader(), activationTime
+}
+
+func newTaikoPayloadAttributes(t testing.TB, chainConfig *params.ChainConfig, parent *types.Header, timestamp uint64, amsterdam bool) *engine.PayloadAttributes {
+	t.Helper()
+
+	random := crypto.Keccak256Hash([]byte{0xaa, 0xbb, 0xcc})
+	tx := types.MustSignNewTx(testKey, types.LatestSigner(chainConfig), &types.DynamicFeeTx{
+		ChainID:   chainConfig.ChainID,
+		Nonce:     0,
+		To:        &testAddr,
+		Gas:       params.TxGas,
+		GasTipCap: big.NewInt(params.InitialBaseFee),
+		GasFeeCap: big.NewInt(2 * params.InitialBaseFee),
+		Value:     common.Big1,
+	})
+	txList, err := rlp.EncodeToBytes(types.Transactions{tx})
+	if err != nil {
+		t.Fatalf("failed to encode tx list: %v", err)
+	}
+	attrs := &engine.PayloadAttributes{
+		Timestamp:             timestamp,
+		Random:                random,
+		SuggestedFeeRecipient: parent.Coinbase,
+		Withdrawals:           []*types.Withdrawal{},
+		BaseFeePerGas:         big.NewInt(params.InitialBaseFee),
+		BlockMetadata: &engine.BlockMetadata{
+			Beneficiary: parent.Coinbase,
+			GasLimit:    parent.GasLimit,
+			Timestamp:   timestamp,
+			MixHash:     random,
+			TxList:      txList,
+			ExtraData:   []byte("taiko"),
+		},
+		L1Origin: &rawdb.L1Origin{
+			BlockID:       new(big.Int).Add(parent.Number, common.Big1),
+			L1BlockHeight: common.Big1,
+			L1BlockHash:   common.HexToHash("0x1"),
+		},
+	}
+	if amsterdam {
+		slot := uint64(1)
+		attrs.SlotNumber = &slot
+	}
+	return attrs
+}
+
+func newSyntheticCatalystPayload(t testing.TB, chainConfig *params.ChainConfig, parent *types.Header, timestamp uint64, amsterdam bool, withBlobTx bool, uzen bool) *engine.ExecutableData {
+	t.Helper()
+
+	var (
+		slotNum         *uint64
+		blobGasUsed     = uint64(0)
+		excessBlobGas   = uint64(0)
+		transactions    [][]byte
+		versionedHashes []common.Hash
+	)
+	if amsterdam {
+		slot := uint64(1)
+		slotNum = &slot
+	}
+	if withBlobTx {
+		tx := makeMultiBlobTx(chainConfig, 0, 1, 0, testKey, types.BlobSidecarVersion0)
+		txData, err := tx.MarshalBinary()
+		if err != nil {
+			t.Fatalf("failed to encode blob tx: %v", err)
+		}
+		transactions = [][]byte{txData}
+		versionedHashes = append(versionedHashes, tx.BlobHashes()...)
+		blobGasUsed = uint64(len(versionedHashes))
+		excessBlobGas = blobGasUsed
+	}
+
+	payload := &engine.ExecutableData{
+		ParentHash:    parent.Hash(),
+		FeeRecipient:  parent.Coinbase,
+		StateRoot:     parent.Root,
+		ReceiptsRoot:  types.EmptyReceiptsHash,
+		LogsBloom:     make([]byte, 256),
+		Random:        crypto.Keccak256Hash([]byte{0x1, 0x2, 0x3}),
+		Number:        parent.Number.Uint64() + 1,
+		GasLimit:      parent.GasLimit,
+		GasUsed:       0,
+		Timestamp:     timestamp,
+		ExtraData:     nil,
+		BaseFeePerGas: parent.BaseFee,
+		Transactions:  transactions,
+		Withdrawals:   []*types.Withdrawal{},
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
+		SlotNumber:    slotNum,
+		TaikoBlock:    true,
+		UzenBlock:     uzen,
+	}
+	block, err := engine.ExecutableDataToBlockNoHash(*payload, versionedHashes, nil, nil)
+	if err != nil {
+		t.Fatalf("failed to create synthetic block: %v", err)
+	}
+	payload.BlockHash = block.Hash()
+	return payload
+}
+
+func payloadVersionedHashes(t testing.TB, payload *engine.ExecutableData) []common.Hash {
+	t.Helper()
+
+	txs, err := decodeTransactions(payload.Transactions)
+	if err != nil {
+		t.Fatalf("failed to decode payload transactions: %v", err)
+	}
+	versionedHashes := make([]common.Hash, 0)
+	for _, tx := range txs {
+		versionedHashes = append(versionedHashes, tx.BlobHashes()...)
+	}
+	return versionedHashes
+}
+
+func payloadRequests(requests [][]byte) []hexutil.Bytes {
+	if len(requests) == 0 {
+		return []hexutil.Bytes{}
+	}
+	out := make([]hexutil.Bytes, len(requests))
+	for i, request := range requests {
+		out[i] = request
+	}
+	return out
+}
+
+func describeEngineError(err error) string {
+	var apiErr *engine.EngineAPIError
+	if errors.As(err, &apiErr) {
+		return fmt.Sprint(apiErr.ErrorData())
+	}
+	return ""
+}
+
+func newTaikoUzenGenesis(uzenOffset uint64) *core.Genesis {
+	genesis, _ := generateMergeChain(0, true)
+	activationTime := genesis.Timestamp + 1
+
+	genesis.Config.Taiko = true
+	genesis.Config.ShanghaiTime = &activationTime
+	genesis.Config.CancunTime = &activationTime
+	genesis.Config.PragueTime = &activationTime
+	genesis.Config.BlobScheduleConfig = params.DefaultBlobSchedule
+
+	uzenTime := activationTime + uzenOffset
+	genesis.Config.UzenTime = &uzenTime
+
+	genesis.Alloc[taiko.GoldenTouchAccount] = types.Account{Balance: new(big.Int).Set(testBalance)}
+	return genesis
+}
+
+func makeTaikoPayloadAttributes(t testing.TB, chainConfig *params.ChainConfig, parent *types.Header, beaconRoot *common.Hash) engine.PayloadAttributes {
+	t.Helper()
+
+	attrs := newTaikoPayloadAttributes(t, chainConfig, parent, parent.Time+1, false)
+	attrs.BeaconRoot = beaconRoot
+	return *attrs
+}
+
+func makeTaikoPayloadEnvelope(chainConfig *params.ChainConfig, parent *types.Header, txs types.Transactions, slotNumber *uint64) (*types.Block, *engine.ExecutionPayloadEnvelope, []common.Hash) {
+	uzenOffset := uint64(0)
+	if chainConfig.UzenTime != nil && *chainConfig.UzenTime > parent.Time+1 {
+		uzenOffset = *chainConfig.UzenTime - (parent.Time + 1)
+	}
+	genesis := newTaikoUzenGenesis(uzenOffset)
+	if slotNumber != nil {
+		genesis.Config.AmsterdamTime = new(uint64)
+		*genesis.Config.AmsterdamTime = genesis.Timestamp + 1
+		blobConfig := *genesis.Config.BlobScheduleConfig
+		blobConfig.Amsterdam = blobConfig.Osaka
+		genesis.Config.BlobScheduleConfig = &blobConfig
+	}
+
+	if len(txs) == 0 {
+		txs = append(txs, newTaikoAnchorTx(genesis.Config, 0))
+	}
+	var versionedHashes []common.Hash
+	for _, tx := range txs {
+		versionedHashes = append(versionedHashes, tx.BlobHashes()...)
+	}
+	if len(versionedHashes) > 0 {
+		payload := newSyntheticPayloadFromTransactions(chainConfig, parent, txs, slotNumber, true)
+		block, _ := engine.ExecutableDataToBlockNoHash(*payload, versionedHashes, nil, nil)
+		return block, &engine.ExecutionPayloadEnvelope{ExecutionPayload: payload}, versionedHashes
+	}
+
+	consensusEngine := beacon.New(ethash.NewFaker())
+	_, blocks, _ := core.GenerateChainWithGenesis(genesis, consensusEngine, 1, func(i int, g *core.BlockGen) {
+		g.OffsetTime(1)
+		if genesis.Config.IsUzen(g.Timestamp()) {
+			g.SetParentBeaconRoot(common.Hash{})
+		}
+		for _, tx := range txs {
+			g.AddTx(tx)
+		}
+	})
+	block := blocks[0]
+	header := block.Header()
+	if genesis.Config.IsUzen(header.Time) {
+		header.ParentBeaconRoot = new(common.Hash)
+		header.RequestsHash = &types.EmptyRequestsHash
+	}
+	if slotNumber != nil {
+		header.SlotNumber = new(uint64)
+		*header.SlotNumber = *slotNumber
+	}
+	block = types.NewBlock(header, &types.Body{Transactions: block.Transactions(), Withdrawals: block.Withdrawals()}, nil, trie.NewStackTrie(nil))
+	return block, engine.BlockToExecutableData(block, common.Big0, nil, nil), versionedHashes
+}
+
+func newSyntheticPayloadFromTransactions(chainConfig *params.ChainConfig, parent *types.Header, txs types.Transactions, slotNumber *uint64, uzen bool) *engine.ExecutableData {
+	blobGasUsed := uint64(0)
+	excessBlobGas := uint64(0)
+	if len(txs) > 0 {
+		for _, tx := range txs {
+			blobGasUsed += uint64(len(tx.BlobHashes()))
+		}
+		excessBlobGas = blobGasUsed
+	}
+	transactions := make([][]byte, len(txs))
+	versionedHashes := make([]common.Hash, 0)
+	for i, tx := range txs {
+		enc, err := tx.MarshalBinary()
+		if err != nil {
+			panic(err)
+		}
+		transactions[i] = enc
+		versionedHashes = append(versionedHashes, tx.BlobHashes()...)
+	}
+	payload := &engine.ExecutableData{
+		ParentHash:    parent.Hash(),
+		FeeRecipient:  parent.Coinbase,
+		StateRoot:     parent.Root,
+		ReceiptsRoot:  types.EmptyReceiptsHash,
+		LogsBloom:     make([]byte, 256),
+		Random:        crypto.Keccak256Hash([]byte{0x1, 0x2, 0x3}),
+		Number:        parent.Number.Uint64() + 1,
+		GasLimit:      parent.GasLimit,
+		GasUsed:       0,
+		Timestamp:     parent.Time + 1,
+		BaseFeePerGas: parent.BaseFee,
+		Transactions:  transactions,
+		Withdrawals:   []*types.Withdrawal{},
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
+		SlotNumber:    slotNumber,
+		TaikoBlock:    true,
+		UzenBlock:     uzen,
+	}
+	block, err := engine.ExecutableDataToBlockNoHash(*payload, versionedHashes, nil, nil)
+	if err != nil {
+		panic(err)
+	}
+	payload.BlockHash = block.Hash()
+	return payload
+}
+
+func newTaikoAnchorTx(chainConfig *params.ChainConfig, nonce uint64) *types.Transaction {
+	return types.MustSignNewTx(goldenTouchKey, types.LatestSigner(chainConfig), &types.DynamicFeeTx{
+		ChainID:   chainConfig.ChainID,
+		Nonce:     nonce,
+		GasTipCap: common.Big0,
+		GasFeeCap: new(big.Int).SetUint64(875_000_000),
+		Data:      taiko.AnchorSelector,
+		Gas:       taiko.AnchorGasLimit,
+		To:        ptrAddress(taikoL2Address(chainConfig.ChainID)),
+	})
+}
+
+func taikoL2Address(chainID *big.Int) common.Address {
+	prefix := strings.TrimPrefix(chainID.String(), "0")
+	return common.HexToAddress(
+		"0x" +
+			prefix +
+			strings.Repeat("0", common.AddressLength*2-len(prefix)-len(taiko.TaikoL2AddressSuffix)) +
+			taiko.TaikoL2AddressSuffix,
+	)
+}
+
+func ptrAddress(addr common.Address) *common.Address {
+	return &addr
 }
 
 // TestGetClientVersion verifies the expected version info is returned.
