@@ -309,7 +309,7 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 		}
 		header.BlobGasUsed = new(uint64)
 		header.ExcessBlobGas = &excessBlobGas
-		header.ParentBeaconRoot = genParams.beaconRoot
+		header.ParentBeaconRoot = core.NormalizeUzenParentBeaconRoot(miner.chainConfig.IsUzen(header.Time), genParams.beaconRoot)
 	}
 	// Apply EIP-7843.
 	if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {

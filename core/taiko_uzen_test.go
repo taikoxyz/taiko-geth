@@ -19,8 +19,19 @@ package core
 import (
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
+
+func TestNormalizeUzenParentBeaconRootUsesZeroHash(t *testing.T) {
+	got := NormalizeUzenParentBeaconRoot(true, nil)
+	if got == nil {
+		t.Fatal("expected non-nil beacon root for Uzen")
+	}
+	if *got != (common.Hash{}) {
+		t.Fatalf("unexpected beacon root: got %x want %x", *got, common.Hash{})
+	}
+}
 
 func TestUzenRequestsHashUsesEmptyHash(t *testing.T) {
 	got := UzenRequestsHash(true, [][]byte{[]byte("not-empty")})
