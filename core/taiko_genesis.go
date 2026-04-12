@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -24,6 +25,11 @@ var (
 	MasayaShastaTime   uint64 = 0
 	MainnetShastaTime  uint64 = 1_775_135_700
 	HoodiShastaTime    uint64 = 1_770_296_400
+
+	InternalUzenTime uint64 = 0
+	MasayaUzenTime   uint64 = math.MaxUint64
+	MainnetUzenTime  uint64 = math.MaxUint64
+	HoodiUzenTime    uint64 = math.MaxUint64
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
@@ -37,30 +43,56 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.OntakeBlock = MainnetOntakeBlock
 		chainConfig.PacayaBlock = MainnetPacayaBlock
 		chainConfig.ShastaTime = &MainnetShastaTime
+		chainConfig.UzenTime = &MainnetUzenTime
+		if MainnetUzenTime != math.MaxUint64 {
+			chainConfig.CancunTime = &MainnetUzenTime
+			chainConfig.PragueTime = &MainnetUzenTime
+			chainConfig.OsakaTime = &MainnetUzenTime
+		}
 		allocJSON = taikoGenesis.MainnetGenesisAllocJSON
 	case params.TaikoInternalNetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoInternalNetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
+		chainConfig.UzenTime = &InternalUzenTime
+		chainConfig.CancunTime = &InternalUzenTime
+		chainConfig.PragueTime = &InternalUzenTime
+		chainConfig.OsakaTime = &InternalUzenTime
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	case params.MasayaDevnetNetworkID.Uint64():
 		chainConfig.ChainID = params.MasayaDevnetNetworkID
 		chainConfig.OntakeBlock = MasayaDevnetOntakeBlock
 		chainConfig.PacayaBlock = MasayaDevnetPacayaBlock
 		chainConfig.ShastaTime = &MasayaShastaTime
+		chainConfig.UzenTime = &MasayaUzenTime
+		if MasayaUzenTime != math.MaxUint64 {
+			chainConfig.CancunTime = &MasayaUzenTime
+			chainConfig.PragueTime = &MasayaUzenTime
+			chainConfig.OsakaTime = &MasayaUzenTime
+		}
 		allocJSON = taikoGenesis.MasayaGenesisAllocJSON
 	case params.TaikoHoodiNetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoHoodiNetworkID
 		chainConfig.OntakeBlock = TaikoHoodiOntakeBlock
 		chainConfig.PacayaBlock = TaikoHoodiPacayaBlock
 		chainConfig.ShastaTime = &HoodiShastaTime
+		chainConfig.UzenTime = &HoodiUzenTime
+		if HoodiUzenTime != math.MaxUint64 {
+			chainConfig.CancunTime = &HoodiUzenTime
+			chainConfig.PragueTime = &HoodiUzenTime
+			chainConfig.OsakaTime = &HoodiUzenTime
+		}
 		allocJSON = taikoGenesis.TaikoHoodiGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoInternalNetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
+		chainConfig.UzenTime = &InternalUzenTime
+		chainConfig.CancunTime = &InternalUzenTime
+		chainConfig.PragueTime = &InternalUzenTime
+		chainConfig.OsakaTime = &InternalUzenTime
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	}
 	var alloc GenesisAlloc
