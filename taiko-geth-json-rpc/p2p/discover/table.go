@@ -25,6 +25,7 @@ package discover
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/netip"
 	"slices"
 	"sync"
@@ -32,9 +33,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/mclock"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/p2p/enode"
+	"github.com/ethereum/go-ethereum/p2p/enr"
 	"github.com/ethereum/go-ethereum/p2p/netutil"
 )
 
@@ -53,9 +56,8 @@ const (
 	bucketIPLimit, bucketSubnet = 2, 24 // at most 2 addresses from the same /24
 	tableIPLimit, tableSubnet   = 10, 24
 
-	seedMinTableTime = 5 * time.Minute
-	seedCount        = 30
-	seedMaxAge       = 5 * 24 * time.Hour
+	seedCount  = 30
+	seedMaxAge = 5 * 24 * time.Hour
 )
 
 // Table is the 'node table', a Kademlia-like index of neighbor nodes. The table keeps
@@ -84,6 +86,7 @@ type Table struct {
 	closeReq        chan struct{}
 	closed          chan struct{}
 
+	nodeFeed        event.FeedOf[*enode.Node]
 	nodeAddedHook   func(*bucket, *tableNode)
 	nodeRemovedHook func(*bucket, *tableNode)
 }
@@ -204,6 +207,13 @@ func (tab *Table) close() {
 func (tab *Table) setFallbackNodes(nodes []*enode.Node) error {
 	nursery := make([]*enode.Node, 0, len(nodes))
 	for _, n := range nodes {
+		if n.Hostname() != "" && !n.IPAddr().IsValid() {
+			resolved, err := resolveBootnodeHostname(n, tab.log)
+			if err != nil {
+				return fmt.Errorf("bad bootstrap node %q: %v", n, err)
+			}
+			n = resolved
+		}
 		if err := n.ValidateComplete(); err != nil {
 			return fmt.Errorf("bad bootstrap node %q: %v", n, err)
 		}
@@ -215,6 +225,42 @@ func (tab *Table) setFallbackNodes(nodes []*enode.Node) error {
 	}
 	tab.nursery = nursery
 	return nil
+}
+
+// resolveBootnodeHostname resolves the DNS hostname of a bootstrap node to an IP address.
+func resolveBootnodeHostname(n *enode.Node, logger log.Logger) (*enode.Node, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ips, err := net.DefaultResolver.LookupNetIP(ctx, "ip", n.Hostname())
+	if err != nil {
+		return nil, fmt.Errorf("DNS lookup failed for %q: %v", n.Hostname(), err)
+	}
+
+	var ip4, ip6 netip.Addr
+	for _, ip := range ips {
+		if ip.Is4() && !ip4.IsValid() {
+			ip4 = ip
+		}
+		if ip.Is6() && !ip6.IsValid() {
+			ip6 = ip
+		}
+	}
+	if !ip4.IsValid() && !ip6.IsValid() {
+		return nil, fmt.Errorf("no IP addresses found for hostname %q", n.Hostname())
+	}
+
+	rec := n.Record()
+	if ip4.IsValid() {
+		rec.Set(enr.IPv4Addr(ip4))
+	}
+	if ip6.IsValid() {
+		rec.Set(enr.IPv6Addr(ip6))
+	}
+	rec.SetSeq(n.Seq())
+	resolved := enode.SignNull(rec, n.ID()).WithHostname(n.Hostname())
+	logger.Debug("Resolved bootstrap node hostname", "name", n.Hostname(), "ip", resolved.IP())
+	return resolved, nil
 }
 
 // isInitDone returns whether the table's initial seeding procedure has completed.
@@ -562,11 +608,13 @@ func (tab *Table) addReplacement(b *bucket, n *enode.Node) {
 }
 
 func (tab *Table) nodeAdded(b *bucket, n *tableNode) {
-	if n.addedToTable == (time.Time{}) {
+	if n.addedToTable.IsZero() {
 		n.addedToTable = time.Now()
 	}
 	n.addedToBucket = time.Now()
 	tab.revalidation.nodeAdded(tab, n)
+
+	tab.nodeFeed.Send(n.Node)
 	if tab.nodeAddedHook != nil {
 		tab.nodeAddedHook(b, n)
 	}
@@ -693,4 +741,47 @@ func pushNode(list []*tableNode, n *tableNode, max int) ([]*tableNode, *tableNod
 	copy(list[1:], list)
 	list[0] = n
 	return list, removed
+}
+
+// deleteNode removes a node from the table.
+func (tab *Table) deleteNode(n *enode.Node) {
+	tab.mutex.Lock()
+	defer tab.mutex.Unlock()
+	b := tab.bucket(n.ID())
+	tab.deleteInBucket(b, n.ID())
+}
+
+// waitForNodes blocks until the table contains at least n nodes.
+func (tab *Table) waitForNodes(ctx context.Context, n int) error {
+	getlength := func() (count int) {
+		for _, b := range &tab.buckets {
+			count += len(b.entries)
+		}
+		return count
+	}
+
+	var ch chan *enode.Node
+	for {
+		tab.mutex.Lock()
+		if getlength() >= n {
+			tab.mutex.Unlock()
+			return nil
+		}
+		if ch == nil {
+			// Init subscription.
+			ch = make(chan *enode.Node)
+			sub := tab.nodeFeed.Subscribe(ch)
+			defer sub.Unsubscribe()
+		}
+		tab.mutex.Unlock()
+
+		// Wait for a node add event.
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-tab.closeReq:
+			return errClosed
+		}
+	}
 }

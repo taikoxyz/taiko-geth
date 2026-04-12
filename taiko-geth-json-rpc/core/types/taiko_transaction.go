@@ -5,46 +5,46 @@ func (tx *Transaction) MarkAsAnchor() error {
 }
 
 func (tx *Transaction) IsAnchor() bool {
-	return tx.inner.isAnchor()
+	return tx.inner.isAnchorTx()
 }
 
-func (tx *DynamicFeeTx) isAnchor() bool {
-	return tx.isAnhcor
+func (tx *DynamicFeeTx) isAnchorTx() bool {
+	return tx.isAnchor
 }
 
-func (tx *LegacyTx) isAnchor() bool {
+func (tx *LegacyTx) isAnchorTx() bool {
 	return false
 }
 
-func (tx *AccessListTx) isAnchor() bool {
+func (tx *AccessListTx) isAnchorTx() bool {
 	return false
 }
 
-func (tx *BlobTx) isAnchor() bool {
+func (tx *BlobTx) isAnchorTx() bool {
 	return false
 }
 
-func (tx *SetCodeTx) isAnchor() bool {
+func (tx *SetCodeTx) isAnchorTx() bool {
 	return false
 }
 
 func (tx *DynamicFeeTx) markAsAnchor() error {
-	tx.isAnhcor = true
+	tx.isAnchor = true
 	return nil
 }
 
 func (tx *LegacyTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	return ErrTxTypeNotSupported
 }
 
 func (tx *AccessListTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	return ErrTxTypeNotSupported
 }
 
 func (tx *BlobTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	return ErrTxTypeNotSupported
 }
 
 func (tx *SetCodeTx) markAsAnchor() error {
-	return ErrInvalidTxType
+	return ErrTxTypeNotSupported
 }
