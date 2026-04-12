@@ -160,10 +160,18 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		return nil, err
 	}
 
-	// CHANGE(taiko): validate that the imported header difficulty matches the
-	// recomputed finalized block zk gas. This mirrors alethia-reth's
-	// validate_expected_zk_gas_difficulty check.
+	// CHANGE(taiko): validate Uzen block post-execution invariants.
 	if cfg.ZkGasMeter != nil {
+		// Validate that body doesn't extend past zk gas truncation point.
+		// Mirrors alethia-reth's body_transaction_count == committed_receipt_count check.
+		if len(block.Transactions()) != len(receipts) {
+			return nil, fmt.Errorf(
+				"Uzen block body extends past zk gas truncation point: body has %d transactions but execution committed %d",
+				len(block.Transactions()), len(receipts),
+			)
+		}
+		// Validate that the imported header difficulty matches the recomputed
+		// finalized block zk gas.
 		recomputed := new(big.Int).SetUint64(cfg.ZkGasMeter.BlockZkGasUsed())
 		if header.Difficulty.Cmp(recomputed) != 0 {
 			return nil, fmt.Errorf("zk gas difficulty mismatch: header has %v, recomputed %v", header.Difficulty, recomputed)
