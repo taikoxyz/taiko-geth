@@ -259,7 +259,20 @@ func (w *Miner) sealBlockWith(
 
 	env.gasPool = core.NewGasPool(gasLimit)
 
+	// CHANGE(taiko): initialize zk gas meter for Uzen blocks.
+	var zkGasMeter *vm.ZkGasMeter
+	if w.chainConfig.IsUzen(timestamp) {
+		zkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
+		env.evm.Config.ZkGasMeter = zkGasMeter
+	}
+
+	zkGasExhausted := false // CHANGE(taiko)
+
 	for i, tx := range txs {
+		if zkGasExhausted { // CHANGE(taiko)
+			break
+		}
+
 		if i == 0 {
 			if err := tx.MarkAsAnchor(); err != nil {
 				return nil, err
@@ -278,11 +291,38 @@ func (w *Miner) sealBlockWith(
 
 		env.state.Prepare(rules, sender, blkMeta.Beneficiary, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
 		env.state.SetTxContext(tx.Hash(), env.tcount)
+
+		// CHANGE(taiko): reset in-flight zk gas before each transaction.
+		if zkGasMeter != nil {
+			zkGasMeter.ResetTransaction()
+		}
+
 		if err := w.commitTransaction(ctx, env, tx); err != nil {
+			// CHANGE(taiko): if zk gas exceeded, stop including transactions.
+			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
+				zkGasMeter.ResetTransaction()
+				zkGasExhausted = true
+				break
+			}
 			log.Debug("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			continue
 		}
+
+		// CHANGE(taiko): commit transaction zk gas on success.
+		if zkGasMeter != nil {
+			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil {
+				zkGasMeter.ResetTransaction()
+				zkGasExhausted = true
+				break
+			}
+		}
+
 		env.tcount++
+	}
+
+	// CHANGE(taiko): set header difficulty to finalized block zk gas for Uzen.
+	if zkGasMeter != nil {
+		env.header.Difficulty = new(big.Int).SetUint64(zkGasMeter.BlockZkGasUsed())
 	}
 
 	block, err := w.engine.FinalizeAndAssemble(
