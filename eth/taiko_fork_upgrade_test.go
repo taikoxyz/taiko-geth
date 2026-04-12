@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/params"
@@ -29,7 +28,7 @@ func TestShastaUpgradeUsesUpdatedChainConfigInConsensusEngine(t *testing.T) {
 
 	// Simulate upgrade to a version that includes ShastaTime in Hoodi genesis config.
 	newGenesis := core.TaikoGenesisBlock(params.TaikoHoodiNetworkID.Uint64())
-	loadedCfg, err := core.LoadChainConfig(db, newGenesis)
+	loadedCfg, _, err := core.LoadChainConfig(db, newGenesis)
 	if err != nil {
 		t.Fatalf("failed to load chain config: %v", err)
 	}
@@ -41,7 +40,7 @@ func TestShastaUpgradeUsesUpdatedChainConfigInConsensusEngine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to create consensus engine: %v", err)
 	}
-	chain, err := core.NewBlockChain(db, nil, newGenesis, nil, engine, vm.Config{}, nil)
+	chain, err := core.NewBlockChain(db, newGenesis, engine, nil)
 	if err != nil {
 		t.Fatalf("failed to create blockchain: %v", err)
 	}

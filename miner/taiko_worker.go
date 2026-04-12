@@ -3,6 +3,7 @@ package miner
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -70,13 +71,13 @@ func (w *Miner) buildTransactionsLists(
 	}
 
 	// Check if tx pool is empty at first.
-	pendingTxs := removeGoldenTouchPendingTxs(w.txpool.Pending(
+	pending, _ := w.txpool.Pending(
 		txpool.PendingFilter{
-			MinTip:       uint256.NewInt(minTip),
-			BaseFee:      uint256.MustFromBig(baseFee),
-			OnlyPlainTxs: true,
+			MinTip:  uint256.NewInt(minTip),
+			BaseFee: uint256.MustFromBig(baseFee),
 		},
-	))
+	)
+	pendingTxs := removeGoldenTouchPendingTxs(pending)
 	if len(pendingTxs) == 0 {
 		log.Warn(
 			"Transaction pool for building transactions lists is empty",
@@ -109,7 +110,8 @@ func (w *Miner) buildTransactionsLists(
 		"noTxs", params.noTxs,
 	)
 
-	env, err := w.prepareWork(params, false)
+	ctx := context.Background()
+	env, err := w.prepareWork(ctx, params, false)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +126,7 @@ func (w *Miner) buildTransactionsLists(
 	commitTxs := func(pruningResult *txsPruningResult) (*txsPruningResult, *PreBuiltTxList, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
-		env.gasPool = new(core.GasPool).AddGas(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
+		env.gasPool = core.NewGasPool(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
 		env.header.GasLimit = blockMaxGasLimit
 
 		result, err := w.commitL2Transactions(
@@ -243,7 +245,8 @@ func (w *Miner) sealBlockWith(
 	// Set extraData
 	w.SetExtra(blkMeta.ExtraData)
 
-	env, err := w.prepareWork(params, false)
+	ctx := context.Background()
+	env, err := w.prepareWork(ctx, params, false)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +257,7 @@ func (w *Miner) sealBlockWith(
 	gasLimit := env.header.GasLimit
 	rules := w.chain.Config().Rules(env.header.Number, true, timestamp)
 
-	env.gasPool = new(core.GasPool).AddGas(gasLimit)
+	env.gasPool = core.NewGasPool(gasLimit)
 
 	for i, tx := range txs {
 		if i == 0 {
@@ -275,7 +278,7 @@ func (w *Miner) sealBlockWith(
 
 		env.state.Prepare(rules, sender, blkMeta.Beneficiary, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
 		env.state.SetTxContext(tx.Hash(), env.tcount)
-		if err := w.commitTransaction(env, tx); err != nil {
+		if err := w.commitTransaction(ctx, env, tx); err != nil {
 			log.Debug("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			continue
 		}
@@ -283,6 +286,7 @@ func (w *Miner) sealBlockWith(
 	}
 
 	block, err := w.engine.FinalizeAndAssemble(
+		ctx,
 		w.chain,
 		env.header,
 		env.state,
@@ -307,9 +311,8 @@ func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int) (
 	map[common.Address][]*txpool.LazyTransaction,
 	map[common.Address][]*txpool.LazyTransaction,
 ) {
-	pending := removeGoldenTouchPendingTxs(
-		w.txpool.Pending(txpool.PendingFilter{OnlyPlainTxs: true, BaseFee: uint256.MustFromBig(baseFee)}),
-	)
+	rawPending, _ := w.txpool.Pending(txpool.PendingFilter{BaseFee: uint256.MustFromBig(baseFee)})
+	pending := removeGoldenTouchPendingTxs(rawPending)
 	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
 
 	for _, local := range localAccounts {
@@ -405,7 +408,7 @@ loop:
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 
-		err := w.commitTransaction(env, tx)
+		err := w.commitTransaction(context.Background(), env, tx)
 		switch {
 		case errors.Is(err, core.ErrNonceTooLow):
 			// New head notification data race between the transaction pool and miner, shift

@@ -28,14 +28,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/holiman/uint256"
 )
 
 var (
 	ErrInvalidSig           = errors.New("invalid transaction v, r, s values")
 	ErrUnexpectedProtection = errors.New("transaction type does not supported EIP-155 protected signatures")
-	ErrInvalidTxType        = errors.New("transaction type not valid in this context")
 	ErrTxTypeNotSupported   = errors.New("transaction type not supported")
 	ErrGasFeeCapTooLow      = errors.New("fee cap less than base fee")
+	ErrUint256Overflow      = errors.New("bigint overflow, too large for uint256")
 	errShortTypedTx         = errors.New("typed transaction too short")
 	errInvalidYParity       = errors.New("'yParity' field must be 0 or 1")
 	errVYParityMismatch     = errors.New("'v' and 'yParity' fields do not match")
@@ -88,7 +89,7 @@ type TxData interface {
 	to() *common.Address
 
 	// CHANGE(taiko): anchor transaction related.
-	isAnchor() bool
+	isAnchorTx() bool
 	markAsAnchor() error
 
 	rawSignatureValues() (v, r, s *big.Int)
@@ -104,6 +105,9 @@ type TxData interface {
 
 	encode(*bytes.Buffer) error
 	decode([]byte) error
+
+	// sigHash returns the hash of the transaction that is ought to be signed
+	sigHash(*big.Int) common.Hash
 }
 
 // EncodeRLP implements rlp.Encoder
@@ -317,11 +321,15 @@ func (tx *Transaction) To() *common.Address {
 
 // Cost returns (gas * gasPrice) + (blobGas * blobGasPrice) + value.
 func (tx *Transaction) Cost() *big.Int {
-	total := new(big.Int).Mul(tx.GasPrice(), new(big.Int).SetUint64(tx.Gas()))
-	if tx.Type() == BlobTxType {
-		total.Add(total, new(big.Int).Mul(tx.BlobGasFeeCap(), new(big.Int).SetUint64(tx.BlobGas())))
+	// Avoid allocating copies via tx.GasPrice()/tx.Value(); use inner values directly.
+	total := new(big.Int).SetUint64(tx.inner.gas())
+	total.Mul(total, tx.inner.gasPrice())
+	if blobtx, ok := tx.inner.(*BlobTx); ok {
+		tmp := new(big.Int).SetUint64(blobtx.blobGas())
+		tmp.Mul(tmp, blobtx.BlobFeeCap.ToBig())
+		total.Add(total, tmp)
 	}
-	total.Add(total, tx.Value())
+	total.Add(total, tx.inner.value())
 	return total
 }
 
@@ -353,47 +361,91 @@ func (tx *Transaction) GasTipCapIntCmp(other *big.Int) int {
 }
 
 // EffectiveGasTip returns the effective miner gasTipCap for the given base fee.
-// Note: if the effective gasTipCap is negative, this method returns both error
-// the actual negative value, _and_ ErrGasFeeCapTooLow
+// Note: if the effective gasTipCap would be negative, this method
+// returns ErrGasFeeCapTooLow, and value is undefined.
 func (tx *Transaction) EffectiveGasTip(baseFee *big.Int) (*big.Int, error) {
-	if baseFee == nil {
-		return tx.GasTipCap(), nil
+	dst := new(uint256.Int)
+	base := new(uint256.Int)
+	if baseFee != nil {
+		if base.SetFromBig(baseFee) {
+			return nil, ErrUint256Overflow
+		}
 	}
+	err := tx.calcEffectiveGasTip(dst, base)
+	return dst.ToBig(), err
+}
+
+// calcEffectiveGasTip calculates the effective gas tip of the transaction and
+// saves the result to dst.
+func (tx *Transaction) calcEffectiveGasTip(dst *uint256.Int, baseFee *uint256.Int) error {
+	if baseFee == nil {
+		if dst.SetFromBig(tx.inner.gasTipCap()) {
+			return ErrUint256Overflow
+		}
+		return nil
+	}
+
 	var err error
-	gasFeeCap := tx.GasFeeCap()
-	if gasFeeCap.Cmp(baseFee) < 0 {
+	if dst.SetFromBig(tx.inner.gasFeeCap()) {
+		return ErrUint256Overflow
+	}
+	if dst.Cmp(baseFee) < 0 {
 		err = ErrGasFeeCapTooLow
 	}
-	gasFeeCap = gasFeeCap.Sub(gasFeeCap, baseFee)
 
-	gasTipCap := tx.GasTipCap()
-	if gasTipCap.Cmp(gasFeeCap) < 0 {
-		return gasTipCap, err
+	dst.Sub(dst, baseFee)
+	gasTipCap := new(uint256.Int)
+	if gasTipCap.SetFromBig(tx.inner.gasTipCap()) {
+		return ErrUint256Overflow
 	}
-	return gasFeeCap, err
+	if gasTipCap.Cmp(dst) < 0 {
+		dst.Set(gasTipCap)
+	}
+	return err
 }
 
-// EffectiveGasTipValue is identical to EffectiveGasTip, but does not return an
-// error in case the effective gasTipCap is negative
+// EffectiveGasTipValue returns the effective gasTip value for the given base fee,
+// even if it would be negative. This can be used for sorting purposes.
 func (tx *Transaction) EffectiveGasTipValue(baseFee *big.Int) *big.Int {
-	effectiveTip, _ := tx.EffectiveGasTip(baseFee)
-	return effectiveTip
+	// min(gasTipCap, gasFeeCap - baseFee)
+	dst := new(big.Int)
+	if baseFee == nil {
+		dst.Set(tx.inner.gasTipCap())
+		return dst
+	}
+
+	dst.Sub(tx.inner.gasFeeCap(), baseFee) // gasFeeCap - baseFee
+	gasTipCap := tx.inner.gasTipCap()
+	if gasTipCap.Cmp(dst) < 0 { // gasTipCap < (gasFeeCap - baseFee)
+		dst.Set(gasTipCap)
+	}
+	return dst
 }
 
-// EffectiveGasTipCmp compares the effective gasTipCap of two transactions assuming the given base fee.
-func (tx *Transaction) EffectiveGasTipCmp(other *Transaction, baseFee *big.Int) int {
+func (tx *Transaction) EffectiveGasTipCmp(other *Transaction, baseFee *uint256.Int) int {
 	if baseFee == nil {
 		return tx.GasTipCapCmp(other)
 	}
-	return tx.EffectiveGasTipValue(baseFee).Cmp(other.EffectiveGasTipValue(baseFee))
+	// Use more efficient internal method.
+	txTip, otherTip := new(uint256.Int), new(uint256.Int)
+	err1 := tx.calcEffectiveGasTip(txTip, baseFee)
+	err2 := other.calcEffectiveGasTip(otherTip, baseFee)
+	if err1 != nil || err2 != nil {
+		// fall back to big int comparison in case of error
+		base := baseFee.ToBig()
+		return tx.EffectiveGasTipValue(base).Cmp(other.EffectiveGasTipValue(base))
+	}
+	return txTip.Cmp(otherTip)
 }
 
 // EffectiveGasTipIntCmp compares the effective gasTipCap of a transaction to the given gasTipCap.
-func (tx *Transaction) EffectiveGasTipIntCmp(other *big.Int, baseFee *big.Int) int {
+func (tx *Transaction) EffectiveGasTipIntCmp(other *uint256.Int, baseFee *uint256.Int) int {
 	if baseFee == nil {
-		return tx.GasTipCapIntCmp(other)
+		return tx.GasTipCapIntCmp(other.ToBig())
 	}
-	return tx.EffectiveGasTipValue(baseFee).Cmp(other)
+	txTip := new(uint256.Int)
+	tx.calcEffectiveGasTip(txTip, baseFee)
+	return txTip.Cmp(other)
 }
 
 // BlobGas returns the blob gas limit of the transaction for blob transactions, 0 otherwise.
@@ -441,14 +493,18 @@ func (tx *Transaction) BlobGasFeeCapIntCmp(other *big.Int) int {
 // WithoutBlobTxSidecar returns a copy of tx with the blob sidecar removed.
 func (tx *Transaction) WithoutBlobTxSidecar() *Transaction {
 	blobtx, ok := tx.inner.(*BlobTx)
-	if !ok {
+	if !ok || blobtx.Sidecar == nil {
 		return tx
 	}
 	cpy := &Transaction{
 		inner: blobtx.withoutSidecar(),
 		time:  tx.time,
 	}
-	// Note: tx.size cache not carried over because the sidecar is included in size!
+	if size := tx.size.Load(); size != 0 {
+		// The tx had a sidecar before, so we need to subtract it from the size.
+		scSize := rlp.ListSize(blobtx.Sidecar.encodedSize())
+		cpy.size.Store(size - scSize)
+	}
 	if h := tx.hash.Load(); h != nil {
 		cpy.hash.Store(h)
 	}
@@ -622,7 +678,7 @@ func TxDifference(a, b Transactions) Transactions {
 func HashDifference(a, b []common.Hash) []common.Hash {
 	keep := make([]common.Hash, 0, len(a))
 
-	remove := make(map[common.Hash]struct{})
+	remove := make(map[common.Hash]struct{}, len(b))
 	for _, hash := range b {
 		remove[hash] = struct{}{}
 	}

@@ -47,7 +47,6 @@ func CalcEIP4396BaseFee(config *params.ChainConfig, parent *types.Header, parent
 	if parent.Number.Cmp(common.Big0) == 0 {
 		return new(big.Int).SetUint64(params.ShastaInitialBaseFee)
 	}
-
 	parentGasTarget := parent.GasLimit / config.ElasticityMultiplier()
 	parentAdjustedGasTarget := min(
 		parentGasTarget*parentBlockTime/blockTimeTarget,

@@ -35,10 +35,10 @@ import (
 // ExecutionResult includes all output after executing given evm
 // message no matter the execution itself is successful or not.
 type ExecutionResult struct {
-	UsedGas     uint64 // Total used gas, not including the refunded gas
-	RefundedGas uint64 // Total gas refunded after execution
-	Err         error  // Any error encountered during the execution(listed in core/vm/errors.go)
-	ReturnData  []byte // Returned data from evm(function result or data supplied with revert opcode)
+	UsedGas    uint64 // Total used gas, refunded gas is deducted
+	MaxUsedGas uint64 // Maximum gas consumed during execution, excluding gas refunds.
+	Err        error  // Any error encountered during the execution(listed in core/vm/errors.go)
+	ReturnData []byte // Returned data from evm(function result or data supplied with revert opcode)
 }
 
 // Unwrap returns the internal evm error which allows us for further
@@ -160,11 +160,17 @@ type Message struct {
 
 	// When SkipNonceChecks is true, the message nonce is not checked against the
 	// account nonce in state.
-	// This field will be set to true for operations like RPC eth_call.
+	//
+	// This field will be set to true for operations like RPC eth_call
+	// or the state prefetching.
 	SkipNonceChecks bool
 
-	// When SkipFromEOACheck is true, the message sender is not checked to be an EOA.
-	SkipFromEOACheck bool
+	// When set, the message is not treated as a transaction, and certain
+	// transaction-specific checks are skipped:
+	//
+	// - From is not verified to be an EOA
+	// - GasLimit is not checked against the protocol defined tx gaslimit
+	SkipTransactionChecks bool
 
 	// CHANGE(taiko): whether the current transaction is the first TaikoL2.anchor transaction in a block.
 	IsAnchor bool
@@ -178,16 +184,16 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 	msg := &Message{
 		Nonce:                 tx.Nonce(),
 		GasLimit:              tx.Gas(),
-		GasPrice:              new(big.Int).Set(tx.GasPrice()),
-		GasFeeCap:             new(big.Int).Set(tx.GasFeeCap()),
-		GasTipCap:             new(big.Int).Set(tx.GasTipCap()),
+		GasPrice:              tx.GasPrice(),
+		GasFeeCap:             tx.GasFeeCap(),
+		GasTipCap:             tx.GasTipCap(),
 		To:                    tx.To(),
 		Value:                 tx.Value(),
 		Data:                  tx.Data(),
 		AccessList:            tx.AccessList(),
 		SetCodeAuthorizations: tx.SetCodeAuthorizations(),
 		SkipNonceChecks:       false,
-		SkipFromEOACheck:      false,
+		SkipTransactionChecks: false,
 		BlobHashes:            tx.BlobHashes(),
 		BlobGasFeeCap:         tx.BlobGasFeeCap(),
 		IsAnchor:              tx.IsAnchor(),
@@ -212,6 +218,11 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 // indicates a core error meaning that the message would always fail for that particular
 // state and would never be accepted within a block.
 func ApplyMessage(evm *vm.EVM, msg *Message, gp *GasPool) (*ExecutionResult, error) {
+	// Do not panic if the gas pool is nil. This is allowed when executing
+	// a single message via RPC invocation.
+	if gp == nil {
+		gp = NewGasPool(msg.GasLimit)
+	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	return newStateTransition(evm, msg, gp).execute()
 }
@@ -307,8 +318,8 @@ func (st *stateTransition) buyGas() error {
 		st.evm.Config.Tracer.OnGasChange(0, st.msg.GasLimit, tracing.GasChangeTxInitialBalance)
 	}
 	st.gasRemaining = st.msg.GasLimit
-
 	st.initialGas = st.msg.GasLimit
+
 	mgvalU256, _ := uint256.FromBig(mgval)
 	st.state.SubBalance(st.msg.From, mgvalU256, tracing.BalanceDecreaseGasBuy)
 	return nil
@@ -331,7 +342,12 @@ func (st *stateTransition) preCheck() error {
 				msg.From.Hex(), stNonce)
 		}
 	}
-	if !msg.SkipFromEOACheck {
+	isOsaka := st.evm.ChainConfig().IsOsaka(st.evm.Context.BlockNumber, st.evm.Context.Time)
+	if !msg.SkipTransactionChecks {
+		// Verify tx gas limit does not exceed EIP-7825 cap.
+		if isOsaka && msg.GasLimit > params.MaxTxGas {
+			return fmt.Errorf("%w (cap: %d, tx: %d)", ErrGasLimitTooHigh, params.MaxTxGas, msg.GasLimit)
+		}
 		// Make sure the sender is an EOA
 		code := st.state.GetCode(msg.From)
 		_, delegated := types.ParseDelegation(code)
@@ -375,6 +391,9 @@ func (st *stateTransition) preCheck() error {
 		}
 		if len(msg.BlobHashes) == 0 {
 			return ErrMissingBlobHashes
+		}
+		if isOsaka && len(msg.BlobHashes) > params.BlobTxMaxBlobs {
+			return ErrTooManyBlobs
 		}
 		for i, hash := range msg.BlobHashes {
 			if !kzg4844.IsValidVersionedHash(hash[:]) {
@@ -469,7 +488,7 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		st.evm.AccessEvents.AddTxOrigin(msg.From)
 
 		if targetAddr := msg.To; targetAddr != nil {
-			st.evm.AccessEvents.AddTxDestination(*targetAddr, msg.Value.Sign() != 0)
+			st.evm.AccessEvents.AddTxDestination(*targetAddr, msg.Value.Sign() != 0, !st.state.Exist(*targetAddr))
 		}
 	}
 
@@ -483,8 +502,10 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 	}
 
 	// Check whether the init code size has been exceeded.
-	if rules.IsShanghai && contractCreation && len(msg.Data) > params.MaxInitCodeSize {
-		return nil, fmt.Errorf("%w: code size %v limit %v", ErrMaxInitCodeSizeExceeded, len(msg.Data), params.MaxInitCodeSize)
+	if contractCreation {
+		if err := vm.CheckMaxInitCodeSize(&rules, uint64(len(msg.Data))); err != nil {
+			return nil, err
+		}
 	}
 
 	// Execute the preparatory steps for state transition which includes:
@@ -523,9 +544,12 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		ret, st.gasRemaining, vmerr = st.evm.Call(msg.From, st.to(), msg.Data, st.gasRemaining, value)
 	}
 
+	// Record the gas used excluding gas refunds. This value represents the actual
+	// gas allowance required to complete execution.
+	peakGasUsed := st.gasUsed()
+
 	// Compute refund counter, capped to a refund quotient.
-	gasRefund := st.calcRefund()
-	st.gasRemaining += gasRefund
+	st.gasRemaining += st.calcRefund()
 	if rules.IsPrague {
 		// After EIP-7623: Data-heavy transactions pay the floor gas.
 		if st.gasUsed() < floorDataGas {
@@ -535,15 +559,27 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 				t.OnGasChange(prev, st.gasRemaining, tracing.GasChangeTxDataFloor)
 			}
 		}
+		if peakGasUsed < floorDataGas {
+			peakGasUsed = floorDataGas
+		}
 	}
+	// Return gas to the user
 	st.returnGas()
 
+	// Return gas to the gas pool
+	if rules.IsAmsterdam {
+		// Refund is excluded for returning
+		err = st.gp.ReturnGas(st.initialGas-peakGasUsed, st.gasUsed())
+	} else {
+		// Refund is included for returning
+		err = st.gp.ReturnGas(st.gasRemaining, st.gasUsed())
+	}
+	if err != nil {
+		return nil, err
+	}
 	effectiveTip := msg.GasPrice
 	if rules.IsLondon {
-		effectiveTip = new(big.Int).Sub(msg.GasFeeCap, st.evm.Context.BaseFee)
-		if effectiveTip.Cmp(msg.GasTipCap) > 0 {
-			effectiveTip = msg.GasTipCap
-		}
+		effectiveTip = new(big.Int).Sub(msg.GasPrice, st.evm.Context.BaseFee)
 	}
 	effectiveTipU256, _ := uint256.FromBig(effectiveTip)
 
@@ -572,15 +608,17 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		}
 		// add the coinbase to the witness iff the fee is greater than 0
 		if rules.IsEIP4762 && fee.Sign() != 0 {
-			st.evm.AccessEvents.AddAccount(st.evm.Context.Coinbase, true)
+			st.evm.AccessEvents.AddAccount(st.evm.Context.Coinbase, true, math.MaxUint64)
 		}
 	}
-
+	if rules.IsAmsterdam {
+		st.evm.StateDB.EmitLogsForBurnAccounts()
+	}
 	return &ExecutionResult{
-		UsedGas:     st.gasUsed(),
-		RefundedGas: gasRefund,
-		Err:         vmerr,
-		ReturnData:  ret,
+		UsedGas:    st.gasUsed(),
+		MaxUsedGas: peakGasUsed,
+		Err:        vmerr,
+		ReturnData: ret,
 	}, nil
 }
 
@@ -632,12 +670,12 @@ func (st *stateTransition) applyAuthorization(auth *types.SetCodeAuthorization) 
 	st.state.SetNonce(authority, auth.Nonce+1, tracing.NonceChangeAuthorization)
 	if auth.Address == (common.Address{}) {
 		// Delegation to zero address means clear.
-		st.state.SetCode(authority, nil)
+		st.state.SetCode(authority, nil, tracing.CodeChangeAuthorizationClear)
 		return nil
 	}
 
 	// Otherwise install delegation to auth.Address.
-	st.state.SetCode(authority, types.AddressToDelegation(auth.Address))
+	st.state.SetCode(authority, types.AddressToDelegation(auth.Address), tracing.CodeChangeAuthorization)
 
 	return nil
 }
@@ -673,10 +711,6 @@ func (st *stateTransition) returnGas() {
 			st.evm.Config.Tracer.OnGasChange(st.gasRemaining, 0, tracing.GasChangeTxLeftOverReturned)
 		}
 	}
-
-	// Also return remaining gas to the block gas counter so it is
-	// available for the next transaction.
-	st.gp.AddGas(st.gasRemaining)
 }
 
 // gasUsed returns the amount of gas used up by the state transition.

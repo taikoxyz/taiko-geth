@@ -30,25 +30,19 @@ import (
 
 // memoryTable is used to store a list of sequential items in memory.
 type memoryTable struct {
-	name   string   // Table name
 	items  uint64   // Number of stored items in the table, including the deleted ones
 	offset uint64   // Number of deleted items from the table
 	data   [][]byte // List of rlp-encoded items, sort in order
 	size   uint64   // Total memory size occupied by the table
 	lock   sync.RWMutex
+
+	name   string
+	config freezerTableConfig
 }
 
 // newMemoryTable initializes the memory table.
-func newMemoryTable(name string) *memoryTable {
-	return &memoryTable{name: name}
-}
-
-// has returns an indicator whether the specified data exists.
-func (t *memoryTable) has(number uint64) bool {
-	t.lock.RLock()
-	defer t.lock.RUnlock()
-
-	return number >= t.offset && number < t.items
+func newMemoryTable(name string, config freezerTableConfig) *memoryTable {
+	return &memoryTable{name: name, config: config}
 }
 
 // retrieve retrieves multiple items in sequence, starting from the index 'start'.
@@ -97,6 +91,13 @@ func (t *memoryTable) truncateHead(items uint64) error {
 	if items < t.offset {
 		return errors.New("truncation below tail")
 	}
+	for i := int(items - t.offset); i < len(t.data); i++ {
+		if t.size > uint64(len(t.data[i])) {
+			t.size -= uint64(len(t.data[i]))
+		} else {
+			t.size = 0
+		}
+	}
 	t.data = t.data[:items-t.offset]
 	t.items = items
 	return nil
@@ -112,10 +113,27 @@ func (t *memoryTable) truncateTail(items uint64) error {
 		return nil
 	}
 	if t.items < items {
-		return errors.New("truncation above head")
+		return t.reset(items)
+	}
+	for i := uint64(0); i < items-t.offset; i++ {
+		if t.size > uint64(len(t.data[i])) {
+			t.size -= uint64(len(t.data[i]))
+		} else {
+			t.size = 0
+		}
 	}
 	t.data = t.data[items-t.offset:]
 	t.offset = items
+	return nil
+}
+
+// reset clears the entire table and sets both the head and tail to the given
+// value. It assumes the caller holds the lock and that tail > t.items.
+func (t *memoryTable) reset(offset uint64) error {
+	t.size = 0
+	t.data = nil
+	t.items = offset
+	t.offset = offset
 	return nil
 }
 
@@ -218,27 +236,16 @@ type MemoryFreezer struct {
 }
 
 // NewMemoryFreezer initializes an in-memory freezer instance.
-func NewMemoryFreezer(readonly bool, tableName map[string]bool) *MemoryFreezer {
+func NewMemoryFreezer(readonly bool, tableName map[string]freezerTableConfig) *MemoryFreezer {
 	tables := make(map[string]*memoryTable)
-	for name := range tableName {
-		tables[name] = newMemoryTable(name)
+	for name, cfg := range tableName {
+		tables[name] = newMemoryTable(name, cfg)
 	}
 	return &MemoryFreezer{
 		writeBatch: newMemoryBatch(),
 		readonly:   readonly,
 		tables:     tables,
 	}
-}
-
-// HasAncient returns an indicator whether the specified data exists.
-func (f *MemoryFreezer) HasAncient(kind string, number uint64) (bool, error) {
-	f.lock.RLock()
-	defer f.lock.RUnlock()
-
-	if table := f.tables[kind]; table != nil {
-		return table.has(number), nil
-	}
-	return false, nil
 }
 
 // Ancient retrieves an ancient binary blob from the in-memory freezer.
@@ -368,7 +375,9 @@ func (f *MemoryFreezer) TruncateHead(items uint64) (uint64, error) {
 	return old, nil
 }
 
-// TruncateTail discards any recent data below the provided threshold number.
+// TruncateTail discards all data below the provided threshold number.
+// Note this will only truncate 'prunable' tables. Block headers and canonical
+// hashes cannot be truncated at this time.
 func (f *MemoryFreezer) TruncateTail(tail uint64) (uint64, error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -381,16 +390,21 @@ func (f *MemoryFreezer) TruncateTail(tail uint64) (uint64, error) {
 		return old, nil
 	}
 	for _, table := range f.tables {
-		if err := table.truncateTail(tail); err != nil {
-			return 0, err
+		if table.config.prunable {
+			if err := table.truncateTail(tail); err != nil {
+				return 0, err
+			}
 		}
 	}
 	f.tail = tail
+	if f.items < tail {
+		f.items = tail
+	}
 	return old, nil
 }
 
-// Sync flushes all data tables to disk.
-func (f *MemoryFreezer) Sync() error {
+// SyncAncient flushes all data tables to disk.
+func (f *MemoryFreezer) SyncAncient() error {
 	return nil
 }
 
@@ -412,8 +426,8 @@ func (f *MemoryFreezer) Reset() error {
 	defer f.lock.Unlock()
 
 	tables := make(map[string]*memoryTable)
-	for name := range f.tables {
-		tables[name] = newMemoryTable(name)
+	for name, table := range f.tables {
+		tables[name] = newMemoryTable(name, table.config)
 	}
 	f.tables = tables
 	f.items, f.tail = 0, 0
@@ -424,4 +438,29 @@ func (f *MemoryFreezer) Reset() error {
 // Since the memory freezer is ephemeral, an empty string is returned.
 func (f *MemoryFreezer) AncientDatadir() (string, error) {
 	return "", nil
+}
+
+// AncientBytes retrieves the value segment of the element specified by the id
+// and value offsets.
+func (f *MemoryFreezer) AncientBytes(kind string, id, offset, length uint64) ([]byte, error) {
+	f.lock.RLock()
+	defer f.lock.RUnlock()
+
+	table := f.tables[kind]
+	if table == nil {
+		return nil, errUnknownTable
+	}
+	entries, err := table.retrieve(id, 1, 0)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, errOutOfBounds
+	}
+	data := entries[0]
+
+	if offset > uint64(len(data)) || offset+length > uint64(len(data)) {
+		return nil, fmt.Errorf("requested range out of bounds: item size %d, offset %d, length %d", len(data), offset, length)
+	}
+	return data[offset : offset+length], nil
 }
