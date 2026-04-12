@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -122,7 +121,7 @@ func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
 	engine := ethash.NewFaker()
 
 	db := rawdb.NewMemoryDatabase()
-	chain, err := core.NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil)
+	chain, err := core.NewBlockChain(db, genesis, engine, nil)
 	if err != nil {
 		t.Fatalf("failed to create chain: %v", err)
 	}
@@ -257,7 +256,7 @@ func newShastaTestChain(t *testing.T) (ethdb.Database, *core.BlockChain, *big.In
 	})
 
 	db := rawdb.NewMemoryDatabase()
-	chain, err := core.NewBlockChain(db, nil, genesis, nil, engine, vm.Config{}, nil)
+	chain, err := core.NewBlockChain(db, genesis, engine, nil)
 	if err != nil {
 		t.Fatalf("failed to create chain: %v", err)
 	}

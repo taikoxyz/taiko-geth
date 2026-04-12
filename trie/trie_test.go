@@ -35,12 +35,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/keccak"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/internal/testrand"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/holiman/uint256"
-	"golang.org/x/crypto/sha3"
 )
 
 func init() {
@@ -326,7 +326,7 @@ func TestReplication(t *testing.T) {
 		updateString(trie2, val.k, val.v)
 	}
 	if trie2.Hash() != hash {
-		t.Errorf("root failure. expected %x got %x", hash, hash)
+		t.Errorf("root failure. expected %x got %x", hash, trie2.Hash())
 	}
 }
 
@@ -449,35 +449,35 @@ func verifyAccessList(old *Trie, new *Trie, set *trienode.NodeSet) error {
 		if !ok || n.IsDeleted() {
 			return errors.New("expect new node")
 		}
-		//if len(n.Prev) > 0 {
-		//	return errors.New("unexpected origin value")
-		//}
+		if len(set.Origins[path]) > 0 {
+			return errors.New("unexpected origin value")
+		}
 	}
 	// Check deletion set
-	for path := range deletes {
+	for path, blob := range deletes {
 		n, ok := set.Nodes[path]
 		if !ok || !n.IsDeleted() {
 			return errors.New("expect deleted node")
 		}
-		//if len(n.Prev) == 0 {
-		//	return errors.New("expect origin value")
-		//}
-		//if !bytes.Equal(n.Prev, blob) {
-		//	return errors.New("invalid origin value")
-		//}
+		if len(set.Origins[path]) == 0 {
+			return errors.New("expect origin value")
+		}
+		if !bytes.Equal(set.Origins[path], blob) {
+			return errors.New("invalid origin value")
+		}
 	}
 	// Check update set
-	for path := range updates {
+	for path, blob := range updates {
 		n, ok := set.Nodes[path]
 		if !ok || n.IsDeleted() {
 			return errors.New("expect updated node")
 		}
-		//if len(n.Prev) == 0 {
-		//	return errors.New("expect origin value")
-		//}
-		//if !bytes.Equal(n.Prev, blob) {
-		//	return errors.New("invalid origin value")
-		//}
+		if len(set.Origins[path]) == 0 {
+			return errors.New("expect origin value")
+		}
+		if !bytes.Equal(set.Origins[path], blob) {
+			return errors.New("invalid origin value")
+		}
 	}
 	return nil
 }
@@ -595,18 +595,18 @@ func runRandTest(rt randTest) error {
 					deleteExp[path] = struct{}{}
 				}
 			}
-			if len(insertExp) != len(tr.tracer.inserts) {
+			if len(insertExp) != len(tr.opTracer.inserts) {
 				rt[i].err = errors.New("insert set mismatch")
 			}
-			if len(deleteExp) != len(tr.tracer.deletes) {
+			if len(deleteExp) != len(tr.opTracer.deletes) {
 				rt[i].err = errors.New("delete set mismatch")
 			}
-			for insert := range tr.tracer.inserts {
+			for insert := range tr.opTracer.inserts {
 				if _, present := insertExp[insert]; !present {
 					rt[i].err = errors.New("missing inserted node")
 				}
 			}
-			for del := range tr.tracer.deletes {
+			for del := range tr.opTracer.deletes {
 				if _, present := deleteExp[del]; !present {
 					rt[i].err = errors.New("missing deleted node")
 				}
@@ -830,6 +830,7 @@ func (s *spongeDb) NewBatch() ethdb.Batch                    { return &spongeBat
 func (s *spongeDb) NewBatchWithSize(size int) ethdb.Batch    { return &spongeBatch{s} }
 func (s *spongeDb) Stat() (string, error)                    { panic("implement me") }
 func (s *spongeDb) Compact(start []byte, limit []byte) error { panic("implement me") }
+func (s *spongeDb) SyncKeyValue() error                      { return nil }
 func (s *spongeDb) Close() error                             { return nil }
 func (s *spongeDb) Put(key []byte, value []byte) error {
 	var (
@@ -862,7 +863,6 @@ func (s *spongeDb) Flush() {
 		s.sponge.Write([]byte(key))
 		s.sponge.Write([]byte(s.values[key]))
 	}
-	fmt.Println(len(s.keys))
 }
 
 // spongeBatch is a dummy batch which immediately writes to the underlying spongedb
@@ -875,10 +875,12 @@ func (b *spongeBatch) Put(key, value []byte) error {
 	return nil
 }
 func (b *spongeBatch) Delete(key []byte) error             { panic("implement me") }
+func (b *spongeBatch) DeleteRange(start, end []byte) error { panic("implement me") }
 func (b *spongeBatch) ValueSize() int                      { return 100 }
 func (b *spongeBatch) Write() error                        { return nil }
 func (b *spongeBatch) Reset()                              {}
 func (b *spongeBatch) Replay(w ethdb.KeyValueWriter) error { return nil }
+func (b *spongeBatch) Close()                              {}
 
 // TestCommitSequence tests that the trie.Commit operation writes the elements
 // of the trie in the expected order.
@@ -967,7 +969,7 @@ func TestCommitSequenceStackTrie(t *testing.T) {
 		prng := rand.New(rand.NewSource(int64(count)))
 		// This spongeDb is used to check the sequence of disk-db-writes
 		s := &spongeDb{
-			sponge: sha3.NewLegacyKeccak256(),
+			sponge: keccak.NewLegacyKeccak256(),
 			id:     "a",
 			values: make(map[string]string),
 		}
@@ -976,7 +978,7 @@ func TestCommitSequenceStackTrie(t *testing.T) {
 
 		// Another sponge is used for the stacktrie commits
 		stackTrieSponge := &spongeDb{
-			sponge: sha3.NewLegacyKeccak256(),
+			sponge: keccak.NewLegacyKeccak256(),
 			id:     "b",
 			values: make(map[string]string),
 		}
@@ -1039,7 +1041,7 @@ func TestCommitSequenceStackTrie(t *testing.T) {
 // not fit into 32 bytes, rlp-encoded. However, it's still the correct thing to do.
 func TestCommitSequenceSmallRoot(t *testing.T) {
 	s := &spongeDb{
-		sponge: sha3.NewLegacyKeccak256(),
+		sponge: keccak.NewLegacyKeccak256(),
 		id:     "a",
 		values: make(map[string]string),
 	}
@@ -1048,7 +1050,7 @@ func TestCommitSequenceSmallRoot(t *testing.T) {
 
 	// Another sponge is used for the stacktrie commits
 	stackTrieSponge := &spongeDb{
-		sponge: sha3.NewLegacyKeccak256(),
+		sponge: keccak.NewLegacyKeccak256(),
 		id:     "b",
 		values: make(map[string]string),
 	}
@@ -1329,4 +1331,252 @@ func printSet(set *trienode.NodeSet) string {
 		fmt.Fprintf(out, "[leaf]: %v\n", n)
 	}
 	return out.String()
+}
+
+func TestTrieCopy(t *testing.T) {
+	testTrieCopy(t, []kv{
+		{k: []byte("do"), v: []byte("verb")},
+		{k: []byte("ether"), v: []byte("wookiedoo")},
+		{k: []byte("horse"), v: []byte("stallion")},
+		{k: []byte("shaman"), v: []byte("horse")},
+		{k: []byte("doge"), v: []byte("coin")},
+		{k: []byte("dog"), v: []byte("puppy")},
+	})
+
+	var entries []kv
+	for i := 0; i < 256; i++ {
+		entries = append(entries, kv{k: testrand.Bytes(32), v: testrand.Bytes(32)})
+	}
+	testTrieCopy(t, entries)
+}
+
+func testTrieCopy(t *testing.T, entries []kv) {
+	tr := NewEmpty(nil)
+	for _, entry := range entries {
+		tr.Update(entry.k, entry.v)
+	}
+	trCpy := tr.Copy()
+
+	if tr.Hash() != trCpy.Hash() {
+		t.Errorf("Hash mismatch: old %v, copy %v", tr.Hash(), trCpy.Hash())
+	}
+
+	// Check iterator
+	it, _ := tr.NodeIterator(nil)
+	itCpy, _ := trCpy.NodeIterator(nil)
+
+	for it.Next(false) {
+		hasNext := itCpy.Next(false)
+		if !hasNext {
+			t.Fatal("Iterator is not matched")
+		}
+		if !bytes.Equal(it.Path(), itCpy.Path()) {
+			t.Fatal("Iterator is not matched")
+		}
+		if it.Leaf() != itCpy.Leaf() {
+			t.Fatal("Iterator is not matched")
+		}
+		if it.Leaf() && !bytes.Equal(it.LeafBlob(), itCpy.LeafBlob()) {
+			t.Fatal("Iterator is not matched")
+		}
+	}
+
+	// Check commit
+	root, nodes := tr.Commit(false)
+	rootCpy, nodesCpy := trCpy.Commit(false)
+	if root != rootCpy {
+		t.Fatal("root mismatch")
+	}
+	if len(nodes.Nodes) != len(nodesCpy.Nodes) {
+		t.Fatal("commit node mismatch")
+	}
+	for p, n := range nodes.Nodes {
+		nn, exists := nodesCpy.Nodes[p]
+		if !exists {
+			t.Fatalf("node not exists: %v", p)
+		}
+		if !reflect.DeepEqual(n, nn) {
+			t.Fatalf("node mismatch: %v", p)
+		}
+	}
+}
+
+func TestTrieCopyOldTrie(t *testing.T) {
+	testTrieCopyOldTrie(t, []kv{
+		{k: []byte("do"), v: []byte("verb")},
+		{k: []byte("ether"), v: []byte("wookiedoo")},
+		{k: []byte("horse"), v: []byte("stallion")},
+		{k: []byte("shaman"), v: []byte("horse")},
+		{k: []byte("doge"), v: []byte("coin")},
+		{k: []byte("dog"), v: []byte("puppy")},
+	})
+
+	var entries []kv
+	for i := 0; i < 256; i++ {
+		entries = append(entries, kv{k: testrand.Bytes(32), v: testrand.Bytes(32)})
+	}
+	testTrieCopyOldTrie(t, entries)
+}
+
+func testTrieCopyOldTrie(t *testing.T, entries []kv) {
+	tr := NewEmpty(nil)
+	for _, entry := range entries {
+		tr.Update(entry.k, entry.v)
+	}
+	hash := tr.Hash()
+
+	trCpy := tr.Copy()
+	for _, val := range entries {
+		if rand.Intn(2) == 0 {
+			trCpy.Delete(val.k)
+		} else {
+			trCpy.Update(val.k, testrand.Bytes(32))
+		}
+	}
+	for i := 0; i < 10; i++ {
+		trCpy.Update(testrand.Bytes(32), testrand.Bytes(32))
+	}
+	trCpy.Hash()
+	trCpy.Commit(false)
+
+	// Traverse the original tree, the changes made on the copy one shouldn't
+	// affect the old one
+	for _, entry := range entries {
+		d, _ := tr.Get(entry.k)
+		if !bytes.Equal(d, entry.v) {
+			t.Errorf("Unexpected data, key: %v, want: %v, got: %v", entry.k, entry.v, d)
+		}
+	}
+	if tr.Hash() != hash {
+		t.Errorf("Hash mismatch: old %v, new %v", hash, tr.Hash())
+	}
+}
+
+func TestTrieCopyNewTrie(t *testing.T) {
+	testTrieCopyNewTrie(t, []kv{
+		{k: []byte("do"), v: []byte("verb")},
+		{k: []byte("ether"), v: []byte("wookiedoo")},
+		{k: []byte("horse"), v: []byte("stallion")},
+		{k: []byte("shaman"), v: []byte("horse")},
+		{k: []byte("doge"), v: []byte("coin")},
+		{k: []byte("dog"), v: []byte("puppy")},
+	})
+
+	var entries []kv
+	for i := 0; i < 256; i++ {
+		entries = append(entries, kv{k: testrand.Bytes(32), v: testrand.Bytes(32)})
+	}
+	testTrieCopyNewTrie(t, entries)
+}
+
+func testTrieCopyNewTrie(t *testing.T, entries []kv) {
+	tr := NewEmpty(nil)
+	for _, entry := range entries {
+		tr.Update(entry.k, entry.v)
+	}
+	trCpy := tr.Copy()
+	hash := trCpy.Hash()
+
+	for _, val := range entries {
+		if rand.Intn(2) == 0 {
+			tr.Delete(val.k)
+		} else {
+			tr.Update(val.k, testrand.Bytes(32))
+		}
+	}
+	for i := 0; i < 10; i++ {
+		tr.Update(testrand.Bytes(32), testrand.Bytes(32))
+	}
+
+	// Traverse the original tree, the changes made on the copy one shouldn't
+	// affect the old one
+	for _, entry := range entries {
+		d, _ := trCpy.Get(entry.k)
+		if !bytes.Equal(d, entry.v) {
+			t.Errorf("Unexpected data, key: %v, want: %v, got: %v", entry.k, entry.v, d)
+		}
+	}
+	if trCpy.Hash() != hash {
+		t.Errorf("Hash mismatch: old %v, new %v", hash, tr.Hash())
+	}
+}
+
+// goos: darwin
+// goarch: arm64
+// pkg: github.com/ethereum/go-ethereum/trie
+// cpu: Apple M1 Pro
+// BenchmarkTriePrefetch
+// BenchmarkTriePrefetch-8   	    9961	    100706 ns/op
+func BenchmarkTriePrefetch(b *testing.B) {
+	db := newTestDatabase(rawdb.NewMemoryDatabase(), rawdb.HashScheme)
+	tr := NewEmpty(db)
+	vals := make(map[string]*kv)
+	for i := 0; i < 3000; i++ {
+		value := &kv{
+			k: randBytes(32),
+			v: randBytes(20),
+			t: false,
+		}
+		tr.MustUpdate(value.k, value.v)
+		vals[string(value.k)] = value
+	}
+	root, nodes := tr.Commit(false)
+	db.Update(root, types.EmptyRootHash, trienode.NewWithNodeSet(nodes))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		tr, err := New(TrieID(root), db)
+		if err != nil {
+			b.Fatalf("Failed to open the trie")
+		}
+		var keys [][]byte
+		for k := range vals {
+			keys = append(keys, []byte(k))
+			if len(keys) > 64 {
+				break
+			}
+		}
+		tr.Prefetch(keys)
+	}
+}
+
+// goos: darwin
+// goarch: arm64
+// pkg: github.com/ethereum/go-ethereum/trie
+// cpu: Apple M1 Pro
+// BenchmarkTrieSeqPrefetch
+// BenchmarkTrieSeqPrefetch-8   	   12879	     96710 ns/op
+func BenchmarkTrieSeqPrefetch(b *testing.B) {
+	db := newTestDatabase(rawdb.NewMemoryDatabase(), rawdb.HashScheme)
+	tr := NewEmpty(db)
+	vals := make(map[string]*kv)
+	for i := 0; i < 3000; i++ {
+		value := &kv{
+			k: randBytes(32),
+			v: randBytes(20),
+			t: false,
+		}
+		tr.MustUpdate(value.k, value.v)
+		vals[string(value.k)] = value
+	}
+	root, nodes := tr.Commit(false)
+	db.Update(root, types.EmptyRootHash, trienode.NewWithNodeSet(nodes))
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		tr, err := New(TrieID(root), db)
+		if err != nil {
+			b.Fatalf("Failed to open the trie")
+		}
+		var keys [][]byte
+		for k := range vals {
+			keys = append(keys, []byte(k))
+			if len(keys) > 64 {
+				break
+			}
+		}
+		for _, k := range keys {
+			tr.Get(k)
+		}
+	}
 }

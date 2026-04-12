@@ -23,6 +23,7 @@ func (p PayloadAttributes) MarshalJSON() ([]byte, error) {
 		SuggestedFeeRecipient common.Address      `json:"suggestedFeeRecipient" gencodec:"required"`
 		Withdrawals           []*types.Withdrawal `json:"withdrawals"`
 		BeaconRoot            *common.Hash        `json:"parentBeaconBlockRoot"`
+		SlotNumber            *hexutil.Uint64     `json:"slotNumber"`
 		BaseFeePerGas         *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
 		BlockMetadata         *BlockMetadata      `json:"blockMetadata" gencodec:"required"`
 		L1Origin              *rawdb.L1Origin     `json:"l1Origin"      gencodec:"required"`
@@ -33,6 +34,7 @@ func (p PayloadAttributes) MarshalJSON() ([]byte, error) {
 	enc.SuggestedFeeRecipient = p.SuggestedFeeRecipient
 	enc.Withdrawals = p.Withdrawals
 	enc.BeaconRoot = p.BeaconRoot
+	enc.SlotNumber = (*hexutil.Uint64)(p.SlotNumber)
 	enc.BaseFeePerGas = (*hexutil.Big)(p.BaseFeePerGas)
 	enc.BlockMetadata = p.BlockMetadata
 	enc.L1Origin = p.L1Origin
@@ -47,6 +49,7 @@ func (p *PayloadAttributes) UnmarshalJSON(input []byte) error {
 		SuggestedFeeRecipient *common.Address     `json:"suggestedFeeRecipient" gencodec:"required"`
 		Withdrawals           []*types.Withdrawal `json:"withdrawals"`
 		BeaconRoot            *common.Hash        `json:"parentBeaconBlockRoot"`
+		SlotNumber            *hexutil.Uint64     `json:"slotNumber"`
 		BaseFeePerGas         *hexutil.Big        `json:"baseFeePerGas" gencodec:"required"`
 		BlockMetadata         *BlockMetadata      `json:"blockMetadata" gencodec:"required"`
 		L1Origin              *rawdb.L1Origin     `json:"l1Origin"      gencodec:"required"`
@@ -72,6 +75,9 @@ func (p *PayloadAttributes) UnmarshalJSON(input []byte) error {
 	}
 	if dec.BeaconRoot != nil {
 		p.BeaconRoot = dec.BeaconRoot
+	}
+	if dec.SlotNumber != nil {
+		p.SlotNumber = (*uint64)(dec.SlotNumber)
 	}
 	if dec.BaseFeePerGas == nil {
 		return errors.New("missing required field 'baseFeePerGas' for PayloadAttributes")

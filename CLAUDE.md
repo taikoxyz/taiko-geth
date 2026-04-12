@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-This is **taiko-geth**, a fork of go-ethereum v1.15.5 customized for the Taiko L2 rollup. All Taiko-specific changes are marked with `"CHANGE(taiko): ...."` comments, and new files follow the `taiko_*.go` naming convention.
+This is **taiko-geth**, a fork of go-ethereum v1.17.2 customized for the Taiko L2 rollup. All Taiko-specific changes are marked with `"CHANGE(taiko): ...."` comments, and new files follow the `taiko_*.go` naming convention.
 
 ## Build and Development Commands
 
@@ -123,7 +123,7 @@ go mod verify
 
 ## Important Notes
 
-- This is a fork of go-ethereum v1.15.5 - check upstream documentation for base functionality
+- This is a fork of go-ethereum v1.17.2 - check upstream documentation for base functionality
 - Requires Go 1.23+ and a C compiler
 - All Taiko modifications are clearly marked for easy identification
 - The codebase maintains standard go-ethereum structure with Taiko additions

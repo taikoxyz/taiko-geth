@@ -11,6 +11,12 @@ import (
 // CHANGES(taiko): make taiko-geth compatible with the op-service library.
 const DepositTxType = 0x7E
 
+// DepositTx implements the TxData interface so that op-service style
+// deposit transactions are recognized by the rest of the code at runtime.
+// The TxData interface is unexported, so the unused-lint checker cannot
+// prove the implementation is reachable — declare the assertion here.
+var _ TxData = (*DepositTx)(nil)
+
 type DepositTx struct {
 	// SourceHash uniquely identifies the source of the deposit
 	SourceHash common.Hash
@@ -48,8 +54,8 @@ func (tx *DepositTx) value() *big.Int        { return tx.Value }
 func (tx *DepositTx) nonce() uint64          { return 0 }
 func (tx *DepositTx) to() *common.Address    { return tx.To }
 func (tx *DepositTx) isSystemTx() bool       { return tx.IsSystemTransaction } // nolint:unused
-func (tx *DepositTx) isAnchor() bool         { return false }
-func (tx *DepositTx) markAsAnchor() error    { return ErrInvalidTxType }
+func (tx *DepositTx) isAnchorTx() bool       { return false }
+func (tx *DepositTx) markAsAnchor() error    { return ErrTxTypeNotSupported }
 
 func (tx *DepositTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
 	return dst.Set(new(big.Int))
@@ -72,3 +78,8 @@ func (tx *DepositTx) encode(b *bytes.Buffer) error {
 func (tx *DepositTx) decode(input []byte) error {
 	return rlp.DecodeBytes(input, tx)
 }
+
+// sigHash is not meaningful for op-stack deposit transactions (they are
+// injected by the sequencer and carry no user signature), so return the
+// zero hash. Implemented to satisfy the TxData interface.
+func (tx *DepositTx) sigHash(*big.Int) common.Hash { return common.Hash{} }

@@ -20,7 +20,6 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 func TestTransaction(t *testing.T) {
@@ -58,8 +57,7 @@ func TestTransaction(t *testing.T) {
 	txt.skipLoad("^ttEIP1559/GasLimitPriceProductOverflow.json")
 
 	txt.walk(t, transactionTestDir, func(t *testing.T, name string, test *TransactionTest) {
-		cfg := params.MainnetChainConfig
-		if err := txt.checkFailure(t, test.Run(cfg)); err != nil {
+		if err := txt.checkFailure(t, test.Run()); err != nil {
 			t.Error(err)
 		}
 	})
@@ -72,11 +70,10 @@ func TestExecutionSpecTransaction(t *testing.T) {
 	st := new(testMatcher)
 
 	// Emptiness of authorization list is only validated during the tx precheck
-	st.skipLoad("^prague/eip7702_set_code_tx/invalid_tx/empty_authorization_list.json")
+	st.skipLoad("^prague/eip7702_set_code_tx/test_empty_authorization_list.json")
 
 	st.walk(t, executionSpecTransactionTestDir, func(t *testing.T, name string, test *TransactionTest) {
-		cfg := params.MainnetChainConfig
-		if err := st.checkFailure(t, test.Run(cfg)); err != nil {
+		if err := st.checkFailure(t, test.Run()); err != nil {
 			t.Error(err)
 		}
 	})

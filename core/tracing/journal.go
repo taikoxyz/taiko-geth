@@ -17,7 +17,7 @@
 package tracing
 
 import (
-	"fmt"
+	"errors"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -39,14 +39,17 @@ type entry interface {
 // WrapWithJournal wraps the given tracer with a journaling layer.
 func WrapWithJournal(hooks *Hooks) (*Hooks, error) {
 	if hooks == nil {
-		return nil, fmt.Errorf("wrapping nil tracer")
+		return nil, errors.New("wrapping nil tracer")
 	}
 	// No state change to journal, return the wrapped hooks as is
-	if hooks.OnBalanceChange == nil && hooks.OnNonceChange == nil && hooks.OnNonceChangeV2 == nil && hooks.OnCodeChange == nil && hooks.OnStorageChange == nil {
+	if hooks.OnBalanceChange == nil && hooks.OnNonceChange == nil && hooks.OnNonceChangeV2 == nil && hooks.OnCodeChange == nil && hooks.OnCodeChangeV2 == nil && hooks.OnStorageChange == nil {
 		return hooks, nil
 	}
 	if hooks.OnNonceChange != nil && hooks.OnNonceChangeV2 != nil {
-		return nil, fmt.Errorf("cannot have both OnNonceChange and OnNonceChangeV2")
+		return nil, errors.New("cannot have both OnNonceChange and OnNonceChangeV2")
+	}
+	if hooks.OnCodeChange != nil && hooks.OnCodeChangeV2 != nil {
+		return nil, errors.New("cannot have both OnCodeChange and OnCodeChangeV2")
 	}
 
 	// Create a new Hooks instance and copy all hooks
@@ -71,6 +74,9 @@ func WrapWithJournal(hooks *Hooks) (*Hooks, error) {
 	}
 	if hooks.OnCodeChange != nil {
 		wrapped.OnCodeChange = j.OnCodeChange
+	}
+	if hooks.OnCodeChangeV2 != nil {
+		wrapped.OnCodeChangeV2 = j.OnCodeChangeV2
 	}
 	if hooks.OnStorageChange != nil {
 		wrapped.OnStorageChange = j.OnStorageChange
@@ -149,10 +155,18 @@ func (j *journal) OnBalanceChange(addr common.Address, prev, new *big.Int, reaso
 }
 
 func (j *journal) OnNonceChangeV2(addr common.Address, prev, new uint64, reason NonceChangeReason) {
-	// When a contract is created, the nonce of the creator is incremented.
-	// This change is not reverted when the creation fails.
-	if reason != NonceChangeContractCreator {
-		j.entries = append(j.entries, nonceChange{addr: addr, prev: prev, new: new})
+	j.entries = append(j.entries, nonceChange{addr: addr, prev: prev, new: new})
+	if reason == NonceChangeContractCreator {
+		// When a contract is created via CREATE/CREATE2, the creator's nonce is
+		// incremented. The EVM does not revert this when the CREATE frame itself
+		// fails (the nonce change happens before the EVM snapshot). However, if
+		// a parent frame reverts, the nonce must be reverted along with everything
+		// else.
+		//
+		// To achieve this, advance the current frame's revision point past this
+		// entry. The CREATE frame's revert won't touch it (it's below the revision),
+		// but a parent frame's revert will (it's above the parent's revision).
+		j.revisions[len(j.revisions)-1] = len(j.entries)
 	}
 	if j.hooks.OnNonceChangeV2 != nil {
 		j.hooks.OnNonceChangeV2(addr, prev, new, reason)
@@ -171,6 +185,19 @@ func (j *journal) OnCodeChange(addr common.Address, prevCodeHash common.Hash, pr
 	})
 	if j.hooks.OnCodeChange != nil {
 		j.hooks.OnCodeChange(addr, prevCodeHash, prevCode, codeHash, code)
+	}
+}
+
+func (j *journal) OnCodeChangeV2(addr common.Address, prevCodeHash common.Hash, prevCode []byte, codeHash common.Hash, code []byte, reason CodeChangeReason) {
+	j.entries = append(j.entries, codeChange{
+		addr:         addr,
+		prevCodeHash: prevCodeHash,
+		prevCode:     prevCode,
+		newCodeHash:  codeHash,
+		newCode:      code,
+	})
+	if j.hooks.OnCodeChangeV2 != nil {
+		j.hooks.OnCodeChangeV2(addr, prevCodeHash, prevCode, codeHash, code, reason)
 	}
 }
 
@@ -225,7 +252,9 @@ func (n nonceChange) revert(hooks *Hooks) {
 }
 
 func (c codeChange) revert(hooks *Hooks) {
-	if hooks.OnCodeChange != nil {
+	if hooks.OnCodeChangeV2 != nil {
+		hooks.OnCodeChangeV2(c.addr, c.newCodeHash, c.newCode, c.prevCodeHash, c.prevCode, CodeChangeRevert)
+	} else if hooks.OnCodeChange != nil {
 		hooks.OnCodeChange(c.addr, c.newCodeHash, c.newCode, c.prevCodeHash, c.prevCode)
 	}
 }

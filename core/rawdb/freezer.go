@@ -59,7 +59,7 @@ const freezerTableSize = 2 * 1000 * 1000 * 1000
 // - The in-order data ensures that disk reads are always optimized.
 type Freezer struct {
 	datadir string
-	frozen  atomic.Uint64 // Number of items already frozen
+	head    atomic.Uint64 // Number of items stored (including items removed from tail)
 	tail    atomic.Uint64 // Number of the first stored item in the freezer
 
 	// This lock synchronizes writers and the truncate operation, as well as
@@ -76,9 +76,10 @@ type Freezer struct {
 // NewFreezer creates a freezer instance for maintaining immutable ordered
 // data according to the given parameters.
 //
-// The 'tables' argument defines the data tables. If the value of a map
-// entry is true, snappy compression is disabled for the table.
-func NewFreezer(datadir string, namespace string, readonly bool, maxTableSize uint32, tables map[string]bool) (*Freezer, error) {
+// The 'tables' argument defines the freezer tables and their configuration.
+// Each value is a freezerTableConfig specifying whether snappy compression is
+// disabled (noSnappy) and whether the table is prunable (prunable).
+func NewFreezer(datadir string, namespace string, readonly bool, maxTableSize uint32, tables map[string]freezerTableConfig) (*Freezer, error) {
 	// Create the initial freezer object
 	var (
 		readMeter  = metrics.NewRegisteredMeter(namespace+"ancient/read", nil)
@@ -96,12 +97,12 @@ func NewFreezer(datadir string, namespace string, readonly bool, maxTableSize ui
 			return nil, errSymlinkDatadir
 		}
 	}
+	// Leveldb/Pebble uses LOCK as the filelock filename. To prevent the
+	// name collision, we use FLOCK as the lock name.
 	flockFile := filepath.Join(datadir, "FLOCK")
 	if err := os.MkdirAll(filepath.Dir(flockFile), 0755); err != nil {
 		return nil, err
 	}
-	// Leveldb uses LOCK as the filelock filename. To prevent the
-	// name collision, we use FLOCK as the lock name.
 	lock := flock.New(flockFile)
 	tryLock := lock.TryLock
 	if readonly {
@@ -121,8 +122,8 @@ func NewFreezer(datadir string, namespace string, readonly bool, maxTableSize ui
 	}
 
 	// Create the tables.
-	for name, disableSnappy := range tables {
-		table, err := newTable(datadir, name, readMeter, writeMeter, sizeGauge, maxTableSize, disableSnappy, readonly)
+	for name, config := range tables {
+		table, err := newTable(datadir, name, readMeter, writeMeter, sizeGauge, maxTableSize, config, readonly)
 		if err != nil {
 			for _, table := range freezer.tables {
 				table.Close()
@@ -172,24 +173,12 @@ func (f *Freezer) Close() error {
 			errs = append(errs, err)
 		}
 	})
-	if errs != nil {
-		return fmt.Errorf("%v", errs)
-	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // AncientDatadir returns the path of the ancient store.
 func (f *Freezer) AncientDatadir() (string, error) {
 	return f.datadir, nil
-}
-
-// HasAncient returns an indicator whether the specified ancient data exists
-// in the freezer.
-func (f *Freezer) HasAncient(kind string, number uint64) (bool, error) {
-	if table := f.tables[kind]; table != nil {
-		return table.has(number), nil
-	}
-	return false, nil
 }
 
 // Ancient retrieves an ancient binary blob from the append-only immutable files.
@@ -213,9 +202,18 @@ func (f *Freezer) AncientRange(kind string, start, count, maxBytes uint64) ([][]
 	return nil, errUnknownTable
 }
 
+// AncientBytes retrieves the value segment of the element specified by the id
+// and value offsets.
+func (f *Freezer) AncientBytes(kind string, id, offset, length uint64) ([]byte, error) {
+	if table := f.tables[kind]; table != nil {
+		return table.RetrieveBytes(id, offset, length)
+	}
+	return nil, errUnknownTable
+}
+
 // Ancients returns the length of the frozen items.
 func (f *Freezer) Ancients() (uint64, error) {
-	return f.frozen.Load(), nil
+	return f.head.Load(), nil
 }
 
 // Tail returns the number of first stored item in the freezer.
@@ -254,7 +252,7 @@ func (f *Freezer) ModifyAncients(fn func(ethdb.AncientWriteOp) error) (writeSize
 	defer f.writeLock.Unlock()
 
 	// Roll back all tables to the starting position in case of error.
-	prevItem := f.frozen.Load()
+	prevItem := f.head.Load()
 	defer func() {
 		if err != nil {
 			// The write operation has failed. Go back to the previous item position.
@@ -275,7 +273,7 @@ func (f *Freezer) ModifyAncients(fn func(ethdb.AncientWriteOp) error) (writeSize
 	if err != nil {
 		return 0, err
 	}
-	f.frozen.Store(item)
+	f.head.Store(item)
 	return writeSize, nil
 }
 
@@ -288,7 +286,7 @@ func (f *Freezer) TruncateHead(items uint64) (uint64, error) {
 	f.writeLock.Lock()
 	defer f.writeLock.Unlock()
 
-	oitems := f.frozen.Load()
+	oitems := f.head.Load()
 	if oitems <= items {
 		return oitems, nil
 	}
@@ -297,11 +295,12 @@ func (f *Freezer) TruncateHead(items uint64) (uint64, error) {
 			return 0, err
 		}
 	}
-	f.frozen.Store(items)
+	f.head.Store(items)
 	return oitems, nil
 }
 
-// TruncateTail discards any recent data below the provided threshold number.
+// TruncateTail discards all data below the specified threshold. Note that only
+// 'prunable' tables will be truncated.
 func (f *Freezer) TruncateTail(tail uint64) (uint64, error) {
 	if f.readonly {
 		return 0, errReadOnly
@@ -314,16 +313,23 @@ func (f *Freezer) TruncateTail(tail uint64) (uint64, error) {
 		return old, nil
 	}
 	for _, table := range f.tables {
-		if err := table.truncateTail(tail); err != nil {
-			return 0, err
+		if table.config.prunable {
+			if err := table.truncateTail(tail); err != nil {
+				return 0, err
+			}
 		}
 	}
 	f.tail.Store(tail)
+
+	// Update the head if the requested tail exceeds the current head
+	if f.head.Load() < tail {
+		f.head.Store(tail)
+	}
 	return old, nil
 }
 
-// Sync flushes all data tables to disk.
-func (f *Freezer) Sync() error {
+// SyncAncient flushes all data tables to disk.
+func (f *Freezer) SyncAncient() error {
 	var errs []error
 	for _, table := range f.tables {
 		if err := table.Sync(); err != nil {
@@ -343,56 +349,77 @@ func (f *Freezer) validate() error {
 		return nil
 	}
 	var (
-		head uint64
-		tail uint64
-		name string
+		head       uint64
+		prunedTail *uint64
 	)
-	// Hack to get boundary of any table
-	for kind, table := range f.tables {
+	// get any head value
+	for _, table := range f.tables {
 		head = table.items.Load()
-		tail = table.itemHidden.Load()
-		name = kind
 		break
 	}
-	// Now check every table against those boundaries.
 	for kind, table := range f.tables {
+		// all tables have to have the same head
 		if head != table.items.Load() {
-			return fmt.Errorf("freezer tables %s and %s have differing head: %d != %d", kind, name, table.items.Load(), head)
+			return fmt.Errorf("freezer table %s has a differing head: %d != %d", kind, table.items.Load(), head)
 		}
-		if tail != table.itemHidden.Load() {
-			return fmt.Errorf("freezer tables %s and %s have differing tail: %d != %d", kind, name, table.itemHidden.Load(), tail)
+		if !table.config.prunable {
+			// non-prunable tables have to start at 0
+			if table.itemHidden.Load() != 0 {
+				return fmt.Errorf("non-prunable freezer table '%s' has a non-zero tail: %d", kind, table.itemHidden.Load())
+			}
+		} else {
+			// prunable tables have to have the same length
+			if prunedTail == nil {
+				tmp := table.itemHidden.Load()
+				prunedTail = &tmp
+			}
+			if *prunedTail != table.itemHidden.Load() {
+				return fmt.Errorf("freezer table %s has differing tail: %d != %d", kind, table.itemHidden.Load(), *prunedTail)
+			}
 		}
 	}
-	f.frozen.Store(head)
-	f.tail.Store(tail)
+
+	if prunedTail == nil {
+		tmp := uint64(0)
+		prunedTail = &tmp
+	}
+
+	f.head.Store(head)
+	f.tail.Store(*prunedTail)
 	return nil
 }
 
 // repair truncates all data tables to the same length.
 func (f *Freezer) repair() error {
 	var (
-		head = uint64(math.MaxUint64)
-		tail = uint64(0)
+		head       = uint64(math.MaxUint64)
+		prunedTail = uint64(0)
 	)
+	// get the minimal head and the maximum tail
 	for _, table := range f.tables {
-		items := table.items.Load()
-		if head > items {
-			head = items
-		}
-		hidden := table.itemHidden.Load()
-		if hidden > tail {
-			tail = hidden
-		}
+		head = min(head, table.items.Load())
+		prunedTail = max(prunedTail, table.itemHidden.Load())
 	}
-	for _, table := range f.tables {
+	// apply the pruning
+	for kind, table := range f.tables {
+		// all tables need to have the same head
 		if err := table.truncateHead(head); err != nil {
 			return err
 		}
-		if err := table.truncateTail(tail); err != nil {
-			return err
+		if !table.config.prunable {
+			// non-prunable tables have to start at 0
+			if table.itemHidden.Load() != 0 {
+				panic(fmt.Sprintf("non-prunable freezer table %s has non-zero tail: %v", kind, table.itemHidden.Load()))
+			}
+		} else {
+			// prunable tables have to have the same length
+			if err := table.truncateTail(prunedTail); err != nil {
+				return err
+			}
 		}
 	}
-	f.frozen.Store(head)
-	f.tail.Store(tail)
+
+	f.head.Store(head)
+	f.tail.Store(prunedTail)
 	return nil
 }
