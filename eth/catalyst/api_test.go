@@ -37,7 +37,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
-	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -59,8 +58,7 @@ import (
 
 var (
 	// testKey is a private key to use for funding a tester account.
-	testKey, _        = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
-	goldenTouchKey, _ = crypto.HexToECDSA("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
+	testKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 
 	// testAddr is the Ethereum address of the tester account.
 	testAddr = crypto.PubkeyToAddress(testKey.PublicKey)
@@ -2082,155 +2080,6 @@ func describeEngineError(err error) string {
 		return fmt.Sprint(apiErr.ErrorData())
 	}
 	return ""
-}
-
-func newTaikoUzenGenesis(uzenOffset uint64) *core.Genesis {
-	genesis, _ := generateMergeChain(0, true)
-	activationTime := genesis.Timestamp + 1
-
-	genesis.Config.Taiko = true
-	genesis.Config.ShanghaiTime = &activationTime
-	genesis.Config.CancunTime = &activationTime
-	genesis.Config.PragueTime = &activationTime
-	genesis.Config.BlobScheduleConfig = params.DefaultBlobSchedule
-
-	uzenTime := activationTime + uzenOffset
-	genesis.Config.UzenTime = &uzenTime
-
-	genesis.Alloc[taiko.GoldenTouchAccount] = types.Account{Balance: new(big.Int).Set(testBalance)}
-	return genesis
-}
-
-func makeTaikoPayloadAttributes(t testing.TB, chainConfig *params.ChainConfig, parent *types.Header, beaconRoot *common.Hash) engine.PayloadAttributes {
-	t.Helper()
-
-	attrs := newTaikoPayloadAttributes(t, chainConfig, parent, parent.Time+1, false)
-	attrs.BeaconRoot = beaconRoot
-	return *attrs
-}
-
-func makeTaikoPayloadEnvelope(chainConfig *params.ChainConfig, parent *types.Header, txs types.Transactions, slotNumber *uint64) (*types.Block, *engine.ExecutionPayloadEnvelope, []common.Hash) {
-	uzenOffset := uint64(0)
-	if chainConfig.UzenTime != nil && *chainConfig.UzenTime > parent.Time+1 {
-		uzenOffset = *chainConfig.UzenTime - (parent.Time + 1)
-	}
-	genesis := newTaikoUzenGenesis(uzenOffset)
-	if slotNumber != nil {
-		genesis.Config.AmsterdamTime = new(uint64)
-		*genesis.Config.AmsterdamTime = genesis.Timestamp + 1
-		blobConfig := *genesis.Config.BlobScheduleConfig
-		blobConfig.Amsterdam = blobConfig.Osaka
-		genesis.Config.BlobScheduleConfig = &blobConfig
-	}
-
-	if len(txs) == 0 {
-		txs = append(txs, newTaikoAnchorTx(genesis.Config, 0))
-	}
-	var versionedHashes []common.Hash
-	for _, tx := range txs {
-		versionedHashes = append(versionedHashes, tx.BlobHashes()...)
-	}
-	if len(versionedHashes) > 0 {
-		payload := newSyntheticPayloadFromTransactions(chainConfig, parent, txs, slotNumber, true)
-		block, _ := engine.ExecutableDataToBlockNoHash(*payload, versionedHashes, nil, nil)
-		return block, &engine.ExecutionPayloadEnvelope{ExecutionPayload: payload}, versionedHashes
-	}
-
-	consensusEngine := beacon.New(ethash.NewFaker())
-	_, blocks, _ := core.GenerateChainWithGenesis(genesis, consensusEngine, 1, func(i int, g *core.BlockGen) {
-		g.OffsetTime(1)
-		if genesis.Config.IsUzen(g.Timestamp()) {
-			g.SetParentBeaconRoot(common.Hash{})
-		}
-		for _, tx := range txs {
-			g.AddTx(tx)
-		}
-	})
-	block := blocks[0]
-	header := block.Header()
-	if genesis.Config.IsUzen(header.Time) {
-		header.ParentBeaconRoot = new(common.Hash)
-		header.RequestsHash = &types.EmptyRequestsHash
-	}
-	if slotNumber != nil {
-		header.SlotNumber = new(uint64)
-		*header.SlotNumber = *slotNumber
-	}
-	block = types.NewBlock(header, &types.Body{Transactions: block.Transactions(), Withdrawals: block.Withdrawals()}, nil, trie.NewStackTrie(nil))
-	return block, engine.BlockToExecutableData(block, common.Big0, nil, nil), versionedHashes
-}
-
-func newSyntheticPayloadFromTransactions(chainConfig *params.ChainConfig, parent *types.Header, txs types.Transactions, slotNumber *uint64, uzen bool) *engine.ExecutableData {
-	blobGasUsed := uint64(0)
-	excessBlobGas := uint64(0)
-	if len(txs) > 0 {
-		for _, tx := range txs {
-			blobGasUsed += uint64(len(tx.BlobHashes()))
-		}
-		excessBlobGas = blobGasUsed
-	}
-	transactions := make([][]byte, len(txs))
-	versionedHashes := make([]common.Hash, 0)
-	for i, tx := range txs {
-		enc, err := tx.MarshalBinary()
-		if err != nil {
-			panic(err)
-		}
-		transactions[i] = enc
-		versionedHashes = append(versionedHashes, tx.BlobHashes()...)
-	}
-	payload := &engine.ExecutableData{
-		ParentHash:    parent.Hash(),
-		FeeRecipient:  parent.Coinbase,
-		StateRoot:     parent.Root,
-		ReceiptsRoot:  types.EmptyReceiptsHash,
-		LogsBloom:     make([]byte, 256),
-		Random:        crypto.Keccak256Hash([]byte{0x1, 0x2, 0x3}),
-		Number:        parent.Number.Uint64() + 1,
-		GasLimit:      parent.GasLimit,
-		GasUsed:       0,
-		Timestamp:     parent.Time + 1,
-		BaseFeePerGas: parent.BaseFee,
-		Transactions:  transactions,
-		Withdrawals:   []*types.Withdrawal{},
-		BlobGasUsed:   &blobGasUsed,
-		ExcessBlobGas: &excessBlobGas,
-		SlotNumber:    slotNumber,
-		TaikoBlock:    true,
-		UzenBlock:     uzen,
-	}
-	block, err := engine.ExecutableDataToBlockNoHash(*payload, versionedHashes, nil, nil)
-	if err != nil {
-		panic(err)
-	}
-	payload.BlockHash = block.Hash()
-	return payload
-}
-
-func newTaikoAnchorTx(chainConfig *params.ChainConfig, nonce uint64) *types.Transaction {
-	return types.MustSignNewTx(goldenTouchKey, types.LatestSigner(chainConfig), &types.DynamicFeeTx{
-		ChainID:   chainConfig.ChainID,
-		Nonce:     nonce,
-		GasTipCap: common.Big0,
-		GasFeeCap: new(big.Int).SetUint64(875_000_000),
-		Data:      taiko.AnchorSelector,
-		Gas:       taiko.AnchorGasLimit,
-		To:        ptrAddress(taikoL2Address(chainConfig.ChainID)),
-	})
-}
-
-func taikoL2Address(chainID *big.Int) common.Address {
-	prefix := strings.TrimPrefix(chainID.String(), "0")
-	return common.HexToAddress(
-		"0x" +
-			prefix +
-			strings.Repeat("0", common.AddressLength*2-len(prefix)-len(taiko.TaikoL2AddressSuffix)) +
-			taiko.TaikoL2AddressSuffix,
-	)
-}
-
-func ptrAddress(addr common.Address) *common.Address {
-	return &addr
 }
 
 // TestGetClientVersion verifies the expected version info is returned.
