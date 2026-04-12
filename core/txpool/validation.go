@@ -89,6 +89,10 @@ func ValidateTransaction(tx *types.Transaction, head *types.Header, signer types
 	if !rules.IsPrague && tx.Type() == types.SetCodeTxType {
 		return fmt.Errorf("%w: type %d rejected, pool not yet in Prague", core.ErrTxTypeNotSupported, tx.Type())
 	}
+	// CHANGE(taiko): Uzen disables blob transactions on Taiko networks.
+	if opts.Config.Taiko && opts.Config.IsUzen(head.Time) && tx.Type() == types.BlobTxType {
+		return core.ErrBlobTransactionsUnsupported
+	}
 	// Check whether the init code size has been exceeded
 	if tx.To() == nil {
 		if err := vm.CheckMaxInitCodeSize(&rules, uint64(len(tx.Data()))); err != nil {

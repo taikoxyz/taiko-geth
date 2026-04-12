@@ -124,6 +124,9 @@ var (
 	// ErrBlobTxCreate is returned if a blob transaction has no explicit to field.
 	ErrBlobTxCreate = errors.New("blob transaction of type create")
 
+	// CHANGE(taiko): Uzen disables blob transactions in ingress and payload paths.
+	ErrBlobTransactionsUnsupported = errors.New("blob transactions unsupported after Uzen")
+
 	// -- EIP-7702 errors --
 
 	// Message validation errors:

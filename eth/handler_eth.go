@@ -57,6 +57,7 @@ func (h *ethHandler) AcceptTxs() bool {
 // message that the handler couldn't consume and serve itself.
 func (h *ethHandler) Handle(peer *eth.Peer, packet eth.Packet) error {
 	// Consume any broadcasts and announces, forwarding the rest to the downloader
+	uzenActive := h.chain.Config().Taiko && h.chain.Config().IsUzen(h.chain.CurrentBlock().Time)
 	switch packet := packet.(type) {
 	case *eth.NewPooledTransactionHashesPacket:
 		return h.txFetcher.Notify(peer.ID(), packet.Types, packet.Sizes, packet.Hashes)
@@ -66,8 +67,8 @@ func (h *ethHandler) Handle(peer *eth.Peer, packet eth.Packet) error {
 		if err != nil {
 			return fmt.Errorf("Transactions: %v", err)
 		}
-		if err := handleTransactions(peer, txs, true); err != nil {
-			return fmt.Errorf("Transactions: %v", err)
+		if err := handleTransactions(peer, txs, true, uzenActive); err != nil {
+			return fmt.Errorf("Transactions: %w", err)
 		}
 		return h.txFetcher.Enqueue(peer.ID(), txs, false)
 
@@ -76,8 +77,8 @@ func (h *ethHandler) Handle(peer *eth.Peer, packet eth.Packet) error {
 		if err != nil {
 			return fmt.Errorf("PooledTransactions: %v", err)
 		}
-		if err := handleTransactions(peer, txs, false); err != nil {
-			return fmt.Errorf("PooledTransactions: %v", err)
+		if err := handleTransactions(peer, txs, false, uzenActive); err != nil {
+			return fmt.Errorf("PooledTransactions: %w", err)
 		}
 		return h.txFetcher.Enqueue(peer.ID(), txs, true)
 
@@ -88,10 +89,14 @@ func (h *ethHandler) Handle(peer *eth.Peer, packet eth.Packet) error {
 
 // handleTransactions marks all given transactions as known to the peer
 // and performs basic validations.
-func handleTransactions(peer *eth.Peer, list []*types.Transaction, directBroadcast bool) error {
+func handleTransactions(peer *eth.Peer, list []*types.Transaction, directBroadcast bool, uzenActive bool) error {
 	seen := make(map[common.Hash]struct{})
 	for _, tx := range list {
 		if tx.Type() == types.BlobTxType {
+			// CHANGE(taiko): Uzen disables inbound blob transactions.
+			if uzenActive {
+				return core.ErrBlobTransactionsUnsupported
+			}
 			if directBroadcast {
 				return errors.New("disallowed broadcast blob transaction")
 			} else {

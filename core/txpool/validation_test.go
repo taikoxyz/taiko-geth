@@ -18,6 +18,7 @@ package txpool
 
 import (
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"errors"
 	"math"
 	"math/big"
@@ -27,7 +28,9 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 )
 
 func TestValidateTransactionEIP2681(t *testing.T) {
@@ -96,6 +99,47 @@ func TestValidateTransactionEIP2681(t *testing.T) {
 	}
 }
 
+func TestValidateTransactionBlobTransactionsUnsupportedAfterUzen(t *testing.T) {
+	key, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	uzenTime := uint64(10)
+	cancunTime := uint64(0)
+	config := *params.TestChainConfig
+	config.Taiko = true
+	config.CancunTime = &cancunTime
+	config.OsakaTime = nil
+	config.UzenTime = &uzenTime
+
+	head := &types.Header{
+		Number:     big.NewInt(1),
+		GasLimit:   5000000,
+		Time:       uzenTime - 1,
+		Difficulty: big.NewInt(0),
+	}
+	signer := types.LatestSigner(&config)
+	opts := &ValidationOptions{
+		Config:       &config,
+		Accept:       0xFF,
+		MaxSize:      256 * 1024,
+		MaxBlobCount: params.BlobTxMaxBlobs,
+		MinTip:       big.NewInt(0),
+	}
+	tx := createTestBlobTransaction(t, key, &config, 0)
+
+	if err := ValidateTransaction(tx, head, signer, opts); err != nil {
+		t.Fatalf("blob tx should remain valid before Uzen: %v", err)
+	}
+
+	head.Time = uzenTime
+	err = ValidateTransaction(tx, head, signer, opts)
+	if !errors.Is(err, core.ErrBlobTransactionsUnsupported) {
+		t.Fatalf("ValidateTransaction() error = %v, want %v", err, core.ErrBlobTransactionsUnsupported)
+	}
+}
+
 // createTestTransaction creates a basic transaction for testing
 func createTestTransaction(key *ecdsa.PrivateKey, nonce uint64) *types.Transaction {
 	to := common.HexToAddress("0x0000000000000000000000000000000000000001")
@@ -112,4 +156,38 @@ func createTestTransaction(key *ecdsa.PrivateKey, nonce uint64) *types.Transacti
 	tx := types.NewTx(txdata)
 	signedTx, _ := types.SignTx(tx, types.HomesteadSigner{}, key)
 	return signedTx
+}
+
+func createTestBlobTransaction(t *testing.T, key *ecdsa.PrivateKey, config *params.ChainConfig, nonce uint64) *types.Transaction {
+	t.Helper()
+
+	blob := kzg4844.Blob{}
+	commitment, err := kzg4844.BlobToCommitment(&blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := kzg4844.ComputeBlobProof(&blob, commitment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobHash := kzg4844.CalcBlobHashV1(sha256.New(), &commitment)
+	to := common.HexToAddress("0x0000000000000000000000000000000000000001")
+
+	return types.MustSignNewTx(key, types.LatestSigner(config), &types.BlobTx{
+		ChainID:    uint256.MustFromBig(config.ChainID),
+		Nonce:      nonce,
+		GasTipCap:  uint256.NewInt(1),
+		GasFeeCap:  uint256.NewInt(1000),
+		Gas:        params.TxGas,
+		To:         to,
+		BlobHashes: []common.Hash{blobHash},
+		BlobFeeCap: uint256.NewInt(params.BlobTxMinBlobGasprice),
+		Value:      uint256.NewInt(1),
+		Sidecar: types.NewBlobTxSidecar(
+			types.BlobSidecarVersion0,
+			[]kzg4844.Blob{blob},
+			[]kzg4844.Commitment{commitment},
+			[]kzg4844.Proof{proof},
+		),
+	})
 }

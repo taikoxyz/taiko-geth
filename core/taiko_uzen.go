@@ -17,15 +17,8 @@
 package core
 
 import (
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-)
-
-var (
-	// CHANGE(taiko): Uzen disables blob transactions in payload processing paths.
-	ErrBlobTransactionsUnsupported = errors.New("blob transactions unsupported after Uzen")
 )
 
 func NormalizeUzenParentBeaconRoot(uzenActive bool, beaconRoot *common.Hash) *common.Hash {

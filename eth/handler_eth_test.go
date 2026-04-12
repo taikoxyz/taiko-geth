@@ -17,6 +17,8 @@
 package eth
 
 import (
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
@@ -27,12 +29,15 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/holiman/uint256"
 )
 
 // testEthHandler is a mock event handler to listen for inbound network requests
@@ -281,6 +286,42 @@ func testRecvTransactions(t *testing.T, protocol uint) {
 	}
 }
 
+func TestHandleTransactionsBlobTransactionsUnsupportedAfterUzen(t *testing.T) {
+	t.Parallel()
+
+	config := *params.TestChainConfig
+	config.Taiko = true
+	cancunTime := uint64(0)
+	config.ShanghaiTime = &cancunTime
+	config.CancunTime = &cancunTime
+	config.OsakaTime = nil
+	config.BlobScheduleConfig = params.DefaultBlobSchedule
+
+	tx := makeTestBlobTransaction(t, &config, 0)
+
+	preUzen := newTestHandlerWithConfig(t, &config)
+	defer preUzen.close()
+	preUzen.handler.synced.Store(true)
+
+	peer := eth.NewPeer(eth.ETH69, p2p.NewPeer(enode.ID{0x1}, "peer", nil), nil, nil)
+	defer peer.Close()
+
+	packet := &eth.PooledTransactionsPacket{RequestId: 1, List: encodeTransactions([]*types.Transaction{tx})}
+	if err := (*ethHandler)(preUzen.handler).Handle(peer, packet); err != nil {
+		t.Fatalf("blob tx should remain accepted before Uzen: %v", err)
+	}
+
+	config.UzenTime = &cancunTime
+	atUzen := newTestHandlerWithConfig(t, &config)
+	defer atUzen.close()
+	atUzen.handler.synced.Store(true)
+
+	err := (*ethHandler)(atUzen.handler).Handle(peer, packet)
+	if !errors.Is(err, core.ErrBlobTransactionsUnsupported) {
+		t.Fatalf("Handle() error = %v, want %v", err, core.ErrBlobTransactionsUnsupported)
+	}
+}
+
 // This test checks that pending transactions are sent.
 func TestSendTransactions69(t *testing.T) { testSendTransactions(t, eth.ETH69) }
 
@@ -352,6 +393,82 @@ func testSendTransactions(t *testing.T, protocol uint) {
 			t.Errorf("missing transaction: %x", tx.Hash())
 		}
 	}
+}
+
+func makeTestBlobTransaction(t *testing.T, config *params.ChainConfig, nonce uint64) *types.Transaction {
+	t.Helper()
+
+	blob := kzg4844.Blob{}
+	commitment, err := kzg4844.BlobToCommitment(&blob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := kzg4844.ComputeBlobProof(&blob, commitment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blobHash := kzg4844.CalcBlobHashV1(sha256.New(), &commitment)
+
+	return types.MustSignNewTx(testKey, types.LatestSigner(config), &types.BlobTx{
+		ChainID:    uint256.MustFromBig(config.ChainID),
+		Nonce:      nonce,
+		GasTipCap:  uint256.NewInt(1),
+		GasFeeCap:  uint256.NewInt(1000),
+		Gas:        params.TxGas,
+		To:         testAddr,
+		BlobHashes: []common.Hash{blobHash},
+		BlobFeeCap: uint256.NewInt(params.BlobTxMinBlobGasprice),
+		Value:      uint256.NewInt(1),
+		Sidecar: types.NewBlobTxSidecar(
+			types.BlobSidecarVersion0,
+			[]kzg4844.Blob{blob},
+			[]kzg4844.Commitment{commitment},
+			[]kzg4844.Proof{proof},
+		),
+	})
+}
+
+func newTestHandlerWithConfig(t *testing.T, config *params.ChainConfig) *testHandler {
+	t.Helper()
+
+	db := rawdb.NewMemoryDatabase()
+	gspec := &core.Genesis{
+		Config: config,
+		Alloc:  types.GenesisAlloc{testAddr: {Balance: big.NewInt(1000000)}},
+	}
+	chain, err := core.NewBlockChain(db, gspec, ethash.NewFaker(), nil)
+	if err != nil {
+		t.Fatalf("core.NewBlockChain failed: %v", err)
+	}
+	txpool := newTestTxPool()
+
+	handler, err := newHandler(&handlerConfig{
+		Database:   db,
+		Chain:      chain,
+		TxPool:     txpool,
+		Network:    1,
+		Sync:       ethconfig.FullSync,
+		BloomCache: 1,
+	})
+	if err != nil {
+		t.Fatalf("newHandler failed: %v", err)
+	}
+	handler.Start(1000)
+
+	return &testHandler{
+		db:      db,
+		chain:   chain,
+		txpool:  txpool,
+		handler: handler,
+	}
+}
+
+func encodeTransactions(txs []*types.Transaction) rlp.RawList[*types.Transaction] {
+	rl, err := rlp.EncodeToRawList(txs)
+	if err != nil {
+		panic(err)
+	}
+	return rl
 }
 
 // Tests that transactions get propagated to all attached peers, either via direct

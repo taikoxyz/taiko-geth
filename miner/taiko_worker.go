@@ -265,9 +265,9 @@ func (w *Miner) sealBlockWith(
 				return nil, err
 			}
 		}
-		// Skip blob transactions
-		if tx.Type() == types.BlobTxType {
-			log.Debug("Skip a blob transaction", "hash", tx.Hash())
+		// CHANGE(taiko): Keep proposed Taiko blocks blob-free once Uzen activates.
+		if w.chainConfig.IsUzen(env.header.Time) && tx.Type() == types.BlobTxType {
+			log.Debug("Skip a blob transaction after Uzen", "hash", tx.Hash())
 			continue
 		}
 		sender, err := types.LatestSignerForChainID(w.chainConfig.ChainID).Sender(tx)
@@ -384,6 +384,12 @@ loop:
 			log.Trace("Ignoring evicted transaction")
 
 			txs.Pop()
+			continue
+		}
+		// CHANGE(taiko): Keep the local Taiko builder blob-free once Uzen activates.
+		if w.chainConfig.IsUzen(env.header.Time) && tx.Type() == types.BlobTxType {
+			log.Debug("Skip a blob transaction after Uzen", "hash", tx.Hash())
+			txs.Shift()
 			continue
 		}
 
