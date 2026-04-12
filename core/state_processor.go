@@ -18,6 +18,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -87,6 +88,11 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	context = NewEVMBlockContext(header, p.chain, nil)
 	evm := vm.NewEVM(context, tracingStateDB, config, cfg)
 
+	// CHANGE(taiko): initialize zk gas meter for Uzen blocks.
+	if config.IsUzen(header.Time) {
+		cfg.ZkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
+	}
+
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
@@ -94,8 +100,16 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 
+	// CHANGE(taiko): track zk gas exhaustion state.
+	zkGasExhausted := false
+
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
+		// CHANGE(taiko): skip remaining transactions if zk gas is exhausted.
+		if zkGasExhausted {
+			break
+		}
+
 		// CHANGE(taiko): mark the first transaction as anchor transaction.
 		if i == 0 && config.Taiko {
 			if err := tx.MarkAsAnchor(); err != nil {
@@ -117,11 +131,34 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 			telemetry.Int64Attribute("tx.index", int64(i)),
 		)
 
+		// CHANGE(taiko): reset in-flight zk gas before each transaction.
+		if cfg.ZkGasMeter != nil {
+			cfg.ZkGasMeter.ResetTransaction()
+		}
+
 		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, evm)
 		if err != nil {
+			// CHANGE(taiko): if zk gas exceeded, abort this tx and skip remaining.
+			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
+				cfg.ZkGasMeter.ResetTransaction()
+				zkGasExhausted = true
+				spanEnd(nil)
+				break
+			}
 			spanEnd(&err)
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
+
+		// CHANGE(taiko): commit transaction zk gas on success.
+		if cfg.ZkGasMeter != nil {
+			if commitErr := cfg.ZkGasMeter.CommitTransaction(); commitErr != nil {
+				cfg.ZkGasMeter.ResetTransaction()
+				zkGasExhausted = true
+				spanEnd(nil)
+				break
+			}
+		}
+
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
 		spanEnd(nil)
@@ -129,6 +166,11 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	requests, err := postExecution(ctx, config, block, allLogs, evm)
 	if err != nil {
 		return nil, err
+	}
+
+	// CHANGE(taiko): set header difficulty to finalized block zk gas for Uzen.
+	if cfg.ZkGasMeter != nil {
+		header.Difficulty = new(big.Int).SetUint64(cfg.ZkGasMeter.BlockZkGasUsed())
 	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
