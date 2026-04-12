@@ -22,11 +22,11 @@ func testSchedule() *ZkGasSchedule {
 		s.OpcodeMultipliers[i] = math.MaxUint16
 	}
 	// Set a few known opcodes for testing.
-	s.OpcodeMultipliers[0x01] = 12  // ADD
-	s.OpcodeMultipliers[0x02] = 21  // MUL
-	s.OpcodeMultipliers[0x00] = 0   // STOP
-	s.OpcodeMultipliers[0xf1] = 25  // CALL
-	s.OpcodeMultipliers[0xf0] = 1   // CREATE
+	s.OpcodeMultipliers[0x01] = 12 // ADD
+	s.OpcodeMultipliers[0x02] = 21 // MUL
+	s.OpcodeMultipliers[0x00] = 0  // STOP
+	s.OpcodeMultipliers[0xf1] = 25 // CALL
+	s.OpcodeMultipliers[0xf0] = 1  // CREATE
 
 	// Set a precompile multiplier for testing.
 	for i := range s.PrecompileMultipliers {
@@ -240,7 +240,7 @@ func TestUzenSchedule_SpawnEstimates(t *testing.T) {
 	s := &UzenZkGasSchedule
 
 	tests := []struct {
-		name string
+		name  string
 		field uint64
 		want  uint64
 	}{
@@ -283,14 +283,14 @@ func TestZkGasMeter_SpawnEstimateLookup(t *testing.T) {
 		opcode byte
 		want   uint64
 	}{
-		{0xf1, 12500},  // CALL
-		{0xf2, 12500},  // CALLCODE
-		{0xf4, 3500},   // DELEGATECALL
-		{0xfa, 3500},   // STATICCALL
-		{0xf0, 37000},  // CREATE
-		{0xf5, 44500},  // CREATE2
-		{0x01, 0},      // ADD (not a spawn opcode)
-		{0x00, 0},      // STOP (not a spawn opcode)
+		{0xf1, 12500}, // CALL
+		{0xf2, 12500}, // CALLCODE
+		{0xf4, 3500},  // DELEGATECALL
+		{0xfa, 3500},  // STATICCALL
+		{0xf0, 37000}, // CREATE
+		{0xf5, 44500}, // CREATE2
+		{0x01, 0},     // ADD (not a spawn opcode)
+		{0x00, 0},     // STOP (not a spawn opcode)
 	}
 	for _, tt := range tests {
 		got := m.SpawnEstimate(tt.opcode)

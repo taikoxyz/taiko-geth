@@ -100,16 +100,8 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 
-	// CHANGE(taiko): track zk gas exhaustion state.
-	zkGasExhausted := false
-
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
-		// CHANGE(taiko): skip remaining transactions if zk gas is exhausted.
-		if zkGasExhausted {
-			break
-		}
-
 		// CHANGE(taiko): mark the first transaction as anchor transaction.
 		if i == 0 && config.Taiko {
 			if err := tx.MarkAsAnchor(); err != nil {
@@ -141,7 +133,6 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 			// CHANGE(taiko): if zk gas exceeded, abort this tx and skip remaining.
 			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
 				cfg.ZkGasMeter.ResetTransaction()
-				zkGasExhausted = true
 				spanEnd(nil)
 				break
 			}
@@ -153,7 +144,6 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		if cfg.ZkGasMeter != nil {
 			if commitErr := cfg.ZkGasMeter.CommitTransaction(); commitErr != nil {
 				cfg.ZkGasMeter.ResetTransaction()
-				zkGasExhausted = true
 				spanEnd(nil)
 				break
 			}

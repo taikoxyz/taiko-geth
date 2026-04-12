@@ -266,13 +266,7 @@ func (w *Miner) sealBlockWith(
 		env.evm.Config.ZkGasMeter = zkGasMeter
 	}
 
-	zkGasExhausted := false // CHANGE(taiko)
-
 	for i, tx := range txs {
-		if zkGasExhausted { // CHANGE(taiko)
-			break
-		}
-
 		if i == 0 {
 			if err := tx.MarkAsAnchor(); err != nil {
 				return nil, err
@@ -301,7 +295,6 @@ func (w *Miner) sealBlockWith(
 			// CHANGE(taiko): if zk gas exceeded, stop including transactions.
 			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
 				zkGasMeter.ResetTransaction()
-				zkGasExhausted = true
 				break
 			}
 			log.Debug("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
@@ -312,7 +305,6 @@ func (w *Miner) sealBlockWith(
 		if zkGasMeter != nil {
 			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil {
 				zkGasMeter.ResetTransaction()
-				zkGasExhausted = true
 				break
 			}
 		}
