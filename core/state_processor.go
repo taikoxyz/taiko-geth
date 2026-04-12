@@ -18,6 +18,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -81,11 +82,16 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	var (
 		context vm.BlockContext
 		signer  = types.MakeSigner(config, header.Number, header.Time)
+		zkMeter *vm.ZKGasMeter
 	)
 
 	// Apply pre-execution system calls.
 	context = NewEVMBlockContext(header, p.chain, nil)
 	evm := vm.NewEVM(context, tracingStateDB, config, cfg)
+	if config.Taiko && config.IsUzen(header.Time) {
+		zkMeter = vm.NewZKGasMeter()
+		evm.SetZKGasMeter(zkMeter)
+	}
 
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
@@ -117,10 +123,35 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 			telemetry.Int64Attribute("tx.index", int64(i)),
 		)
 
+		stateSnapshot := statedb.Snapshot()
+		gasSnapshot := gp.Snapshot()
+		if zkMeter != nil {
+			zkMeter.StartTx()
+		}
 		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, evm)
+		if errors.Is(err, vm.ErrZKGasLimitReached) {
+			statedb.RevertToSnapshot(stateSnapshot)
+			gp.Set(gasSnapshot)
+			zkMeter.AbortTx()
+			spanEnd(&err)
+			break
+		}
 		if err != nil {
 			spanEnd(&err)
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+		}
+		if zkMeter != nil {
+			if err := zkMeter.CommitTx(); err != nil {
+				if errors.Is(err, vm.ErrZKGasLimitReached) {
+					statedb.RevertToSnapshot(stateSnapshot)
+					gp.Set(gasSnapshot)
+					zkMeter.AbortTx()
+					spanEnd(&err)
+					break
+				}
+				spanEnd(&err)
+				return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			}
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
@@ -183,6 +214,9 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 	result, err := ApplyMessage(evm, msg, gp)
 	if err != nil {
 		return nil, err
+	}
+	if errors.Is(result.Err, vm.ErrZKGasLimitReached) {
+		return nil, vm.ErrZKGasLimitReached
 	}
 	// Update the state with pending changes.
 	var root []byte

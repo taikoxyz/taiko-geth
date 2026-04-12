@@ -17,6 +17,7 @@
 package core
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"math"
 	"math/big"
@@ -30,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/keccak"
 	"github.com/ethereum/go-ethereum/params"
@@ -38,6 +40,173 @@ import (
 )
 
 func u64(val uint64) *uint64 { return &val }
+
+var (
+	zkGasTestKey, _       = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	zkGasTestAddr         = crypto.PubkeyToAddress(zkGasTestKey.PublicKey)
+	zkGasSuccessAddr      = common.Address{0x21}
+	zkGasLimitAddr        = common.Address{0x22}
+	zkGasRevertAddr       = common.Address{0x23}
+	zkGasSuccessCode      = common.FromHex("0x600160020100")
+	zkGasLimitExceededCode = common.FromHex("0x6020621000002000")
+	zkGasRevertCode       = common.FromHex("0x60006000fd")
+)
+
+func TestApplyTransactionWithEVMReturnsZKGasLimitReached(t *testing.T) {
+	chain, config := newUzenZKGasTestChain(t)
+	defer chain.Stop()
+
+	parent := chain.CurrentBlock()
+	header := &types.Header{
+		ParentHash: parent.Hash(),
+		Number:     new(big.Int).Add(parent.Number, common.Big1),
+		Time:       *config.UzenTime,
+		GasLimit:   30_000_000,
+		BaseFee:    big.NewInt(params.InitialBaseFee),
+		Difficulty: common.Big0,
+	}
+	statedb, err := chain.StateAt(parent.Root)
+	if err != nil {
+		t.Fatalf("StateAt() error = %v", err)
+	}
+
+	evm := vm.NewEVM(NewEVMBlockContext(header, chain, nil), statedb, config, vm.Config{})
+	meter := vm.NewZKGasMeter()
+	evm.SetZKGasMeter(meter)
+	meter.StartTx()
+
+	tx := newZKGasDynamicTx(t, config, 0, zkGasLimitAddr, 5_000_000)
+	msg, err := TransactionToMessage(tx, types.MakeSigner(config, header.Number, header.Time), header.BaseFee)
+	if err != nil {
+		t.Fatalf("TransactionToMessage() error = %v", err)
+	}
+
+	receipt, err := ApplyTransactionWithEVM(
+		msg,
+		NewGasPool(header.GasLimit),
+		statedb,
+		header.Number,
+		header.Hash(),
+		header.Time,
+		tx,
+		evm,
+	)
+	if receipt != nil {
+		t.Fatalf("expected nil receipt, got %#v", receipt)
+	}
+	if err != vm.ErrZKGasLimitReached {
+		t.Fatalf("expected ErrZKGasLimitReached, got %v", err)
+	}
+}
+
+func TestStateProcessorUzenZKGasTruncatesBlock(t *testing.T) {
+	chain, config := newUzenZKGasTestChain(t)
+	defer chain.Stop()
+
+	parent := chain.CurrentBlock()
+	block := types.NewBlock(
+		&types.Header{
+			ParentHash: parent.Hash(),
+			Number:     new(big.Int).Add(parent.Number, common.Big1),
+			Time:       *config.UzenTime,
+			GasLimit:   30_000_000,
+			BaseFee:    big.NewInt(params.InitialBaseFee),
+			Difficulty: common.Big0,
+		},
+		&types.Body{Transactions: []*types.Transaction{
+			newZKGasDynamicTx(t, config, 0, zkGasSuccessAddr, 100_000),
+			newZKGasDynamicTx(t, config, 1, zkGasRevertAddr, 100_000),
+			newZKGasDynamicTx(t, config, 2, zkGasLimitAddr, 5_000_000),
+			newZKGasDynamicTx(t, config, 3, zkGasSuccessAddr, 100_000),
+		}},
+		nil,
+		trie.NewStackTrie(nil),
+	)
+	statedb, err := chain.StateAt(parent.Root)
+	if err != nil {
+		t.Fatalf("StateAt() error = %v", err)
+	}
+
+	res, err := NewStateProcessor(chain).Process(context.Background(), block, statedb, vm.Config{})
+	if err != nil {
+		t.Fatalf("Process() error = %v", err)
+	}
+	if got, want := len(res.Receipts), 2; got != want {
+		t.Fatalf("unexpected receipt count, got %d want %d", got, want)
+	}
+	if got, want := res.Receipts[0].TxHash, block.Transactions()[0].Hash(); got != want {
+		t.Fatalf("unexpected first receipt hash, got %s want %s", got, want)
+	}
+	if got, want := res.Receipts[1].TxHash, block.Transactions()[1].Hash(); got != want {
+		t.Fatalf("unexpected second receipt hash, got %s want %s", got, want)
+	}
+	if got, want := res.Receipts[0].Status, types.ReceiptStatusSuccessful; got != want {
+		t.Fatalf("unexpected first receipt status, got %d want %d", got, want)
+	}
+	if got, want := res.Receipts[1].Status, types.ReceiptStatusFailed; got != want {
+		t.Fatalf("unexpected second receipt status, got %d want %d", got, want)
+	}
+	if got, want := res.GasUsed, res.Receipts[len(res.Receipts)-1].CumulativeGasUsed; got != want {
+		t.Fatalf("unexpected gas used, got %d want %d", got, want)
+	}
+	if got, want := statedb.GetNonce(zkGasTestAddr), uint64(2); got != want {
+		t.Fatalf("unexpected sender nonce, got %d want %d", got, want)
+	}
+}
+
+func newUzenZKGasTestChain(t *testing.T) (*BlockChain, *params.ChainConfig) {
+	t.Helper()
+
+	config := *params.MergedTestChainConfig
+	uzenTime := uint64(100)
+	config.Taiko = true
+	config.UzenTime = &uzenTime
+
+	db := rawdb.NewMemoryDatabase()
+	genesis := &Genesis{
+		Config:  &config,
+		BaseFee: big.NewInt(params.InitialBaseFee),
+		Alloc: types.GenesisAlloc{
+			zkGasTestAddr: {
+				Balance: big.NewInt(10_000_000_000_000_000),
+			},
+			zkGasSuccessAddr: {
+				Nonce: 1,
+				Code:  zkGasSuccessCode,
+			},
+			zkGasLimitAddr: {
+				Nonce: 1,
+				Code:  zkGasLimitExceededCode,
+			},
+			zkGasRevertAddr: {
+				Nonce: 1,
+				Code:  zkGasRevertCode,
+			},
+		},
+	}
+	chain, err := NewBlockChain(db, genesis, beacon.New(ethash.NewFaker()), nil)
+	if err != nil {
+		t.Fatalf("NewBlockChain() error = %v", err)
+	}
+	return chain, &config
+}
+
+func newZKGasDynamicTx(t *testing.T, config *params.ChainConfig, nonce uint64, to common.Address, gas uint64) *types.Transaction {
+	t.Helper()
+
+	tx, err := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID:   config.ChainID,
+		Nonce:     nonce,
+		GasTipCap: common.Big0,
+		GasFeeCap: big.NewInt(params.InitialBaseFee),
+		Gas:       gas,
+		To:        &to,
+	}), types.LatestSigner(config), zkGasTestKey)
+	if err != nil {
+		t.Fatalf("SignTx() error = %v", err)
+	}
+	return tx
+}
 
 // TestStateProcessorErrors tests the output from the 'core' errors
 // as defined in core/error.go. These errors are generated when the

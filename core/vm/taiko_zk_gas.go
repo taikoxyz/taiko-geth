@@ -176,3 +176,9 @@ func (evm *EVM) taikoZKGasCurrentFrame() *taikoZKGasFrame {
 	}
 	return &evm.zkGasFrames[len(evm.zkGasFrames)-1]
 }
+
+// CHANGE(taiko): attach the block-scoped zk gas meter used by Uzen execution.
+func (evm *EVM) SetZKGasMeter(meter *ZKGasMeter) {
+	evm.zkGasMeter = meter
+	evm.zkGasFrames = nil
+}
