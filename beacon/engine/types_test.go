@@ -17,7 +17,9 @@
 package engine
 
 import (
+	"encoding/json"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -61,10 +63,9 @@ func TestExecutableDataToBlockNormalizesUzenBeaconRootAndRequestsHash(t *testing
 		ExtraData:     nil,
 		LogsBloom:     make([]byte, 256),
 		TaikoBlock:    true,
-		UzenBlock:     true,
 	}
 
-	block, err := ExecutableDataToBlockNoHash(payload, nil, nil, nil)
+	block, err := ExecutableDataToBlockNoHash(payload, nil, nil, nil, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,5 +74,61 @@ func TestExecutableDataToBlockNormalizesUzenBeaconRootAndRequestsHash(t *testing
 	}
 	if block.RequestsHash() == nil || *block.RequestsHash() != types.EmptyRequestsHash {
 		t.Fatalf("expected empty requests hash under Uzen, got %v", block.RequestsHash())
+	}
+}
+
+func TestExecutableDataToBlockPreservesNonUzenBeaconRootAndRequestsHash(t *testing.T) {
+	beaconRoot := common.HexToHash("0x1234")
+	requests := [][]byte{[]byte{0x01}, []byte{0x02, 0x03}}
+	payload := ExecutableData{
+		Number:        1,
+		Timestamp:     1_779_999_999,
+		GasLimit:      30_000_000,
+		GasUsed:       0,
+		BaseFeePerGas: big.NewInt(params.InitialBaseFee),
+		Transactions:  nil,
+		ExtraData:     nil,
+		LogsBloom:     make([]byte, 256),
+		TaikoBlock:    true,
+	}
+
+	block, err := ExecutableDataToBlockNoHash(payload, nil, &beaconRoot, requests, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if block.BeaconRoot() == nil || *block.BeaconRoot() != beaconRoot {
+		t.Fatalf("expected preserved beacon root outside Uzen, got %v", block.BeaconRoot())
+	}
+	wantRequestsHash := types.CalcRequestsHash(requests)
+	if block.RequestsHash() == nil || *block.RequestsHash() != wantRequestsHash {
+		t.Fatalf("expected requests hash %v outside Uzen, got %v", wantRequestsHash, block.RequestsHash())
+	}
+}
+
+func TestExecutableDataJSONDoesNotExposeUzenBlock(t *testing.T) {
+	payload := ExecutableData{
+		Number:        1,
+		Timestamp:     1,
+		GasLimit:      30_000_000,
+		BaseFeePerGas: big.NewInt(params.InitialBaseFee),
+		Transactions:  [][]byte{},
+		LogsBloom:     make([]byte, 256),
+		TaikoBlock:    true,
+	}
+
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "UzenBlock") {
+		t.Fatalf("unexpected UzenBlock field in payload JSON: %s", encoded)
+	}
+
+	var decoded ExecutableData
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if !decoded.TaikoBlock {
+		t.Fatal("expected TaikoBlock to survive payload JSON round-trip")
 	}
 }

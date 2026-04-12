@@ -134,7 +134,6 @@ type ExecutableData struct {
 	TxHash          common.Hash `json:"txHash"`          // CHANGE(taiko): allow passing txHash directly instead of transactions list
 	WithdrawalsHash common.Hash `json:"withdrawalsHash"` // CHANGE(taiko): allow passing WithdrawalsHash directly instead of withdrawals
 	TaikoBlock      bool        // CHANGE(taiko): whether this is a Taiko L2 block, only used by ExecutableDataToBlock
-	UzenBlock       bool        // CHANGE(taiko): whether Uzen payload normalization applies
 }
 
 // JSON type overrides for executableData.
@@ -282,8 +281,10 @@ func DecodeTransactions(enc [][]byte) ([]*types.Transaction, error) {
 // and that the blockhash of the constructed block matches the parameters. Nil
 // Withdrawals value will propagate through the returned block. Empty
 // Withdrawals value must be passed via non-nil, length 0 value in data.
-func ExecutableDataToBlock(data ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests [][]byte) (*types.Block, error) {
-	block, err := ExecutableDataToBlockNoHash(data, versionedHashes, beaconRoot, requests)
+// CHANGE(taiko): callers must derive uzenActive from chain config and payload
+// timestamp before invoking this helper.
+func ExecutableDataToBlock(data ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests [][]byte, uzenActive bool) (*types.Block, error) {
+	block, err := ExecutableDataToBlockNoHash(data, versionedHashes, beaconRoot, requests, uzenActive)
 	if err != nil {
 		return nil, err
 	}
@@ -296,7 +297,7 @@ func ExecutableDataToBlock(data ExecutableData, versionedHashes []common.Hash, b
 // ExecutableDataToBlockNoHash is analogous to ExecutableDataToBlock, but is used
 // for stateless execution, so it skips checking if the executable data hashes to
 // the requested hash (stateless has to *compute* the root hash, it's not given).
-func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests [][]byte) (*types.Block, error) {
+func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests [][]byte, uzenActive bool) (*types.Block, error) {
 	txs, err := DecodeTransactions(data.Transactions)
 	if err != nil {
 		return nil, err
@@ -333,7 +334,7 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 	}
 
 	var requestsHash *common.Hash
-	if data.UzenBlock {
+	if uzenActive {
 		beaconRoot = core.NormalizeUzenParentBeaconRoot(true, beaconRoot)
 		requestsHash = core.UzenRequestsHash(true, requests)
 	} else {

@@ -905,12 +905,14 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	log.Trace("Engine API request received", "method", "NewPayload", "number", params.Number, "hash", params.BlockHash)
 	// CHANGE(taiko): allow passing the executable data with txHash instead of all transactions.
 	var block *types.Block
-	params.TaikoBlock = api.eth.BlockChain().Config().Taiko
+	config := api.eth.BlockChain().Config()
+	params.TaikoBlock = config.Taiko
+	uzenActive := false
 	if params.TaikoBlock {
-		params.UzenBlock = api.eth.BlockChain().Config().IsUzen(params.Timestamp)
-		beaconRoot = core.NormalizeUzenParentBeaconRoot(params.UzenBlock, beaconRoot)
+		uzenActive = config.IsUzen(params.Timestamp)
+		beaconRoot = core.NormalizeUzenParentBeaconRoot(uzenActive, beaconRoot)
 	}
-	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil && params.Withdrawals == nil {
+	if config.Taiko && params.Transactions == nil && params.Withdrawals == nil {
 		block = types.NewBlockWithHeader(&types.Header{
 			ParentHash:       params.ParentHash,
 			UncleHash:        types.EmptyUncleHash,
@@ -929,10 +931,10 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 			MixDigest:        params.Random,
 			WithdrawalsHash:  &params.WithdrawalsHash,
 			ParentBeaconRoot: beaconRoot,
-			RequestsHash:     core.UzenRequestsHash(params.UzenBlock, requests),
+			RequestsHash:     core.UzenRequestsHash(uzenActive, requests),
 		})
 	} else {
-		block, err = engine.ExecutableDataToBlock(params, versionedHashes, beaconRoot, requests)
+		block, err = engine.ExecutableDataToBlock(params, versionedHashes, beaconRoot, requests, uzenActive)
 		if err != nil {
 			bgu := "nil"
 			if params.BlobGasUsed != nil {
@@ -992,7 +994,7 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	// will not trigger a sync cycle. That is fine though, if we get a fork choice
 	// update after legit payload executions.
 	parent := api.eth.BlockChain().GetBlock(block.ParentHash(), block.NumberU64()-1)
-	if err := core.RejectUzenBlobTransactions(params.UzenBlock, block.Transactions()); err != nil {
+	if err := core.RejectUzenBlobTransactions(uzenActive, block.Transactions()); err != nil {
 		if parent != nil {
 			return api.invalid(err, parent.Header()), nil
 		}
@@ -1003,7 +1005,7 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	}
 	// CHANGE(taiko): a block that has the same timestamp as its parents is
 	// allowed in Taiko protocol.
-	if api.eth.BlockChain().Config().Taiko {
+	if config.Taiko {
 		if block.Time() < parent.Time() {
 			log.Warn("Invalid timestamp", "parent", parent.Time(), "block", block.Time())
 			return api.invalid(errors.New("invalid timestamp"), parent.Header()), nil

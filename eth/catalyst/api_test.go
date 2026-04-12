@@ -316,7 +316,7 @@ func TestEth2NewBlock(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create the executable data, block %d: %v", i, err)
 		}
-		block, err := engine.ExecutableDataToBlock(*execData, nil, nil, nil)
+		block, err := engine.ExecutableDataToBlock(*execData, nil, nil, nil, false)
 		if err != nil {
 			t.Fatalf("Failed to convert executable data to block %v", err)
 		}
@@ -358,7 +358,7 @@ func TestEth2NewBlock(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to create the executable data %v", err)
 		}
-		block, err := engine.ExecutableDataToBlock(*execData, nil, nil, nil)
+		block, err := engine.ExecutableDataToBlock(*execData, nil, nil, nil, false)
 		if err != nil {
 			t.Fatalf("Failed to convert executable data to block %v", err)
 		}
@@ -953,7 +953,7 @@ func TestSimultaneousNewBlock(t *testing.T) {
 				t.Fatal(testErr)
 			}
 		}
-		block, err := engine.ExecutableDataToBlock(*execData, nil, nil, nil)
+		block, err := engine.ExecutableDataToBlock(*execData, nil, nil, nil, false)
 		if err != nil {
 			t.Fatalf("Failed to convert executable data to block %v", err)
 		}
@@ -1552,7 +1552,7 @@ func TestBlockToPayloadWithBlobs(t *testing.T) {
 	if got := len(envelope.BlobsBundle.Blobs); got != want {
 		t.Fatalf("invalid number of blobs: got %v, want %v", got, want)
 	}
-	_, err := engine.ExecutableDataToBlock(*envelope.ExecutionPayload, make([]common.Hash, 1), nil, nil)
+	_, err := engine.ExecutableDataToBlock(*envelope.ExecutionPayload, make([]common.Hash, 1), nil, nil, false)
 	if err != nil {
 		t.Error(err)
 	}
@@ -2049,9 +2049,8 @@ func newSyntheticCatalystPayload(t testing.TB, chainConfig *params.ChainConfig, 
 		ExcessBlobGas: &excessBlobGas,
 		SlotNumber:    slotNum,
 		TaikoBlock:    true,
-		UzenBlock:     uzen,
 	}
-	block, err := engine.ExecutableDataToBlockNoHash(*payload, versionedHashes, nil, nil)
+	block, err := engine.ExecutableDataToBlockNoHash(*payload, versionedHashes, nil, nil, uzen)
 	if err != nil {
 		t.Fatalf("failed to create synthetic block: %v", err)
 	}

@@ -247,13 +247,15 @@ func (api *ConsensusAPI) ExecuteStatelessPayloadV4(params engine.ExecutableData,
 
 func (api *ConsensusAPI) executeStatelessPayload(params engine.ExecutableData, versionedHashes []common.Hash, beaconRoot *common.Hash, requests [][]byte, opaqueWitness hexutil.Bytes) (engine.StatelessPayloadStatusV1, error) {
 	log.Trace("Engine API request received", "method", "ExecuteStatelessPayload", "number", params.Number, "hash", params.BlockHash)
-	params.TaikoBlock = api.config().Taiko
+	config := api.config()
+	params.TaikoBlock = config.Taiko
+	uzenActive := false
 	if params.TaikoBlock {
 		// CHANGE(taiko): keep stateless witness conversion aligned with newPayload.
-		params.UzenBlock = api.config().IsUzen(params.Timestamp)
-		beaconRoot = core.NormalizeUzenParentBeaconRoot(params.UzenBlock, beaconRoot)
+		uzenActive = config.IsUzen(params.Timestamp)
+		beaconRoot = core.NormalizeUzenParentBeaconRoot(uzenActive, beaconRoot)
 	}
-	block, err := engine.ExecutableDataToBlockNoHash(params, versionedHashes, beaconRoot, requests)
+	block, err := engine.ExecutableDataToBlockNoHash(params, versionedHashes, beaconRoot, requests, uzenActive)
 	if err != nil {
 		bgu := "nil"
 		if params.BlobGasUsed != nil {
@@ -286,7 +288,7 @@ func (api *ConsensusAPI) executeStatelessPayload(params engine.ExecutableData, v
 		errorMsg := err.Error()
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID, ValidationError: &errorMsg}, nil
 	}
-	if err := core.RejectUzenBlobTransactions(params.UzenBlock, block.Transactions()); err != nil {
+	if err := core.RejectUzenBlobTransactions(uzenActive, block.Transactions()); err != nil {
 		log.Warn("ExecuteStatelessPayload: rejecting blob transactions after Uzen", "err", err)
 		errorMsg := err.Error()
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID, ValidationError: &errorMsg}, nil
