@@ -84,14 +84,15 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		signer  = types.MakeSigner(config, header.Number, header.Time)
 	)
 
-	// Apply pre-execution system calls.
-	context = NewEVMBlockContext(header, p.chain, nil)
-	evm := vm.NewEVM(context, tracingStateDB, config, cfg)
-
 	// CHANGE(taiko): initialize zk gas meter for Uzen blocks.
+	// Must be set before NewEVM since it copies cfg by value.
 	if config.IsUzen(header.Time) {
 		cfg.ZkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
 	}
+
+	// Apply pre-execution system calls.
+	context = NewEVMBlockContext(header, p.chain, nil)
+	evm := vm.NewEVM(context, tracingStateDB, config, cfg)
 
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
@@ -130,8 +131,9 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 
 		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, evm)
 		if err != nil {
-			// CHANGE(taiko): if zk gas exceeded, abort this tx and skip remaining.
-			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
+			// CHANGE(taiko): if zk gas exceeded on a non-anchor tx, abort and skip remaining.
+			// The anchor tx (i==0) is never discarded — it must always be in the block.
+			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
 				cfg.ZkGasMeter.ResetTransaction()
 				spanEnd(nil)
 				break
@@ -142,7 +144,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 
 		// CHANGE(taiko): commit transaction zk gas on success.
 		if cfg.ZkGasMeter != nil {
-			if commitErr := cfg.ZkGasMeter.CommitTransaction(); commitErr != nil {
+			if commitErr := cfg.ZkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
 				cfg.ZkGasMeter.ResetTransaction()
 				spanEnd(nil)
 				break

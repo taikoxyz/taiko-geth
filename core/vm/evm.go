@@ -297,7 +297,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
-		if evm.Config.ZkGasMeter != nil && err == nil {
+		if evm.Config.ZkGasMeter != nil {
 			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
 				return nil, 0, zkErr
 			}
@@ -373,7 +373,7 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
-		if evm.Config.ZkGasMeter != nil && err == nil {
+		if evm.Config.ZkGasMeter != nil {
 			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
 				return nil, 0, zkErr
 			}
@@ -429,7 +429,7 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
-		if evm.Config.ZkGasMeter != nil && err == nil {
+		if evm.Config.ZkGasMeter != nil {
 			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
 				return nil, 0, zkErr
 			}
@@ -494,7 +494,7 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
-		if evm.Config.ZkGasMeter != nil && err == nil {
+		if evm.Config.ZkGasMeter != nil {
 			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
 				return nil, 0, zkErr
 			}

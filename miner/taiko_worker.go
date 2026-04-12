@@ -293,9 +293,13 @@ func (w *Miner) sealBlockWith(
 
 		if err := w.commitTransaction(ctx, env, tx); err != nil {
 			// CHANGE(taiko): if zk gas exceeded, stop including transactions.
-			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
+			// The anchor tx (i==0) is never discarded — it must always be in the block.
+			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
 				zkGasMeter.ResetTransaction()
 				break
+			}
+			if i == 0 {
+				return nil, fmt.Errorf("anchor transaction failed: %w", err)
 			}
 			log.Debug("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			continue
@@ -303,7 +307,7 @@ func (w *Miner) sealBlockWith(
 
 		// CHANGE(taiko): commit transaction zk gas on success.
 		if zkGasMeter != nil {
-			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil {
+			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
 				zkGasMeter.ResetTransaction()
 				break
 			}
