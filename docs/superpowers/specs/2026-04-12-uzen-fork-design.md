@@ -45,13 +45,13 @@ When `IsUzen` is true, `CancunTime`, `PragueTime`, and `OsakaTime` must also be 
 
 ### Activation Timestamps
 ```go
-InternalUzenTime uint64 = 0           // devnet: active from genesis
-MasayaUzenTime   uint64 = 0           // placeholder: Never (use math.MaxUint64 or nil)
-MainnetUzenTime  // nil (not yet scheduled)
-HoodiUzenTime    // nil (not yet scheduled)
+InternalUzenTime uint64 = 0                  // devnet: active from genesis
+MasayaUzenTime   uint64 = math.MaxUint64     // not scheduled
+MainnetUzenTime  uint64 = math.MaxUint64     // not scheduled
+HoodiUzenTime    uint64 = math.MaxUint64     // not scheduled
 ```
 
-Note: For networks where Uzen is not active, `UzenTime` is left as `nil`. For devnet, it's `0`.
+Note: Unscheduled networks use `math.MaxUint64` (effectively never). This matches the pattern used by alethia-reth's `ForkCondition::Never` and avoids nil-pointer checks.
 
 ## 2. ZK Gas Meter
 
