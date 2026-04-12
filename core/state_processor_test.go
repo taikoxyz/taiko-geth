@@ -42,14 +42,14 @@ import (
 func u64(val uint64) *uint64 { return &val }
 
 var (
-	zkGasTestKey, _       = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
-	zkGasTestAddr         = crypto.PubkeyToAddress(zkGasTestKey.PublicKey)
-	zkGasSuccessAddr      = common.Address{0x21}
-	zkGasLimitAddr        = common.Address{0x22}
-	zkGasRevertAddr       = common.Address{0x23}
-	zkGasSuccessCode      = common.FromHex("0x600160020100")
+	zkGasTestKey, _        = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	zkGasTestAddr          = crypto.PubkeyToAddress(zkGasTestKey.PublicKey)
+	zkGasSuccessAddr       = common.Address{0x21}
+	zkGasLimitAddr         = common.Address{0x22}
+	zkGasRevertAddr        = common.Address{0x23}
+	zkGasSuccessCode       = common.FromHex("0x600160020100")
 	zkGasLimitExceededCode = common.FromHex("0x6020621000002000")
-	zkGasRevertCode       = common.FromHex("0x60006000fd")
+	zkGasRevertCode        = common.FromHex("0x60006000fd")
 )
 
 func TestApplyTransactionWithEVMReturnsZKGasLimitReached(t *testing.T) {
