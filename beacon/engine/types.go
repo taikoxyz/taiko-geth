@@ -345,13 +345,21 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 		requestsHash = &h
 	}
 
-	// CHANGE(taiko): Uzen blocks require requestsHash and parentBeaconRoot.
+	// CHANGE(taiko): Uzen blocks require requestsHash, parentBeaconRoot, and blob gas fields.
 	if data.HeaderDifficulty != nil {
 		emptyRequests := types.EmptyRequestsHash
 		requestsHash = &emptyRequests
 		if beaconRoot == nil {
 			zero := common.Hash{}
 			beaconRoot = &zero
+		}
+		if data.BlobGasUsed == nil {
+			zeroBlobGas := uint64(0)
+			data.BlobGasUsed = &zeroBlobGas
+		}
+		if data.ExcessBlobGas == nil {
+			excessBlobGas := uint64(0)
+			data.ExcessBlobGas = &excessBlobGas
 		}
 	}
 

@@ -276,7 +276,7 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 		header.Difficulty = common.Big0
 	}
 
-	// CHANGE(taiko): Uzen blocks require requestsHash and parentBeaconRoot.
+	// CHANGE(taiko): Uzen blocks require requestsHash, parentBeaconRoot, and blob gas fields.
 	if t.chainConfig.IsUzen(header.Time) {
 		emptyRequests := types.EmptyRequestsHash
 		header.RequestsHash = &emptyRequests
@@ -284,6 +284,10 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 			zero := common.Hash{}
 			header.ParentBeaconRoot = &zero
 		}
+		zeroBlobGas := uint64(0)
+		header.BlobGasUsed = &zeroBlobGas
+		excessBlobGas := uint64(0)
+		header.ExcessBlobGas = &excessBlobGas
 	}
 
 	// Withdrawals processing.

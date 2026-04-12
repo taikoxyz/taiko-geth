@@ -926,6 +926,10 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 			header.RequestsHash = &emptyRequests
 			zero := common.Hash{}
 			header.ParentBeaconRoot = &zero
+			zeroBlobGas := uint64(0)
+			header.BlobGasUsed = &zeroBlobGas
+			excessBlobGas := uint64(0)
+			header.ExcessBlobGas = &excessBlobGas
 		}
 		block = types.NewBlockWithHeader(header)
 	} else {
