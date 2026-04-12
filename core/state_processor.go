@@ -158,9 +158,14 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		return nil, err
 	}
 
-	// CHANGE(taiko): set header difficulty to finalized block zk gas for Uzen.
+	// CHANGE(taiko): validate that the imported header difficulty matches the
+	// recomputed finalized block zk gas. This mirrors alethia-reth's
+	// validate_expected_zk_gas_difficulty check.
 	if cfg.ZkGasMeter != nil {
-		header.Difficulty = new(big.Int).SetUint64(cfg.ZkGasMeter.BlockZkGasUsed())
+		recomputed := new(big.Int).SetUint64(cfg.ZkGasMeter.BlockZkGasUsed())
+		if header.Difficulty.Cmp(recomputed) != 0 {
+			return nil, fmt.Errorf("zk gas difficulty mismatch: header has %v, recomputed %v", header.Difficulty, recomputed)
+		}
 	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)

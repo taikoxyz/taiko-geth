@@ -251,7 +251,11 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		// execute the operation
 		res, err = operation.execute(&pc, evm, callContext)
 
-		// CHANGE(taiko): charge zk gas after opcode execution.
+		// CHANGE(taiko): charge zk gas after opcode execution. The raw gas input
+		// is `cost` (constantGas + dynamicGas from the jump table), which does NOT
+		// include gas forwarded to child frames. For spawn opcodes that actually
+		// dispatched a child (childSpawned=true), the fixed spawn estimate is used
+		// instead. This matches alethia-reth's step_gas / spawn_estimate logic.
 		if meter := evm.Config.ZkGasMeter; meter != nil {
 			var zkErr error
 			if IsSpawnOpcode(op) {
