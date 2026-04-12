@@ -64,3 +64,16 @@ func TestIsUzenTimestampFork(t *testing.T) {
 		t.Fatal("expected Rules.IsUzen to mirror ChainConfig.IsUzen")
 	}
 }
+
+func TestRulesDoNotEnableUzenForNonTaikoChain(t *testing.T) {
+	cfg := *MainnetChainConfig
+	uzenTime := uint64(1_780_000_000)
+	cfg.UzenTime = &uzenTime
+
+	if !cfg.IsUzen(uzenTime) {
+		t.Fatal("expected UzenTime helper to report activation when populated")
+	}
+	if cfg.Rules(common.Big1, true, uzenTime).IsUzen {
+		t.Fatal("expected Rules.IsUzen to stay disabled for non-Taiko chains")
+	}
+}

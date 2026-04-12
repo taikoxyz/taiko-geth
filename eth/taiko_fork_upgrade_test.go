@@ -2,6 +2,7 @@ package eth
 
 import (
 	"math/big"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -119,6 +120,23 @@ func TestUzenUpgradeUsesUpdatedChainConfigInConsensusEngine(t *testing.T) {
 
 	if chain.Config().UzenTime == nil {
 		t.Fatal("expected upgraded blockchain config to contain UzenTime")
+	}
+	taikoEngine, ok := engine.(*taiko.Taiko)
+	if !ok {
+		t.Fatalf("expected taiko engine, got %T", engine)
+	}
+	engineCfg := reflect.ValueOf(taikoEngine).Elem().FieldByName("chainConfig")
+	if !engineCfg.IsValid() {
+		t.Fatal("expected taiko engine to retain chainConfig field")
+	}
+	if engineCfg.IsNil() {
+		t.Fatal("expected taiko engine chainConfig to be populated after upgrade")
+	}
+	if engineCfg.Pointer() != reflect.ValueOf(chain.Config()).Pointer() {
+		t.Fatal("expected taiko engine to receive the refreshed blockchain chain config")
+	}
+	if engineCfg.Elem().FieldByName("UzenTime").IsNil() {
+		t.Fatal("expected taiko engine chain config to contain UzenTime after upgrade")
 	}
 }
 
