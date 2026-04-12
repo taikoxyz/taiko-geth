@@ -130,9 +130,18 @@ type ExecutableData struct {
 	ExcessBlobGas *uint64             `json:"excessBlobGas"`
 	SlotNumber    *uint64             `json:"slotNumber"`
 
-	TxHash          common.Hash `json:"txHash"`          // CHANGE(taiko): allow passing txHash directly instead of transactions list
-	WithdrawalsHash common.Hash `json:"withdrawalsHash"` // CHANGE(taiko): allow passing WithdrawalsHash directly instead of withdrawals
-	TaikoBlock      bool        // CHANGE(taiko): whether this is a Taiko L2 block, only used by ExecutableDataToBlock
+	TxHash           common.Hash `json:"txHash"`           // CHANGE(taiko): allow passing txHash directly instead of transactions list
+	WithdrawalsHash  common.Hash `json:"withdrawalsHash"`  // CHANGE(taiko): allow passing WithdrawalsHash directly instead of withdrawals
+	HeaderDifficulty *big.Int    `json:"headerDifficulty"` // CHANGE(taiko): Uzen header difficulty for hash-stable round-trips
+	TaikoBlock       bool        // CHANGE(taiko): whether this is a Taiko L2 block, only used by ExecutableDataToBlock
+}
+
+// CHANGE(taiko): HeaderDifficultyOrZero returns HeaderDifficulty when set, otherwise common.Big0.
+func (data *ExecutableData) HeaderDifficultyOrZero() *big.Int {
+	if data.HeaderDifficulty != nil {
+		return new(big.Int).Set(data.HeaderDifficulty)
+	}
+	return common.Big0
 }
 
 // JSON type overrides for executableData.
@@ -336,6 +345,16 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 		requestsHash = &h
 	}
 
+	// CHANGE(taiko): Uzen blocks require requestsHash and parentBeaconRoot.
+	if data.HeaderDifficulty != nil {
+		emptyRequests := types.EmptyRequestsHash
+		requestsHash = &emptyRequests
+		if beaconRoot == nil {
+			zero := common.Hash{}
+			beaconRoot = &zero
+		}
+	}
+
 	header := &types.Header{
 		ParentHash:       data.ParentHash,
 		UncleHash:        types.EmptyUncleHash,
@@ -344,7 +363,7 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 		TxHash:           types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil)),
 		ReceiptHash:      data.ReceiptsRoot,
 		Bloom:            types.BytesToBloom(data.LogsBloom),
-		Difficulty:       common.Big0,
+		Difficulty:       data.HeaderDifficultyOrZero(), // CHANGE(taiko): use Uzen difficulty when present
 		Number:           new(big.Int).SetUint64(data.Number),
 		GasLimit:         data.GasLimit,
 		GasUsed:          data.GasUsed,
@@ -413,9 +432,15 @@ func BlockToExecutableData(block *types.Block, fees *big.Int, sidecars []*types.
 		}
 	}
 
+	// CHANGE(taiko): Uzen uses blockValue to transport header difficulty.
+	blockValue := fees
+	if block.Difficulty().Sign() > 0 {
+		blockValue = block.Difficulty()
+	}
+
 	return &ExecutionPayloadEnvelope{
 		ExecutionPayload: data,
-		BlockValue:       fees,
+		BlockValue:       blockValue,
 		BlobsBundle:      &bundle,
 		Requests:         requests,
 		Override:         false,

@@ -902,7 +902,7 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	var block *types.Block
 	params.TaikoBlock = api.eth.BlockChain().Config().Taiko
 	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil && params.Withdrawals == nil {
-		block = types.NewBlockWithHeader(&types.Header{
+		header := &types.Header{
 			ParentHash:      params.ParentHash,
 			UncleHash:       types.EmptyUncleHash,
 			Coinbase:        params.FeeRecipient,
@@ -910,7 +910,7 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 			TxHash:          params.TxHash,
 			ReceiptHash:     params.ReceiptsRoot,
 			Bloom:           types.BytesToBloom(params.LogsBloom),
-			Difficulty:      common.Big0,
+			Difficulty:      params.HeaderDifficultyOrZero(), // CHANGE(taiko): use Uzen difficulty
 			Number:          new(big.Int).SetUint64(params.Number),
 			GasLimit:        params.GasLimit,
 			GasUsed:         params.GasUsed,
@@ -919,7 +919,15 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 			Extra:           params.ExtraData,
 			MixDigest:       params.Random,
 			WithdrawalsHash: &params.WithdrawalsHash,
-		})
+		}
+		// CHANGE(taiko): set Uzen header fields.
+		if params.HeaderDifficulty != nil {
+			emptyRequests := types.EmptyRequestsHash
+			header.RequestsHash = &emptyRequests
+			zero := common.Hash{}
+			header.ParentBeaconRoot = &zero
+		}
+		block = types.NewBlockWithHeader(header)
 	} else {
 		block, err = engine.ExecutableDataToBlock(params, versionedHashes, beaconRoot, requests)
 		if err != nil {

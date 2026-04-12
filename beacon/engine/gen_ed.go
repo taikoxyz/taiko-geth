@@ -35,9 +35,10 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		BlobGasUsed     *hexutil.Uint64     `json:"blobGasUsed"`
 		ExcessBlobGas   *hexutil.Uint64     `json:"excessBlobGas"`
 		SlotNumber      *hexutil.Uint64     `json:"slotNumber"`
-		TxHash          common.Hash         `json:"txHash"`
-		WithdrawalsHash common.Hash         `json:"withdrawalsHash"`
-		TaikoBlock      bool
+		TxHash           common.Hash         `json:"txHash"`
+		WithdrawalsHash  common.Hash         `json:"withdrawalsHash"`
+		HeaderDifficulty *big.Int            `json:"headerDifficulty"`
+		TaikoBlock       bool
 	}
 	var enc ExecutableData
 	enc.ParentHash = e.ParentHash
@@ -65,6 +66,7 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 	enc.SlotNumber = (*hexutil.Uint64)(e.SlotNumber)
 	enc.TxHash = e.TxHash
 	enc.WithdrawalsHash = e.WithdrawalsHash
+	enc.HeaderDifficulty = e.HeaderDifficulty
 	enc.TaikoBlock = e.TaikoBlock
 	return json.Marshal(&enc)
 }
@@ -90,9 +92,10 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		BlobGasUsed     *hexutil.Uint64     `json:"blobGasUsed"`
 		ExcessBlobGas   *hexutil.Uint64     `json:"excessBlobGas"`
 		SlotNumber      *hexutil.Uint64     `json:"slotNumber"`
-		TxHash          *common.Hash        `json:"txHash"`
-		WithdrawalsHash *common.Hash        `json:"withdrawalsHash"`
-		TaikoBlock      *bool
+		TxHash           *common.Hash        `json:"txHash"`
+		WithdrawalsHash  *common.Hash        `json:"withdrawalsHash"`
+		HeaderDifficulty *big.Int            `json:"headerDifficulty"`
+		TaikoBlock       *bool
 	}
 	var dec ExecutableData
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -174,6 +177,9 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 	}
 	if dec.WithdrawalsHash != nil {
 		e.WithdrawalsHash = *dec.WithdrawalsHash
+	}
+	if dec.HeaderDifficulty != nil {
+		e.HeaderDifficulty = dec.HeaderDifficulty
 	}
 	if dec.TaikoBlock != nil {
 		e.TaikoBlock = *dec.TaikoBlock
