@@ -265,6 +265,10 @@ func (w *Miner) sealBlockWith(
 				return nil, err
 			}
 		}
+		if tx.Type() == types.BlobTxType && tx.BlobTxSidecar() == nil {
+			log.Debug("Skip a blob transaction without sidecar", "hash", tx.Hash())
+			continue
+		}
 		// CHANGE(taiko): Keep proposed Taiko blocks blob-free once Uzen activates.
 		if w.chainConfig.IsUzen(env.header.Time) && tx.Type() == types.BlobTxType {
 			log.Debug("Skip a blob transaction after Uzen", "hash", tx.Hash())

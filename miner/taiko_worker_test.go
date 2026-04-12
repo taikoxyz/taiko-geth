@@ -4,18 +4,24 @@ import (
 	"context"
 	"crypto/sha256"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
+	engineapi "github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/clique"
+	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 )
@@ -28,6 +34,17 @@ const (
 	// testGas is the gas required for contract deployment.
 	testGas = 144109
 )
+
+var goldenTouchKey, _ = crypto.HexToECDSA("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
+
+type noOpSealEngine struct {
+	*taiko.Taiko
+}
+
+func (e *noOpSealEngine) Seal(_ consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, _ <-chan struct{}) error {
+	results <- block
+	return nil
+}
 
 func newRandomTx(txPool *txpool.TxPool, creation bool) *types.Transaction {
 	var tx *types.Transaction
@@ -82,18 +99,19 @@ func TestCommitL2TransactionsSkipsBlobTransactionsAfterUzen(t *testing.T) {
 		db         = rawdb.NewMemoryDatabase()
 		cancunTime = uint64(0)
 		uzenTime   = uint64(1)
-		config     = *params.AllCliqueProtocolChanges
+		config     = *params.TestChainConfig
 	)
 	config.Taiko = true
 	config.ShanghaiTime = &cancunTime
-	config.CancunTime = &cancunTime
-	config.OsakaTime = nil
 	config.UzenTime = &uzenTime
 	config.BlobScheduleConfig = params.DefaultBlobSchedule
-	config.Clique = &params.CliqueConfig{Period: 1, Epoch: 30000}
+	config.CancunTime = &cancunTime
+	config.Ethash = &params.EthashConfig{}
+	config.Clique = nil
 
-	engine := clique.New(config.Clique, db)
-	w, b := newTestWorker(t, &config, engine, db, 0)
+	consensusEngine := ethash.NewFaker()
+	w, b := newTestWorker(t, &config, consensusEngine, db, 0)
+	w.engine = &noOpSealEngine{Taiko: taiko.New(&config, db)}
 
 	currentHead := b.chain.CurrentBlock()
 	env, err := w.prepareWork(context.Background(), &generateParams{
@@ -135,6 +153,88 @@ func TestCommitL2TransactionsSkipsBlobTransactionsAfterUzen(t *testing.T) {
 
 	assert.Len(t, result.TxsRemaining, 1)
 	assert.EqualValues(t, types.LegacyTxType, result.TxsRemaining[0].Type())
+}
+
+func TestSealBlockWithSkipsBlobTransactionsWithoutSidecarBeforeUzen(t *testing.T) {
+	var (
+		db         = rawdb.NewMemoryDatabase()
+		cancunTime = uint64(0)
+		uzenTime   = uint64(1)
+		config     = *params.TestChainConfig
+	)
+	config.Taiko = true
+	config.ShanghaiTime = &cancunTime
+	config.CancunTime = &cancunTime
+	config.UzenTime = &uzenTime
+	config.BlobScheduleConfig = params.DefaultBlobSchedule
+	config.Ethash = &params.EthashConfig{}
+	config.Clique = nil
+
+	consensusEngine := ethash.NewFaker()
+	w, b := newTestWorker(t, &config, consensusEngine, db, 0)
+	w.engine = &noOpSealEngine{Taiko: taiko.New(&config, db)}
+
+	anchorTx := newTaikoAnchorTx(&config, 0, big.NewInt(params.InitialBaseFee), 0, new(big.Int).Add(b.chain.CurrentBlock().Number, common.Big1))
+	blobTx := makeTestBlobTransaction(t, &config, 1).WithoutBlobTxSidecar()
+	txs := types.Transactions{anchorTx, blobTx}
+	txList, err := rlp.EncodeToBytes(txs)
+	if err != nil {
+		t.Fatalf("rlp.EncodeToBytes() error = %v", err)
+	}
+
+	blkMeta := &engineapi.BlockMetadata{
+		Beneficiary: testBankAddress,
+		GasLimit:    1_000_000,
+		Timestamp:   0,
+		MixHash:     common.Hash{},
+		TxList:      txList,
+		ExtraData:   nil,
+	}
+
+	var block *types.Block
+	assert.NotPanics(t, func() {
+		block, err = w.sealBlockWith(
+			b.chain.CurrentBlock(),
+			0,
+			0,
+			blkMeta,
+			big.NewInt(params.InitialBaseFee),
+			nil,
+		)
+	})
+	assert.NoError(t, err)
+	if assert.NotNil(t, block) {
+		assert.Len(t, block.Transactions(), 1)
+		assert.EqualValues(t, types.DynamicFeeTxType, block.Transactions()[0].Type())
+	}
+}
+
+func newTaikoAnchorTx(chainConfig *params.ChainConfig, nonce uint64, baseFee *big.Int, timestamp uint64, blockNumber *big.Int) *types.Transaction {
+	signer := types.MakeSigner(chainConfig, blockNumber, timestamp)
+	return types.MustSignNewTx(goldenTouchKey, signer, &types.DynamicFeeTx{
+		ChainID:   chainConfig.ChainID,
+		Nonce:     nonce,
+		GasTipCap: common.Big0,
+		GasFeeCap: new(big.Int).Set(baseFee),
+		Value:     common.Big0,
+		Data:      taiko.AnchorSelector,
+		Gas:       taiko.AnchorGasLimit,
+		To:        ptrAddress(taikoL2Address(chainConfig.ChainID)),
+	})
+}
+
+func taikoL2Address(chainID *big.Int) common.Address {
+	prefix := strings.TrimPrefix(chainID.String(), "0")
+	return common.HexToAddress(
+		"0x" +
+			prefix +
+			strings.Repeat("0", common.AddressLength*2-len(prefix)-len(taiko.TaikoL2AddressSuffix)) +
+			taiko.TaikoL2AddressSuffix,
+	)
+}
+
+func ptrAddress(addr common.Address) *common.Address {
+	return &addr
 }
 
 func TestRemoveGoldenTouchPendingTxs(t *testing.T) {
