@@ -308,13 +308,13 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 		if len(code) == 0 {
 			ret, err = nil, nil // gas is unchanged
 		} else {
-			evm.childSpawned = true // CHANGE(taiko): child frame actually spawned
 			// The contract is a scoped environment for this execution context only.
 			contract := NewContract(caller, addr, value, gas, evm.jumpDests)
 			contract.IsSystemCall = isSystemCall(caller)
 			contract.SetCallCode(evm.resolveCodeHash(addr), code)
 			ret, err = evm.Run(contract, input, false)
 			gas = contract.Gas
+			evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 		}
 	}
 	// When an error was returned by the EVM or when setting the creation code
@@ -381,11 +381,11 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
-		evm.childSpawned = true // CHANGE(taiko): child frame actually spawned
 		contract := NewContract(caller, caller, value, gas, evm.jumpDests)
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
+		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -438,11 +438,11 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		// Initialise a new contract and make initialise the delegate values
 		//
 		// Note: The value refers to the original value from the parent call.
-		evm.childSpawned = true // CHANGE(taiko): child frame actually spawned
 		contract := NewContract(originCaller, caller, value, gas, evm.jumpDests)
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
+		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -502,7 +502,6 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
-		evm.childSpawned = true // CHANGE(taiko): child frame actually spawned
 		contract := NewContract(caller, addr, new(uint256.Int), gas, evm.jumpDests)
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 
@@ -511,6 +510,7 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		// when we're in Homestead this also counts for code storage gas errors.
 		ret, err = evm.Run(contract, input, true)
 		gas = contract.Gas
+		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -541,7 +541,6 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	if !evm.Context.CanTransfer(evm.StateDB, caller, value) {
 		return nil, common.Address{}, gas, ErrInsufficientBalance
 	}
-	evm.childSpawned = true // CHANGE(taiko): create frame spawned
 	nonce := evm.StateDB.GetNonce(caller)
 	if nonce+1 < nonce {
 		return nil, common.Address{}, gas, ErrNonceUintOverflow
@@ -619,6 +618,7 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	contract.IsDeployment = true
 
 	ret, err = evm.initNewContract(contract, address)
+	evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {
