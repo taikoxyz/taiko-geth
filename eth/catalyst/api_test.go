@@ -37,6 +37,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
+	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -58,7 +60,8 @@ import (
 
 var (
 	// testKey is a private key to use for funding a tester account.
-	testKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	testKey, _        = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	goldenTouchKey, _ = crypto.HexToECDSA("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
 
 	// testAddr is the Ethereum address of the tester account.
 	testAddr = crypto.PubkeyToAddress(testKey.PublicKey)
@@ -1744,6 +1747,7 @@ func TestUzenForkchoiceUpdatedAllowsNilBeaconRoot(t *testing.T) {
 		name       string
 		amsterdam  bool
 		uzenActive bool
+		errSubstr  string
 		call       func(*ConsensusAPI, engine.ForkchoiceStateV1, *engine.PayloadAttributes) (engine.ForkChoiceResponse, error)
 	}{
 		{
@@ -1764,6 +1768,7 @@ func TestUzenForkchoiceUpdatedAllowsNilBeaconRoot(t *testing.T) {
 			name:       "amsterdam-v4-post-uzen",
 			amsterdam:  true,
 			uzenActive: true,
+			errSubstr:  "no slot number set post-amsterdam",
 			call: func(api *ConsensusAPI, update engine.ForkchoiceStateV1, attrs *engine.PayloadAttributes) (engine.ForkChoiceResponse, error) {
 				return api.ForkchoiceUpdatedV4(context.Background(), update, attrs)
 			},
@@ -1787,10 +1792,10 @@ func TestUzenForkchoiceUpdatedAllowsNilBeaconRoot(t *testing.T) {
 			resp, err := test.call(api, engine.ForkchoiceStateV1{HeadBlockHash: parent.Hash()}, attrs)
 			if test.uzenActive {
 				if err != nil {
-					if strings.Contains(describeEngineError(err), "missing beacon root") {
-						t.Fatalf("expected nil beacon root to get past top-level validation after Uzen, got %v (%s)", err, describeEngineError(err))
+					if test.errSubstr != "" && strings.Contains(describeEngineError(err), test.errSubstr) {
+						return
 					}
-					return
+					t.Fatalf("expected nil beacon root to be accepted after Uzen, got %v (%s)", err, describeEngineError(err))
 				}
 				if resp.PayloadStatus.Status != engine.VALID {
 					t.Fatalf("unexpected status: got %s want %s", resp.PayloadStatus.Status, engine.VALID)
@@ -1812,19 +1817,22 @@ func TestUzenForkchoiceUpdatedAllowsNilBeaconRoot(t *testing.T) {
 
 func TestUzenNewPayloadAcceptsNilBeaconRoot(t *testing.T) {
 	tests := []struct {
-		name      string
-		amsterdam bool
-		execute   func(testing.TB, *ConsensusAPI, *engine.ExecutionPayloadEnvelope) (engine.PayloadStatusV1, error)
+		name                  string
+		amsterdam             bool
+		expectedValidationErr string
+		execute               func(testing.TB, *ConsensusAPI, *engine.ExecutionPayloadEnvelope) (engine.PayloadStatusV1, error)
 	}{
 		{
-			name: "v4-prague",
+			name:                  "v4-prague",
+			expectedValidationErr: "invalid gas used (remote: 0 local: 21160)",
 			execute: func(t testing.TB, api *ConsensusAPI, envelope *engine.ExecutionPayloadEnvelope) (engine.PayloadStatusV1, error) {
 				return api.NewPayloadV4(context.Background(), *envelope.ExecutionPayload, payloadVersionedHashes(t, envelope.ExecutionPayload), nil, payloadRequests(envelope.Requests))
 			},
 		},
 		{
-			name:      "v5-amsterdam",
-			amsterdam: true,
+			name:                  "v5-amsterdam",
+			amsterdam:             true,
+			expectedValidationErr: "invalid gas used (remote: 0 local: 21160)",
 			execute: func(t testing.TB, api *ConsensusAPI, envelope *engine.ExecutionPayloadEnvelope) (engine.PayloadStatusV1, error) {
 				return api.NewPayloadV5(context.Background(), *envelope.ExecutionPayload, payloadVersionedHashes(t, envelope.ExecutionPayload), nil, payloadRequests(envelope.Requests))
 			},
@@ -1842,8 +1850,11 @@ func TestUzenNewPayloadAcceptsNilBeaconRoot(t *testing.T) {
 			if err != nil {
 				t.Fatalf("expected nil beacon root to be normalized after Uzen, got %v (%s)", err, describeEngineError(err))
 			}
-			if status.Status == "" {
-				t.Fatal("expected payload status after Uzen normalization")
+			if status.Status != engine.INVALID {
+				t.Fatalf("unexpected payload status: got %s want %s (validation error: %s)", status.Status, engine.INVALID, describeValidationError(status.ValidationError))
+			}
+			if describeValidationError(status.ValidationError) != test.expectedValidationErr {
+				t.Fatalf("unexpected validation error: got %q want %q", describeValidationError(status.ValidationError), test.expectedValidationErr)
 			}
 		})
 	}
@@ -1876,8 +1887,8 @@ func TestUzenCatalystRejectsBlobPayloads(t *testing.T) {
 	if status.Status != engine.INVALID {
 		t.Fatalf("unexpected status: got %s want %s", status.Status, engine.INVALID)
 	}
-	if status.ValidationError == nil {
-		t.Fatal("expected validation error for blob payload")
+	if status.ValidationError == nil || *status.ValidationError != core.ErrBlobTransactionsUnsupported.Error() {
+		t.Fatalf("expected blob rejection error, got %v", status.ValidationError)
 	}
 }
 
@@ -1888,13 +1899,12 @@ func TestUzenExecuteStatelessPayloadAcceptsNilBeaconRootAndRejectsBlobPayloads(t
 
 		api := newConsensusAPIWithoutHeartbeat(ethservice)
 		payload := newSyntheticCatalystPayload(t, api.config(), parent, timestamp, false, false, true)
-
 		status, err := api.ExecuteStatelessPayloadV4(*payload, payloadVersionedHashes(t, payload), nil, []hexutil.Bytes{}, hexutil.Bytes{0x80})
 		if err != nil {
 			t.Fatalf("expected nil beacon root to be normalized for stateless execution, got %v (%s)", err, describeEngineError(err))
 		}
-		if status.Status == "" {
-			t.Fatal("expected stateless payload status after Uzen normalization")
+		if status.Status != engine.INVALID {
+			t.Fatalf("unexpected stateless payload status: got %s want %s (validation error: %s)", status.Status, engine.INVALID, describeValidationError(status.ValidationError))
 		}
 		if status.ValidationError == nil {
 			t.Fatal("expected stateless path to continue beyond nil beacon-root validation")
@@ -1915,8 +1925,8 @@ func TestUzenExecuteStatelessPayloadAcceptsNilBeaconRootAndRejectsBlobPayloads(t
 		if status.Status != engine.INVALID {
 			t.Fatalf("unexpected status: got %s want %s", status.Status, engine.INVALID)
 		}
-		if status.ValidationError == nil {
-			t.Fatal("expected validation error for blob payload")
+		if status.ValidationError == nil || *status.ValidationError != core.ErrBlobTransactionsUnsupported.Error() {
+			t.Fatalf("expected blob rejection error, got %v", status.ValidationError)
 		}
 	})
 }
@@ -1954,16 +1964,8 @@ func newTaikoPayloadAttributes(t testing.TB, chainConfig *params.ChainConfig, pa
 	t.Helper()
 
 	random := crypto.Keccak256Hash([]byte{0xaa, 0xbb, 0xcc})
-	tx := types.MustSignNewTx(testKey, types.LatestSigner(chainConfig), &types.DynamicFeeTx{
-		ChainID:   chainConfig.ChainID,
-		Nonce:     0,
-		To:        &testAddr,
-		Gas:       params.TxGas,
-		GasTipCap: big.NewInt(params.InitialBaseFee),
-		GasFeeCap: big.NewInt(2 * params.InitialBaseFee),
-		Value:     common.Big1,
-	})
-	txList, err := rlp.EncodeToBytes(types.Transactions{tx})
+	baseFee := eip1559.CalcBaseFee(chainConfig, parent)
+	txList, err := rlp.EncodeToBytes(types.Transactions{newTaikoAnchorTx(chainConfig, 0, baseFee, timestamp, new(big.Int).Add(parent.Number, common.Big1))})
 	if err != nil {
 		t.Fatalf("failed to encode tx list: %v", err)
 	}
@@ -1972,7 +1974,7 @@ func newTaikoPayloadAttributes(t testing.TB, chainConfig *params.ChainConfig, pa
 		Random:                random,
 		SuggestedFeeRecipient: parent.Coinbase,
 		Withdrawals:           []*types.Withdrawal{},
-		BaseFeePerGas:         big.NewInt(params.InitialBaseFee),
+		BaseFeePerGas:         baseFee,
 		BlockMetadata: &engine.BlockMetadata{
 			Beneficiary: parent.Coinbase,
 			GasLimit:    parent.GasLimit,
@@ -2008,14 +2010,22 @@ func newSyntheticCatalystPayload(t testing.TB, chainConfig *params.ChainConfig, 
 		slot := uint64(1)
 		slotNum = &slot
 	}
+	baseFee := eip1559.CalcBaseFee(chainConfig, parent)
+	txs := types.Transactions{newTaikoAnchorTx(chainConfig, 0, baseFee, timestamp, new(big.Int).SetUint64(parent.Number.Uint64()+1))}
 	if withBlobTx {
 		tx := makeMultiBlobTx(chainConfig, 0, 1, 0, testKey, types.BlobSidecarVersion0)
+		txs = append(txs, tx)
+	}
+	transactions = make([][]byte, len(txs))
+	for i, tx := range txs {
 		txData, err := tx.MarshalBinary()
 		if err != nil {
-			t.Fatalf("failed to encode blob tx: %v", err)
+			t.Fatalf("failed to encode tx: %v", err)
 		}
-		transactions = [][]byte{txData}
+		transactions[i] = txData
 		versionedHashes = append(versionedHashes, tx.BlobHashes()...)
+	}
+	if len(versionedHashes) > 0 {
 		blobGasUsed = uint64(len(versionedHashes))
 		excessBlobGas = blobGasUsed
 	}
@@ -2032,7 +2042,7 @@ func newSyntheticCatalystPayload(t testing.TB, chainConfig *params.ChainConfig, 
 		GasUsed:       0,
 		Timestamp:     timestamp,
 		ExtraData:     nil,
-		BaseFeePerGas: parent.BaseFee,
+		BaseFeePerGas: baseFee,
 		Transactions:  transactions,
 		Withdrawals:   []*types.Withdrawal{},
 		BlobGasUsed:   &blobGasUsed,
@@ -2080,6 +2090,41 @@ func describeEngineError(err error) string {
 		return fmt.Sprint(apiErr.ErrorData())
 	}
 	return ""
+}
+
+func describeValidationError(err *string) string {
+	if err == nil {
+		return ""
+	}
+	return *err
+}
+
+func newTaikoAnchorTx(chainConfig *params.ChainConfig, nonce uint64, baseFee *big.Int, timestamp uint64, blockNumber *big.Int) *types.Transaction {
+	signer := types.MakeSigner(chainConfig, blockNumber, timestamp)
+	return types.MustSignNewTx(goldenTouchKey, signer, &types.DynamicFeeTx{
+		ChainID:   chainConfig.ChainID,
+		Nonce:     nonce,
+		GasTipCap: common.Big0,
+		GasFeeCap: new(big.Int).Set(baseFee),
+		Value:     common.Big0,
+		Data:      taiko.AnchorSelector,
+		Gas:       taiko.AnchorGasLimit,
+		To:        ptrAddress(taikoL2Address(chainConfig.ChainID)),
+	})
+}
+
+func taikoL2Address(chainID *big.Int) common.Address {
+	prefix := strings.TrimPrefix(chainID.String(), "0")
+	return common.HexToAddress(
+		"0x" +
+			prefix +
+			strings.Repeat("0", common.AddressLength*2-len(prefix)-len(taiko.TaikoL2AddressSuffix)) +
+			taiko.TaikoL2AddressSuffix,
+	)
+}
+
+func ptrAddress(addr common.Address) *common.Address {
+	return &addr
 }
 
 // TestGetClientVersion verifies the expected version info is returned.
