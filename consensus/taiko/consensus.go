@@ -173,9 +173,11 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return consensus.ErrInvalidNumber
 	}
 
-	// Difficulty should always be zero
-	if header.Difficulty != nil && header.Difficulty.Cmp(common.Big0) != 0 {
-		return fmt.Errorf("invalid difficulty: have %v, want %v", header.Difficulty, common.Big0)
+	// CHANGE(taiko): Uzen repurposes difficulty for zk gas; only enforce zero before Uzen.
+	if !t.chainConfig.IsUzen(header.Time) {
+		if header.Difficulty != nil && header.Difficulty.Cmp(common.Big0) != 0 {
+			return fmt.Errorf("invalid difficulty: have %v, want %v", header.Difficulty, common.Big0)
+		}
 	}
 
 	// Verify that the gas limit is <= 2^63-1
@@ -267,7 +269,23 @@ func (t *Taiko) Prepare(chain consensus.ChainHeaderReader, header *types.Header)
 func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
 	// no block rewards in l2
 	header.UncleHash = types.CalcUncleHash(nil)
-	header.Difficulty = common.Big0
+
+	// CHANGE(taiko): Uzen sets difficulty to finalized zk gas (set by caller);
+	// pre-Uzen sets difficulty to zero.
+	if !t.chainConfig.IsUzen(header.Time) {
+		header.Difficulty = common.Big0
+	}
+
+	// CHANGE(taiko): Uzen blocks require requestsHash and parentBeaconRoot.
+	if t.chainConfig.IsUzen(header.Time) {
+		emptyRequests := types.EmptyRequestsHash
+		header.RequestsHash = &emptyRequests
+		if header.ParentBeaconRoot == nil {
+			zero := common.Hash{}
+			header.ParentBeaconRoot = &zero
+		}
+	}
+
 	// Withdrawals processing.
 	for _, w := range body.Withdrawals {
 		state.AddBalance(
@@ -296,6 +314,15 @@ func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHe
 		}
 		if !isAnchor {
 			return nil, ErrAnchorTxNotFound
+		}
+	}
+
+	// CHANGE(taiko): Uzen blocks must not contain blob transactions.
+	if t.chainConfig.IsUzen(header.Time) {
+		for i, tx := range body.Transactions {
+			if tx.Type() == types.BlobTxType {
+				return nil, fmt.Errorf("blob transaction at index %d not allowed in Uzen block", i)
+			}
 		}
 	}
 
