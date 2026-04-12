@@ -209,9 +209,10 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 			return &newPayloadResult{err: err}
 		}
 	}
-	if requests != nil {
-		reqHash := types.CalcRequestsHash(requests)
-		work.header.RequestsHash = &reqHash
+	if miner.chainConfig.IsUzen(work.header.Time) {
+		work.header.RequestsHash = &types.EmptyRequestsHash
+	} else {
+		work.header.RequestsHash = core.UzenRequestsHash(false, requests)
 	}
 
 	block, err := miner.engine.FinalizeAndAssemble(ctx, miner.chain, work.header, work.state, &body, work.receipts)

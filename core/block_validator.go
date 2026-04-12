@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -153,9 +154,13 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	}
 	// Validate the parsed requests match the expected header value.
 	if header.RequestsHash != nil {
-		reqhash := types.CalcRequestsHash(res.Requests)
-		if reqhash != *header.RequestsHash {
-			return fmt.Errorf("invalid requests hash (remote: %x local: %x)", *header.RequestsHash, reqhash)
+		want := UzenRequestsHash(v.config.Taiko && v.config.IsUzen(header.Time), res.Requests)
+		if want == nil || *want != *header.RequestsHash {
+			var local common.Hash
+			if want != nil {
+				local = *want
+			}
+			return fmt.Errorf("invalid requests hash (remote: %x local: %x)", *header.RequestsHash, local)
 		}
 	} else if res.Requests != nil {
 		return errors.New("block has requests before prague fork")

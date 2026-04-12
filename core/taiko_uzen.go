@@ -1,0 +1,61 @@
+// Copyright 2026 The go-ethereum Authors
+// This file is part of the go-ethereum library.
+//
+// The go-ethereum library is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Lesser General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// The go-ethereum library is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Lesser General Public License for more details.
+//
+// You should have received a copy of the GNU Lesser General Public License
+// along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
+
+package core
+
+import (
+	"errors"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+)
+
+var (
+	// CHANGE(taiko): Uzen disables blob transactions in payload processing paths.
+	ErrBlobTransactionsUnsupported = errors.New("blob transactions unsupported after Uzen")
+)
+
+func NormalizeUzenParentBeaconRoot(uzenActive bool, beaconRoot *common.Hash) *common.Hash {
+	if uzenActive && beaconRoot == nil {
+		zero := common.Hash{}
+		return &zero
+	}
+	return beaconRoot
+}
+
+func UzenRequestsHash(uzenActive bool, requests [][]byte) *common.Hash {
+	if uzenActive {
+		hash := types.EmptyRequestsHash
+		return &hash
+	}
+	if requests == nil {
+		return nil
+	}
+	hash := types.CalcRequestsHash(requests)
+	return &hash
+}
+
+func RejectUzenBlobTransactions(uzenActive bool, txs []*types.Transaction) error {
+	if !uzenActive {
+		return nil
+	}
+	for _, tx := range txs {
+		if tx.Type() == types.BlobTxType {
+			return ErrBlobTransactionsUnsupported
+		}
+	}
+	return nil
+}

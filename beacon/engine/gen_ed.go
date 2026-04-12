@@ -38,6 +38,7 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		TxHash          common.Hash         `json:"txHash"`
 		WithdrawalsHash common.Hash         `json:"withdrawalsHash"`
 		TaikoBlock      bool
+		UzenBlock       bool
 	}
 	var enc ExecutableData
 	enc.ParentHash = e.ParentHash
@@ -66,6 +67,7 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 	enc.TxHash = e.TxHash
 	enc.WithdrawalsHash = e.WithdrawalsHash
 	enc.TaikoBlock = e.TaikoBlock
+	enc.UzenBlock = e.UzenBlock
 	return json.Marshal(&enc)
 }
 
@@ -93,6 +95,7 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		TxHash          *common.Hash        `json:"txHash"`
 		WithdrawalsHash *common.Hash        `json:"withdrawalsHash"`
 		TaikoBlock      *bool
+		UzenBlock       *bool
 	}
 	var dec ExecutableData
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -177,6 +180,9 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 	}
 	if dec.TaikoBlock != nil {
 		e.TaikoBlock = *dec.TaikoBlock
+	}
+	if dec.UzenBlock != nil {
+		e.UzenBlock = *dec.UzenBlock
 	}
 	return nil
 }

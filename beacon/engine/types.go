@@ -23,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -133,6 +134,7 @@ type ExecutableData struct {
 	TxHash          common.Hash `json:"txHash"`          // CHANGE(taiko): allow passing txHash directly instead of transactions list
 	WithdrawalsHash common.Hash `json:"withdrawalsHash"` // CHANGE(taiko): allow passing WithdrawalsHash directly instead of withdrawals
 	TaikoBlock      bool        // CHANGE(taiko): whether this is a Taiko L2 block, only used by ExecutableDataToBlock
+	UzenBlock       bool        // CHANGE(taiko): whether Uzen payload normalization applies
 }
 
 // JSON type overrides for executableData.
@@ -331,9 +333,11 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 	}
 
 	var requestsHash *common.Hash
-	if requests != nil {
-		h := types.CalcRequestsHash(requests)
-		requestsHash = &h
+	if data.UzenBlock {
+		beaconRoot = core.NormalizeUzenParentBeaconRoot(true, beaconRoot)
+		requestsHash = core.UzenRequestsHash(true, requests)
+	} else {
+		requestsHash = core.UzenRequestsHash(false, requests)
 	}
 
 	header := &types.Header{

@@ -17,11 +17,13 @@
 package engine
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 func TestBlobs(t *testing.T) {
@@ -44,5 +46,32 @@ func TestBlobs(t *testing.T) {
 	env = BlockToExecutableData(block, common.Big0, []*types.BlobTxSidecar{sidecarWithCellProofs}, nil)
 	if len(env.BlobsBundle.Proofs) != 128 {
 		t.Fatalf("Expect 128 proofs in blobs bundle, got %v", len(env.BlobsBundle.Proofs))
+	}
+}
+
+func TestExecutableDataToBlockNormalizesUzenBeaconRootAndRequestsHash(t *testing.T) {
+	timestamp := uint64(1_780_000_001)
+	payload := ExecutableData{
+		Number:        1,
+		Timestamp:     timestamp,
+		GasLimit:      30_000_000,
+		GasUsed:       0,
+		BaseFeePerGas: big.NewInt(params.InitialBaseFee),
+		Transactions:  nil,
+		ExtraData:     nil,
+		LogsBloom:     make([]byte, 256),
+		TaikoBlock:    true,
+		UzenBlock:     true,
+	}
+
+	block, err := ExecutableDataToBlockNoHash(payload, nil, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if block.BeaconRoot() == nil || *block.BeaconRoot() != (common.Hash{}) {
+		t.Fatalf("expected zero beacon root under Uzen, got %v", block.BeaconRoot())
+	}
+	if block.RequestsHash() == nil || *block.RequestsHash() != types.EmptyRequestsHash {
+		t.Fatalf("expected empty requests hash under Uzen, got %v", block.RequestsHash())
 	}
 }

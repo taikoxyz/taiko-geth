@@ -901,6 +901,10 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	// CHANGE(taiko): allow passing the executable data with txHash instead of all transactions.
 	var block *types.Block
 	params.TaikoBlock = api.eth.BlockChain().Config().Taiko
+	if params.TaikoBlock {
+		params.UzenBlock = api.eth.BlockChain().Config().IsUzen(params.Timestamp)
+		beaconRoot = core.NormalizeUzenParentBeaconRoot(params.UzenBlock, beaconRoot)
+	}
 	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil && params.Withdrawals == nil {
 		block = types.NewBlockWithHeader(&types.Header{
 			ParentHash:      params.ParentHash,
@@ -981,6 +985,12 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	// will not trigger a sync cycle. That is fine though, if we get a fork choice
 	// update after legit payload executions.
 	parent := api.eth.BlockChain().GetBlock(block.ParentHash(), block.NumberU64()-1)
+	if err := core.RejectUzenBlobTransactions(params.UzenBlock, block.Transactions()); err != nil {
+		if parent != nil {
+			return api.invalid(err, parent.Header()), nil
+		}
+		return api.invalid(err, nil), nil
+	}
 	if parent == nil {
 		return api.delayPayloadImport(block), nil
 	}
