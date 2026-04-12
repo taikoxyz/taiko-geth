@@ -62,11 +62,9 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 	}
 	// CHANGE(taiko): Uzen blocks have non-zero difficulty (zk gas) but still need
 	// Random for PREVRANDAO, and BlobBaseFee=1 for BLOBBASEFEE opcode compatibility.
-	if chain.Config().IsUzen(header.Time) {
+	if chain != nil && chain.Config() != nil && chain.Config().IsUzen(header.Time) {
 		random = &header.MixDigest
-		if blobBaseFee == nil {
-			blobBaseFee = big.NewInt(1)
-		}
+		blobBaseFee = big.NewInt(1)
 	} else if header.Difficulty.Sign() == 0 {
 		random = &header.MixDigest
 	}
