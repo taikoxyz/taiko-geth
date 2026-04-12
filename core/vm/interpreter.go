@@ -144,6 +144,8 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		mem.Free()
 	}()
 	contract.Input = input
+	evm.taikoZKGasPushFrame()
+	defer evm.taikoZKGasPopFrame()
 
 	if debug {
 		defer func() { // this deferred method handles exit-with-error
@@ -164,6 +166,7 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 	// parent context.
 	_ = jumpTable[0] // nil-check the jumpTable out of the loop
 	for {
+		gasRemainingBefore := contract.Gas
 		if debug {
 			// Capture pre-execution values for tracing.
 			logged, pcCopy, gasCopy = false, pc, contract.Gas
@@ -246,8 +249,13 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			mem.Resize(memorySize)
 		}
 
+		evm.taikoZKGasBeginOpcode()
+
 		// execute the operation
 		res, err = operation.execute(&pc, evm, callContext)
+		if meterErr := evm.taikoZKGasChargeOpcode(op, gasRemainingBefore-contract.Gas); meterErr != nil {
+			err = meterErr
+		}
 		if err != nil {
 			break
 		}

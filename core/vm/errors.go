@@ -38,6 +38,7 @@ var (
 	ErrGasUintOverflow          = errors.New("gas uint64 overflow")
 	ErrInvalidCode              = errors.New("invalid code: must not begin with 0xef")
 	ErrNonceUintOverflow        = errors.New("nonce uint64 overflow")
+	ErrZKGasLimitReached        = errors.New("zk gas limit reached")
 
 	// errStopToken is an internal token indicating interpreter loop termination,
 	// never returned to outside callers.
@@ -144,6 +145,7 @@ const (
 	VMErrorCodeGasUintOverflow
 	VMErrorCodeInvalidCode
 	VMErrorCodeNonceUintOverflow
+	VMErrorCodeZKGasLimitReached
 	VMErrorCodeStackUnderflow
 	VMErrorCodeStackOverflow
 	VMErrorCodeInvalidOpCode
@@ -181,6 +183,8 @@ func vmErrorCodeFromErr(err error) int {
 		return VMErrorCodeInvalidCode
 	case errors.Is(err, ErrNonceUintOverflow):
 		return VMErrorCodeNonceUintOverflow
+	case errors.Is(err, ErrZKGasLimitReached):
+		return VMErrorCodeZKGasLimitReached
 
 	default:
 		// Dynamic errors

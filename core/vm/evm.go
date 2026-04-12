@@ -125,6 +125,10 @@ type EVM struct {
 	// jumpDests stores results of JUMPDEST analysis.
 	jumpDests JumpDestCache
 
+	// CHANGE(taiko): persist zk gas metering state across nested EVM frames.
+	zkGasMeter  *ZKGasMeter
+	zkGasFrames []taikoZKGasFrame
+
 	readOnly   bool   // Whether to throw on stateful modifications
 	returnData []byte // Last CALL's return data for subsequent reuse
 }
@@ -287,11 +291,13 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 	}
 
 	if isPrecompile {
+		suppliedGas := gas
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
+		evm.taikoZKGasRecordPrecompile(addr, suppliedGas-gas)
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		code := evm.resolveCode(addr)
@@ -302,6 +308,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			contract := NewContract(caller, addr, value, gas, evm.jumpDests)
 			contract.IsSystemCall = isSystemCall(caller)
 			contract.SetCallCode(evm.resolveCodeHash(addr), code)
+			evm.taikoZKGasRecordChildFrame()
 			ret, err = evm.Run(contract, input, false)
 			gas = contract.Gas
 		}
@@ -354,16 +361,19 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
+		suppliedGas := gas
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
+		evm.taikoZKGasRecordPrecompile(addr, suppliedGas-gas)
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
 		contract := NewContract(caller, caller, value, gas, evm.jumpDests)
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
+		evm.taikoZKGasRecordChildFrame()
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
 	}
@@ -401,17 +411,20 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
+		suppliedGas := gas
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
+		evm.taikoZKGasRecordPrecompile(addr, suppliedGas-gas)
 	} else {
 		// Initialise a new contract and make initialise the delegate values
 		//
 		// Note: The value refers to the original value from the parent call.
 		contract := NewContract(originCaller, caller, value, gas, evm.jumpDests)
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
+		evm.taikoZKGasRecordChildFrame()
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
 	}
@@ -457,16 +470,19 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 	evm.StateDB.AddBalance(addr, new(uint256.Int), tracing.BalanceChangeTouchAccount)
 
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
+		suppliedGas := gas
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
+		evm.taikoZKGasRecordPrecompile(addr, suppliedGas-gas)
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
 		contract := NewContract(caller, addr, new(uint256.Int), gas, evm.jumpDests)
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
+		evm.taikoZKGasRecordChildFrame()
 
 		// When an error was returned by the EVM or when setting the creation code
 		// above we revert to the snapshot and consume any gas remaining. Additionally
@@ -592,6 +608,7 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 // initNewContract runs a new contract's creation code, performs checks on the
 // resulting code that is to be deployed, and consumes necessary gas.
 func (evm *EVM) initNewContract(contract *Contract, address common.Address) ([]byte, error) {
+	evm.taikoZKGasRecordChildFrame()
 	ret, err := evm.Run(contract, nil, false)
 	if err != nil {
 		return ret, err
