@@ -89,6 +89,39 @@ func TestShastaUpgradeUsesUpdatedChainConfigInConsensusEngine(t *testing.T) {
 	}
 }
 
+func TestUzenUpgradeUsesUpdatedChainConfigInConsensusEngine(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+
+	oldGenesis := core.TaikoGenesisBlock(params.TaikoMainnetNetworkID.Uint64())
+	oldCfg := *oldGenesis.Config
+	oldCfg.UzenTime = nil
+	oldGenesis.Config = &oldCfg
+	oldGenesis.MustCommit(db, triedb.NewDatabase(db, triedb.HashDefaults))
+
+	newGenesis := core.TaikoGenesisBlock(params.TaikoMainnetNetworkID.Uint64())
+	loadedCfg, _, err := core.LoadChainConfig(db, newGenesis)
+	if err != nil {
+		t.Fatalf("failed to load chain config: %v", err)
+	}
+	if loadedCfg.UzenTime != nil {
+		t.Fatalf("expected stored config to be missing UzenTime, got %d", *loadedCfg.UzenTime)
+	}
+
+	engine, err := ethconfig.CreateConsensusEngine(loadedCfg, db)
+	if err != nil {
+		t.Fatalf("failed to create consensus engine: %v", err)
+	}
+	chain, err := core.NewBlockChain(db, newGenesis, engine, nil)
+	if err != nil {
+		t.Fatalf("failed to create blockchain: %v", err)
+	}
+	defer chain.Stop()
+
+	if chain.Config().UzenTime == nil {
+		t.Fatal("expected upgraded blockchain config to contain UzenTime")
+	}
+}
+
 func taikoL2Address(chainID *big.Int) common.Address {
 	prefix := strings.TrimPrefix(chainID.String(), "0")
 	return common.HexToAddress(

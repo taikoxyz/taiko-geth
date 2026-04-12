@@ -24,6 +24,11 @@ var (
 	MasayaShastaTime   uint64 = 0
 	MainnetShastaTime  uint64 = 1_775_135_700
 	HoodiShastaTime    uint64 = 1_770_296_400
+
+	InternalUzenTime uint64 = 0
+	MasayaUzenTime   uint64 = 0
+	MainnetUzenTime  uint64 = 1_780_000_000
+	HoodiUzenTime    uint64 = 0
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
@@ -37,30 +42,35 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.OntakeBlock = MainnetOntakeBlock
 		chainConfig.PacayaBlock = MainnetPacayaBlock
 		chainConfig.ShastaTime = &MainnetShastaTime
+		chainConfig.UzenTime = &MainnetUzenTime
 		allocJSON = taikoGenesis.MainnetGenesisAllocJSON
 	case params.TaikoInternalNetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoInternalNetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
+		chainConfig.UzenTime = &InternalUzenTime
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	case params.MasayaDevnetNetworkID.Uint64():
 		chainConfig.ChainID = params.MasayaDevnetNetworkID
 		chainConfig.OntakeBlock = MasayaDevnetOntakeBlock
 		chainConfig.PacayaBlock = MasayaDevnetPacayaBlock
 		chainConfig.ShastaTime = &MasayaShastaTime
+		chainConfig.UzenTime = &MasayaUzenTime
 		allocJSON = taikoGenesis.MasayaGenesisAllocJSON
 	case params.TaikoHoodiNetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoHoodiNetworkID
 		chainConfig.OntakeBlock = TaikoHoodiOntakeBlock
 		chainConfig.PacayaBlock = TaikoHoodiPacayaBlock
 		chainConfig.ShastaTime = &HoodiShastaTime
+		chainConfig.UzenTime = &HoodiUzenTime
 		allocJSON = taikoGenesis.TaikoHoodiGenesisAllocJSON
 	default:
 		chainConfig.ChainID = params.TaikoInternalNetworkID
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
+		chainConfig.UzenTime = &InternalUzenTime
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	}
 	var alloc GenesisAlloc
