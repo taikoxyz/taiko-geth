@@ -259,6 +259,13 @@ func (w *Miner) sealBlockWith(
 
 	env.gasPool = core.NewGasPool(gasLimit)
 
+	// CHANGE(taiko): initialize zk gas meter for Uzen blocks.
+	var zkGasMeter *vm.ZkGasMeter
+	if w.chainConfig.IsUzen(timestamp) {
+		zkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
+		env.evm.Config.ZkGasMeter = zkGasMeter
+	}
+
 	for i, tx := range txs {
 		if i == 0 {
 			if err := tx.MarkAsAnchor(); err != nil {
@@ -278,11 +285,50 @@ func (w *Miner) sealBlockWith(
 
 		env.state.Prepare(rules, sender, blkMeta.Beneficiary, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
 		env.state.SetTxContext(tx.Hash(), env.tcount)
+
+		// CHANGE(taiko): reset in-flight zk gas before each transaction.
+		if zkGasMeter != nil {
+			zkGasMeter.ResetTransaction()
+		}
+
 		if err := w.commitTransaction(ctx, env, tx); err != nil {
+			// CHANGE(taiko): if zk gas exceeded, stop including transactions.
+			// The anchor tx (i==0) is never discarded — it must always be in the block.
+			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
+				zkGasMeter.ResetTransaction()
+				break
+			}
+			if i == 0 {
+				return nil, fmt.Errorf("anchor transaction failed: %w", err)
+			}
 			log.Debug("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			continue
 		}
+
+		// CHANGE(taiko): commit transaction zk gas on success.
+		if zkGasMeter != nil {
+			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
+				zkGasMeter.ResetTransaction()
+				break
+			}
+		}
+
 		env.tcount++
+	}
+
+	// CHANGE(taiko): set header difficulty to finalized block zk gas for Uzen.
+	if zkGasMeter != nil {
+		env.header.Difficulty = new(big.Int).SetUint64(zkGasMeter.BlockZkGasUsed())
+
+		// CHANGE(taiko): align locally sealed Uzen blocks with replayed/imported
+		// payload handling by setting the canonical zero beacon root.
+		zero := common.Hash{}
+		env.header.ParentBeaconRoot = &zero
+
+		// CHANGE(taiko): Uzen locally sealed blocks carry the canonical empty
+		// requests hash, matching replayed/imported payload handling.
+		emptyRequests := types.EmptyRequestsHash
+		env.header.RequestsHash = &emptyRequests
 	}
 
 	block, err := w.engine.FinalizeAndAssemble(

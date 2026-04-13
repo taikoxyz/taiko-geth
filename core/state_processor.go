@@ -18,6 +18,7 @@ package core
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 
@@ -83,6 +84,18 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		signer  = types.MakeSigner(config, header.Number, header.Time)
 	)
 
+	// CHANGE(taiko): initialize zk gas meter for Uzen blocks.
+	// Must be set before NewEVM since it copies cfg by value.
+	if config.IsUzen(header.Time) {
+		cfg.ZkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
+		// CHANGE(taiko): Uzen imported blocks must not contain blob transactions.
+		for i, tx := range block.Transactions() {
+			if tx.Type() == types.BlobTxType {
+				return nil, fmt.Errorf("blob transaction at index %d not allowed in Uzen block", i)
+			}
+		}
+	}
+
 	// Apply pre-execution system calls.
 	context = NewEVMBlockContext(header, p.chain, nil)
 	evm := vm.NewEVM(context, tracingStateDB, config, cfg)
@@ -117,11 +130,33 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 			telemetry.Int64Attribute("tx.index", int64(i)),
 		)
 
+		// CHANGE(taiko): reset in-flight zk gas before each transaction.
+		if cfg.ZkGasMeter != nil {
+			cfg.ZkGasMeter.ResetTransaction()
+		}
+
 		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, evm)
 		if err != nil {
+			// CHANGE(taiko): if zk gas exceeded on a non-anchor tx, abort and skip remaining.
+			// The anchor tx (i==0) is never discarded — it must always be in the block.
+			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
+				cfg.ZkGasMeter.ResetTransaction()
+				spanEnd(nil)
+				break
+			}
 			spanEnd(&err)
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
+
+		// CHANGE(taiko): commit transaction zk gas on success.
+		if cfg.ZkGasMeter != nil {
+			if commitErr := cfg.ZkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
+				cfg.ZkGasMeter.ResetTransaction()
+				spanEnd(nil)
+				break
+			}
+		}
+
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
 		spanEnd(nil)
@@ -129,6 +164,24 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	requests, err := postExecution(ctx, config, block, allLogs, evm)
 	if err != nil {
 		return nil, err
+	}
+
+	// CHANGE(taiko): validate Uzen block post-execution invariants.
+	if cfg.ZkGasMeter != nil {
+		// Validate that body doesn't extend past zk gas truncation point.
+		// Mirrors alethia-reth's body_transaction_count == committed_receipt_count check.
+		if len(block.Transactions()) != len(receipts) {
+			return nil, fmt.Errorf(
+				"Uzen block body extends past zk gas truncation point: body has %d transactions but execution committed %d",
+				len(block.Transactions()), len(receipts),
+			)
+		}
+		// Validate that the imported header difficulty matches the recomputed
+		// finalized block zk gas.
+		recomputed := new(big.Int).SetUint64(cfg.ZkGasMeter.BlockZkGasUsed())
+		if header.Difficulty.Cmp(recomputed) != 0 {
+			return nil, fmt.Errorf("zk gas difficulty mismatch: header has %v, recomputed %v", header.Difficulty, recomputed)
+		}
 	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
