@@ -178,6 +178,8 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		if header.Difficulty != nil && header.Difficulty.Cmp(common.Big0) != 0 {
 			return fmt.Errorf("invalid difficulty: have %v, want %v", header.Difficulty, common.Big0)
 		}
+	} else if err := verifyUzenHeaderFields(header); err != nil {
+		return err
 	}
 
 	// Verify that the gas limit is <= 2^63-1
@@ -235,6 +237,33 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return consensus.ErrFutureBlock
 	}
 
+	return nil
+}
+
+// CHANGE(taiko): verifyUzenHeaderFields enforces the canonical Uzen header fields
+// for imported blocks so the import path matches local sealing/finalization.
+func verifyUzenHeaderFields(header *types.Header) error {
+	if header.RequestsHash == nil {
+		return fmt.Errorf("requests hash missing")
+	}
+	if *header.RequestsHash != types.EmptyRequestsHash {
+		return fmt.Errorf("invalid requests hash: have %v, want %v", *header.RequestsHash, types.EmptyRequestsHash)
+	}
+	if header.ParentBeaconRoot == nil {
+		return fmt.Errorf("parent beacon root missing")
+	}
+	if header.BlobGasUsed == nil {
+		return fmt.Errorf("blob gas used missing")
+	}
+	if *header.BlobGasUsed != 0 {
+		return fmt.Errorf("invalid blob gas used: have %d, want 0", *header.BlobGasUsed)
+	}
+	if header.ExcessBlobGas == nil {
+		return fmt.Errorf("excess blob gas missing")
+	}
+	if *header.ExcessBlobGas != 0 {
+		return fmt.Errorf("invalid excess blob gas: have %d, want 0", *header.ExcessBlobGas)
+	}
 	return nil
 }
 

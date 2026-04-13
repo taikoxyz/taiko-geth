@@ -230,3 +230,88 @@ func TestVerifyHeader(t *testing.T) {
 	})
 	assert.ErrorContains(t, err, "uncles not empty", "VerifyHeader should throw ErrUnclesNotEmpty if uncles is not the empty hash")
 }
+
+func TestVerifyHeaderUzenCanonicalFields(t *testing.T) {
+	ethService, blocks := newTestBackend(t)
+
+	cfg := *params.TestChainConfig
+	cfg.Taiko = true
+	uzenTime := uint64(0)
+	cfg.UzenTime = &uzenTime
+
+	engine := taiko.New(&cfg, rawdb.NewMemoryDatabase())
+	parent := blocks[len(blocks)-1].Header()
+
+	validHeader := func() *types.Header {
+		zero := common.Hash{}
+		zeroBlobGas := uint64(0)
+		excessBlobGas := uint64(0)
+		emptyRequests := types.EmptyRequestsHash
+		return &types.Header{
+			ParentHash:       parent.Hash(),
+			Number:           new(big.Int).Add(parent.Number, common.Big1),
+			Time:             uint64(time.Now().Unix()),
+			Difficulty:       common.Big1,
+			GasLimit:         parent.GasLimit,
+			BaseFee:          big.NewInt(params.InitialBaseFee),
+			WithdrawalsHash:  &types.EmptyWithdrawalsHash,
+			UncleHash:        types.EmptyUncleHash,
+			ParentBeaconRoot: &zero,
+			BlobGasUsed:      &zeroBlobGas,
+			ExcessBlobGas:    &excessBlobGas,
+			RequestsHash:     &emptyRequests,
+		}
+	}
+
+	t.Run("missing requests hash", func(t *testing.T) {
+		header := validHeader()
+		header.RequestsHash = nil
+		err := engine.VerifyHeader(ethService.BlockChain(), header)
+		assert.ErrorContains(t, err, "requests hash missing")
+	})
+
+	t.Run("non empty requests hash", func(t *testing.T) {
+		header := validHeader()
+		invalid := common.HexToHash("0x1")
+		header.RequestsHash = &invalid
+		err := engine.VerifyHeader(ethService.BlockChain(), header)
+		assert.ErrorContains(t, err, "invalid requests hash")
+	})
+
+	t.Run("missing parent beacon root", func(t *testing.T) {
+		header := validHeader()
+		header.ParentBeaconRoot = nil
+		err := engine.VerifyHeader(ethService.BlockChain(), header)
+		assert.ErrorContains(t, err, "parent beacon root missing")
+	})
+
+	t.Run("missing blob gas used", func(t *testing.T) {
+		header := validHeader()
+		header.BlobGasUsed = nil
+		err := engine.VerifyHeader(ethService.BlockChain(), header)
+		assert.ErrorContains(t, err, "blob gas used missing")
+	})
+
+	t.Run("non zero blob gas used", func(t *testing.T) {
+		header := validHeader()
+		used := uint64(1)
+		header.BlobGasUsed = &used
+		err := engine.VerifyHeader(ethService.BlockChain(), header)
+		assert.ErrorContains(t, err, "invalid blob gas used")
+	})
+
+	t.Run("missing excess blob gas", func(t *testing.T) {
+		header := validHeader()
+		header.ExcessBlobGas = nil
+		err := engine.VerifyHeader(ethService.BlockChain(), header)
+		assert.ErrorContains(t, err, "excess blob gas missing")
+	})
+
+	t.Run("non zero excess blob gas", func(t *testing.T) {
+		header := validHeader()
+		excess := uint64(1)
+		header.ExcessBlobGas = &excess
+		err := engine.VerifyHeader(ethService.BlockChain(), header)
+		assert.ErrorContains(t, err, "invalid excess blob gas")
+	})
+}

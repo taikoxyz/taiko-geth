@@ -88,6 +88,12 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// Must be set before NewEVM since it copies cfg by value.
 	if config.IsUzen(header.Time) {
 		cfg.ZkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
+		// CHANGE(taiko): Uzen imported blocks must not contain blob transactions.
+		for i, tx := range block.Transactions() {
+			if tx.Type() == types.BlobTxType {
+				return nil, fmt.Errorf("blob transaction at index %d not allowed in Uzen block", i)
+			}
+		}
 	}
 
 	// Apply pre-execution system calls.
