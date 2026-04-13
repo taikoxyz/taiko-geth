@@ -300,7 +300,10 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 		if ph == nil {
 			return engine.STATUS_INVALID, errors.New("parent unavailable for difficulty check")
 		}
-		if ph.Difficulty.Sign() == 0 && block.Difficulty().Sign() > 0 {
+		// CHANGE(taiko): Uzen repurposes block difficulty for zk-gas, so a positive
+		// difficulty no longer indicates an invalid post-merge terminal block.
+		if ph.Difficulty.Sign() == 0 && block.Difficulty().Sign() > 0 &&
+			!(api.eth.BlockChain().Config().Taiko && api.eth.BlockChain().Config().IsUzen(block.Time())) {
 			log.Error("Parent block is already post-ttd", "number", block.NumberU64(), "hash", update.HeadBlockHash, "diff", block.Difficulty(), "age", common.PrettyAge(time.Unix(int64(block.Time()), 0)))
 			return engine.ForkChoiceResponse{PayloadStatus: engine.INVALID_TERMINAL_BLOCK, PayloadID: nil}, nil
 		}
