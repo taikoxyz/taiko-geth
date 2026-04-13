@@ -444,6 +444,7 @@ func BlockToExecutableData(block *types.Block, fees *big.Int, sidecars []*types.
 	blockValue := fees
 	if block.Difficulty().Sign() > 0 {
 		blockValue = block.Difficulty()
+		data.HeaderDifficulty = new(big.Int).Set(block.Difficulty())
 	}
 
 	return &ExecutionPayloadEnvelope{
