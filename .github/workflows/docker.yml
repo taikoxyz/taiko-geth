@@ -2,7 +2,7 @@ name: "Push multi-arch docker image to GAR"
 
 on:
   push:
-    branches: [taiko]
+    branches: [taiko, devnet-json-413]
     tags:
       - "v*"
 
