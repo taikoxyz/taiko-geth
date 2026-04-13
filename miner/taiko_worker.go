@@ -319,6 +319,16 @@ func (w *Miner) sealBlockWith(
 	// CHANGE(taiko): set header difficulty to finalized block zk gas for Uzen.
 	if zkGasMeter != nil {
 		env.header.Difficulty = new(big.Int).SetUint64(zkGasMeter.BlockZkGasUsed())
+
+		// CHANGE(taiko): align locally sealed Uzen blocks with replayed/imported
+		// payload handling by setting the canonical zero beacon root.
+		zero := common.Hash{}
+		env.header.ParentBeaconRoot = &zero
+
+		// CHANGE(taiko): Uzen locally sealed blocks carry the canonical empty
+		// requests hash, matching replayed/imported payload handling.
+		emptyRequests := types.EmptyRequestsHash
+		env.header.RequestsHash = &emptyRequests
 	}
 
 	block, err := w.engine.FinalizeAndAssemble(

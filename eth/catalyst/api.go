@@ -187,7 +187,8 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV2(ctx context.Context, update engine.
 			return engine.STATUS_INVALID, attributesErr("withdrawals before shanghai")
 		case api.checkFork(params.Timestamp, forks.Shanghai) && params.Withdrawals == nil:
 			return engine.STATUS_INVALID, attributesErr("missing withdrawals")
-		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai):
+		// CHANGE(taiko): allow Taiko Uzen payload building to continue on the V2 wire path.
+		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai) && !api.allowTaikoUzenForkchoiceV2(params.Timestamp):
 			return engine.STATUS_INVALID, unsupportedForkErr("fcuV2 must only be called with paris or shanghai payloads")
 		}
 	}
@@ -538,12 +539,21 @@ func (api *ConsensusAPI) GetPayloadV1(payloadID engine.PayloadID) (*engine.Execu
 
 // GetPayloadV2 returns a cached payload by id.
 func (api *ConsensusAPI) GetPayloadV2(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
-	return api.getPayload(
+	// CHANGE(taiko): allow Taiko Uzen payload retrieval on the V2 wire path.
+	data, err := api.getPayload(
 		payloadID,
 		false,
 		[]engine.PayloadVersion{engine.PayloadV1, engine.PayloadV2},
-		[]forks.Fork{forks.Paris, forks.Shanghai},
+		nil,
 	)
+	if err != nil {
+		return nil, err
+	}
+	if api.checkFork(data.ExecutionPayload.Timestamp, forks.Paris, forks.Shanghai) ||
+		api.allowTaikoUzenGetPayloadV2(data.ExecutionPayload.Timestamp) {
+		return data, nil
+	}
+	return nil, engine.UnsupportedFork
 }
 
 // GetPayloadV3 returns a cached payload by id. This endpoint should only
@@ -786,9 +796,12 @@ func (api *ConsensusAPI) NewPayloadV2(ctx context.Context, params engine.Executa
 		// and a non-zero WithdrawalsHash (the txHash-only optimization path). Allow
 		// that case through the Shanghai post-fork validation.
 		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
+		// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+		// header difficulty is provided for the reconstructed block header.
+		taikoUzenV2Allowed = api.allowTaikoUzenPayloadV2(params)
 	)
 	switch {
-	case cancun:
+	case cancun && !taikoUzenV2Allowed:
 		return invalidStatus, paramsErr("can't use newPayloadV2 post-cancun")
 	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
 		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
@@ -800,6 +813,24 @@ func (api *ConsensusAPI) NewPayloadV2(ctx context.Context, params engine.Executa
 		return invalidStatus, paramsErr("non-nil blobGasUsed pre-cancun")
 	}
 	return api.newPayload(ctx, params, nil, nil, nil, false)
+}
+
+// CHANGE(taiko): keep Taiko Uzen forkchoice on the V2 Engine API path for
+// compatibility with legacy clients that still speak V2 on the wire.
+func (api *ConsensusAPI) allowTaikoUzenForkchoiceV2(timestamp uint64) bool {
+	return api.config().Taiko && api.config().IsUzen(timestamp)
+}
+
+// CHANGE(taiko): keep Taiko Uzen getPayload on the V2 Engine API path for
+// compatibility with legacy clients that still speak V2 on the wire.
+func (api *ConsensusAPI) allowTaikoUzenGetPayloadV2(timestamp uint64) bool {
+	return api.config().Taiko && api.config().IsUzen(timestamp)
+}
+
+// CHANGE(taiko): keep Taiko Uzen newPayload on the V2 Engine API path when the
+// payload carries header difficulty needed to restore the Uzen header fields.
+func (api *ConsensusAPI) allowTaikoUzenPayloadV2(params engine.ExecutableData) bool {
+	return api.config().Taiko && api.config().IsUzen(params.Timestamp) && params.HeaderDifficulty != nil
 }
 
 // NewPayloadV3 creates an Eth1 block, inserts it in the chain, and returns the status of the chain.

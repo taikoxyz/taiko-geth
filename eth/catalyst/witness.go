@@ -58,7 +58,8 @@ func (api *ConsensusAPI) ForkchoiceUpdatedWithWitnessV2(ctx context.Context, upd
 			return engine.STATUS_INVALID, attributesErr("withdrawals before shanghai")
 		case api.checkFork(params.Timestamp, forks.Shanghai) && params.Withdrawals == nil:
 			return engine.STATUS_INVALID, attributesErr("missing withdrawals")
-		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai):
+		// CHANGE(taiko): allow Taiko Uzen payload building to continue on the V2 wire path.
+		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai) && !api.allowTaikoUzenForkchoiceV2(params.Timestamp):
 			return engine.STATUS_INVALID, unsupportedForkErr("fcuV2 must only be called with paris or shanghai payloads")
 		}
 	}
@@ -103,9 +104,12 @@ func (api *ConsensusAPI) NewPayloadWithWitnessV2(ctx context.Context, params eng
 		// CHANGE(taiko): see comment on NewPayloadV2 — Taiko drivers may submit
 		// nil Withdrawals with a non-zero WithdrawalsHash.
 		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
+		// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+		// header difficulty is provided for the reconstructed block header.
+		taikoUzenV2Allowed = api.allowTaikoUzenPayloadV2(params)
 	)
 	switch {
-	case cancun:
+	case cancun && !taikoUzenV2Allowed:
 		return invalidStatus, paramsErr("can't use newPayloadV2 post-cancun")
 	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
 		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
@@ -183,9 +187,12 @@ func (api *ConsensusAPI) ExecuteStatelessPayloadV2(params engine.ExecutableData,
 		// CHANGE(taiko): see comment on NewPayloadV2 — Taiko drivers may submit
 		// nil Withdrawals with a non-zero WithdrawalsHash.
 		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
+		// CHANGE(taiko): allow Taiko Uzen stateless execution on the V2 wire path when
+		// header difficulty is provided for the reconstructed block header.
+		taikoUzenV2Allowed = api.allowTaikoUzenPayloadV2(params)
 	)
 	switch {
-	case cancun:
+	case cancun && !taikoUzenV2Allowed:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("can't use newPayloadV2 post-cancun")
 	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("nil withdrawals post-shanghai")
