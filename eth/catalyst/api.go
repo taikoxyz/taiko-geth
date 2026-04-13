@@ -807,9 +807,13 @@ func (api *ConsensusAPI) NewPayloadV2(ctx context.Context, params engine.Executa
 		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return invalidStatus, paramsErr("non-nil withdrawals pre-shanghai")
-	case params.ExcessBlobGas != nil:
+	// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+	// blob gas fields are present in the replayed payload shape.
+	case params.ExcessBlobGas != nil && !taikoUzenV2Allowed:
 		return invalidStatus, paramsErr("non-nil excessBlobGas pre-cancun")
-	case params.BlobGasUsed != nil:
+	// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+	// blob gas fields are present in the replayed payload shape.
+	case params.BlobGasUsed != nil && !taikoUzenV2Allowed:
 		return invalidStatus, paramsErr("non-nil blobGasUsed pre-cancun")
 	}
 	return api.newPayload(ctx, params, nil, nil, nil, false)

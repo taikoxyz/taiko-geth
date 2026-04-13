@@ -115,9 +115,13 @@ func (api *ConsensusAPI) NewPayloadWithWitnessV2(ctx context.Context, params eng
 		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return invalidStatus, paramsErr("non-nil withdrawals pre-shanghai")
-	case params.ExcessBlobGas != nil:
+	// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+	// blob gas fields are present in the replayed payload shape.
+	case params.ExcessBlobGas != nil && !taikoUzenV2Allowed:
 		return invalidStatus, paramsErr("non-nil excessBlobGas pre-cancun")
-	case params.BlobGasUsed != nil:
+	// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+	// blob gas fields are present in the replayed payload shape.
+	case params.BlobGasUsed != nil && !taikoUzenV2Allowed:
 		return invalidStatus, paramsErr("non-nil blobGasUsed pre-cancun")
 	}
 	return api.newPayload(ctx, params, nil, nil, nil, true)
@@ -198,9 +202,13 @@ func (api *ConsensusAPI) ExecuteStatelessPayloadV2(params engine.ExecutableData,
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("non-nil withdrawals pre-shanghai")
-	case params.ExcessBlobGas != nil:
+	// CHANGE(taiko): allow Taiko Uzen stateless execution on the V2 wire path
+	// when blob gas fields are present in the replayed payload shape.
+	case params.ExcessBlobGas != nil && !taikoUzenV2Allowed:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("non-nil excessBlobGas pre-cancun")
-	case params.BlobGasUsed != nil:
+	// CHANGE(taiko): allow Taiko Uzen stateless execution on the V2 wire path
+	// when blob gas fields are present in the replayed payload shape.
+	case params.BlobGasUsed != nil && !taikoUzenV2Allowed:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("non-nil blobGasUsed pre-cancun")
 	}
 	return api.executeStatelessPayload(params, nil, nil, nil, opaqueWitness)
