@@ -78,4 +78,11 @@ var TaikoChainConfig = &ChainConfig{
 	MergeNetsplitBlock:      nil,
 	TerminalTotalDifficulty: common.Big0,
 	Taiko:                   true,
+	BlobScheduleConfig: &BlobScheduleConfig{
+		Cancun: DefaultCancunBlobConfig,
+		Prague: DefaultPragueBlobConfig,
+		Osaka:  DefaultOsakaBlobConfig,
+		BPO1:   DefaultBPO1BlobConfig,
+		BPO2:   DefaultBPO2BlobConfig,
+	},
 }

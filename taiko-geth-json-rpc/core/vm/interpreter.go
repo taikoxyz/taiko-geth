@@ -32,6 +32,8 @@ type Config struct {
 	NoBaseFee               bool  // Forces the EIP-1559 baseFee to 0 (needed for 0 price calls)
 	EnablePreimageRecording bool  // Enables recording of SHA3/keccak preimages
 	ExtraEips               []int // Additional EIPS that are to be enabled
+
+	ZkGasMeter *ZkGasMeter // CHANGE(taiko): per-opcode zk gas metering when non-nil (Uzen fork)
 }
 
 // ScopeContext contains the things that are per-call, such as stack and memory,
@@ -248,6 +250,29 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 
 		// execute the operation
 		res, err = operation.execute(&pc, evm, callContext)
+
+		// CHANGE(taiko): charge zk gas after opcode execution. The raw gas input
+		// is `cost` (constantGas + dynamicGas from the jump table), which does NOT
+		// include gas forwarded to child frames. For spawn opcodes that actually
+		// dispatched a child (childSpawned=true), the fixed spawn estimate is used
+		// instead. This matches alethia-reth's step_gas / spawn_estimate logic.
+		if meter := evm.Config.ZkGasMeter; meter != nil {
+			var zkErr error
+			if IsSpawnOpcode(op) {
+				if evm.childSpawned {
+					zkErr = meter.ChargeOpcode(byte(op), meter.SpawnEstimate(byte(op)))
+					evm.childSpawned = false
+				} else {
+					zkErr = meter.ChargeOpcode(byte(op), cost)
+				}
+			} else {
+				zkErr = meter.ChargeOpcode(byte(op), cost)
+			}
+			if zkErr != nil {
+				return nil, ErrZkGasLimitExceeded
+			}
+		}
+
 		if err != nil {
 			break
 		}
