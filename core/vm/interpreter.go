@@ -166,6 +166,7 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 	// parent context.
 	_ = jumpTable[0] // nil-check the jumpTable out of the loop
 	for {
+		gasBefore := contract.Gas
 		if debug {
 			// Capture pre-execution values for tracing.
 			logged, pcCopy, gasCopy = false, pc, contract.Gas
@@ -248,27 +249,20 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			mem.Resize(memorySize)
 		}
 
+		// CHANGE(taiko): capture the pre-step opcode and gas so zk gas charging
+		// can be resolved after execution with current alethia-reth semantics.
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+		}
+
 		// execute the operation
 		res, err = operation.execute(&pc, evm, callContext)
 
-		// CHANGE(taiko): charge zk gas after opcode execution. The raw gas input
-		// is `cost` (constantGas + dynamicGas from the jump table), which does NOT
-		// include gas forwarded to child frames. For spawn opcodes that actually
-		// dispatched a child (childSpawned=true), the fixed spawn estimate is used
-		// instead. This matches alethia-reth's step_gas / spawn_estimate logic.
-		if meter := evm.Config.ZkGasMeter; meter != nil {
-			var zkErr error
-			if IsSpawnOpcode(op) {
-				if evm.childSpawned {
-					zkErr = meter.ChargeOpcode(byte(op), meter.SpawnEstimate(byte(op)))
-					evm.childSpawned = false
-				} else {
-					zkErr = meter.ChargeOpcode(byte(op), cost)
-				}
-			} else {
-				zkErr = meter.ChargeOpcode(byte(op), cost)
-			}
-			if zkErr != nil {
+		// CHANGE(taiko): charge zk gas after opcode execution using exact
+		// alethia-reth semantics: net per-step gas unless the opcode actually
+		// spawned child work, in which case the fixed spawn estimate is used.
+		if evm.zkGasTracker != nil {
+			if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, contract.Gas); zkErr != nil {
 				return nil, ErrZkGasLimitExceeded
 			}
 		}
