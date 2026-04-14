@@ -249,6 +249,8 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			mem.Resize(memorySize)
 		}
 
+		// CHANGE(taiko): capture the pre-step opcode and gas so zk gas charging
+		// can be resolved after execution with current alethia-reth semantics.
 		if evm.zkGasTracker != nil {
 			evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
 		}
