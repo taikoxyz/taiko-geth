@@ -299,6 +299,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
+
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
