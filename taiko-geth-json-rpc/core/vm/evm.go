@@ -128,7 +128,7 @@ type EVM struct {
 	readOnly   bool   // Whether to throw on stateful modifications
 	returnData []byte // Last CALL's return data for subsequent reuse
 
-	childSpawned bool // CHANGE(taiko): set when Call/Create passes pre-checks for zk gas spawn estimate
+	zkGasTracker *ZkGasStepTracker // CHANGE(taiko): exact per-depth Uzen zk gas tracking
 }
 
 // NewEVM constructs an EVM instance with the supplied block context, state
@@ -144,6 +144,7 @@ func NewEVM(blockCtx BlockContext, statedb StateDB, chainConfig *params.ChainCon
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time),
 		jumpDests:   newMapJumpDests(),
 	}
+	evm.SetZkGasMeter(config.ZkGasMeter)
 	evm.precompiles = activePrecompiledContracts(evm.chainRules)
 
 	switch {
@@ -198,6 +199,33 @@ func NewEVM(blockCtx BlockContext, statedb StateDB, chainConfig *params.ChainCon
 	return evm
 }
 
+// CHANGE(taiko): SetZkGasMeter keeps the EVM config and per-step tracker in sync
+// so Uzen zk gas metering works even when the meter is attached after NewEVM.
+func (evm *EVM) SetZkGasMeter(meter *ZkGasMeter) {
+	evm.Config.ZkGasMeter = meter
+	if meter != nil {
+		evm.zkGasTracker = NewZkGasStepTracker(meter)
+		return
+	}
+	evm.zkGasTracker = nil
+}
+
+// CHANGE(taiko): markPendingCallSpawn applies current alethia-reth CALL-family
+// spawn semantics, which mark the parent opcode as spawned at dispatch start.
+func (evm *EVM) markPendingCallSpawn() {
+	if evm.zkGasTracker != nil {
+		evm.zkGasTracker.MarkCallSpawn(evm.depth)
+	}
+}
+
+// CHANGE(taiko): markPendingCreateSpawn applies current alethia-reth CREATE-family
+// spawn semantics, which mark the parent opcode as spawned at dispatch start.
+func (evm *EVM) markPendingCreateSpawn() {
+	if evm.zkGasTracker != nil {
+		evm.zkGasTracker.MarkCreateSpawn(evm.depth)
+	}
+}
+
 // SetPrecompiles sets the precompiled contracts for the EVM.
 // This method is only used through RPC calls.
 // It is not thread-safe.
@@ -246,6 +274,9 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -289,11 +320,11 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 	}
 
 	if isPrecompile {
-		evm.childSpawned = true // CHANGE(taiko): precompile dispatch counts as spawned
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
+
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
@@ -314,7 +345,6 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			contract.SetCallCode(evm.resolveCodeHash(addr), code)
 			ret, err = evm.Run(contract, input, false)
 			gas = contract.Gas
-			evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 		}
 	}
 	// When an error was returned by the EVM or when setting the creation code
@@ -350,6 +380,9 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -365,7 +398,6 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		evm.childSpawned = true // CHANGE(taiko): precompile dispatch counts as spawned
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -385,7 +417,6 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
-		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -413,6 +444,9 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -421,7 +455,6 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		evm.childSpawned = true // CHANGE(taiko): precompile dispatch counts as spawned
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -442,7 +475,6 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
-		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -468,6 +500,9 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -486,7 +521,6 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 	evm.StateDB.AddBalance(addr, new(uint256.Int), tracing.BalanceChangeTouchAccount)
 
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		evm.childSpawned = true // CHANGE(taiko): precompile dispatch counts as spawned
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -510,7 +544,6 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		// when we're in Homestead this also counts for code storage gas errors.
 		ret, err = evm.Run(contract, input, true)
 		gas = contract.Gas
-		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -533,6 +566,9 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CREATE-family
+	// opcodes as spawned at dispatch entry, including short-circuit create paths.
+	evm.markPendingCreateSpawn()
 	// Depth check execution. Fail if we're trying to execute above the
 	// limit.
 	if evm.depth > int(params.CallCreateDepth) {
@@ -618,7 +654,6 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	contract.IsDeployment = true
 
 	ret, err = evm.initNewContract(contract, address)
-	evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {

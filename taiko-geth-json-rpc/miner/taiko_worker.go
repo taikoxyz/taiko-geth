@@ -263,7 +263,9 @@ func (w *Miner) sealBlockWith(
 	var zkGasMeter *vm.ZkGasMeter
 	if w.chainConfig.IsUzen(timestamp) {
 		zkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
-		env.evm.Config.ZkGasMeter = zkGasMeter
+		// CHANGE(taiko): attach the meter through the EVM setter so the
+		// per-step zk gas tracker is initialized on this late-bound seal path.
+		env.evm.SetZkGasMeter(zkGasMeter)
 	}
 
 	for i, tx := range txs {
