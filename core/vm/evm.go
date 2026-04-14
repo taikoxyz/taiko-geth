@@ -144,9 +144,7 @@ func NewEVM(blockCtx BlockContext, statedb StateDB, chainConfig *params.ChainCon
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time),
 		jumpDests:   newMapJumpDests(),
 	}
-	if config.ZkGasMeter != nil {
-		evm.zkGasTracker = NewZkGasStepTracker(config.ZkGasMeter)
-	}
+	evm.SetZkGasMeter(config.ZkGasMeter)
 	evm.precompiles = activePrecompiledContracts(evm.chainRules)
 
 	switch {
@@ -199,6 +197,17 @@ func NewEVM(blockCtx BlockContext, statedb StateDB, chainConfig *params.ChainCon
 	}
 	evm.Config.ExtraEips = extraEips
 	return evm
+}
+
+// CHANGE(taiko): SetZkGasMeter keeps the EVM config and per-step tracker in sync
+// so Uzen zk gas metering works even when the meter is attached after NewEVM.
+func (evm *EVM) SetZkGasMeter(meter *ZkGasMeter) {
+	evm.Config.ZkGasMeter = meter
+	if meter != nil {
+		evm.zkGasTracker = NewZkGasStepTracker(meter)
+		return
+	}
+	evm.zkGasTracker = nil
 }
 
 // CHANGE(taiko): markPendingCallSpawn applies current alethia-reth CALL-family

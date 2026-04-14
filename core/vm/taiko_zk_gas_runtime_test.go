@@ -92,6 +92,47 @@ func TestZkGasStepTracker_CreateSpawnUsesFixedEstimate(t *testing.T) {
 	}
 }
 
+func TestEVMSetZkGasMeterInitializesLateBoundTracker(t *testing.T) {
+	meter := NewZkGasMeter(testSchedule())
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	code := common.Hex2Bytes("600160010100")
+
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{})
+
+	if evm.zkGasTracker != nil {
+		t.Fatalf("zkGasTracker initialized unexpectedly")
+	}
+
+	evm.SetZkGasMeter(meter)
+	if evm.Config.ZkGasMeter != meter {
+		t.Fatalf("ZkGasMeter was not installed on Config")
+	}
+	if evm.zkGasTracker == nil {
+		t.Fatalf("zkGasTracker was not initialized")
+	}
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 100_000, new(uint256.Int)); err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+
+	if got := meter.TxZkGasUsed(); got == 0 {
+		t.Fatalf("TxZkGasUsed = %d, want non-zero after late meter attachment", got)
+	}
+}
+
 func TestUzenZkGasParity_EmptyCodeCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
 	code := common.Hex2Bytes("60006000600060006000731111111111111111111111111111111111111111612710f100")
 	got, want := executeUzenZkGasParityCase(t, code, nil, nil)
