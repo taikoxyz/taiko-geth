@@ -201,6 +201,22 @@ func NewEVM(blockCtx BlockContext, statedb StateDB, chainConfig *params.ChainCon
 	return evm
 }
 
+// CHANGE(taiko): markPendingCallSpawn applies current alethia-reth CALL-family
+// spawn semantics, which mark the parent opcode as spawned at dispatch start.
+func (evm *EVM) markPendingCallSpawn() {
+	if evm.zkGasTracker != nil {
+		evm.zkGasTracker.MarkCallSpawn(evm.depth)
+	}
+}
+
+// CHANGE(taiko): markPendingCreateSpawn applies current alethia-reth CREATE-family
+// spawn semantics, which mark the parent opcode as spawned at dispatch start.
+func (evm *EVM) markPendingCreateSpawn() {
+	if evm.zkGasTracker != nil {
+		evm.zkGasTracker.MarkCreateSpawn(evm.depth)
+	}
+}
+
 // SetPrecompiles sets the precompiled contracts for the EVM.
 // This method is only used through RPC calls.
 // It is not thread-safe.
@@ -249,6 +265,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -292,9 +309,6 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 	}
 
 	if isPrecompile {
-		if evm.zkGasTracker != nil {
-			evm.zkGasTracker.MarkCallSpawn(evm.depth)
-		}
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -320,9 +334,6 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			contract.SetCallCode(evm.resolveCodeHash(addr), code)
 			ret, err = evm.Run(contract, input, false)
 			gas = contract.Gas
-			if evm.zkGasTracker != nil {
-				evm.zkGasTracker.MarkCallSpawn(evm.depth)
-			}
 		}
 	}
 	// When an error was returned by the EVM or when setting the creation code
@@ -358,6 +369,7 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -373,9 +385,6 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		if evm.zkGasTracker != nil {
-			evm.zkGasTracker.MarkCallSpawn(evm.depth)
-		}
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -395,9 +404,6 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
-		if evm.zkGasTracker != nil {
-			evm.zkGasTracker.MarkCallSpawn(evm.depth)
-		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -425,6 +431,7 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -433,9 +440,6 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		if evm.zkGasTracker != nil {
-			evm.zkGasTracker.MarkCallSpawn(evm.depth)
-		}
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -456,9 +460,6 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
-		if evm.zkGasTracker != nil {
-			evm.zkGasTracker.MarkCallSpawn(evm.depth)
-		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -484,6 +485,7 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -502,9 +504,6 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 	evm.StateDB.AddBalance(addr, new(uint256.Int), tracing.BalanceChangeTouchAccount)
 
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		if evm.zkGasTracker != nil {
-			evm.zkGasTracker.MarkCallSpawn(evm.depth)
-		}
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -528,9 +527,6 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		// when we're in Homestead this also counts for code storage gas errors.
 		ret, err = evm.Run(contract, input, true)
 		gas = contract.Gas
-		if evm.zkGasTracker != nil {
-			evm.zkGasTracker.MarkCallSpawn(evm.depth)
-		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -553,6 +549,7 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	evm.markPendingCreateSpawn()
 	// Depth check execution. Fail if we're trying to execute above the
 	// limit.
 	if evm.depth > int(params.CallCreateDepth) {
@@ -638,9 +635,6 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	contract.IsDeployment = true
 
 	ret, err = evm.initNewContract(contract, address)
-	if evm.zkGasTracker != nil {
-		evm.zkGasTracker.MarkCreateSpawn(evm.depth)
-	}
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {

@@ -92,39 +92,9 @@ func TestZkGasStepTracker_CreateSpawnUsesFixedEstimate(t *testing.T) {
 	}
 }
 
-func TestUzenZkGasParity_NonSpawnCallUsesNetStepGas(t *testing.T) {
-	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
-	collector := newZkGasTraceCollector(activePrecompiledContracts(rules))
-	meter := NewZkGasMeter(&UzenZkGasSchedule)
-
-	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
-	statedb.CreateAccount(contractAddr)
-	statedb.SetCode(contractAddr, common.Hex2Bytes("60006000600060006000731111111111111111111111111111111111111111612710f100"), tracing.CodeChangeUnspecified)
-	statedb.Finalise(true)
-
-	blockCtx := BlockContext{
-		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
-		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
-		BlockNumber: big.NewInt(1),
-		Time:        1,
-		Random:      &common.Hash{},
-	}
-	evm := NewEVM(blockCtx, statedb, params.MergedTestChainConfig, Config{
-		Tracer:     collector.Hooks(),
-		ZkGasMeter: meter,
-	})
-	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
-
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int)); err != nil {
-		t.Fatalf("Call returned error: %v", err)
-	}
-
-	got := meter.TxZkGasUsed()
-	want, err := collector.CanonicalTxZkGas(&UzenZkGasSchedule)
-	if err != nil {
-		t.Fatalf("CanonicalTxZkGas returned error: %v", err)
-	}
+func TestUzenZkGasParity_EmptyCodeCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
+	code := common.Hex2Bytes("60006000600060006000731111111111111111111111111111111111111111612710f100")
+	got, want := executeUzenZkGasParityCase(t, code, nil, nil)
 	if got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
@@ -132,7 +102,7 @@ func TestUzenZkGasParity_NonSpawnCallUsesNetStepGas(t *testing.T) {
 
 func TestUzenZkGasParity_PrecompileCallMatchesCanonicalMeter(t *testing.T) {
 	code := common.Hex2Bytes("63deadbeef600052600460006004601c60006004612710f100")
-	got, want := executeUzenZkGasParityCase(t, code, nil)
+	got, want := executeUzenZkGasParityCase(t, code, nil, nil)
 	if got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
@@ -145,13 +115,23 @@ func TestUzenZkGasParity_NestedCallDoesNotLeakSpawnState(t *testing.T) {
 
 	got, want := executeUzenZkGasParityCase(t, outerCode, map[common.Address][]byte{
 		innerAddr: innerCode,
+	}, nil)
+	if got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
+func TestUzenZkGasParity_CreateOutOfFundsUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
+	code := common.Hex2Bytes("60016000600060006000f06000")
+	got, want := executeUzenZkGasParityCase(t, code, nil, func(_ common.Address, _ common.Address, value *uint256.Int) bool {
+		return value.IsZero()
 	})
 	if got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
 
-func executeUzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[common.Address][]byte) (uint64, uint64) {
+func executeUzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[common.Address][]byte, canTransfer func(common.Address, common.Address, *uint256.Int) bool) (uint64, uint64) {
 	t.Helper()
 
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
@@ -168,8 +148,13 @@ func executeUzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[co
 	}
 	statedb.Finalise(true)
 
+	if canTransfer == nil {
+		canTransfer = func(common.Address, common.Address, *uint256.Int) bool { return true }
+	}
 	blockCtx := BlockContext{
-		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		CanTransfer: func(db StateDB, caller common.Address, value *uint256.Int) bool {
+			return canTransfer(caller, common.Address{}, value)
+		},
 		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
 		BlockNumber: big.NewInt(1),
 		Time:        1,
@@ -311,7 +296,7 @@ func (c *zkGasTraceCollector) spawned(idx int) bool {
 		if child.parent != current.frame {
 			continue
 		}
-		if child.enterSeq > current.seq && child.enterSeq < boundary && (child.precompile || child.opcodeCount > 0) {
+		if child.enterSeq > current.seq && child.enterSeq < boundary {
 			return true
 		}
 	}
