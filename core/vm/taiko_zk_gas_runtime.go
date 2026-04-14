@@ -1,15 +1,21 @@
 package vm
 
+// CHANGE(taiko): zkGasPendingStep stores the in-flight opcode state for one EVM depth.
 type zkGasPendingStep struct {
-	opcode    byte
+	// opcode is the opcode byte captured before the step executes.
+	opcode byte
+	// gasBefore is the frame gas remaining before the opcode executes.
 	gasBefore uint64
-	spawned   bool
+	// spawned records whether the opcode should use the fixed spawn estimate.
+	spawned bool
 }
 
 // CHANGE(taiko): ZkGasStepTracker keeps pending per-depth opcode steps so Uzen
 // zk gas can charge spawn opcodes with exact alethia-reth semantics.
 type ZkGasStepTracker struct {
-	meter   *ZkGasMeter
+	// meter owns the fork schedule and accumulated zk gas totals.
+	meter *ZkGasMeter
+	// pending stores the in-flight opcode step for each active call depth.
 	pending []*zkGasPendingStep
 }
 
@@ -59,20 +65,19 @@ func (t *ZkGasStepTracker) FinishAndCharge(depth int, gasAfter uint64) error {
 	return t.meter.ChargeOpcode(step.opcode, rawGas)
 }
 
+// CHANGE(taiko): ensureDepth grows the pending-step slice so the requested depth is addressable.
 func (t *ZkGasStepTracker) ensureDepth(depth int) {
 	for len(t.pending) <= depth {
 		t.pending = append(t.pending, nil)
 	}
 }
 
+// CHANGE(taiko): markSpawn marks the matching pending opcode at the current depth.
 func (t *ZkGasStepTracker) markSpawn(depth int, matches func(byte) bool) {
-	for _, idx := range []int{depth, depth - 1} {
-		if idx < 0 || idx >= len(t.pending) || t.pending[idx] == nil {
-			continue
-		}
-		if matches(t.pending[idx].opcode) {
-			t.pending[idx].spawned = true
-			return
-		}
+	if depth < 0 || depth >= len(t.pending) || t.pending[depth] == nil {
+		return
+	}
+	if matches(t.pending[depth].opcode) {
+		t.pending[depth].spawned = true
 	}
 }

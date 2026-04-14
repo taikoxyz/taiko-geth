@@ -131,6 +131,39 @@ func TestUzenZkGasParity_CreateOutOfFundsUsesCurrentAletheiaSpawnSemantics(t *te
 	}
 }
 
+func TestUzenZkGasParity_DepthExceededCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
+	meter := NewZkGasMeter(&UzenZkGasSchedule)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	blockCtx := BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}
+	evm := NewEVM(blockCtx, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+
+	depth := int(params.CallCreateDepth) + 1
+	evm.depth = depth
+	evm.zkGasTracker.Begin(depth, byte(CALL), 1_000)
+
+	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, 1_000, new(uint256.Int))
+	if err != ErrDepth {
+		t.Fatalf("Call error = %v, want %v", err, ErrDepth)
+	}
+	if gasLeft != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	}
+	if err := evm.zkGasTracker.FinishAndCharge(depth, gasLeft); err != nil {
+		t.Fatalf("FinishAndCharge returned error: %v", err)
+	}
+
+	want := UzenZkGasSchedule.SpawnEstimates.Call * uint64(UzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
+	if got := meter.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
 func executeUzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[common.Address][]byte, canTransfer func(common.Address, common.Address, *uint256.Int) bool) (uint64, uint64) {
 	t.Helper()
 
