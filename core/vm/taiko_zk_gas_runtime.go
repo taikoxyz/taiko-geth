@@ -13,10 +13,12 @@ type ZkGasStepTracker struct {
 	pending []*zkGasPendingStep
 }
 
+// CHANGE(taiko): NewZkGasStepTracker creates a per-depth zk gas tracker for a block execution.
 func NewZkGasStepTracker(meter *ZkGasMeter) *ZkGasStepTracker {
 	return &ZkGasStepTracker{meter: meter}
 }
 
+// CHANGE(taiko): Begin records the opcode and pre-step gas at the current depth.
 func (t *ZkGasStepTracker) Begin(depth int, opcode byte, gasBefore uint64) {
 	t.ensureDepth(depth)
 	t.pending[depth] = &zkGasPendingStep{
@@ -25,18 +27,21 @@ func (t *ZkGasStepTracker) Begin(depth int, opcode byte, gasBefore uint64) {
 	}
 }
 
+// CHANGE(taiko): MarkCallSpawn marks the pending CALL-family opcode at this depth as spawned.
 func (t *ZkGasStepTracker) MarkCallSpawn(depth int) {
 	t.markSpawn(depth, func(op byte) bool {
 		return op == byte(CALL) || op == byte(CALLCODE) || op == byte(DELEGATECALL) || op == byte(STATICCALL)
 	})
 }
 
+// CHANGE(taiko): MarkCreateSpawn marks the pending CREATE-family opcode at this depth as spawned.
 func (t *ZkGasStepTracker) MarkCreateSpawn(depth int) {
 	t.markSpawn(depth, func(op byte) bool {
 		return op == byte(CREATE) || op == byte(CREATE2)
 	})
 }
 
+// CHANGE(taiko): FinishAndCharge applies the canonical raw gas rule for the pending opcode.
 func (t *ZkGasStepTracker) FinishAndCharge(depth int, gasAfter uint64) error {
 	if depth >= len(t.pending) || t.pending[depth] == nil {
 		return nil

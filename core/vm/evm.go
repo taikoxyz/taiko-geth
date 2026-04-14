@@ -128,7 +128,7 @@ type EVM struct {
 	readOnly   bool   // Whether to throw on stateful modifications
 	returnData []byte // Last CALL's return data for subsequent reuse
 
-	childSpawned bool // CHANGE(taiko): set when Call/Create passes pre-checks for zk gas spawn estimate
+	zkGasTracker *ZkGasStepTracker // CHANGE(taiko): exact per-depth Uzen zk gas tracking
 }
 
 // NewEVM constructs an EVM instance with the supplied block context, state
@@ -143,6 +143,9 @@ func NewEVM(blockCtx BlockContext, statedb StateDB, chainConfig *params.ChainCon
 		chainConfig: chainConfig,
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time),
 		jumpDests:   newMapJumpDests(),
+	}
+	if config.ZkGasMeter != nil {
+		evm.zkGasTracker = NewZkGasStepTracker(config.ZkGasMeter)
 	}
 	evm.precompiles = activePrecompiledContracts(evm.chainRules)
 
@@ -289,7 +292,9 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 	}
 
 	if isPrecompile {
-		evm.childSpawned = true // CHANGE(taiko): precompile dispatch counts as spawned
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.MarkCallSpawn(evm.depth)
+		}
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -314,7 +319,9 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			contract.SetCallCode(evm.resolveCodeHash(addr), code)
 			ret, err = evm.Run(contract, input, false)
 			gas = contract.Gas
-			evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
+			if evm.zkGasTracker != nil {
+				evm.zkGasTracker.MarkCallSpawn(evm.depth)
+			}
 		}
 	}
 	// When an error was returned by the EVM or when setting the creation code
@@ -365,7 +372,9 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		evm.childSpawned = true // CHANGE(taiko): precompile dispatch counts as spawned
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.MarkCallSpawn(evm.depth)
+		}
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -385,7 +394,9 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
-		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.MarkCallSpawn(evm.depth)
+		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -421,7 +432,9 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		evm.childSpawned = true // CHANGE(taiko): precompile dispatch counts as spawned
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.MarkCallSpawn(evm.depth)
+		}
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -442,7 +455,9 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
-		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.MarkCallSpawn(evm.depth)
+		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -486,7 +501,9 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 	evm.StateDB.AddBalance(addr, new(uint256.Int), tracing.BalanceChangeTouchAccount)
 
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
-		evm.childSpawned = true // CHANGE(taiko): precompile dispatch counts as spawned
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.MarkCallSpawn(evm.depth)
+		}
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -510,7 +527,9 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		// when we're in Homestead this also counts for code storage gas errors.
 		ret, err = evm.Run(contract, input, true)
 		gas = contract.Gas
-		evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.MarkCallSpawn(evm.depth)
+		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -618,7 +637,9 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	contract.IsDeployment = true
 
 	ret, err = evm.initNewContract(contract, address)
-	evm.childSpawned = true // CHANGE(taiko): set AFTER child returns to prevent nested frame corruption
+	if evm.zkGasTracker != nil {
+		evm.zkGasTracker.MarkCreateSpawn(evm.depth)
+	}
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {
 		evm.StateDB.RevertToSnapshot(snapshot)
 		if err != ErrExecutionReverted {
