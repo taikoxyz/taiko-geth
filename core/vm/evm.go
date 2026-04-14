@@ -265,6 +265,8 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
 	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
@@ -369,6 +371,8 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
 	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
@@ -431,6 +435,8 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
 	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
@@ -485,6 +491,8 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
 	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
@@ -549,6 +557,8 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
+	// CHANGE(taiko): match current alethia-reth semantics by marking CREATE-family
+	// opcodes as spawned at dispatch entry, including short-circuit create paths.
 	evm.markPendingCreateSpawn()
 	// Depth check execution. Fail if we're trying to execute above the
 	// limit.
