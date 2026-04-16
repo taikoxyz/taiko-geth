@@ -18,8 +18,15 @@
 package utils
 
 import (
+	"flag"
 	"reflect"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/urfave/cli/v2"
 )
 
 func Test_SplitTagsFlag(t *testing.T) {
@@ -62,5 +69,48 @@ func Test_SplitTagsFlag(t *testing.T) {
 				t.Errorf("splitTagsFlag() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestSetEthConfigUsesNetworkIDForTaikoGenesis(t *testing.T) {
+	t.Parallel()
+
+	app := cli.NewApp()
+	set := flag.NewFlagSet("test", flag.ContinueOnError)
+	for _, f := range []cli.Flag{
+		CacheFlag,
+		CryptoKZGFlag,
+		FDLimitFlag,
+		GCModeFlag,
+		NetworkIdFlag,
+		&TaikoFlag,
+	} {
+		if err := f.Apply(set); err != nil {
+			t.Fatalf("failed to apply flag %q: %v", f.Names()[0], err)
+		}
+	}
+	if err := set.Set(NetworkIdFlag.Name, params.MasayaDevnetNetworkID.String()); err != nil {
+		t.Fatalf("failed to set %q: %v", NetworkIdFlag.Name, err)
+	}
+	if err := set.Set(TaikoFlag.Name, "true"); err != nil {
+		t.Fatalf("failed to set %q: %v", TaikoFlag.Name, err)
+	}
+	ctx := cli.NewContext(app, set, nil)
+
+	stack, err := node.New(&node.Config{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("failed to create test node: %v", err)
+	}
+	defer stack.Close()
+
+	cfg := ethconfig.Defaults
+	SetEthConfig(ctx, stack, &cfg)
+
+	if cfg.NetworkId != params.MasayaDevnetNetworkID.Uint64() {
+		t.Fatalf("network ID mismatch: have %d want %d", cfg.NetworkId, params.MasayaDevnetNetworkID.Uint64())
+	}
+	want := core.TaikoGenesisBlock(params.MasayaDevnetNetworkID.Uint64()).ToBlock().Hash()
+	if got := cfg.Genesis.ToBlock().Hash(); got != want {
+		t.Fatalf("genesis hash mismatch: have %s want %s", got, want)
 	}
 }
