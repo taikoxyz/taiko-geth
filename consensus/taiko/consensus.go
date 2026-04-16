@@ -213,7 +213,7 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 					return err
 				}
 			} else {
-				log.Warn(
+				log.Debug(
 					"Skipping EIP-4396 verification due to unknown ancestor",
 					"parent", parent.Hash(),
 					"number", parent.Number,
