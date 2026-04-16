@@ -109,6 +109,7 @@ func TestSetEthConfigUsesNetworkIDForTaikoGenesis(t *testing.T) {
 	if cfg.NetworkId != params.MasayaDevnetNetworkID.Uint64() {
 		t.Fatalf("network ID mismatch: have %d want %d", cfg.NetworkId, params.MasayaDevnetNetworkID.Uint64())
 	}
+
 	want := core.TaikoGenesisBlock(params.MasayaDevnetNetworkID.Uint64()).ToBlock().Hash()
 	if got := cfg.Genesis.ToBlock().Hash(); got != want {
 		t.Fatalf("genesis hash mismatch: have %s want %s", got, want)
