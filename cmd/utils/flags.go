@@ -1780,14 +1780,6 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 			Fatalf("--%s: %v", ChainHistoryFlag.Name, err)
 		}
 	}
-	if ctx.IsSet(NetworkIdFlag.Name) {
-		// Typically it's best to automatically set the network ID to the chainID,
-		// by not passing the --networkid flag at all. Emit a warning when set
-		// explicitly in case overriding the network ID is not the user's intention.
-		id := ctx.Uint64(NetworkIdFlag.Name)
-		log.Warn("Setting network ID with command-line flag", "id", id)
-		cfg.NetworkId = id
-	}
 
 	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheDatabaseFlag.Name) {
 		cfg.DatabaseCache = ctx.Int(CacheFlag.Name) * ctx.Int(CacheDatabaseFlag.Name) / 100
@@ -1943,35 +1935,29 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	// CHANGE(taiko): when `--taiko` flag is set, use the Taiko genesis.
 	case ctx.IsSet(TaikoFlag.Name):
 		core.DevnetUzenTime = ctx.Uint64(TaikoDevnetUzenTimeFlag.Name)
-		cfg.Genesis = core.TaikoGenesisBlock(cfg.NetworkId)
-	case ctx.Bool(MainnetFlag.Name):
-		if !ctx.IsSet(NetworkIdFlag.Name) {
-			cfg.NetworkId = 1
+		networkID := cfg.NetworkId
+		if ctx.IsSet(NetworkIdFlag.Name) {
+			networkID = ctx.Uint64(NetworkIdFlag.Name)
 		}
+		cfg.Genesis = core.TaikoGenesisBlock(networkID)
+	case ctx.Bool(MainnetFlag.Name):
+		cfg.NetworkId = 1
 		cfg.Genesis = core.DefaultGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.MainnetGenesisHash)
 	case ctx.Bool(HoleskyFlag.Name):
-		if !ctx.IsSet(NetworkIdFlag.Name) {
-			cfg.NetworkId = 17000
-		}
+		cfg.NetworkId = 17000
 		cfg.Genesis = core.DefaultHoleskyGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.HoleskyGenesisHash)
 	case ctx.Bool(SepoliaFlag.Name):
-		if !ctx.IsSet(NetworkIdFlag.Name) {
-			cfg.NetworkId = 11155111
-		}
+		cfg.NetworkId = 11155111
 		cfg.Genesis = core.DefaultSepoliaGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.SepoliaGenesisHash)
 	case ctx.Bool(HoodiFlag.Name):
-		if !ctx.IsSet(NetworkIdFlag.Name) {
-			cfg.NetworkId = 560048
-		}
+		cfg.NetworkId = 560048
 		cfg.Genesis = core.DefaultHoodiGenesisBlock()
 		SetDNSDiscoveryDefaults(cfg, params.HoodiGenesisHash)
 	case ctx.Bool(DeveloperFlag.Name):
-		if !ctx.IsSet(NetworkIdFlag.Name) {
-			cfg.NetworkId = 1337
-		}
+		cfg.NetworkId = 1337
 		cfg.SyncMode = ethconfig.FullSync
 		cfg.EnablePreimageRecording = true
 		// Create new developer account or reuse existing one
@@ -2065,9 +2051,17 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 		}
 		cfg.Genesis = genesis
 	default:
-		if cfg.NetworkId == 1 {
+		if ctx.Uint64(NetworkIdFlag.Name) == 1 {
 			SetDNSDiscoveryDefaults(cfg, params.MainnetGenesisHash)
 		}
+	}
+	if ctx.IsSet(NetworkIdFlag.Name) {
+		// Typically it's best to automatically set the network ID to the chainID,
+		// by not passing the --networkid flag at all. Emit a warning when set
+		// explicitly in case overriding the network ID is not the user's intention.
+		id := ctx.Uint64(NetworkIdFlag.Name)
+		log.Warn("Setting network ID with command-line flag", "id", id)
+		cfg.NetworkId = id
 	}
 	// Set any dangling config values
 	if ctx.String(CryptoKZGFlag.Name) != "gokzg" && ctx.String(CryptoKZGFlag.Name) != "ckzg" {
