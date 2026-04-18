@@ -152,13 +152,13 @@ func deployExhaustingContract(t *testing.T, statedb *state.StateDB, addr common.
 // (crates/block/src/executor.rs:261-291).
 func TestApplyTransactionWithEVM_UzenCommitThenTruncate(t *testing.T) {
 	var (
-		chainConfig    = uzenTestChainConfig(t)
-		key1, _        = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
-		addr1          = crypto.PubkeyToAddress(key1.PublicKey)
+		chainConfig = uzenTestChainConfig(t)
+		key1, _     = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+		addr1       = crypto.PubkeyToAddress(key1.PublicKey)
 		// Mirror of core/state_processor_test.go:51 — the literal "0020" in the
 		// middle is load-bearing (matches an existing fixture key used across
 		// the repo), not a typo.
-		key2, _ = crypto.HexToECDSA("0202020202020202020202020202020202020202020202020202002020202020")
+		key2, _        = crypto.HexToECDSA("0202020202020202020202020202020202020202020202020202002020202020")
 		addr2          = crypto.PubkeyToAddress(key2.PublicKey)
 		heavyContract  = common.HexToAddress("0x000000000000000000000000000000000000beef")
 		initialBalance = new(big.Int).SetUint64(1_000_000_000_000_000_000)
