@@ -297,6 +297,12 @@ func (w *Miner) sealBlockWith(
 			// CHANGE(taiko): if zk gas exceeded, stop including transactions.
 			// The anchor tx (i==0) is never discarded — it must always be in the block.
 			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
+				log.Debug(
+					"Uzen zk gas limit reached during sealing; truncating block",
+					"txIndex", i,
+					"txHash", tx.Hash(),
+					"blockZkGasUsed", zkGasMeter.BlockZkGasUsed(),
+				)
 				zkGasMeter.ResetTransaction()
 				break
 			}

@@ -1,16 +1,24 @@
 package miner
 
 import (
+	"errors"
+	"math"
 	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -84,4 +92,75 @@ func TestRemoveGoldenTouchPendingTxs(t *testing.T) {
 	assert.False(t, exists)
 	_, exists = filtered[testUserAddress]
 	assert.True(t, exists)
+}
+
+// CHANGE(taiko): TestApplyTransaction_SealerZkGasExhaustionSurface pins the
+// exported wrapper that the sealer consumes. The inner ApplyTransactionWithEVM
+// is already covered by core/taiko_state_processor_uzen_test.go; this test
+// exists because miner.applyTransaction (miner/worker.go:416) calls
+// core.ApplyTransaction — so a future rename or arg reshuffle of the wrapper
+// would fail here at the sealer's actual consumption surface, not just at the
+// inner function. The sealer's snapshot/revert at miner/worker.go:413-419 and
+// the break-guard at miner/taiko_worker.go:299 both rely on the wrapper
+// surfacing vm.ErrZkGasLimitExceeded as a Go error.
+func TestApplyTransaction_SealerZkGasExhaustionSurface(t *testing.T) {
+	zero := uint64(0)
+	chainConfig := *params.MergedTestChainConfig
+	chainConfig.Taiko = true
+	chainConfig.ChainID = big.NewInt(167000)
+	chainConfig.UzenTime = &zero
+	chainConfig.OsakaTime = &zero
+	signer := types.LatestSigner(&chainConfig)
+
+	senderKey, _ := crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	sender := crypto.PubkeyToAddress(senderKey.PublicKey)
+	callee := common.HexToAddress("0x000000000000000000000000000000000000c0de")
+
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.SetBalance(sender, uint256.NewInt(1_000_000_000_000_000_000), 0)
+	statedb.SetCode(callee, []byte{0x60, 0x01, 0x60, 0x01, 0x01, 0x00}, tracing.CodeChangeGenesis) // PUSH1 1 PUSH1 1 ADD STOP
+	statedb.Finalise(true)
+
+	schedule := &vm.ZkGasSchedule{BlockLimit: 0}
+	for i := range schedule.OpcodeMultipliers {
+		schedule.OpcodeMultipliers[i] = math.MaxUint16
+	}
+	for i := range schedule.PrecompileMultipliers {
+		schedule.PrecompileMultipliers[i] = math.MaxUint16
+	}
+
+	blockCtx := vm.BlockContext{
+		CanTransfer: core.CanTransfer,
+		Transfer:    core.Transfer,
+		GetHash:     func(uint64) common.Hash { return common.Hash{} },
+		Coinbase:    common.Address{},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Difficulty:  big.NewInt(0),
+		BaseFee:     big.NewInt(1_000_000_000),
+		GasLimit:    30_000_000,
+		Random:      &common.Hash{},
+		BlobBaseFee: big.NewInt(1),
+	}
+	evm := vm.NewEVM(blockCtx, statedb, &chainConfig, vm.Config{ZkGasMeter: vm.NewZkGasMeter(schedule)})
+
+	tx, err := types.SignTx(
+		types.NewTransaction(0, callee, big.NewInt(0), 100_000, big.NewInt(1_000_000_000), nil),
+		signer,
+		senderKey,
+	)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	gp := core.NewGasPool(30_000_000)
+	header := &types.Header{Number: big.NewInt(1), Time: 1, BaseFee: big.NewInt(1_000_000_000), GasLimit: 30_000_000}
+	receipt, err := core.ApplyTransaction(evm, gp, statedb, header, tx)
+
+	if !errors.Is(err, vm.ErrZkGasLimitExceeded) {
+		t.Fatalf("expected ErrZkGasLimitExceeded, got err=%v receipt=%+v", err, receipt)
+	}
+	if receipt != nil {
+		t.Fatalf("expected nil receipt, got %+v", receipt)
+	}
 }

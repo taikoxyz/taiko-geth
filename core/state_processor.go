@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/internal/telemetry"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -140,6 +141,12 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 			// CHANGE(taiko): if zk gas exceeded on a non-anchor tx, abort and skip remaining.
 			// The anchor tx (i==0) is never discarded — it must always be in the block.
 			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
+				log.Debug(
+					"Uzen zk gas limit reached during block processing; truncating",
+					"txIndex", i,
+					"txHash", tx.Hash(),
+					"blockZkGasUsed", cfg.ZkGasMeter.BlockZkGasUsed(),
+				)
 				cfg.ZkGasMeter.ResetTransaction()
 				spanEnd(nil)
 				break
@@ -232,11 +239,37 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 			defer func() { hooks.OnTxEnd(receipt, err) }()
 		}
 	}
+
+	// CHANGE(taiko): Uzen-only — snapshot statedb and gas pool so a
+	// zk-gas-exhausted transaction can be reverted cleanly to match
+	// alethia-reth. alethia-reth's revm never commits on error; taiko-geth
+	// mutates statedb in place, so we capture pre-tx state here and revert
+	// below when the interpreter surfaces a zk-gas-limit error via result.Err.
+	var (
+		zkSnap int = -1
+		zkGp   *GasPool
+	)
+	if evm.Config.ZkGasMeter != nil {
+		zkSnap = statedb.Snapshot()
+		zkGp = gp.Snapshot()
+	}
+
 	// Apply the transaction to the current state (included in the env).
 	result, err := ApplyMessage(evm, msg, gp)
 	if err != nil {
 		return nil, err
 	}
+
+	// CHANGE(taiko): a zk-gas-limit error from the interpreter is stored in
+	// result.Err (not bubbled as err, per core/state_transition.go comment).
+	// Revert all tx-level state mutations and propagate as a Go error so the
+	// block-building/processing loops can break without appending a receipt.
+	if zkSnap >= 0 && result.Err != nil && errors.Is(result.Err, vm.ErrZkGasLimitExceeded) {
+		statedb.RevertToSnapshot(zkSnap)
+		gp.Set(zkGp)
+		return nil, vm.ErrZkGasLimitExceeded
+	}
+
 	// Update the state with pending changes.
 	var root []byte
 	if evm.ChainConfig().IsByzantium(blockNumber) {
