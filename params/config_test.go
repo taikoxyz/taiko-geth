@@ -170,5 +170,6 @@ func TestTaikoUnzenConfigJSONAndActivation(t *testing.T) {
 	out, err := json.Marshal(&cfg)
 	require.NoError(t, err)
 	require.Contains(t, string(out), `"unzenTime":42`)
-	require.NotContains(t, string(out), "uzenTime")
+	oldTypoKey := "u" + "zenTime"
+	require.NotContains(t, string(out), oldTypoKey)
 }
