@@ -133,28 +133,28 @@ func TestEVMSetZkGasMeterInitializesLateBoundTracker(t *testing.T) {
 	}
 }
 
-func TestUzenZkGasParity_EmptyCodeCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
+func TestUnzenZkGasParity_EmptyCodeCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
 	code := common.Hex2Bytes("60006000600060006000731111111111111111111111111111111111111111612710f100")
-	got, want := executeUzenZkGasParityCase(t, code, nil, nil)
+	got, want := executeUnzenZkGasParityCase(t, code, nil, nil)
 	if got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
 
-func TestUzenZkGasParity_PrecompileCallMatchesCanonicalMeter(t *testing.T) {
+func TestUnzenZkGasParity_PrecompileCallMatchesCanonicalMeter(t *testing.T) {
 	code := common.Hex2Bytes("63deadbeef600052600460006004601c60006004612710f100")
-	got, want := executeUzenZkGasParityCase(t, code, nil, nil)
+	got, want := executeUnzenZkGasParityCase(t, code, nil, nil)
 	if got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
 
-func TestUzenZkGasParity_NestedCallDoesNotLeakSpawnState(t *testing.T) {
+func TestUnzenZkGasParity_NestedCallDoesNotLeakSpawnState(t *testing.T) {
 	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
 	outerCode := common.Hex2Bytes("60006000600060006000732000000000000000000000000000000000000000612710f100")
 	innerCode := common.Hex2Bytes("60006000600060006000732222222222222222222222222222222222222222612710f100")
 
-	got, want := executeUzenZkGasParityCase(t, outerCode, map[common.Address][]byte{
+	got, want := executeUnzenZkGasParityCase(t, outerCode, map[common.Address][]byte{
 		innerAddr: innerCode,
 	}, nil)
 	if got != want {
@@ -162,9 +162,9 @@ func TestUzenZkGasParity_NestedCallDoesNotLeakSpawnState(t *testing.T) {
 	}
 }
 
-func TestUzenZkGasParity_CreateOutOfFundsUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
+func TestUnzenZkGasParity_CreateOutOfFundsUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
 	code := common.Hex2Bytes("60016000600060006000f06000")
-	got, want := executeUzenZkGasParityCase(t, code, nil, func(_ common.Address, _ common.Address, value *uint256.Int) bool {
+	got, want := executeUnzenZkGasParityCase(t, code, nil, func(_ common.Address, _ common.Address, value *uint256.Int) bool {
 		return value.IsZero()
 	})
 	if got != want {
@@ -172,8 +172,8 @@ func TestUzenZkGasParity_CreateOutOfFundsUsesCurrentAletheiaSpawnSemantics(t *te
 	}
 }
 
-func TestUzenZkGasParity_DepthExceededCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
-	meter := NewZkGasMeter(&UzenZkGasSchedule)
+func TestUnzenZkGasParity_DepthExceededCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
+	meter := NewZkGasMeter(&UnzenZkGasSchedule)
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	blockCtx := BlockContext{
 		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
@@ -199,18 +199,18 @@ func TestUzenZkGasParity_DepthExceededCallUsesCurrentAletheiaSpawnSemantics(t *t
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
 
-	want := UzenZkGasSchedule.SpawnEstimates.Call * uint64(UzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
+	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
 	if got := meter.TxZkGasUsed(); got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
 
-func executeUzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[common.Address][]byte, canTransfer func(common.Address, common.Address, *uint256.Int) bool) (uint64, uint64) {
+func executeUnzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[common.Address][]byte, canTransfer func(common.Address, common.Address, *uint256.Int) bool) (uint64, uint64) {
 	t.Helper()
 
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	collector := newZkGasTraceCollector(activePrecompiledContracts(rules))
-	meter := NewZkGasMeter(&UzenZkGasSchedule)
+	meter := NewZkGasMeter(&UnzenZkGasSchedule)
 
 	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
@@ -244,7 +244,7 @@ func executeUzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[co
 		t.Fatalf("Call returned error: %v", err)
 	}
 
-	want, err := collector.CanonicalTxZkGas(&UzenZkGasSchedule)
+	want, err := collector.CanonicalTxZkGas(&UnzenZkGasSchedule)
 	if err != nil {
 		t.Fatalf("CanonicalTxZkGas returned error: %v", err)
 	}

@@ -1934,7 +1934,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	switch {
 	// CHANGE(taiko): when `--taiko` flag is set, use the Taiko genesis.
 	case ctx.IsSet(TaikoFlag.Name):
-		core.DevnetUzenTime = ctx.Uint64(TaikoDevnetUzenTimeFlag.Name)
+		core.DevnetUnzenTime = ctx.Uint64(TaikoDevnetUnzenTimeFlag.Name)
 		networkID := cfg.NetworkId
 		if ctx.IsSet(NetworkIdFlag.Name) {
 			networkID = ctx.Uint64(NetworkIdFlag.Name)

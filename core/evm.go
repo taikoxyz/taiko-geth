@@ -60,12 +60,12 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 	if header.ExcessBlobGas != nil {
 		blobBaseFee = eip4844.CalcBlobFee(chain.Config(), header)
 	}
-	// CHANGE(taiko): Uzen blocks have non-zero difficulty (zk gas) but still need
+	// CHANGE(taiko): Unzen blocks have non-zero difficulty (zk gas) but still need
 	// Random for PREVRANDAO, and BlobBaseFee=1 for BLOBBASEFEE opcode compatibility.
 	// Note: chainCfg guards against nil interface values AND nil concrete pointers
 	// behind a non-nil interface (e.g. (*BlockChain)(nil) passed from test helpers).
 	chainCfg := getChainConfig(chain)
-	if chainCfg != nil && chainCfg.IsUzen(header.Time) {
+	if chainCfg != nil && chainCfg.IsUnzen(header.Time) {
 		random = &header.MixDigest
 		blobBaseFee = big.NewInt(1)
 	} else if header.Difficulty.Sign() == 0 {

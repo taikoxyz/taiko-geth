@@ -132,7 +132,7 @@ type ExecutableData struct {
 
 	TxHash           common.Hash `json:"txHash"`           // CHANGE(taiko): allow passing txHash directly instead of transactions list
 	WithdrawalsHash  common.Hash `json:"withdrawalsHash"`  // CHANGE(taiko): allow passing WithdrawalsHash directly instead of withdrawals
-	HeaderDifficulty *big.Int    `json:"headerDifficulty"` // CHANGE(taiko): Uzen header difficulty for hash-stable round-trips
+	HeaderDifficulty *big.Int    `json:"headerDifficulty"` // CHANGE(taiko): Unzen header difficulty for hash-stable round-trips
 	TaikoBlock       bool        // CHANGE(taiko): whether this is a Taiko L2 block, only used by ExecutableDataToBlock
 }
 
@@ -345,7 +345,7 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 		requestsHash = &h
 	}
 
-	// CHANGE(taiko): Uzen blocks require requestsHash, parentBeaconRoot, and blob gas fields.
+	// CHANGE(taiko): Unzen blocks require requestsHash, parentBeaconRoot, and blob gas fields.
 	if data.HeaderDifficulty != nil {
 		emptyRequests := types.EmptyRequestsHash
 		requestsHash = &emptyRequests
@@ -371,7 +371,7 @@ func ExecutableDataToBlockNoHash(data ExecutableData, versionedHashes []common.H
 		TxHash:           types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil)),
 		ReceiptHash:      data.ReceiptsRoot,
 		Bloom:            types.BytesToBloom(data.LogsBloom),
-		Difficulty:       data.HeaderDifficultyOrZero(), // CHANGE(taiko): use Uzen difficulty when present
+		Difficulty:       data.HeaderDifficultyOrZero(), // CHANGE(taiko): use Unzen difficulty when present
 		Number:           new(big.Int).SetUint64(data.Number),
 		GasLimit:         data.GasLimit,
 		GasUsed:          data.GasUsed,
@@ -440,7 +440,7 @@ func BlockToExecutableData(block *types.Block, fees *big.Int, sidecars []*types.
 		}
 	}
 
-	// CHANGE(taiko): Uzen uses blockValue to transport header difficulty.
+	// CHANGE(taiko): Unzen uses blockValue to transport header difficulty.
 	blockValue := fees
 	if block.Difficulty().Sign() > 0 {
 		blockValue = block.Difficulty()

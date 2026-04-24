@@ -2,8 +2,8 @@ package vm
 
 import "math"
 
-// CHANGE(taiko): UzenZkGasSchedule defines the consensus zk gas parameters for the Uzen fork.
-var UzenZkGasSchedule = func() ZkGasSchedule {
+// CHANGE(taiko): UnzenZkGasSchedule defines the consensus zk gas parameters for the Unzen fork.
+var UnzenZkGasSchedule = func() ZkGasSchedule {
 	s := ZkGasSchedule{
 		BlockLimit: 100_000_000,
 		SpawnEstimates: SpawnEstimates{

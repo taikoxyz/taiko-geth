@@ -275,7 +275,7 @@ func init() {
 	)
 	// CHANGE(taiko): append Taiko flags into the original GETH flags
 	app.Flags = append(app.Flags, &utils.TaikoFlag)
-	app.Flags = append(app.Flags, &utils.TaikoDevnetUzenTimeFlag)
+	app.Flags = append(app.Flags, &utils.TaikoDevnetUnzenTimeFlag)
 
 	flags.AutoEnvVars(app.Flags, "GETH")
 

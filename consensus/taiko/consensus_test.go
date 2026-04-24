@@ -231,13 +231,13 @@ func TestVerifyHeader(t *testing.T) {
 	assert.ErrorContains(t, err, "uncles not empty", "VerifyHeader should throw ErrUnclesNotEmpty if uncles is not the empty hash")
 }
 
-func TestVerifyHeaderUzenCanonicalFields(t *testing.T) {
+func TestVerifyHeaderUnzenCanonicalFields(t *testing.T) {
 	ethService, blocks := newTestBackend(t)
 
 	cfg := *params.TestChainConfig
 	cfg.Taiko = true
-	uzenTime := uint64(0)
-	cfg.UzenTime = &uzenTime
+	unzenTime := uint64(0)
+	cfg.UnzenTime = &unzenTime
 
 	engine := taiko.New(&cfg, rawdb.NewMemoryDatabase())
 	parent := blocks[len(blocks)-1].Header()

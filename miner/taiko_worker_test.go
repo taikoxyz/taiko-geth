@@ -96,7 +96,7 @@ func TestRemoveGoldenTouchPendingTxs(t *testing.T) {
 
 // CHANGE(taiko): TestApplyTransaction_SealerZkGasExhaustionSurface pins the
 // exported wrapper that the sealer consumes. The inner ApplyTransactionWithEVM
-// is already covered by core/taiko_state_processor_uzen_test.go; this test
+// is already covered by core/taiko_state_processor_unzen_test.go; this test
 // exists because miner.applyTransaction (miner/worker.go:416) calls
 // core.ApplyTransaction — so a future rename or arg reshuffle of the wrapper
 // would fail here at the sealer's actual consumption surface, not just at the
@@ -108,7 +108,7 @@ func TestApplyTransaction_SealerZkGasExhaustionSurface(t *testing.T) {
 	chainConfig := *params.MergedTestChainConfig
 	chainConfig.Taiko = true
 	chainConfig.ChainID = big.NewInt(167000)
-	chainConfig.UzenTime = &zero
+	chainConfig.UnzenTime = &zero
 	chainConfig.OsakaTime = &zero
 	signer := types.LatestSigner(&chainConfig)
 

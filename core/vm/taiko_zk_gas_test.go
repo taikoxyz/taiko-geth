@@ -184,10 +184,10 @@ func TestZkGasMeter_CommitExceedsLimit(t *testing.T) {
 	}
 }
 
-// --- Uzen schedule spot-check tests ---
+// --- Unzen schedule spot-check tests ---
 
-func TestUzenSchedule_SpotChecks(t *testing.T) {
-	s := &UzenZkGasSchedule
+func TestUnzenSchedule_SpotChecks(t *testing.T) {
+	s := &UnzenZkGasSchedule
 
 	tests := []struct {
 		name  string
@@ -236,8 +236,8 @@ func TestUzenSchedule_SpotChecks(t *testing.T) {
 	}
 }
 
-func TestUzenSchedule_SpawnEstimates(t *testing.T) {
-	s := &UzenZkGasSchedule
+func TestUnzenSchedule_SpawnEstimates(t *testing.T) {
+	s := &UnzenZkGasSchedule
 
 	tests := []struct {
 		name  string
@@ -277,7 +277,7 @@ func TestZkGasMeter_IntegrationWithIsSpawnOpcode(t *testing.T) {
 }
 
 func TestZkGasMeter_SpawnEstimateLookup(t *testing.T) {
-	m := NewZkGasMeter(&UzenZkGasSchedule)
+	m := NewZkGasMeter(&UnzenZkGasSchedule)
 
 	tests := []struct {
 		opcode byte
