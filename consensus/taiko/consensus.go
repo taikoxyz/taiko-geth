@@ -173,12 +173,12 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return consensus.ErrInvalidNumber
 	}
 
-	// CHANGE(taiko): Uzen repurposes difficulty for zk gas; only enforce zero before Uzen.
-	if !t.chainConfig.IsUzen(header.Time) {
+	// CHANGE(taiko): Unzen repurposes difficulty for zk gas; only enforce zero before Unzen.
+	if !t.chainConfig.IsUnzen(header.Time) {
 		if header.Difficulty != nil && header.Difficulty.Cmp(common.Big0) != 0 {
 			return fmt.Errorf("invalid difficulty: have %v, want %v", header.Difficulty, common.Big0)
 		}
-	} else if err := verifyUzenHeaderFields(header); err != nil {
+	} else if err := verifyUnzenHeaderFields(header); err != nil {
 		return err
 	}
 
@@ -240,9 +240,9 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	return nil
 }
 
-// CHANGE(taiko): verifyUzenHeaderFields enforces the canonical Uzen header fields
+// CHANGE(taiko): verifyUnzenHeaderFields enforces the canonical Unzen header fields
 // for imported blocks so the import path matches local sealing/finalization.
-func verifyUzenHeaderFields(header *types.Header) error {
+func verifyUnzenHeaderFields(header *types.Header) error {
 	if header.RequestsHash == nil {
 		return fmt.Errorf("requests hash missing")
 	}
@@ -299,14 +299,14 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	// no block rewards in l2
 	header.UncleHash = types.CalcUncleHash(nil)
 
-	// CHANGE(taiko): Uzen sets difficulty to finalized zk gas (set by caller);
-	// pre-Uzen sets difficulty to zero.
-	if !t.chainConfig.IsUzen(header.Time) {
+	// CHANGE(taiko): Unzen sets difficulty to finalized zk gas (set by caller);
+	// pre-Unzen sets difficulty to zero.
+	if !t.chainConfig.IsUnzen(header.Time) {
 		header.Difficulty = common.Big0
 	}
 
-	// CHANGE(taiko): Uzen blocks require requestsHash, parentBeaconRoot, and blob gas fields.
-	if t.chainConfig.IsUzen(header.Time) {
+	// CHANGE(taiko): Unzen blocks require requestsHash, parentBeaconRoot, and blob gas fields.
+	if t.chainConfig.IsUnzen(header.Time) {
 		emptyRequests := types.EmptyRequestsHash
 		header.RequestsHash = &emptyRequests
 		if header.ParentBeaconRoot == nil {
@@ -350,11 +350,11 @@ func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHe
 		}
 	}
 
-	// CHANGE(taiko): Uzen blocks must not contain blob transactions.
-	if t.chainConfig.IsUzen(header.Time) {
+	// CHANGE(taiko): Unzen blocks must not contain blob transactions.
+	if t.chainConfig.IsUnzen(header.Time) {
 		for i, tx := range body.Transactions {
 			if tx.Type() == types.BlobTxType {
-				return nil, fmt.Errorf("blob transaction at index %d not allowed in Uzen block", i)
+				return nil, fmt.Errorf("blob transaction at index %d not allowed in Unzen block", i)
 			}
 		}
 	}

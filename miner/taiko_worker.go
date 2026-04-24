@@ -259,10 +259,10 @@ func (w *Miner) sealBlockWith(
 
 	env.gasPool = core.NewGasPool(gasLimit)
 
-	// CHANGE(taiko): initialize zk gas meter for Uzen blocks.
+	// CHANGE(taiko): initialize zk gas meter for Unzen blocks.
 	var zkGasMeter *vm.ZkGasMeter
-	if w.chainConfig.IsUzen(timestamp) {
-		zkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
+	if w.chainConfig.IsUnzen(timestamp) {
+		zkGasMeter = vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
 		// CHANGE(taiko): attach the meter through the EVM setter so the
 		// per-step zk gas tracker is initialized on this late-bound seal path.
 		env.evm.SetZkGasMeter(zkGasMeter)
@@ -298,7 +298,7 @@ func (w *Miner) sealBlockWith(
 			// The anchor tx (i==0) is never discarded — it must always be in the block.
 			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
 				log.Debug(
-					"Uzen zk gas limit reached during sealing; truncating block",
+					"Unzen zk gas limit reached during sealing; truncating block",
 					"txIndex", i,
 					"txHash", tx.Hash(),
 					"blockZkGasUsed", zkGasMeter.BlockZkGasUsed(),
@@ -324,16 +324,16 @@ func (w *Miner) sealBlockWith(
 		env.tcount++
 	}
 
-	// CHANGE(taiko): set header difficulty to finalized block zk gas for Uzen.
+	// CHANGE(taiko): set header difficulty to finalized block zk gas for Unzen.
 	if zkGasMeter != nil {
 		env.header.Difficulty = new(big.Int).SetUint64(zkGasMeter.BlockZkGasUsed())
 
-		// CHANGE(taiko): align locally sealed Uzen blocks with replayed/imported
+		// CHANGE(taiko): align locally sealed Unzen blocks with replayed/imported
 		// payload handling by setting the canonical zero beacon root.
 		zero := common.Hash{}
 		env.header.ParentBeaconRoot = &zero
 
-		// CHANGE(taiko): Uzen locally sealed blocks carry the canonical empty
+		// CHANGE(taiko): Unzen locally sealed blocks carry the canonical empty
 		// requests hash, matching replayed/imported payload handling.
 		emptyRequests := types.EmptyRequestsHash
 		env.header.RequestsHash = &emptyRequests

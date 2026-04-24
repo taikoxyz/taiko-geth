@@ -85,14 +85,14 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		signer  = types.MakeSigner(config, header.Number, header.Time)
 	)
 
-	// CHANGE(taiko): initialize zk gas meter for Uzen blocks.
+	// CHANGE(taiko): initialize zk gas meter for Unzen blocks.
 	// Must be set before NewEVM since it copies cfg by value.
-	if config.IsUzen(header.Time) {
-		cfg.ZkGasMeter = vm.NewZkGasMeter(&vm.UzenZkGasSchedule)
-		// CHANGE(taiko): Uzen imported blocks must not contain blob transactions.
+	if config.IsUnzen(header.Time) {
+		cfg.ZkGasMeter = vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
+		// CHANGE(taiko): Unzen imported blocks must not contain blob transactions.
 		for i, tx := range block.Transactions() {
 			if tx.Type() == types.BlobTxType {
-				return nil, fmt.Errorf("blob transaction at index %d not allowed in Uzen block", i)
+				return nil, fmt.Errorf("blob transaction at index %d not allowed in Unzen block", i)
 			}
 		}
 	}
@@ -142,7 +142,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 			// The anchor tx (i==0) is never discarded — it must always be in the block.
 			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
 				log.Debug(
-					"Uzen zk gas limit reached during block processing; truncating",
+					"Unzen zk gas limit reached during block processing; truncating",
 					"txIndex", i,
 					"txHash", tx.Hash(),
 					"blockZkGasUsed", cfg.ZkGasMeter.BlockZkGasUsed(),
@@ -173,13 +173,13 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		return nil, err
 	}
 
-	// CHANGE(taiko): validate Uzen block post-execution invariants.
+	// CHANGE(taiko): validate Unzen block post-execution invariants.
 	if cfg.ZkGasMeter != nil {
 		// Validate that body doesn't extend past zk gas truncation point.
 		// Mirrors alethia-reth's body_transaction_count == committed_receipt_count check.
 		if len(block.Transactions()) != len(receipts) {
 			return nil, fmt.Errorf(
-				"Uzen block body extends past zk gas truncation point: body has %d transactions but execution committed %d",
+				"Unzen block body extends past zk gas truncation point: body has %d transactions but execution committed %d",
 				len(block.Transactions()), len(receipts),
 			)
 		}
@@ -240,7 +240,7 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 		}
 	}
 
-	// CHANGE(taiko): Uzen-only — snapshot statedb and gas pool so a
+	// CHANGE(taiko): Unzen-only — snapshot statedb and gas pool so a
 	// zk-gas-exhausted transaction can be reverted cleanly to match
 	// alethia-reth. alethia-reth's revm never commits on error; taiko-geth
 	// mutates statedb in place, so we capture pre-tx state here and revert
