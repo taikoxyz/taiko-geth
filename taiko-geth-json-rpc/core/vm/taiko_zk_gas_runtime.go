@@ -10,7 +10,7 @@ type zkGasPendingStep struct {
 	spawned bool
 }
 
-// CHANGE(taiko): ZkGasStepTracker keeps pending per-depth opcode steps so Uzen
+// CHANGE(taiko): ZkGasStepTracker keeps pending per-depth opcode steps so Unzen
 // zk gas can charge spawn opcodes with exact alethia-reth semantics.
 type ZkGasStepTracker struct {
 	// meter owns the fork schedule and accumulated zk gas totals.

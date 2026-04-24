@@ -33,7 +33,7 @@ type Config struct {
 	EnablePreimageRecording bool  // Enables recording of SHA3/keccak preimages
 	ExtraEips               []int // Additional EIPS that are to be enabled
 
-	ZkGasMeter *ZkGasMeter // CHANGE(taiko): per-opcode zk gas metering when non-nil (Uzen fork)
+	ZkGasMeter *ZkGasMeter // CHANGE(taiko): per-opcode zk gas metering when non-nil (Unzen fork)
 }
 
 // ScopeContext contains the things that are per-call, such as stack and memory,
