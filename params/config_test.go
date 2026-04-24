@@ -17,6 +17,7 @@
 package params
 
 import (
+	"encoding/json"
 	"math"
 	"math/big"
 	"reflect"
@@ -154,4 +155,20 @@ func TestTimestampCompatError(t *testing.T) {
 
 	require.Equal(t, newTimestampCompatError(errWhat, newUint64(0), newUint64(1681338455)).Error(),
 		"mismatching Shanghai fork timestamp in database (have timestamp 0, want timestamp 1681338455, rewindto timestamp 0)")
+}
+
+func TestTaikoUnzenConfigJSONAndActivation(t *testing.T) {
+	var cfg ChainConfig
+	err := json.Unmarshal([]byte(`{"chainId":167000,"taiko":true,"unzenTime":42}`), &cfg)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.UnzenTime)
+	require.Equal(t, uint64(42), *cfg.UnzenTime)
+	require.False(t, cfg.IsUnzen(41))
+	require.True(t, cfg.IsUnzen(42))
+	require.True(t, cfg.IsUnzen(43))
+
+	out, err := json.Marshal(&cfg)
+	require.NoError(t, err)
+	require.Contains(t, string(out), `"unzenTime":42`)
+	require.NotContains(t, string(out), "uzenTime")
 }
