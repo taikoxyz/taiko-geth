@@ -128,7 +128,7 @@ type EVM struct {
 	readOnly   bool   // Whether to throw on stateful modifications
 	returnData []byte // Last CALL's return data for subsequent reuse
 
-	zkGasTracker *ZkGasStepTracker // CHANGE(taiko): exact per-depth Uzen zk gas tracking
+	zkGasTracker *ZkGasStepTracker // CHANGE(taiko): exact per-depth Unzen zk gas tracking
 }
 
 // NewEVM constructs an EVM instance with the supplied block context, state
@@ -200,7 +200,7 @@ func NewEVM(blockCtx BlockContext, statedb StateDB, chainConfig *params.ChainCon
 }
 
 // CHANGE(taiko): SetZkGasMeter keeps the EVM config and per-step tracker in sync
-// so Uzen zk gas metering works even when the meter is attached after NewEVM.
+// so Unzen zk gas metering works even when the meter is attached after NewEVM.
 func (evm *EVM) SetZkGasMeter(meter *ZkGasMeter) {
 	evm.Config.ZkGasMeter = meter
 	if meter != nil {

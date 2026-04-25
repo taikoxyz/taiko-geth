@@ -21,23 +21,23 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// CHANGE(taiko): uzenTestChainConfig returns a Taiko chain config with Uzen (and
-// all prior forks) active from genesis. Used by Uzen truncation parity tests.
-func uzenTestChainConfig(t *testing.T) *params.ChainConfig {
+// CHANGE(taiko): unzenTestChainConfig returns a Taiko chain config with Unzen (and
+// all prior forks) active from genesis. Used by Unzen truncation parity tests.
+func unzenTestChainConfig(t *testing.T) *params.ChainConfig {
 	t.Helper()
 	zero := uint64(0)
 	cfg := *params.MergedTestChainConfig
 	cfg.Taiko = true
 	cfg.ChainID = big.NewInt(167000)
-	cfg.UzenTime = &zero
+	cfg.UnzenTime = &zero
 	cfg.OsakaTime = &zero
 	return &cfg
 }
 
-// CHANGE(taiko): uzenTestScheduleExhausting returns a zk gas schedule whose
+// CHANGE(taiko): unzenTestScheduleExhausting returns a zk gas schedule whose
 // BlockLimit is zero, so the very first opcode that would consume non-zero
 // zk gas exhausts the budget.
-func uzenTestScheduleExhausting() *vm.ZkGasSchedule {
+func unzenTestScheduleExhausting() *vm.ZkGasSchedule {
 	s := &vm.ZkGasSchedule{BlockLimit: 0}
 	for i := range s.OpcodeMultipliers {
 		s.OpcodeMultipliers[i] = math.MaxUint16
@@ -56,7 +56,7 @@ func uzenTestScheduleExhausting() *vm.ZkGasSchedule {
 // fails because the function builds a failed-status receipt and returns nil err.
 func TestApplyTransactionWithEVM_ZkGasExhausted_RevertsAndReturnsError(t *testing.T) {
 	var (
-		chainConfig    = uzenTestChainConfig(t)
+		chainConfig    = unzenTestChainConfig(t)
 		senderKey, _   = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		sender         = crypto.PubkeyToAddress(senderKey.PublicKey)
 		callee         = common.HexToAddress("0x000000000000000000000000000000000000c0de")
@@ -104,7 +104,7 @@ func TestApplyTransactionWithEVM_ZkGasExhausted_RevertsAndReturnsError(t *testin
 		Random:      &common.Hash{},
 		BlobBaseFee: big.NewInt(1),
 	}
-	vmConfig := vm.Config{ZkGasMeter: vm.NewZkGasMeter(uzenTestScheduleExhausting())}
+	vmConfig := vm.Config{ZkGasMeter: vm.NewZkGasMeter(unzenTestScheduleExhausting())}
 	evm := vm.NewEVM(blockCtx, statedb, chainConfig, vmConfig)
 
 	receipt, applyErr := ApplyTransactionWithEVM(
@@ -144,15 +144,15 @@ func deployExhaustingContract(t *testing.T, statedb *state.StateDB, addr common.
 	statedb.SetCode(addr, []byte{0x5b, 0x60, 0x00, 0x60, 0x00, 0x01, 0x50, 0x60, 0x00, 0x56}, tracing.CodeChangeGenesis)
 }
 
-// CHANGE(taiko): TestApplyTransactionWithEVM_UzenCommitThenTruncate drives two
+// CHANGE(taiko): TestApplyTransactionWithEVM_UnzenCommitThenTruncate drives two
 // transactions against a shared ZkGasMeter. Tx A (a small value transfer)
 // succeeds and is committed. Tx B (a call to a tight-loop contract) exhausts
 // the remaining block budget and must be reverted with no state imprint.
 // Mirrors alethia-reth's block-executor truncation contract
 // (crates/block/src/executor.rs:261-291).
-func TestApplyTransactionWithEVM_UzenCommitThenTruncate(t *testing.T) {
+func TestApplyTransactionWithEVM_UnzenCommitThenTruncate(t *testing.T) {
 	var (
-		chainConfig = uzenTestChainConfig(t)
+		chainConfig = unzenTestChainConfig(t)
 		key1, _     = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
 		addr1       = crypto.PubkeyToAddress(key1.PublicKey)
 		// Mirror of core/state_processor_test.go:51 — the literal "0020" in the

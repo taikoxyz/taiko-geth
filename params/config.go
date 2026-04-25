@@ -502,7 +502,7 @@ type ChainConfig struct {
 	OntakeBlock *big.Int `json:"ontakeBlock,omitempty"` // Ontake switch block (nil = no fork, 0 = already activated)
 	PacayaBlock *big.Int `json:"pacayaBlock,omitempty"` // Pacaya switch block (nil = no fork, 0 = already activated)
 	ShastaTime  *uint64  `json:"shastaTime,omitempty"`  // Shasta switch time (nil = no fork, 0 = already activated)
-	UzenTime    *uint64  `json:"uzenTime,omitempty"`    // CHANGE(taiko): Uzen switch time (nil = no fork, 0 = already activated)
+	UnzenTime   *uint64  `json:"unzenTime,omitempty"`   // CHANGE(taiko): Unzen switch time (nil = no fork, 0 = already activated)
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -722,8 +722,8 @@ func (c *ChainConfig) Description() string {
 	if c.ShastaTime != nil {
 		banner += fmt.Sprintf(" - Shasta:                      @%-10v\n", *c.ShastaTime)
 	}
-	if c.UzenTime != nil {
-		banner += fmt.Sprintf(" - Uzen:                        @%-10v\n", *c.UzenTime)
+	if c.UnzenTime != nil {
+		banner += fmt.Sprintf(" - Unzen:                        @%-10v\n", *c.UnzenTime)
 	}
 	return banner
 }
@@ -917,9 +917,9 @@ func (c *ChainConfig) IsShasta(time uint64) bool {
 	return isTimestampForked(c.ShastaTime, time)
 }
 
-// CHANGE(taiko): IsUzen returns whether time is either equal to the Uzen fork time or greater.
-func (c *ChainConfig) IsUzen(time uint64) bool {
-	return isTimestampForked(c.UzenTime, time)
+// CHANGE(taiko): IsUnzen returns whether time is either equal to the Unzen fork time or greater.
+func (c *ChainConfig) IsUnzen(time uint64) bool {
+	return isTimestampForked(c.UnzenTime, time)
 }
 
 // IsVerkleGenesis checks whether the verkle fork is activated at the genesis block.

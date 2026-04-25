@@ -58,8 +58,8 @@ func (api *ConsensusAPI) ForkchoiceUpdatedWithWitnessV2(ctx context.Context, upd
 			return engine.STATUS_INVALID, attributesErr("withdrawals before shanghai")
 		case api.checkFork(params.Timestamp, forks.Shanghai) && params.Withdrawals == nil:
 			return engine.STATUS_INVALID, attributesErr("missing withdrawals")
-		// CHANGE(taiko): allow Taiko Uzen payload building to continue on the V2 wire path.
-		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai) && !api.allowTaikoUzenForkchoiceV2(params.Timestamp):
+		// CHANGE(taiko): allow Taiko Unzen payload building to continue on the V2 wire path.
+		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai) && !api.allowTaikoUnzenForkchoiceV2(params.Timestamp):
 			return engine.STATUS_INVALID, unsupportedForkErr("fcuV2 must only be called with paris or shanghai payloads")
 		}
 	}
@@ -104,24 +104,24 @@ func (api *ConsensusAPI) NewPayloadWithWitnessV2(ctx context.Context, params eng
 		// CHANGE(taiko): see comment on NewPayloadV2 — Taiko drivers may submit
 		// nil Withdrawals with a non-zero WithdrawalsHash.
 		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
-		// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+		// CHANGE(taiko): allow Taiko Unzen payload execution on the V2 wire path when
 		// header difficulty is provided for the reconstructed block header.
-		taikoUzenV2Allowed = api.allowTaikoUzenPayloadV2(params)
+		taikoUnzenV2Allowed = api.allowTaikoUnzenPayloadV2(params)
 	)
 	switch {
-	case cancun && !taikoUzenV2Allowed:
+	case cancun && !taikoUnzenV2Allowed:
 		return invalidStatus, paramsErr("can't use newPayloadV2 post-cancun")
 	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
 		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return invalidStatus, paramsErr("non-nil withdrawals pre-shanghai")
-	// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+	// CHANGE(taiko): allow Taiko Unzen payload execution on the V2 wire path when
 	// blob gas fields are present in the replayed payload shape.
-	case params.ExcessBlobGas != nil && !taikoUzenV2Allowed:
+	case params.ExcessBlobGas != nil && !taikoUnzenV2Allowed:
 		return invalidStatus, paramsErr("non-nil excessBlobGas pre-cancun")
-	// CHANGE(taiko): allow Taiko Uzen payload execution on the V2 wire path when
+	// CHANGE(taiko): allow Taiko Unzen payload execution on the V2 wire path when
 	// blob gas fields are present in the replayed payload shape.
-	case params.BlobGasUsed != nil && !taikoUzenV2Allowed:
+	case params.BlobGasUsed != nil && !taikoUnzenV2Allowed:
 		return invalidStatus, paramsErr("non-nil blobGasUsed pre-cancun")
 	}
 	return api.newPayload(ctx, params, nil, nil, nil, true)
@@ -191,24 +191,24 @@ func (api *ConsensusAPI) ExecuteStatelessPayloadV2(params engine.ExecutableData,
 		// CHANGE(taiko): see comment on NewPayloadV2 — Taiko drivers may submit
 		// nil Withdrawals with a non-zero WithdrawalsHash.
 		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
-		// CHANGE(taiko): allow Taiko Uzen stateless execution on the V2 wire path when
+		// CHANGE(taiko): allow Taiko Unzen stateless execution on the V2 wire path when
 		// header difficulty is provided for the reconstructed block header.
-		taikoUzenV2Allowed = api.allowTaikoUzenPayloadV2(params)
+		taikoUnzenV2Allowed = api.allowTaikoUnzenPayloadV2(params)
 	)
 	switch {
-	case cancun && !taikoUzenV2Allowed:
+	case cancun && !taikoUnzenV2Allowed:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("can't use newPayloadV2 post-cancun")
 	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("non-nil withdrawals pre-shanghai")
-	// CHANGE(taiko): allow Taiko Uzen stateless execution on the V2 wire path
+	// CHANGE(taiko): allow Taiko Unzen stateless execution on the V2 wire path
 	// when blob gas fields are present in the replayed payload shape.
-	case params.ExcessBlobGas != nil && !taikoUzenV2Allowed:
+	case params.ExcessBlobGas != nil && !taikoUnzenV2Allowed:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("non-nil excessBlobGas pre-cancun")
-	// CHANGE(taiko): allow Taiko Uzen stateless execution on the V2 wire path
+	// CHANGE(taiko): allow Taiko Unzen stateless execution on the V2 wire path
 	// when blob gas fields are present in the replayed payload shape.
-	case params.BlobGasUsed != nil && !taikoUzenV2Allowed:
+	case params.BlobGasUsed != nil && !taikoUnzenV2Allowed:
 		return engine.StatelessPayloadStatusV1{Status: engine.INVALID}, paramsErr("non-nil blobGasUsed pre-cancun")
 	}
 	return api.executeStatelessPayload(params, nil, nil, nil, opaqueWitness)

@@ -15,11 +15,11 @@ var (
 		Name:  "taiko",
 		Usage: "Taiko network",
 	}
-	TaikoDevnetUzenTimeFlag = cli.Uint64Flag{
-		Name:    "taiko.devnet-uzen-time",
-		Usage:   "Override Uzen fork time for Taiko internal devnet (timestamp)",
+	TaikoDevnetUnzenTimeFlag = cli.Uint64Flag{
+		Name:    "taiko.devnet-unzen-time",
+		Usage:   "Override Unzen fork time for Taiko internal devnet (timestamp)",
 		Value:   0,
-		EnvVars: []string{"TAIKO_DEVNET_UZEN_TIME"},
+		EnvVars: []string{"TAIKO_DEVNET_UNZEN_TIME"},
 	}
 )
 
