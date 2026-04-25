@@ -27,7 +27,7 @@ var (
 	HoodiShastaTime    uint64 = 1_770_296_400
 
 	DevnetUzenTime  uint64 = 0
-	MasayaUzenTime  uint64 = 1_778_158_800 // 2026-05-07 13:00:00 UTC
+	MasayaUzenTime  uint64 = 1_778_158_800
 	MainnetUzenTime uint64 = math.MaxUint64
 	HoodiUzenTime   uint64 = math.MaxUint64
 )
