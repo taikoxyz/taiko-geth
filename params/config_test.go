@@ -173,3 +173,24 @@ func TestTaikoUnzenConfigJSONAndActivation(t *testing.T) {
 	oldTypoKey := "u" + "zenTime"
 	require.NotContains(t, string(out), oldTypoKey)
 }
+
+func TestTaikoNetworkIDsArePinned(t *testing.T) {
+	// Network IDs are part of consensus and must not silently drift if
+	// params/taiko_config.go is edited. Genesis-hash tests do not depend on
+	// chain id, so pin them here explicitly.
+	cases := []struct {
+		name string
+		got  *big.Int
+		want int64
+	}{
+		{"taiko-mainnet", TaikoMainnetNetworkID, 167000},
+		{"taiko-internal", TaikoInternalNetworkID, 167001},
+		{"masaya-devnet", MasayaDevnetNetworkID, 167011},
+		{"taiko-hoodi", TaikoHoodiNetworkID, 167013},
+	}
+	for _, c := range cases {
+		if c.got == nil || c.got.Int64() != c.want {
+			t.Fatalf("%s network id = %v, want %d", c.name, c.got, c.want)
+		}
+	}
+}
