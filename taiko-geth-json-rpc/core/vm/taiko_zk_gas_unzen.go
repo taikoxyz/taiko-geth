@@ -1,11 +1,46 @@
 package vm
 
-import "math"
+import (
+	"math"
+	"math/big"
 
-// CHANGE(taiko): UnzenZkGasSchedule defines the consensus zk gas parameters for the Unzen fork.
-var UnzenZkGasSchedule = func() ZkGasSchedule {
+	"github.com/ethereum/go-ethereum/params"
+)
+
+// CHANGE(taiko): zk-gas block limit on Devnet, Hoodi, and Mainnet during Unzen.
+const BlockZkGasLimit uint64 = 100_000_000
+
+// CHANGE(taiko): zk-gas block limit on the Taiko Masaya network during Unzen.
+// Masaya runs Unzen with a 10× higher block budget than the other Taiko chains.
+const MasayaBlockZkGasLimit uint64 = 1_000_000_000
+
+// CHANGE(taiko): UnzenZkGasSchedule is the consensus zk-gas schedule used by
+// Devnet, Hoodi, and Mainnet during the Unzen fork.
+var UnzenZkGasSchedule = unzenZkGasScheduleWithBlockLimit(BlockZkGasLimit)
+
+// CHANGE(taiko): MasayaUnzenZkGasSchedule is the consensus zk-gas schedule
+// used by the Taiko Masaya network during the Unzen fork. Opcode multipliers,
+// precompile multipliers, and spawn estimates are identical to
+// UnzenZkGasSchedule; only the per-block budget differs.
+var MasayaUnzenZkGasSchedule = unzenZkGasScheduleWithBlockLimit(MasayaBlockZkGasLimit)
+
+// CHANGE(taiko): UnzenZkGasScheduleFor returns the Unzen zk-gas schedule for
+// the given chain id. Taiko Masaya (167011) runs the 1B-budget schedule; all
+// other chains use the default 100M-budget schedule.
+func UnzenZkGasScheduleFor(chainID *big.Int) *ZkGasSchedule {
+	if chainID != nil && chainID.Cmp(params.MasayaDevnetNetworkID) == 0 {
+		return &MasayaUnzenZkGasSchedule
+	}
+	return &UnzenZkGasSchedule
+}
+
+// unzenZkGasScheduleWithBlockLimit builds an Unzen-shaped schedule with the
+// requested block limit. Opcode multipliers, precompile multipliers, and
+// spawn estimates are identical across all networks; only the block budget
+// differs.
+func unzenZkGasScheduleWithBlockLimit(blockLimit uint64) ZkGasSchedule {
 	s := ZkGasSchedule{
-		BlockLimit: 100_000_000,
+		BlockLimit: blockLimit,
 		SpawnEstimates: SpawnEstimates{
 			Call:         12500,
 			CallCode:     12500,
@@ -197,4 +232,4 @@ var UnzenZkGasSchedule = func() ZkGasSchedule {
 	s.PrecompileMultipliers[0x13] = 112  // bls12_map_fp2_to_g2
 
 	return s
-}()
+}

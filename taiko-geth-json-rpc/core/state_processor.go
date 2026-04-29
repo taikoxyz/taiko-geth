@@ -88,7 +88,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// CHANGE(taiko): initialize zk gas meter for Unzen blocks.
 	// Must be set before NewEVM since it copies cfg by value.
 	if config.IsUnzen(header.Time) {
-		cfg.ZkGasMeter = vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
+		cfg.ZkGasMeter = vm.NewZkGasMeter(vm.UnzenZkGasScheduleFor(config.ChainID))
 		// CHANGE(taiko): Unzen imported blocks must not contain blob transactions.
 		for i, tx := range block.Transactions() {
 			if tx.Type() == types.BlobTxType {
