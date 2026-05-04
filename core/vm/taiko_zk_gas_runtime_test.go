@@ -269,6 +269,43 @@ func TestUnzenZkGas_FailedPrecompileExceedingBlockLimit_StickyError(t *testing.T
 	}
 }
 
+func TestUnzenZkGas_SuccessfulPrecompileExceedingBlockLimit_StickyError(t *testing.T) {
+	// STATICCALL to identity (0x04) with non-empty input. Identity always
+	// succeeds, so this exercises the success path of ChargePrecompile.
+	// PUSH1 0 PUSH1 32 PUSH1 0 PUSH1 0 PUSH1 0x04 PUSH3 0x0186a0 STATICCALL STOP
+	code := common.Hex2Bytes("6000602060006000600462018680fa00")
+
+	schedule := stickySchedule()
+	// Identity precompile multiplier sized so even minimal gas use overshoots BlockLimit=1000.
+	schedule.PrecompileMultipliers[0x04] = 10_000
+
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	meter := NewZkGasMeter(schedule)
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	if err != ErrZkGasLimitExceeded {
+		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+	}
+	if evm.zkGasErr != ErrZkGasLimitExceeded {
+		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded", evm.zkGasErr)
+	}
+}
+
 func executeUnzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[common.Address][]byte, canTransfer func(common.Address, common.Address, *uint256.Int) bool) (uint64, uint64) {
 	t.Helper()
 
