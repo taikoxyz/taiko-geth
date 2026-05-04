@@ -2,17 +2,17 @@ package vm
 
 import "testing"
 
-func TestEVMSetZkGasLimitErr_IdempotentWhenSlotEmpty(t *testing.T) {
+func TestEVMSetZkGasErr_IdempotentWhenSlotEmpty(t *testing.T) {
 	evm := &EVM{}
-	evm.setZkGasLimitErr()
+	evm.setZkGasErr()
 	if evm.zkGasErr != ErrZkGasLimitExceeded {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded", evm.zkGasErr)
 	}
 }
 
-func TestEVMSetZkGasLimitErr_DoesNotClobberExistingError(t *testing.T) {
+func TestEVMSetZkGasErr_DoesNotClobberExistingError(t *testing.T) {
 	evm := &EVM{zkGasErr: ErrZkGasLimitExceeded}
-	evm.setZkGasLimitErr()
+	evm.setZkGasErr()
 	if evm.zkGasErr != ErrZkGasLimitExceeded {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded preserved", evm.zkGasErr)
 	}

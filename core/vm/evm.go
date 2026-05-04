@@ -130,11 +130,11 @@ type EVM struct {
 
 	zkGasTracker *ZkGasStepTracker // CHANGE(taiko): exact per-depth Unzen zk gas tracking
 
-	// CHANGE(taiko): zkGasErr is the sticky zk-gas-limit error slot. Mirrors
-	// alethia-reth's ContextError::Custom(ZK_GAS_LIMIT_ERR) on context.error().
-	// Set by precompile-charge and FinishAndCharge sites that would otherwise be
-	// swallowed by op*Call's ok=false semantics; consumed at the top of the
-	// interpreter Run loop. Cleared per-tx by the block executor.
+	// CHANGE(taiko): zkGasErr is the sticky zk-gas-limit error slot. It is
+	// set by the precompile-charge and FinishAndCharge sites that would
+	// otherwise be swallowed by op*Call's ok=false semantics; consumed at
+	// the top of the interpreter Run loop; cleared per-tx by the block
+	// executor.
 	zkGasErr error
 }
 
