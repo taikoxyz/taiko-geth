@@ -133,7 +133,7 @@ func TestEVMSetZkGasMeterInitializesLateBoundTracker(t *testing.T) {
 	}
 }
 
-func TestUnzenZkGasParity_EmptyCodeCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
+func TestUnzenZkGasParity_EmptyCodeCallUsesCurrentAlethiaSpawnSemantics(t *testing.T) {
 	code := common.Hex2Bytes("60006000600060006000731111111111111111111111111111111111111111612710f100")
 	got, want := executeUnzenZkGasParityCase(t, code, nil, nil)
 	if got != want {
@@ -172,7 +172,7 @@ func TestUnzenZkGasParity_NestedCallDoesNotLeakSpawnState(t *testing.T) {
 	}
 }
 
-func TestUnzenZkGasParity_CreateOutOfFundsUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
+func TestUnzenZkGasParity_CreateOutOfFundsUsesCurrentAlethiaSpawnSemantics(t *testing.T) {
 	code := common.Hex2Bytes("60016000600060006000f06000")
 	got, want := executeUnzenZkGasParityCase(t, code, nil, func(_ common.Address, _ common.Address, value *uint256.Int) bool {
 		return value.IsZero()
@@ -182,7 +182,7 @@ func TestUnzenZkGasParity_CreateOutOfFundsUsesCurrentAletheiaSpawnSemantics(t *t
 	}
 }
 
-func TestUnzenZkGasParity_EmptyCodeCallShortCircuitUsesNetStepGas(t *testing.T) {
+func TestUnzenZkGasParity_EmptyCodeCallShortCircuitUsesSpawnEstimate(t *testing.T) {
 	evm, meter := newUnzenShortCircuitEVM(t, nil)
 
 	evm.zkGasTracker.Begin(0, byte(CALL), 1_000)
@@ -196,12 +196,33 @@ func TestUnzenZkGasParity_EmptyCodeCallShortCircuitUsesNetStepGas(t *testing.T) 
 	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	if got := meter.TxZkGasUsed(); got != 0 {
-		t.Fatalf("TxZkGasUsed = %d, want %d", got, 0)
+	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
+	if got := meter.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
 
-func TestUnzenZkGasParity_CallOutOfFundsShortCircuitUsesNetStepGas(t *testing.T) {
+func TestUnzenZkGasParity_EmptyCodeStaticCallShortCircuitUsesSpawnEstimate(t *testing.T) {
+	evm, meter := newUnzenShortCircuitEVM(t, nil)
+
+	evm.zkGasTracker.Begin(0, byte(STATICCALL), 1_000)
+	_, gasLeft, err := evm.StaticCall(common.Address{}, common.Address{0xfe}, nil, 1_000)
+	if err != nil {
+		t.Fatalf("StaticCall error = %v, want nil", err)
+	}
+	if gasLeft != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	}
+	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
+		t.Fatalf("FinishAndCharge returned error: %v", err)
+	}
+	want := UnzenZkGasSchedule.SpawnEstimates.StaticCall * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(STATICCALL)])
+	if got := meter.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
+func TestUnzenZkGasParity_CallOutOfFundsShortCircuitUsesSpawnEstimate(t *testing.T) {
 	evm, meter := newUnzenShortCircuitEVM(t, func(StateDB, common.Address, *uint256.Int) bool {
 		return false
 	})
@@ -217,12 +238,13 @@ func TestUnzenZkGasParity_CallOutOfFundsShortCircuitUsesNetStepGas(t *testing.T)
 	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	if got := meter.TxZkGasUsed(); got != 0 {
-		t.Fatalf("TxZkGasUsed = %d, want %d", got, 0)
+	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
+	if got := meter.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
 
-func TestUnzenZkGasParity_CreateOutOfFundsShortCircuitUsesNetStepGas(t *testing.T) {
+func TestUnzenZkGasParity_CreateOutOfFundsShortCircuitUsesSpawnEstimate(t *testing.T) {
 	evm, meter := newUnzenShortCircuitEVM(t, func(StateDB, common.Address, *uint256.Int) bool {
 		return false
 	})
@@ -238,12 +260,13 @@ func TestUnzenZkGasParity_CreateOutOfFundsShortCircuitUsesNetStepGas(t *testing.
 	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	if got := meter.TxZkGasUsed(); got != 0 {
-		t.Fatalf("TxZkGasUsed = %d, want %d", got, 0)
+	want := UnzenZkGasSchedule.SpawnEstimates.Create * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CREATE)])
+	if got := meter.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
 
-func TestUnzenZkGasParity_DepthExceededCallShortCircuitUsesNetStepGas(t *testing.T) {
+func TestUnzenZkGasParity_DepthExceededCallShortCircuitUsesSpawnEstimate(t *testing.T) {
 	evm, meter := newUnzenShortCircuitEVM(t, nil)
 	depth := int(params.CallCreateDepth) + 1
 	evm.depth = depth
@@ -259,8 +282,9 @@ func TestUnzenZkGasParity_DepthExceededCallShortCircuitUsesNetStepGas(t *testing
 	if err := evm.zkGasTracker.FinishAndCharge(depth, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	if got := meter.TxZkGasUsed(); got != 0 {
-		t.Fatalf("TxZkGasUsed = %d, want %d", got, 0)
+	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
+	if got := meter.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
 
@@ -612,13 +636,7 @@ func (c *zkGasTraceCollector) spawned(idx int) bool {
 			continue
 		}
 		if child.enterSeq > current.seq && child.enterSeq < boundary {
-			if child.precompile {
-				return true
-			}
-			if op := OpCode(current.opcode); op == CREATE || op == CREATE2 {
-				return true
-			}
-			return child.opcodeCount > 0
+			return true
 		}
 	}
 	return false
