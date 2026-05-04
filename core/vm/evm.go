@@ -129,6 +129,13 @@ type EVM struct {
 	returnData []byte // Last CALL's return data for subsequent reuse
 
 	zkGasTracker *ZkGasStepTracker // CHANGE(taiko): exact per-depth Unzen zk gas tracking
+
+	// CHANGE(taiko): zkGasErr is the sticky zk-gas-limit error slot. Mirrors
+	// alethia-reth's ContextError::Custom(ZK_GAS_LIMIT_ERR) on context.error().
+	// Set by precompile-charge and FinishAndCharge sites that would otherwise be
+	// swallowed by op*Call's ok=false semantics; consumed at the top of the
+	// interpreter Run loop. Cleared per-tx by the block executor.
+	zkGasErr error
 }
 
 // NewEVM constructs an EVM instance with the supplied block context, state
