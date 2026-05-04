@@ -305,6 +305,7 @@ func (w *Miner) sealBlockWith(
 					"blockZkGasUsed", zkGasMeter.BlockZkGasUsed(),
 				)
 				zkGasMeter.ResetTransaction()
+				env.evm.ResetZkGasErr()
 				break
 			}
 			if i == 0 {

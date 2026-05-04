@@ -149,6 +149,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 					"blockZkGasUsed", cfg.ZkGasMeter.BlockZkGasUsed(),
 				)
 				cfg.ZkGasMeter.ResetTransaction()
+				evm.ResetZkGasErr()
 				spanEnd(nil)
 				break
 			}
@@ -415,6 +416,12 @@ func processRequestsSystemCall(requests *[][]byte, evm *vm.EVM, requestType byte
 		if tracer.OnSystemCallEnd != nil {
 			defer tracer.OnSystemCallEnd()
 		}
+	}
+	if evm.Config.ZkGasMeter != nil {
+		evm.Config.ZkGasMeter.ResetTransaction()
+		evm.ResetZkGasErr()
+		defer evm.Config.ZkGasMeter.ResetTransaction()
+		defer evm.ResetZkGasErr()
 	}
 	msg := &Message{
 		From:      params.SystemAddress,

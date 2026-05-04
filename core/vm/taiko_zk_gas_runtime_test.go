@@ -421,6 +421,43 @@ func TestUnzenZkGas_StaticGasOutOfGasChargesFullPreStepGas(t *testing.T) {
 	}
 }
 
+func TestUnzenZkGas_DynamicGasOutOfGasChargesFullPreStepGas(t *testing.T) {
+	// Dynamic-gas OOG also spends all remaining frame gas in the Rust
+	// reference EVM. MSTORE has staticGas=3, then memory expansion needs
+	// another 3 gas; with only 5 gas before MSTORE, the dynamic check fails
+	// after static gas is deducted, but zk accounting must still charge 5.
+	schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
+	schedule.OpcodeMultipliers[byte(MSTORE)] = 7
+	meter := NewZkGasMeter(schedule)
+
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	// PUSH1 0xff PUSH1 0x00 MSTORE STOP. With 11 gas, the two PUSH1 opcodes
+	// leave 5 gas for MSTORE, which then trips dynamic memory-expansion OOG.
+	code := common.Hex2Bytes("60ff60005200")
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 11, new(uint256.Int)); err != ErrOutOfGas {
+		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
+	}
+	if got, want := meter.TxZkGasUsed(), uint64(5*7); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
 func newUnzenShortCircuitEVM(t *testing.T, canTransfer func(StateDB, common.Address, *uint256.Int) bool) (*EVM, *ZkGasMeter) {
 	t.Helper()
 
