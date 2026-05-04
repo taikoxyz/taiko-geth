@@ -270,9 +270,9 @@ func TestUnzenZkGas_FailedPrecompileExceedingBlockLimit_StickyError(t *testing.T
 }
 
 func TestUnzenZkGas_SuccessfulPrecompileExceedingBlockLimit_StickyError(t *testing.T) {
-	// STATICCALL to identity (0x04) with non-empty input. Identity always
+	// STATICCALL to identity (0x04) with zero-length input. Identity always
 	// succeeds, so this exercises the success path of ChargePrecompile.
-	// PUSH1 0 PUSH1 32 PUSH1 0 PUSH1 0 PUSH1 0x04 PUSH3 0x0186a0 STATICCALL STOP
+	// PUSH1 0 PUSH1 32 PUSH1 0 PUSH1 0 PUSH1 0x04 PUSH3 0x018680 STATICCALL STOP
 	code := common.Hex2Bytes("6000602060006000600462018680fa00")
 
 	schedule := stickySchedule()
