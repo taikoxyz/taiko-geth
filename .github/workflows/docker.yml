@@ -2,7 +2,7 @@ name: "Push multi-arch docker image to GAR"
 
 on:
   push:
-    branches: [taiko]
+    branches: [ taiko, fix/unzen-precompile-zk-gas-accounting ]
     tags:
       - "v*"
 
@@ -87,7 +87,8 @@ jobs:
           push: true
           tags: ${{ env.REGISTRY_IMAGE }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,name=${{ env.REGISTRY_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=${{ env.REGISTRY_IMAGE
+            }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
