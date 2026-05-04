@@ -202,14 +202,10 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		} else if sLen > operation.maxStack {
 			return nil, &ErrStackOverflow{stackLen: sLen, limit: operation.maxStack}
 		}
-		// for tracing: this gas consumption event is emitted below in the debug section.
-		if contract.Gas < cost {
-			return nil, ErrOutOfGas
-		}
 
 		// CHANGE(taiko): capture the pre-step opcode and gas before any
-		// per-opcode gas is deducted so failing dynamic-gas paths still charge
-		// the measured step gas.
+		// per-opcode gas is deducted so failing static- and dynamic-gas paths
+		// still charge the measured step gas.
 		if evm.zkGasTracker != nil {
 			evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
 		}
@@ -222,6 +218,16 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 				return ErrZkGasLimitExceeded
 			}
 			return nil
+		}
+		// for tracing: this gas consumption event is emitted below in the debug section.
+		if contract.Gas < cost {
+			// Match reference semantics: a static-gas OOG halts after spending
+			// the full pre-step gas, so charge the entire gasBefore to zk
+			// accounting before unwinding.
+			if zkErr := finishZkGasStep(ErrOutOfGas, 0); zkErr != nil {
+				return nil, zkErr
+			}
+			return nil, ErrOutOfGas
 		}
 		contract.Gas -= cost
 
