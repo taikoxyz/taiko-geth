@@ -344,6 +344,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 		// CHANGE(taiko): charge precompile zk gas.
 		if evm.Config.ZkGasMeter != nil {
 			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+				evm.setZkGasErr()
 				return nil, 0, zkErr
 			}
 		}
@@ -421,6 +422,7 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		// CHANGE(taiko): charge precompile zk gas.
 		if evm.Config.ZkGasMeter != nil {
 			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+				evm.setZkGasErr()
 				return nil, 0, zkErr
 			}
 		}
@@ -478,6 +480,7 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		// CHANGE(taiko): charge precompile zk gas.
 		if evm.Config.ZkGasMeter != nil {
 			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+				evm.setZkGasErr()
 				return nil, 0, zkErr
 			}
 		}
@@ -544,6 +547,7 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		// CHANGE(taiko): charge precompile zk gas.
 		if evm.Config.ZkGasMeter != nil {
 			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+				evm.setZkGasErr()
 				return nil, 0, zkErr
 			}
 		}
