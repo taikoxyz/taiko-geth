@@ -1,5 +1,7 @@
 package vm
 
+import "github.com/ethereum/go-ethereum/params"
+
 // CHANGE(taiko): zkGasPendingStep stores the in-flight opcode state for one EVM depth.
 type zkGasPendingStep struct {
 	// opcode is the opcode byte captured before the step executes.
@@ -80,4 +82,13 @@ func (t *ZkGasStepTracker) markSpawn(depth int, matches func(byte) bool) {
 	if matches(t.pending[depth].opcode) {
 		t.pending[depth].spawned = true
 	}
+}
+
+// CHANGE(taiko): zkGasStepGasAfter mirrors REVM's callback-visible gas delta
+// for cases where go-ethereum performs validation after charging dynamic gas.
+func zkGasStepGasAfter(op OpCode, err error, gasBefore, gasAfter uint64) uint64 {
+	if err == ErrWriteProtection && op >= LOG0 && op <= LOG4 && gasBefore >= params.LogGas {
+		return gasBefore - params.LogGas
+	}
+	return gasAfter
 }

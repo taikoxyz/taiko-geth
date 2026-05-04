@@ -270,7 +270,7 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		// alethia-reth semantics: net per-step gas unless the opcode actually
 		// spawned child work, in which case the fixed spawn estimate is used.
 		if evm.zkGasTracker != nil {
-			if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, contract.Gas); zkErr != nil {
+			if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasStepGasAfter(op, err, gasBefore, contract.Gas)); zkErr != nil {
 				evm.setZkGasErr()
 				return nil, ErrZkGasLimitExceeded
 			}
