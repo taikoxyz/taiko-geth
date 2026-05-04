@@ -306,6 +306,51 @@ func TestUnzenZkGas_SuccessfulPrecompileExceedingBlockLimit_StickyError(t *testi
 	}
 }
 
+func TestUnzenZkGas_InnerFrameOpcodeExceedingBlockLimit_StickyError(t *testing.T) {
+	// Outer contract CALLs into innerAddr. Inner code does ADD which trips
+	// FinishAndCharge inside the inner frame. The outer opCall swallows the
+	// Go error (ok=false on stack), but the sticky slot survives and aborts
+	// the outer frame at the next top-of-loop check.
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+
+	// Outer: PUSH1 0 PUSH1 0 PUSH1 0 PUSH1 0 PUSH1 0 PUSH20 inner PUSH3 0x0186a0 CALL STOP
+	outerCode := common.Hex2Bytes("60006000600060006000732000000000000000000000000000000000000000620186a0f100")
+	// Inner: PUSH1 1 PUSH1 2 ADD STOP — ADD trips the over-limit FinishAndCharge.
+	// Use the corrected 6-byte form (no stray ADD).
+	innerCode := common.Hex2Bytes("600160020100")
+
+	schedule := stickySchedule()
+	schedule.OpcodeMultipliers[0x01] = 1024 // ADD overshoots BlockLimit=1000.
+
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, outerCode, tracing.CodeChangeUnspecified)
+	statedb.CreateAccount(innerAddr)
+	statedb.SetCode(innerAddr, innerCode, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	meter := NewZkGasMeter(schedule)
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	if err != ErrZkGasLimitExceeded {
+		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+	}
+	if evm.zkGasErr != ErrZkGasLimitExceeded {
+		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded", evm.zkGasErr)
+	}
+}
+
 func executeUnzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[common.Address][]byte, canTransfer func(common.Address, common.Address, *uint256.Int) bool) (uint64, uint64) {
 	t.Helper()
 
