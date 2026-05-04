@@ -87,6 +87,9 @@ func (t *ZkGasStepTracker) markSpawn(depth int, matches func(byte) bool) {
 // CHANGE(taiko): zkGasStepGasAfter mirrors REVM's callback-visible gas delta
 // for cases where go-ethereum performs validation after charging dynamic gas.
 func zkGasStepGasAfter(op OpCode, err error, gasBefore, gasAfter uint64) uint64 {
+	if err == ErrWriteProtection && (op == CREATE || op == CREATE2) {
+		return gasBefore
+	}
 	if err == ErrWriteProtection && op >= LOG0 && op <= LOG4 && gasBefore >= params.LogGas {
 		return gasBefore - params.LogGas
 	}

@@ -198,6 +198,61 @@ func TestUnzenZkGasParity_StaticLogWriteProtectionUsesRevmStaticGas(t *testing.T
 	}
 }
 
+func TestUnzenZkGasParity_StaticCreateWriteProtectionUsesRevmStaticGas(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		opcode     OpCode
+		targetCode []byte
+	}{
+		{
+			name:       "create",
+			opcode:     CREATE,
+			targetCode: common.Hex2Bytes("600060006000f0"),
+		},
+		{
+			name:       "create2",
+			opcode:     CREATE2,
+			targetCode: common.Hex2Bytes("6000600060006000f5"),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
+			schedule.OpcodeMultipliers[byte(tt.opcode)] = 1
+
+			meter := NewZkGasMeter(schedule)
+			targetAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+			outerAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+			// STATICCALL(gas=100000, target=targetAddr, in=0:0, out=0:0), then STOP.
+			outerCode := append(common.Hex2Bytes("600060006000600073"), targetAddr.Bytes()...)
+			outerCode = append(outerCode, common.Hex2Bytes("620186a0fa00")...)
+
+			rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+			statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+			statedb.CreateAccount(outerAddr)
+			statedb.SetCode(outerAddr, outerCode, tracing.CodeChangeUnspecified)
+			statedb.CreateAccount(targetAddr)
+			statedb.SetCode(targetAddr, tt.targetCode, tracing.CodeChangeUnspecified)
+			statedb.Finalise(true)
+
+			evm := NewEVM(BlockContext{
+				CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+				Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+				BlockNumber: big.NewInt(1),
+				Time:        1,
+				Random:      &common.Hash{},
+			}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+			statedb.Prepare(rules, common.Address{}, common.Address{}, &outerAddr, ActivePrecompiles(rules), nil)
+
+			if _, _, err := evm.Call(common.Address{}, outerAddr, nil, 200_000, new(uint256.Int)); err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got, want := meter.TxZkGasUsed(), uint64(0); got != want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
 func TestUnzenZkGasParity_NestedCallDoesNotLeakSpawnState(t *testing.T) {
 	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
 	outerCode := common.Hex2Bytes("60006000600060006000732000000000000000000000000000000000000000612710f100")
