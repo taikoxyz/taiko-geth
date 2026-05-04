@@ -217,18 +217,16 @@ func (evm *EVM) SetZkGasMeter(meter *ZkGasMeter) {
 	evm.zkGasTracker = nil
 }
 
-// CHANGE(taiko): markPendingCallSpawn mirrors Rust reference EVM inspector
-// semantics: the CALL-family opcode is marked as spawned when normal call
-// handling continues, before the handler knows whether it will execute code,
-// hit a precompile, or short-circuit on validation/empty code.
+// CHANGE(taiko): markPendingCallSpawn records that a CALL-family opcode
+// entered child execution or precompile work.
 func (evm *EVM) markPendingCallSpawn() {
 	if evm.zkGasTracker != nil {
 		evm.zkGasTracker.MarkCallSpawn(evm.depth)
 	}
 }
 
-// CHANGE(taiko): markPendingCreateSpawn mirrors Rust reference EVM inspector
-// semantics by marking CREATE-family opcodes when create handling is entered.
+// CHANGE(taiko): markPendingCreateSpawn records that a CREATE-family opcode
+// entered initcode execution.
 func (evm *EVM) markPendingCreateSpawn() {
 	if evm.zkGasTracker != nil {
 		evm.zkGasTracker.MarkCreateSpawn(evm.depth)
@@ -283,8 +281,6 @@ func isSystemCall(caller common.Address) bool {
 // the necessary steps to create accounts and reverses the state in case of an
 // execution error or failed value transfer.
 func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
-	evm.markPendingCallSpawn()
-
 	// Capture the tracer start/end events in debug mode
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, CALL, caller, addr, input, gas, value.ToBig())
@@ -335,6 +331,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 	}
 
 	if isPrecompile {
+		evm.markPendingCallSpawn()
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -355,6 +352,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 		if len(code) == 0 {
 			ret, err = nil, nil // gas is unchanged
 		} else {
+			evm.markPendingCallSpawn()
 			// The contract is a scoped environment for this execution context only.
 			contract := NewContract(caller, addr, value, gas, evm.jumpDests)
 			contract.IsSystemCall = isSystemCall(caller)
@@ -389,8 +387,6 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 // CallCode differs from Call in the sense that it executes the given address'
 // code with the caller as context.
 func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
-	evm.markPendingCallSpawn()
-
 	// Invoke tracer hooks that signal entering/exiting a call frame
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, CALLCODE, caller, addr, input, gas, value.ToBig())
@@ -413,6 +409,7 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
+		evm.markPendingCallSpawn()
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -429,6 +426,9 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		code := evm.resolveCode(addr)
+		if len(code) > 0 {
+			evm.markPendingCallSpawn()
+		}
 		// The contract is a scoped environment for this execution context only.
 		contract := NewContract(caller, caller, value, gas, evm.jumpDests)
 		contract.SetCallCode(evm.resolveCodeHash(addr), code)
@@ -453,8 +453,6 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 // DelegateCall differs from CallCode in the sense that it executes the given address'
 // code with the caller as context and the caller is set to the caller of the caller.
 func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
-	evm.markPendingCallSpawn()
-
 	// Invoke tracer hooks that signal entering/exiting a call frame
 	if evm.Config.Tracer != nil {
 		// DELEGATECALL inherits value from parent call
@@ -471,6 +469,7 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 
 	// It is allowed to call precompiles, even via delegatecall
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
+		evm.markPendingCallSpawn()
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -487,6 +486,9 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 	} else {
 		// Initialise a new contract and make initialise the delegate values
 		code := evm.resolveCode(addr)
+		if len(code) > 0 {
+			evm.markPendingCallSpawn()
+		}
 		//
 		// Note: The value refers to the original value from the parent call.
 		contract := NewContract(originCaller, caller, value, gas, evm.jumpDests)
@@ -511,8 +513,6 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 // Opcodes that attempt to perform such modifications will result in exceptions
 // instead of performing the modifications.
 func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []byte, gas uint64) (ret []byte, leftOverGas uint64, err error) {
-	evm.markPendingCallSpawn()
-
 	// Invoke tracer hooks that signal entering/exiting a call frame
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, STATICCALL, caller, addr, input, gas, nil)
@@ -538,6 +538,7 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 	evm.StateDB.AddBalance(addr, new(uint256.Int), tracing.BalanceChangeTouchAccount)
 
 	if p, isPrecompile := evm.precompile(addr); isPrecompile {
+		evm.markPendingCallSpawn()
 		var stateDB StateDB
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
@@ -554,6 +555,9 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		code := evm.resolveCode(addr)
+		if len(code) > 0 {
+			evm.markPendingCallSpawn()
+		}
 		// The contract is a scoped environment for this execution context only.
 		contract := NewContract(caller, addr, new(uint256.Int), gas, evm.jumpDests)
 		contract.SetCallCode(evm.resolveCodeHash(addr), code)
@@ -579,8 +583,6 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 
 // create creates a new contract using code as deployment code.
 func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *uint256.Int, address common.Address, typ OpCode) (ret []byte, createAddress common.Address, leftOverGas uint64, err error) {
-	evm.markPendingCreateSpawn()
-
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, typ, caller, address, code, gas, value.ToBig())
 		defer func(startGas uint64) {
@@ -671,6 +673,7 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	contract.SetCallCode(common.Hash{}, code)
 	contract.IsDeployment = true
 
+	evm.markPendingCreateSpawn()
 	ret, err = evm.initNewContract(contract, address)
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {
 		evm.StateDB.RevertToSnapshot(snapshot)
