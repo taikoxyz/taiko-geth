@@ -215,6 +215,53 @@ func TestUnzenZkGasParity_DepthExceededCallUsesCurrentAletheiaSpawnSemantics(t *
 	}
 }
 
+func TestUnzenZkGas_FailedPrecompileExceedingBlockLimit_StickyError(t *testing.T) {
+	// PUSH1 0 PUSH1 0 PUSH1 0xc0 PUSH1 0 PUSH1 0x0a PUSH3 0x0186a0 STATICCALL
+	// STOP STOP — second STOP marks "did the loop continue past the failing
+	// STATICCALL?". With the sticky check in place, only the first STOP could
+	// run, but actually neither STOP runs because the loop exits at top-of-loop.
+	code := common.Hex2Bytes("6000600060c06000600a620186a0fa0000")
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	meter := NewZkGasMeter(stickySchedule())
+	var observedOps []byte
+	tracer := &tracing.Hooks{
+		OnOpcode: func(_ uint64, op byte, _ uint64, _ uint64, _ tracing.OpContext, _ []byte, _ int, _ error) {
+			observedOps = append(observedOps, op)
+		},
+	}
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter, Tracer: tracer})
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	if err != ErrZkGasLimitExceeded {
+		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+	}
+	if evm.zkGasErr != ErrZkGasLimitExceeded {
+		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded", evm.zkGasErr)
+	}
+	// The STATICCALL itself ran (it's the opcode that triggered the over-limit
+	// precompile charge), but the post-STATICCALL STOP must NOT have run — the
+	// top-of-loop sticky check exits the frame before the next dispatch.
+	for _, op := range observedOps {
+		if op == 0x00 { // STOP
+			t.Fatalf("STOP after over-limit STATICCALL was dispatched; sticky check failed to short-circuit. ops=%v", observedOps)
+		}
+	}
+}
+
 func executeUnzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[common.Address][]byte, canTransfer func(common.Address, common.Address, *uint256.Int) bool) (uint64, uint64) {
 	t.Helper()
 

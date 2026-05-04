@@ -166,6 +166,14 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 	// parent context.
 	_ = jumpTable[0] // nil-check the jumpTable out of the loop
 	for {
+		// CHANGE(taiko): consume the sticky zk-gas-limit slot before dispatching
+		// the next opcode. This rescues the case where op*Call swallows the Go
+		// error returned from EVM.Call when ChargePrecompile or FinishAndCharge
+		// fails inside a child frame — the slot persists on the EVM and exits
+		// the outer frame here.
+		if evm.zkGasErr != nil {
+			return nil, evm.zkGasErr
+		}
 		gasBefore := contract.Gas
 		if debug {
 			// Capture pre-execution values for tracing.
