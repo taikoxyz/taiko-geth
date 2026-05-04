@@ -52,8 +52,8 @@ func stickySchedule() *ZkGasSchedule {
 	for i := range s.PrecompileMultipliers {
 		s.PrecompileMultipliers[i] = 1
 	}
-	// Force point_evaluation (0x0a) precompile multiplier large enough that a
-	// 100k-gas call definitely overshoots BlockLimit=1000.
+	// PrecompileMultipliers[0x0a]=1 — the failed-precompile charge of startGas
+	// (100_000) alone overshoots BlockLimit=1_000.
 	s.PrecompileMultipliers[0x0a] = 1
 	return s
 }
@@ -84,5 +84,8 @@ func TestEVMCall_PrecompileOverLimit_SetsStickyError(t *testing.T) {
 
 	if evm.zkGasErr != ErrZkGasLimitExceeded {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded set after over-limit precompile", evm.zkGasErr)
+	}
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want 0 (over-limit charge must be rejected, not committed)", got)
 	}
 }
