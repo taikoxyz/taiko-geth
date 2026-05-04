@@ -13,7 +13,7 @@ type zkGasPendingStep struct {
 }
 
 // CHANGE(taiko): ZkGasStepTracker keeps pending per-depth opcode steps so Unzen
-// zk gas can charge spawn opcodes with exact alethia-reth semantics.
+// zk gas can charge spawn opcodes with consensus zk-gas semantics.
 type ZkGasStepTracker struct {
 	// meter owns the fork schedule and accumulated zk gas totals.
 	meter *ZkGasMeter
@@ -86,6 +86,8 @@ func (t *ZkGasStepTracker) markSpawn(depth int, matches func(byte) bool) {
 
 // CHANGE(taiko): zkGasStepGasAfter mirrors REVM's callback-visible gas delta
 // for cases where go-ethereum performs validation after charging dynamic gas.
+// Static LOG/CREATE write-protection values are derived from observed Rust
+// reference EVM inspector callbacks, not from a direct source-level contract.
 func zkGasStepGasAfter(op OpCode, err error, gasBefore, gasAfter uint64) uint64 {
 	if err == ErrWriteProtection && (op == CREATE || op == CREATE2) {
 		return gasBefore

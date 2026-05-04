@@ -258,7 +258,7 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		}
 
 		// CHANGE(taiko): capture the pre-step opcode and gas so zk gas charging
-		// can be resolved after execution with current alethia-reth semantics.
+		// can be resolved after execution with consensus zk-gas semantics.
 		if evm.zkGasTracker != nil {
 			evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
 		}
@@ -266,10 +266,10 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		// execute the operation
 		res, err = operation.execute(&pc, evm, callContext)
 
-		// CHANGE(taiko): charge zk gas after opcode execution using exact
-		// alethia-reth semantics: net per-step gas unless the opcode actually
+		// CHANGE(taiko): charge zk gas after opcode execution using consensus
+		// semantics: net per-step gas unless the opcode actually
 		// spawned child work, in which case the fixed spawn estimate is used.
-		if evm.zkGasTracker != nil {
+		if evm.zkGasTracker != nil && evm.zkGasErr == nil {
 			if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasStepGasAfter(op, err, gasBefore, contract.Gas)); zkErr != nil {
 				evm.setZkGasErr()
 				return nil, ErrZkGasLimitExceeded

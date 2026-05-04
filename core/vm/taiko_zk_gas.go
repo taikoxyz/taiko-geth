@@ -53,7 +53,7 @@ func (m *ZkGasMeter) ChargePrecompile(addrLowByte byte, gasUsed uint64) error {
 // CommitTransaction promotes the current tx zk gas into the finalized block total.
 func (m *ZkGasMeter) CommitTransaction() error {
 	next, overflow := safeAdd(m.blockZkGasUsed, m.txZkGasUsed)
-	if overflow || next > m.schedule.BlockLimit {
+	if overflow {
 		m.txZkGasUsed = 0
 		return ErrZkGasLimitExceeded
 	}

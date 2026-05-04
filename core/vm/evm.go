@@ -217,7 +217,7 @@ func (evm *EVM) SetZkGasMeter(meter *ZkGasMeter) {
 	evm.zkGasTracker = nil
 }
 
-// CHANGE(taiko): markPendingCallSpawn mirrors current alethia-reth inspector
+// CHANGE(taiko): markPendingCallSpawn mirrors Rust reference EVM inspector
 // semantics: the CALL-family opcode is marked as spawned when normal call
 // handling continues, before the handler knows whether it will execute code,
 // hit a precompile, or short-circuit on validation/empty code.
@@ -227,7 +227,7 @@ func (evm *EVM) markPendingCallSpawn() {
 	}
 }
 
-// CHANGE(taiko): markPendingCreateSpawn mirrors current alethia-reth inspector
+// CHANGE(taiko): markPendingCreateSpawn mirrors Rust reference EVM inspector
 // semantics by marking CREATE-family opcodes when create handling is entered.
 func (evm *EVM) markPendingCreateSpawn() {
 	if evm.zkGasTracker != nil {

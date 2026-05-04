@@ -177,7 +177,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// CHANGE(taiko): validate Unzen block post-execution invariants.
 	if cfg.ZkGasMeter != nil {
 		// Validate that body doesn't extend past zk gas truncation point.
-		// Mirrors alethia-reth's body_transaction_count == committed_receipt_count check.
+		// Mirrors the Rust reference block-executor body_transaction_count == committed_receipt_count check.
 		if len(block.Transactions()) != len(receipts) {
 			return nil, fmt.Errorf(
 				"Unzen block body extends past zk gas truncation point: body has %d transactions but execution committed %d",
@@ -243,7 +243,7 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 
 	// CHANGE(taiko): Unzen-only — snapshot statedb and gas pool so a
 	// zk-gas-exhausted transaction can be reverted cleanly to match
-	// alethia-reth. alethia-reth's revm never commits on error; taiko-geth
+	// the Rust reference EVM. Its state transition never commits on error; taiko-geth
 	// mutates statedb in place, so we capture pre-tx state here and revert
 	// below when the interpreter surfaces a zk-gas-limit error via result.Err.
 	var (

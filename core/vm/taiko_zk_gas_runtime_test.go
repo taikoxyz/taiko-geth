@@ -133,7 +133,7 @@ func TestEVMSetZkGasMeterInitializesLateBoundTracker(t *testing.T) {
 	}
 }
 
-func TestUnzenZkGasParity_EmptyCodeCallUsesCurrentAlethiaSpawnSemantics(t *testing.T) {
+func TestUnzenZkGasParity_EmptyCodeCallUsesConsensusSpawnSemantics(t *testing.T) {
 	code := common.Hex2Bytes("60006000600060006000731111111111111111111111111111111111111111612710f100")
 	got, want := executeUnzenZkGasParityCase(t, code, nil, nil)
 	if got != want {
@@ -266,7 +266,7 @@ func TestUnzenZkGasParity_NestedCallDoesNotLeakSpawnState(t *testing.T) {
 	}
 }
 
-func TestUnzenZkGasParity_CreateOutOfFundsUsesCurrentAlethiaSpawnSemantics(t *testing.T) {
+func TestUnzenZkGasParity_CreateOutOfFundsUsesConsensusSpawnSemantics(t *testing.T) {
 	code := common.Hex2Bytes("60016000600060006000f06000")
 	got, want := executeUnzenZkGasParityCase(t, code, nil, func(_ common.Address, _ common.Address, value *uint256.Int) bool {
 		return value.IsZero()
@@ -361,6 +361,9 @@ func TestUnzenZkGasParity_CreateOutOfFundsShortCircuitUsesSpawnEstimate(t *testi
 }
 
 func TestUnzenZkGasParity_DepthExceededCallShortCircuitUsesSpawnEstimate(t *testing.T) {
+	// Depth-exceeded charging is extrapolated from the Rust reference EVM's
+	// deferred spawn-callback model because the source path does not expose a
+	// direct callback contract for this short-circuit.
 	evm, meter := newUnzenShortCircuitEVM(t, nil)
 	depth := int(params.CallCreateDepth) + 1
 	evm.depth = depth
@@ -507,6 +510,7 @@ func TestUnzenZkGas_InnerFrameOpcodeExceedingBlockLimit_StickyError(t *testing.T
 
 	schedule := stickySchedule()
 	schedule.OpcodeMultipliers[0x01] = 1024 // ADD overshoots BlockLimit=1000.
+	schedule.OpcodeMultipliers[byte(CALL)] = 1
 
 	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
@@ -544,6 +548,9 @@ func TestUnzenZkGas_InnerFrameOpcodeExceedingBlockLimit_StickyError(t *testing.T
 	}
 	if evm.zkGasErr != ErrZkGasLimitExceeded {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded", evm.zkGasErr)
+	}
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want 0 after inner-frame zk-gas failure", got)
 	}
 	// Defense-in-depth: prove the test exercises the right path.
 	// (1) The inner ADD must have dispatched — otherwise the over-limit charge
