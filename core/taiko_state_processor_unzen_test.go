@@ -148,6 +148,8 @@ func deployExhaustingContract(t *testing.T, statedb *state.StateDB, addr common.
 // transactions against a shared ZkGasMeter. Tx A (a small value transfer)
 // succeeds and is committed. Tx B (a call to a tight-loop contract) exhausts
 // the remaining block budget and must be reverted with no state imprint.
+// Mirrors the Rust reference block-executor truncation contract
+// (crates/block/src/executor.rs:261-291).
 func TestApplyTransactionWithEVM_UnzenCommitThenTruncate(t *testing.T) {
 	var (
 		chainConfig = unzenTestChainConfig(t)

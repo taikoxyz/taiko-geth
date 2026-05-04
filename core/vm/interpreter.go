@@ -205,25 +205,9 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		// for tracing: this gas consumption event is emitted below in the debug section.
 		if contract.Gas < cost {
 			return nil, ErrOutOfGas
+		} else {
+			contract.Gas -= cost
 		}
-
-		// CHANGE(taiko): capture the pre-step opcode and gas before any
-		// per-opcode gas is deducted so failing dynamic-gas paths still charge
-		// the measured step gas.
-		if evm.zkGasTracker != nil {
-			evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
-		}
-		finishZkGasStep := func(stepErr error, gasAfter uint64) error {
-			if evm.zkGasTracker == nil || evm.zkGasErr != nil {
-				return nil
-			}
-			if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasStepGasAfter(op, stepErr, gasBefore, gasAfter)); zkErr != nil {
-				evm.setZkGasErr()
-				return ErrZkGasLimitExceeded
-			}
-			return nil
-		}
-		contract.Gas -= cost
 
 		// All ops with a dynamic memory usage also has a dynamic gas cost.
 		var memorySize uint64
@@ -235,17 +219,11 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			if operation.memorySize != nil {
 				memSize, overflow := operation.memorySize(stack)
 				if overflow {
-					if zkErr := finishZkGasStep(ErrGasUintOverflow, contract.Gas); zkErr != nil {
-						return nil, zkErr
-					}
 					return nil, ErrGasUintOverflow
 				}
 				// memory is expanded in words of 32 bytes. Gas
 				// is also calculated in words.
 				if memorySize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
-					if zkErr := finishZkGasStep(ErrGasUintOverflow, contract.Gas); zkErr != nil {
-						return nil, zkErr
-					}
 					return nil, ErrGasUintOverflow
 				}
 			}
@@ -255,17 +233,10 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			dynamicCost, err = operation.dynamicGas(evm, contract, stack, mem, memorySize)
 			cost += dynamicCost // for tracing
 			if err != nil {
-				err = fmt.Errorf("%w: %v", ErrOutOfGas, err)
-				if zkErr := finishZkGasStep(err, contract.Gas); zkErr != nil {
-					return nil, zkErr
-				}
-				return nil, err
+				return nil, fmt.Errorf("%w: %v", ErrOutOfGas, err)
 			}
 			// for tracing: this gas consumption event is emitted below in the debug section.
 			if contract.Gas < dynamicCost {
-				if zkErr := finishZkGasStep(ErrOutOfGas, contract.Gas); zkErr != nil {
-					return nil, zkErr
-				}
 				return nil, ErrOutOfGas
 			} else {
 				contract.Gas -= dynamicCost
@@ -286,14 +257,23 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			mem.Resize(memorySize)
 		}
 
+		// CHANGE(taiko): capture the pre-step opcode and gas so zk gas charging
+		// can be resolved after execution with consensus zk-gas semantics.
+		if evm.zkGasTracker != nil {
+			evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+		}
+
 		// execute the operation
 		res, err = operation.execute(&pc, evm, callContext)
 
 		// CHANGE(taiko): charge zk gas after opcode execution using consensus
 		// semantics: net per-step gas unless the opcode actually
 		// spawned child work, in which case the fixed spawn estimate is used.
-		if zkErr := finishZkGasStep(err, contract.Gas); zkErr != nil {
-			return nil, zkErr
+		if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+			if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasStepGasAfter(op, err, gasBefore, contract.Gas)); zkErr != nil {
+				evm.setZkGasErr()
+				return nil, ErrZkGasLimitExceeded
+			}
 		}
 
 		if err != nil {
