@@ -331,13 +331,23 @@ func TestUnzenZkGas_InnerFrameOpcodeExceedingBlockLimit_StickyError(t *testing.T
 	statedb.Finalise(true)
 
 	meter := NewZkGasMeter(schedule)
+	type opEvent struct {
+		op    byte
+		depth int
+	}
+	var observed []opEvent
+	tracer := &tracing.Hooks{
+		OnOpcode: func(_ uint64, op byte, _ uint64, _ uint64, _ tracing.OpContext, _ []byte, depth int, _ error) {
+			observed = append(observed, opEvent{op: op, depth: depth})
+		},
+	}
 	evm := NewEVM(BlockContext{
 		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
 		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
 		BlockNumber: big.NewInt(1),
 		Time:        1,
 		Random:      &common.Hash{},
-	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter, Tracer: tracer})
 
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
@@ -348,6 +358,23 @@ func TestUnzenZkGas_InnerFrameOpcodeExceedingBlockLimit_StickyError(t *testing.T
 	}
 	if evm.zkGasErr != ErrZkGasLimitExceeded {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded", evm.zkGasErr)
+	}
+	// Defense-in-depth: prove the test exercises the right path.
+	// (1) The inner ADD must have dispatched — otherwise the over-limit charge
+	// never came from FinishAndCharge in the inner frame.
+	// (2) The outer STOP must NOT have dispatched — otherwise the outer
+	// frame ran past CALL, which would mean the sticky check failed to fire.
+	var sawInnerAdd bool
+	for _, ev := range observed {
+		if ev.op == 0x01 && ev.depth >= 2 { // ADD inside the inner frame
+			sawInnerAdd = true
+		}
+		if ev.op == 0x00 && ev.depth == 1 { // STOP at outer-frame depth
+			t.Fatalf("outer STOP dispatched after CALL; sticky check failed to short-circuit. ops=%v", observed)
+		}
+	}
+	if !sawInnerAdd {
+		t.Fatalf("inner ADD was not dispatched; over-limit charge did not originate in inner frame. ops=%v", observed)
 	}
 }
 
