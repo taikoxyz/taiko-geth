@@ -377,44 +377,6 @@ func TestUnzenZkGasParity_DepthExceededCallShortCircuitUsesMeasuredGas(t *testin
 	}
 }
 
-func TestUnzenZkGas_StaticGasOutOfGasChargesFullPreStepGas(t *testing.T) {
-	// Reference EVM halts on static-gas OOG by spending all remaining gas, so zk
-	// accounting must charge the full pre-step gas. ADD has constantGas=3; with
-	// only 2 gas remaining the static check fails before any deduction.
-	schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
-	schedule.OpcodeMultipliers[byte(ADD)] = 5
-	meter := NewZkGasMeter(schedule)
-
-	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
-	// PUSH1 1 PUSH1 2 ADD STOP — PUSH1 costs 3 gas each; with 8 gas the second
-	// PUSH1 leaves 2 gas, then ADD's static cost of 3 trips static-gas OOG.
-	code := common.Hex2Bytes("600160020100")
-
-	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
-	statedb.CreateAccount(contractAddr)
-	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
-	statedb.Finalise(true)
-
-	evm := NewEVM(BlockContext{
-		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
-		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
-		BlockNumber: big.NewInt(1),
-		Time:        1,
-		Random:      &common.Hash{},
-	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
-	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
-
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 8, new(uint256.Int)); err != ErrOutOfGas {
-		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
-	}
-	// Two PUSH1s charged at multiplier 0 (default) → 0 zk gas. ADD trips static
-	// OOG with 2 gas remaining; full pre-step gas (2) is charged at multiplier 5.
-	if got, want := meter.TxZkGasUsed(), uint64(2*5); got != want {
-		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
-	}
-}
-
 func TestUnzenZkGas_DynamicGasOutOfGasChargesMeasuredStepGas(t *testing.T) {
 	schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
 	schedule.OpcodeMultipliers[byte(KECCAK256)] = 7

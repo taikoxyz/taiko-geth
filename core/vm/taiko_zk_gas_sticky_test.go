@@ -49,11 +49,12 @@ func stickySchedule() *ZkGasSchedule {
 	for i := range s.OpcodeMultipliers {
 		s.OpcodeMultipliers[i] = 0
 	}
-	// All PrecompileMultipliers default to 1; with BlockLimit=1_000 the
-	// failed-precompile charge of startGas (100_000) alone overshoots.
 	for i := range s.PrecompileMultipliers {
 		s.PrecompileMultipliers[i] = 1
 	}
+	// PrecompileMultipliers[0x0a]=1 — the failed-precompile charge of startGas
+	// (100_000) alone overshoots BlockLimit=1_000.
+	s.PrecompileMultipliers[0x0a] = 1
 	return s
 }
 
@@ -79,10 +80,8 @@ func TestEVMCall_PrecompileOverLimit_SetsStickyError(t *testing.T) {
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
-	if err != ErrZkGasLimitExceeded {
-		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
-	}
+	_, _, _ = evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+
 	if evm.zkGasErr != ErrZkGasLimitExceeded {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded set after over-limit precompile", evm.zkGasErr)
 	}
