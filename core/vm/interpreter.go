@@ -246,7 +246,7 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			if contract.Gas < dynamicCost {
 				if evm.zkGasTracker != nil && evm.zkGasErr == nil {
 					evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
-					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, 0); zkErr != nil {
+					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasDynamicOOGGasAfter(op, contract.Gas)); zkErr != nil {
 						evm.setZkGasErr()
 						return nil, ErrZkGasLimitExceeded
 					}

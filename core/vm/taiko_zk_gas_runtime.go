@@ -84,6 +84,19 @@ func (t *ZkGasStepTracker) markSpawn(depth int, matches func(byte) bool) {
 	}
 }
 
+// CHANGE(taiko): zkGasDynamicOOGGasAfter mirrors REVM's callback-visible gas
+// for dynamic-cost shortfalls caught before go-ethereum executes the opcode.
+func zkGasDynamicOOGGasAfter(op OpCode, gasAfterStatic uint64) uint64 {
+	// REVM memory-resize OOG records MemoryOOG without spend_all. These opcodes
+	// reach resize_memory with only their static gas already deducted.
+	switch op {
+	case MLOAD, MSTORE, MSTORE8, RETURN, REVERT:
+		return gasAfterStatic
+	default:
+		return 0
+	}
+}
+
 // CHANGE(taiko): zkGasStepGasAfter mirrors REVM's callback-visible gas delta
 // for cases where go-ethereum performs validation after charging dynamic gas.
 // Static LOG/CREATE write-protection values are derived from observed Rust

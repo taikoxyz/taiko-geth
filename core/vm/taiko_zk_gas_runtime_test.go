@@ -421,11 +421,11 @@ func TestUnzenZkGas_StaticGasOutOfGasChargesFullPreStepGas(t *testing.T) {
 	}
 }
 
-func TestUnzenZkGas_DynamicGasOutOfGasChargesFullPreStepGas(t *testing.T) {
-	// Dynamic-gas OOG also spends all remaining frame gas in the Rust
-	// reference EVM. MSTORE has staticGas=3, then memory expansion needs
-	// another 3 gas; with only 5 gas before MSTORE, the dynamic check fails
-	// after static gas is deducted, but zk accounting must still charge 5.
+func TestUnzenZkGas_MemoryExpansionOutOfGasChargesOnlyStaticGas(t *testing.T) {
+	// REVM memory-resize OOG does not spend all remaining gas: MSTORE has
+	// staticGas=3, then memory expansion needs another 3 gas; with only 5 gas
+	// before MSTORE, the dynamic check fails after static gas is deducted, and
+	// Alethia's inspector observes 2 gas remaining in step_end.
 	schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
 	schedule.OpcodeMultipliers[byte(MSTORE)] = 7
 	meter := NewZkGasMeter(schedule)
@@ -453,7 +453,7 @@ func TestUnzenZkGas_DynamicGasOutOfGasChargesFullPreStepGas(t *testing.T) {
 	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 11, new(uint256.Int)); err != ErrOutOfGas {
 		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
 	}
-	if got, want := meter.TxZkGasUsed(), uint64(5*7); got != want {
+	if got, want := meter.TxZkGasUsed(), uint64(3*7); got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
