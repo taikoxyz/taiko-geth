@@ -255,10 +255,17 @@ func TestUnzenZkGas_FailedPrecompileExceedingBlockLimit_StickyError(t *testing.T
 	// The STATICCALL itself ran (it's the opcode that triggered the over-limit
 	// precompile charge), but the post-STATICCALL STOP must NOT have run — the
 	// top-of-loop sticky check exits the frame before the next dispatch.
+	var sawStaticCall bool
 	for _, op := range observedOps {
+		if op == 0xfa { // STATICCALL
+			sawStaticCall = true
+		}
 		if op == 0x00 { // STOP
 			t.Fatalf("STOP after over-limit STATICCALL was dispatched; sticky check failed to short-circuit. ops=%v", observedOps)
 		}
+	}
+	if !sawStaticCall {
+		t.Fatalf("STATICCALL was not dispatched; test would pass for the wrong reason. ops=%v", observedOps)
 	}
 }
 

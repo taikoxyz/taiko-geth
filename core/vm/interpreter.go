@@ -172,7 +172,7 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		// fails inside a child frame — the slot persists on the EVM and exits
 		// the outer frame here.
 		if evm.zkGasErr != nil {
-			return nil, evm.zkGasErr
+			return nil, ErrZkGasLimitExceeded
 		}
 		gasBefore := contract.Gas
 		if debug {
