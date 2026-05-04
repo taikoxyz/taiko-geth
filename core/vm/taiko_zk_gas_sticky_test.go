@@ -98,7 +98,7 @@ func TestRun_FinishAndChargeOverLimit_SetsStickyError(t *testing.T) {
 	schedule.OpcodeMultipliers[0x01] = 1024 // ADD: cost = ADD_gas(3) * 1024 = 3072 > 1000
 
 	// PUSH1 1 PUSH1 2 ADD STOP — overflows on the ADD step.
-	code := common.Hex2Bytes("60016002010100")
+	code := common.Hex2Bytes("600160020100")
 	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	statedb.CreateAccount(contractAddr)
