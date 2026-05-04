@@ -233,6 +233,13 @@ func (evm *EVM) SetPrecompiles(precompiles PrecompiledContracts) {
 	evm.precompiles = precompiles
 }
 
+func precompileZkGasUsed(startGas, remainingGas uint64, err error) uint64 {
+	if err != nil && err != ErrExecutionReverted {
+		return startGas
+	}
+	return startGas - remainingGas
+}
+
 // SetJumpDestCache configures the analysis cache.
 func (evm *EVM) SetJumpDestCache(jumpDests JumpDestCache) {
 	evm.jumpDests = jumpDests
@@ -329,7 +336,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
 		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
+			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
 				return nil, 0, zkErr
 			}
 		}
@@ -406,7 +413,7 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
 		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
+			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
 				return nil, 0, zkErr
 			}
 		}
@@ -463,7 +470,7 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
 		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
+			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
 				return nil, 0, zkErr
 			}
 		}
@@ -529,7 +536,7 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
 		// CHANGE(taiko): charge precompile zk gas.
 		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
+			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
 				return nil, 0, zkErr
 			}
 		}

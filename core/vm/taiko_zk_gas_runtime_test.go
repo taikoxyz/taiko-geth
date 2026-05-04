@@ -149,6 +149,16 @@ func TestUnzenZkGasParity_PrecompileCallMatchesCanonicalMeter(t *testing.T) {
 	}
 }
 
+func TestUnzenZkGasParity_FailedPrecompileCallMatchesCanonicalMeter(t *testing.T) {
+	// STATICCALL point_evaluation(0x0a) with 100k gas and zeroed 192-byte input.
+	// The precompile fails, but the caller only observes ok=false and continues.
+	code := common.Hex2Bytes("6000600060c06000600a620186a0fa00")
+	got, want := executeUnzenZkGasParityCase(t, code, nil, nil)
+	if got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
 func TestUnzenZkGasParity_NestedCallDoesNotLeakSpawnState(t *testing.T) {
 	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
 	outerCode := common.Hex2Bytes("60006000600060006000732000000000000000000000000000000000000000612710f100")
