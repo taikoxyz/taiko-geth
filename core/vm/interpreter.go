@@ -204,6 +204,13 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		}
 		// for tracing: this gas consumption event is emitted below in the debug section.
 		if contract.Gas < cost {
+			if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+				evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+				if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, 0); zkErr != nil {
+					evm.setZkGasErr()
+					return nil, ErrZkGasLimitExceeded
+				}
+			}
 			return nil, ErrOutOfGas
 		} else {
 			contract.Gas -= cost
