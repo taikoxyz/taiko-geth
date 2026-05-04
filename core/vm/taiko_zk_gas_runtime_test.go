@@ -182,18 +182,69 @@ func TestUnzenZkGasParity_CreateOutOfFundsUsesCurrentAletheiaSpawnSemantics(t *t
 	}
 }
 
-func TestUnzenZkGasParity_DepthExceededCallUsesCurrentAletheiaSpawnSemantics(t *testing.T) {
-	meter := NewZkGasMeter(&UnzenZkGasSchedule)
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
-	blockCtx := BlockContext{
-		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
-		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
-		BlockNumber: big.NewInt(1),
-		Time:        1,
-		Random:      &common.Hash{},
-	}
-	evm := NewEVM(blockCtx, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+func TestUnzenZkGasParity_EmptyCodeCallShortCircuitUsesNetStepGas(t *testing.T) {
+	evm, meter := newUnzenShortCircuitEVM(t, nil)
 
+	evm.zkGasTracker.Begin(0, byte(CALL), 1_000)
+	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, 1_000, new(uint256.Int))
+	if err != nil {
+		t.Fatalf("Call error = %v, want nil", err)
+	}
+	if gasLeft != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	}
+	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
+		t.Fatalf("FinishAndCharge returned error: %v", err)
+	}
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, 0)
+	}
+}
+
+func TestUnzenZkGasParity_CallOutOfFundsShortCircuitUsesNetStepGas(t *testing.T) {
+	evm, meter := newUnzenShortCircuitEVM(t, func(StateDB, common.Address, *uint256.Int) bool {
+		return false
+	})
+
+	evm.zkGasTracker.Begin(0, byte(CALL), 1_000)
+	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, 1_000, uint256.NewInt(1))
+	if err != ErrInsufficientBalance {
+		t.Fatalf("Call error = %v, want %v", err, ErrInsufficientBalance)
+	}
+	if gasLeft != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	}
+	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
+		t.Fatalf("FinishAndCharge returned error: %v", err)
+	}
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, 0)
+	}
+}
+
+func TestUnzenZkGasParity_CreateOutOfFundsShortCircuitUsesNetStepGas(t *testing.T) {
+	evm, meter := newUnzenShortCircuitEVM(t, func(StateDB, common.Address, *uint256.Int) bool {
+		return false
+	})
+
+	evm.zkGasTracker.Begin(0, byte(CREATE), 1_000)
+	_, _, gasLeft, err := evm.Create(common.Address{}, []byte{byte(STOP)}, 1_000, uint256.NewInt(1))
+	if err != ErrInsufficientBalance {
+		t.Fatalf("Create error = %v, want %v", err, ErrInsufficientBalance)
+	}
+	if gasLeft != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	}
+	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
+		t.Fatalf("FinishAndCharge returned error: %v", err)
+	}
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, 0)
+	}
+}
+
+func TestUnzenZkGasParity_DepthExceededCallShortCircuitUsesNetStepGas(t *testing.T) {
+	evm, meter := newUnzenShortCircuitEVM(t, nil)
 	depth := int(params.CallCreateDepth) + 1
 	evm.depth = depth
 	evm.zkGasTracker.Begin(depth, byte(CALL), 1_000)
@@ -208,11 +259,28 @@ func TestUnzenZkGasParity_DepthExceededCallUsesCurrentAletheiaSpawnSemantics(t *
 	if err := evm.zkGasTracker.FinishAndCharge(depth, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-
-	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
-	if got := meter.TxZkGasUsed(); got != want {
-		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, 0)
 	}
+}
+
+func newUnzenShortCircuitEVM(t *testing.T, canTransfer func(StateDB, common.Address, *uint256.Int) bool) (*EVM, *ZkGasMeter) {
+	t.Helper()
+
+	if canTransfer == nil {
+		canTransfer = func(StateDB, common.Address, *uint256.Int) bool { return true }
+	}
+	meter := NewZkGasMeter(&UnzenZkGasSchedule)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	blockCtx := BlockContext{
+		CanTransfer: canTransfer,
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}
+	evm := NewEVM(blockCtx, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+	return evm, meter
 }
 
 func TestUnzenZkGas_FailedPrecompileExceedingBlockLimit_StickyError(t *testing.T) {
@@ -544,7 +612,13 @@ func (c *zkGasTraceCollector) spawned(idx int) bool {
 			continue
 		}
 		if child.enterSeq > current.seq && child.enterSeq < boundary {
-			return true
+			if child.precompile {
+				return true
+			}
+			if op := OpCode(current.opcode); op == CREATE || op == CREATE2 {
+				return true
+			}
+			return child.opcodeCount > 0
 		}
 	}
 	return false
