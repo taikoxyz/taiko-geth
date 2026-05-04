@@ -89,3 +89,39 @@ func TestEVMCall_PrecompileOverLimit_SetsStickyError(t *testing.T) {
 		t.Fatalf("TxZkGasUsed = %d, want 0 (over-limit charge must be rejected, not committed)", got)
 	}
 }
+
+func TestRun_FinishAndChargeOverLimit_SetsStickyError(t *testing.T) {
+	// ADD opcode (0x01) with multiplier=1024 → first ADD at depth 0 will trip
+	// BlockLimit=1000 immediately. Use schedule with non-trivial ADD multiplier
+	// to force overflow on the first arithmetic step.
+	schedule := stickySchedule()
+	schedule.OpcodeMultipliers[0x01] = 1024 // ADD: cost = ADD_gas(3) * 1024 = 3072 > 1000
+
+	// PUSH1 1 PUSH1 2 ADD STOP — overflows on the ADD step.
+	code := common.Hex2Bytes("60016002010100")
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	meter := NewZkGasMeter(schedule)
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	if err != ErrZkGasLimitExceeded {
+		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+	}
+	if evm.zkGasErr != ErrZkGasLimitExceeded {
+		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded set after FinishAndCharge over-limit", evm.zkGasErr)
+	}
+}
