@@ -125,3 +125,17 @@ func TestRun_FinishAndChargeOverLimit_SetsStickyError(t *testing.T) {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded set after FinishAndCharge over-limit", evm.zkGasErr)
 	}
 }
+
+func TestEVMResetZkGasErr_CalledPerTxClearsSlot(t *testing.T) {
+	// Simulate the state_processor's per-tx pattern: tx 1 sets slot, executor
+	// calls ResetZkGasErr, tx 2 sees a clean slot.
+	evm := &EVM{}
+	evm.setZkGasErr()
+	if evm.zkGasErr == nil {
+		t.Fatalf("setZkGasErr did not set slot")
+	}
+	evm.ResetZkGasErr()
+	if evm.zkGasErr != nil {
+		t.Fatalf("ResetZkGasErr did not clear slot; zkGasErr = %v", evm.zkGasErr)
+	}
+}

@@ -134,6 +134,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		// CHANGE(taiko): reset in-flight zk gas before each transaction.
 		if cfg.ZkGasMeter != nil {
 			cfg.ZkGasMeter.ResetTransaction()
+			evm.ResetZkGasErr()
 		}
 
 		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, evm)
