@@ -425,7 +425,7 @@ func TestUnzenZkGas_MemoryExpansionOutOfGasChargesOnlyStaticGas(t *testing.T) {
 	// REVM memory-resize OOG does not spend all remaining gas: MSTORE has
 	// staticGas=3, then memory expansion needs another 3 gas; with only 5 gas
 	// before MSTORE, the dynamic check fails after static gas is deducted, and
-	// Alethia's inspector observes 2 gas remaining in step_end.
+	// the reference inspector observes 2 gas remaining in step_end.
 	schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
 	schedule.OpcodeMultipliers[byte(MSTORE)] = 7
 	meter := NewZkGasMeter(schedule)
