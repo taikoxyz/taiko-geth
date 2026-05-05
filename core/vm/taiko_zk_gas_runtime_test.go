@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 
@@ -454,6 +455,79 @@ func TestUnzenZkGas_MemoryExpansionOutOfGasChargesOnlyStaticGas(t *testing.T) {
 		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
 	}
 	if got, want := meter.TxZkGasUsed(), uint64(3*7); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
+func TestUnzenZkGas_KeccakMemoryExpansionOutOfGasChargesPreResizeGas(t *testing.T) {
+	// KECCAK256 charges static gas and per-word hash gas before memory resize.
+	// With 45 gas before KECCAK256, REVM charges 30 static + 12 hash gas, then
+	// memory resize needs another 6 gas and fails with 3 gas still remaining.
+	schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
+	schedule.OpcodeMultipliers[byte(KECCAK256)] = 7
+	meter := NewZkGasMeter(schedule)
+
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	// PUSH1 0x40 PUSH1 0x00 KECCAK256 STOP. The two PUSH1 opcodes leave 45 gas
+	// for KECCAK256.
+	code := common.Hex2Bytes("604060002000")
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 51, new(uint256.Int)); err != ErrOutOfGas {
+		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
+	}
+	if got, want := meter.TxZkGasUsed(), uint64((params.Keccak256Gas+2*params.Keccak256WordGas)*7); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
+func TestUnzenZkGas_CallMemoryExpansionOutOfGasChargesOnlyStaticGas(t *testing.T) {
+	// CALL resolves input/output memory before account/call gas. The target is
+	// a warm precompile, but memory resize fails before dispatch, so the CALL is
+	// charged as a non-spawn step with only its static warm-access gas.
+	schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
+	schedule.OpcodeMultipliers[byte(CALL)] = 7
+	meter := NewZkGasMeter(schedule)
+
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	// CALL(gas=0, to=0x01, value=0, in=0:32, out=0:0). The seven PUSH1
+	// opcodes leave 102 gas for CALL: enough for the 100 static gas, but not
+	// enough for the 3 gas input-memory expansion.
+	code := common.Hex2Bytes("6000600060206000600060016000f100")
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 123, new(uint256.Int)); !errors.Is(err, ErrOutOfGas) {
+		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
+	}
+	if got, want := meter.TxZkGasUsed(), uint64(params.WarmStorageReadCostEIP2929*7); got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }

@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -219,6 +220,8 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		// All ops with a dynamic memory usage also has a dynamic gas cost.
 		var memorySize uint64
 		if operation.dynamicGas != nil {
+			gasAfterStatic := contract.Gas
+			memoryLastGasCost := mem.lastGasCost
 			// calculate the new memory size and expand the memory to fit
 			// the operation
 			// Memory check needs to be done prior to evaluating the dynamic gas portion,
@@ -240,13 +243,20 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			dynamicCost, err = operation.dynamicGas(evm, contract, stack, mem, memorySize)
 			cost += dynamicCost // for tracing
 			if err != nil {
+				if evm.zkGasTracker != nil && evm.zkGasErr == nil && errors.Is(err, ErrOutOfGas) {
+					evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasDynamicOOGGasAfter(evm, op, stack, mem, memorySize, memoryLastGasCost, gasBefore, gasAfterStatic)); zkErr != nil {
+						evm.setZkGasErr()
+						return nil, ErrZkGasLimitExceeded
+					}
+				}
 				return nil, fmt.Errorf("%w: %v", ErrOutOfGas, err)
 			}
 			// for tracing: this gas consumption event is emitted below in the debug section.
 			if contract.Gas < dynamicCost {
 				if evm.zkGasTracker != nil && evm.zkGasErr == nil {
 					evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
-					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasDynamicOOGGasAfter(op, contract.Gas)); zkErr != nil {
+					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasDynamicOOGGasAfter(evm, op, stack, mem, memorySize, memoryLastGasCost, gasBefore, gasAfterStatic)); zkErr != nil {
 						evm.setZkGasErr()
 						return nil, ErrZkGasLimitExceeded
 					}
