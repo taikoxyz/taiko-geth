@@ -490,7 +490,7 @@ func TestUnzenZkGas_KeccakMemoryExpansionOutOfGasChargesPreResizeGas(t *testing.
 	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 51, new(uint256.Int)); err != ErrOutOfGas {
 		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
 	}
-	if got, want := meter.TxZkGasUsed(), uint64((params.Keccak256Gas+2*params.Keccak256WordGas)*7); got != want {
+	if got, want := meter.TxZkGasUsed(), (params.Keccak256Gas+2*params.Keccak256WordGas)*7; got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
@@ -527,7 +527,7 @@ func TestUnzenZkGas_CallMemoryExpansionOutOfGasChargesOnlyStaticGas(t *testing.T
 	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 123, new(uint256.Int)); !errors.Is(err, ErrOutOfGas) {
 		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
 	}
-	if got, want := meter.TxZkGasUsed(), uint64(params.WarmStorageReadCostEIP2929*7); got != want {
+	if got, want := meter.TxZkGasUsed(), params.WarmStorageReadCostEIP2929*7; got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
 }
