@@ -90,6 +90,37 @@ func TestEVMCall_PrecompileOverLimit_SetsStickyError(t *testing.T) {
 	}
 }
 
+func TestEVMCall_PrecompileOverLimit_RevertsCallSnapshot(t *testing.T) {
+	// A zero-value CALL to an existing precompile may create the account before
+	// the precompile runs. If the subsequent zk-gas charge exceeds the limit,
+	// that account creation must be reverted with the call-frame snapshot.
+	precompileAddr := common.HexToAddress("0x04")
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.Finalise(true)
+
+	schedule := &ZkGasSchedule{BlockLimit: 1}
+	schedule.PrecompileMultipliers[0x04] = 1
+	meter := NewZkGasMeter(schedule)
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &precompileAddr, ActivePrecompiles(rules), nil)
+
+	_, _, err := evm.Call(common.Address{}, precompileAddr, []byte{1, 2, 3, 4}, 100_000, new(uint256.Int))
+	if err != ErrZkGasLimitExceeded {
+		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+	}
+	if statedb.Exist(precompileAddr) {
+		t.Fatalf("precompile account exists after over-limit CALL; call snapshot was not reverted")
+	}
+}
+
 func TestRun_FinishAndChargeOverLimit_SetsStickyError(t *testing.T) {
 	// ADD opcode (0x01) with multiplier=1024 → first ADD at depth 0 will trip
 	// BlockLimit=1000 immediately. Use schedule with non-trivial ADD multiplier
