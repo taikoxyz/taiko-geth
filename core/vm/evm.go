@@ -283,7 +283,7 @@ func isSystemCall(caller common.Address) bool {
 // the necessary steps to create accounts and reverses the state in case of an
 // execution error or failed value transfer.
 func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
-     // CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
 	// opcodes as spawned at dispatch entry, including short-circuit call paths.
 	evm.markPendingCallSpawn()
 
