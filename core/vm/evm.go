@@ -391,6 +391,8 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 // CallCode differs from Call in the sense that it executes the given address'
 // code with the caller as context.
 func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
 	evm.markPendingCallSpawn()
 
 	// Invoke tracer hooks that signal entering/exiting a call frame
