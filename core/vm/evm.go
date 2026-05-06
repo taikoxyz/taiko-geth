@@ -587,6 +587,8 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 
 // create creates a new contract using code as deployment code.
 func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *uint256.Int, address common.Address, typ OpCode) (ret []byte, createAddress common.Address, leftOverGas uint64, err error) {
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
 	evm.markPendingCreateSpawn()
 
 	if evm.Config.Tracer != nil {
