@@ -184,6 +184,23 @@ func TestZkGasMeter_CommitExceedsLimit(t *testing.T) {
 	}
 }
 
+func TestZkGasMeter_CommitDoesNotRecheckBlockLimit(t *testing.T) {
+	s := &ZkGasSchedule{BlockLimit: 500}
+	m := NewZkGasMeter(s)
+	m.blockZkGasUsed = 400
+	m.txZkGasUsed = 101
+
+	if err := m.CommitTransaction(); err != nil {
+		t.Fatalf("CommitTransaction returned error: %v", err)
+	}
+	if got := m.BlockZkGasUsed(); got != 501 {
+		t.Fatalf("BlockZkGasUsed = %d, want 501", got)
+	}
+	if got := m.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want 0", got)
+	}
+}
+
 // --- Unzen schedule spot-check tests ---
 
 func TestUnzenSchedule_SpotChecks(t *testing.T) {

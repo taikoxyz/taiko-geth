@@ -291,6 +291,7 @@ func (w *Miner) sealBlockWith(
 		// CHANGE(taiko): reset in-flight zk gas before each transaction.
 		if zkGasMeter != nil {
 			zkGasMeter.ResetTransaction()
+			env.evm.ResetZkGasErr()
 		}
 
 		if err := w.commitTransaction(ctx, env, tx); err != nil {
@@ -304,6 +305,7 @@ func (w *Miner) sealBlockWith(
 					"blockZkGasUsed", zkGasMeter.BlockZkGasUsed(),
 				)
 				zkGasMeter.ResetTransaction()
+				env.evm.ResetZkGasErr()
 				break
 			}
 			if i == 0 {
