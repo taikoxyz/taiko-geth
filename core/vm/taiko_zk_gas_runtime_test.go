@@ -459,6 +459,42 @@ func TestUnzenZkGas_MemoryExpansionOutOfGasChargesOnlyStaticGas(t *testing.T) {
 	}
 }
 
+func TestUnzenZkGas_Block4796MstoreOverflowChargesStaticGas(t *testing.T) {
+	// Block 4796 tx 1 fails at pc=2451 on MSTORE with InvalidOperandOOG.
+	// alethia-reth observes the MSTORE step_end after static gas is spent, so
+	// the block difficulty includes one extra MSTORE static charge: 3 * 22.
+	schedule := &ZkGasSchedule{BlockLimit: 1_000_000}
+	schedule.OpcodeMultipliers[byte(MSTORE)] = 22
+	meter := NewZkGasMeter(schedule)
+
+	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+	// PUSH1 0x21 PUSH32 0x8000...0000 MSTORE STOP. The offset cannot fit in
+	// uint64, so go-ethereum reports ErrGasUintOverflow before resizing memory.
+	code := common.Hex2Bytes("60217f80000000000000000000000000000000000000000000000000000000000000005200")
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(4796), true, 1777923078)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(contractAddr)
+	statedb.SetCode(contractAddr, code, tracing.CodeChangeUnspecified)
+	statedb.Finalise(true)
+
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(4796),
+		Time:        1777923078,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 100_000, new(uint256.Int)); err != ErrGasUintOverflow {
+		t.Fatalf("Call error = %v, want %v", err, ErrGasUintOverflow)
+	}
+	if got, want := meter.TxZkGasUsed(), uint64(3*22); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
 func TestUnzenZkGas_KeccakMemoryExpansionOutOfGasChargesPreResizeGas(t *testing.T) {
 	// KECCAK256 charges static gas and per-word hash gas before memory resize.
 	// With 45 gas before KECCAK256, REVM charges 30 static + 12 hash gas, then
