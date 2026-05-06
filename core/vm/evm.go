@@ -355,6 +355,7 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 				err = zkErr
 			}
 		}
+
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		code := evm.resolveCode(addr)
