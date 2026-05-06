@@ -17,6 +17,7 @@
 package vm
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -166,6 +167,14 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 	// parent context.
 	_ = jumpTable[0] // nil-check the jumpTable out of the loop
 	for {
+		// CHANGE(taiko): consume the sticky zk-gas-limit slot before dispatching
+		// the next opcode. This rescues the case where op*Call swallows the Go
+		// error returned from EVM.Call when ChargePrecompile or FinishAndCharge
+		// fails inside a child frame — the slot persists on the EVM and exits
+		// the outer frame here.
+		if evm.zkGasErr != nil {
+			return nil, ErrZkGasLimitExceeded
+		}
 		gasBefore := contract.Gas
 		if debug {
 			// Capture pre-execution values for tracing.
@@ -196,6 +205,13 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		}
 		// for tracing: this gas consumption event is emitted below in the debug section.
 		if contract.Gas < cost {
+			if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+				evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+				if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, 0); zkErr != nil {
+					evm.setZkGasErr()
+					return nil, ErrZkGasLimitExceeded
+				}
+			}
 			return nil, ErrOutOfGas
 		} else {
 			contract.Gas -= cost
@@ -204,6 +220,8 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		// All ops with a dynamic memory usage also has a dynamic gas cost.
 		var memorySize uint64
 		if operation.dynamicGas != nil {
+			gasAfterStatic := contract.Gas
+			memoryLastGasCost := mem.lastGasCost
 			// calculate the new memory size and expand the memory to fit
 			// the operation
 			// Memory check needs to be done prior to evaluating the dynamic gas portion,
@@ -225,10 +243,24 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			dynamicCost, err = operation.dynamicGas(evm, contract, stack, mem, memorySize)
 			cost += dynamicCost // for tracing
 			if err != nil {
+				if evm.zkGasTracker != nil && evm.zkGasErr == nil && errors.Is(err, ErrOutOfGas) {
+					evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasDynamicOOGGasAfter(evm, op, stack, mem, memorySize, memoryLastGasCost, gasBefore, gasAfterStatic)); zkErr != nil {
+						evm.setZkGasErr()
+						return nil, ErrZkGasLimitExceeded
+					}
+				}
 				return nil, fmt.Errorf("%w: %v", ErrOutOfGas, err)
 			}
 			// for tracing: this gas consumption event is emitted below in the debug section.
 			if contract.Gas < dynamicCost {
+				if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+					evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasDynamicOOGGasAfter(evm, op, stack, mem, memorySize, memoryLastGasCost, gasBefore, gasAfterStatic)); zkErr != nil {
+						evm.setZkGasErr()
+						return nil, ErrZkGasLimitExceeded
+					}
+				}
 				return nil, ErrOutOfGas
 			} else {
 				contract.Gas -= dynamicCost
@@ -250,7 +282,7 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		}
 
 		// CHANGE(taiko): capture the pre-step opcode and gas so zk gas charging
-		// can be resolved after execution with current alethia-reth semantics.
+		// can be resolved after execution with consensus zk-gas semantics.
 		if evm.zkGasTracker != nil {
 			evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
 		}
@@ -258,11 +290,12 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		// execute the operation
 		res, err = operation.execute(&pc, evm, callContext)
 
-		// CHANGE(taiko): charge zk gas after opcode execution using exact
-		// alethia-reth semantics: net per-step gas unless the opcode actually
+		// CHANGE(taiko): charge zk gas after opcode execution using consensus
+		// semantics: net per-step gas unless the opcode actually
 		// spawned child work, in which case the fixed spawn estimate is used.
-		if evm.zkGasTracker != nil {
-			if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, contract.Gas); zkErr != nil {
+		if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+			if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasStepGasAfter(op, err, gasBefore, contract.Gas)); zkErr != nil {
+				evm.setZkGasErr()
 				return nil, ErrZkGasLimitExceeded
 			}
 		}

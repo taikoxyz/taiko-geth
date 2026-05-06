@@ -129,6 +129,13 @@ type EVM struct {
 	returnData []byte // Last CALL's return data for subsequent reuse
 
 	zkGasTracker *ZkGasStepTracker // CHANGE(taiko): exact per-depth Unzen zk gas tracking
+
+	// CHANGE(taiko): zkGasErr is the sticky zk-gas-limit error slot. It is
+	// set by the precompile-charge and FinishAndCharge sites that would
+	// otherwise be swallowed by op*Call's ok=false semantics; consumed at
+	// the top of the interpreter Run loop; cleared per-tx by the block
+	// executor.
+	zkGasErr error
 }
 
 // NewEVM constructs an EVM instance with the supplied block context, state
@@ -210,16 +217,18 @@ func (evm *EVM) SetZkGasMeter(meter *ZkGasMeter) {
 	evm.zkGasTracker = nil
 }
 
-// CHANGE(taiko): markPendingCallSpawn applies current alethia-reth CALL-family
-// spawn semantics, which mark the parent opcode as spawned at dispatch start.
+// CHANGE(taiko): markPendingCallSpawn mirrors Rust reference EVM inspector
+// semantics: the CALL-family opcode is marked as spawned when normal call
+// handling continues, before the handler knows whether it will execute code,
+// hit a precompile, or short-circuit on validation/empty code.
 func (evm *EVM) markPendingCallSpawn() {
 	if evm.zkGasTracker != nil {
 		evm.zkGasTracker.MarkCallSpawn(evm.depth)
 	}
 }
 
-// CHANGE(taiko): markPendingCreateSpawn applies current alethia-reth CREATE-family
-// spawn semantics, which mark the parent opcode as spawned at dispatch start.
+// CHANGE(taiko): markPendingCreateSpawn mirrors Rust reference EVM inspector
+// semantics by marking CREATE-family opcodes when create handling is entered.
 func (evm *EVM) markPendingCreateSpawn() {
 	if evm.zkGasTracker != nil {
 		evm.zkGasTracker.MarkCreateSpawn(evm.depth)
@@ -231,6 +240,13 @@ func (evm *EVM) markPendingCreateSpawn() {
 // It is not thread-safe.
 func (evm *EVM) SetPrecompiles(precompiles PrecompiledContracts) {
 	evm.precompiles = precompiles
+}
+
+func precompileZkGasUsed(startGas, remainingGas uint64, err error) uint64 {
+	if err != nil && err != ErrExecutionReverted {
+		return startGas
+	}
+	return startGas - remainingGas
 }
 
 // SetJumpDestCache configures the analysis cache.
@@ -267,6 +283,10 @@ func isSystemCall(caller common.Address) bool {
 // the necessary steps to create accounts and reverses the state in case of an
 // execution error or failed value transfer.
 func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCallSpawn()
+
 	// Capture the tracer start/end events in debug mode
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, CALL, caller, addr, input, gas, value.ToBig())
@@ -274,9 +294,6 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
-	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
-	// opcodes as spawned at dispatch entry, including short-circuit call paths.
-	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -327,10 +344,15 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
-		// CHANGE(taiko): charge precompile zk gas.
+		// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
+		// sticky error and assign through the standard err-cleanup path
+		// below so the inner-frame snapshot is reverted alongside the
+		// usual tracer/gas accounting that every other precompile error
+		// in this function flows through.
 		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
-				return nil, 0, zkErr
+			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+				evm.setZkGasErr()
+				err = zkErr
 			}
 		}
 	} else {
@@ -373,6 +395,10 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 // CallCode differs from Call in the sense that it executes the given address'
 // code with the caller as context.
 func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCallSpawn()
+
 	// Invoke tracer hooks that signal entering/exiting a call frame
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, CALLCODE, caller, addr, input, gas, value.ToBig())
@@ -380,9 +406,6 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
-	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
-	// opcodes as spawned at dispatch entry, including short-circuit call paths.
-	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -404,17 +427,23 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		}
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
-		// CHANGE(taiko): charge precompile zk gas.
+		// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
+		// sticky error and assign through the standard err-cleanup path
+		// below so the inner-frame snapshot is reverted alongside the
+		// usual tracer/gas accounting that every other precompile error
+		// in this function flows through.
 		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
-				return nil, 0, zkErr
+			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+				evm.setZkGasErr()
+				err = zkErr
 			}
 		}
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
+		code := evm.resolveCode(addr)
 		// The contract is a scoped environment for this execution context only.
 		contract := NewContract(caller, caller, value, gas, evm.jumpDests)
-		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
+		contract.SetCallCode(evm.resolveCodeHash(addr), code)
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
 	}
@@ -436,6 +465,10 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 // DelegateCall differs from CallCode in the sense that it executes the given address'
 // code with the caller as context and the caller is set to the caller of the caller.
 func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address, addr common.Address, input []byte, gas uint64, value *uint256.Int) (ret []byte, leftOverGas uint64, err error) {
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCallSpawn()
+
 	// Invoke tracer hooks that signal entering/exiting a call frame
 	if evm.Config.Tracer != nil {
 		// DELEGATECALL inherits value from parent call
@@ -444,9 +477,6 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
-	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
-	// opcodes as spawned at dispatch entry, including short-circuit call paths.
-	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -461,18 +491,24 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		}
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
-		// CHANGE(taiko): charge precompile zk gas.
+		// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
+		// sticky error and assign through the standard err-cleanup path
+		// below so the inner-frame snapshot is reverted alongside the
+		// usual tracer/gas accounting that every other precompile error
+		// in this function flows through.
 		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
-				return nil, 0, zkErr
+			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+				evm.setZkGasErr()
+				err = zkErr
 			}
 		}
 	} else {
 		// Initialise a new contract and make initialise the delegate values
+		code := evm.resolveCode(addr)
 		//
 		// Note: The value refers to the original value from the parent call.
 		contract := NewContract(originCaller, caller, value, gas, evm.jumpDests)
-		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
+		contract.SetCallCode(evm.resolveCodeHash(addr), code)
 		ret, err = evm.Run(contract, input, false)
 		gas = contract.Gas
 	}
@@ -493,6 +529,10 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 // Opcodes that attempt to perform such modifications will result in exceptions
 // instead of performing the modifications.
 func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []byte, gas uint64) (ret []byte, leftOverGas uint64, err error) {
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCallSpawn()
+
 	// Invoke tracer hooks that signal entering/exiting a call frame
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, STATICCALL, caller, addr, input, gas, nil)
@@ -500,9 +540,6 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
-	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
-	// opcodes as spawned at dispatch entry, including short-circuit call paths.
-	evm.markPendingCallSpawn()
 	// Fail if we're trying to execute above the call depth limit
 	if evm.depth > int(params.CallCreateDepth) {
 		return nil, gas, ErrDepth
@@ -527,17 +564,23 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		}
 		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
 		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
-		// CHANGE(taiko): charge precompile zk gas.
+		// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
+		// sticky error and assign through the standard err-cleanup path
+		// below so the inner-frame snapshot is reverted alongside the
+		// usual tracer/gas accounting that every other precompile error
+		// in this function flows through.
 		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], gasBeforePrecompile-gas); zkErr != nil {
-				return nil, 0, zkErr
+			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr[19], precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+				evm.setZkGasErr()
+				err = zkErr
 			}
 		}
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
+		code := evm.resolveCode(addr)
 		// The contract is a scoped environment for this execution context only.
 		contract := NewContract(caller, addr, new(uint256.Int), gas, evm.jumpDests)
-		contract.SetCallCode(evm.resolveCodeHash(addr), evm.resolveCode(addr))
+		contract.SetCallCode(evm.resolveCodeHash(addr), code)
 
 		// When an error was returned by the EVM or when setting the creation code
 		// above we revert to the snapshot and consume any gas remaining. Additionally
@@ -560,15 +603,16 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 
 // create creates a new contract using code as deployment code.
 func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *uint256.Int, address common.Address, typ OpCode) (ret []byte, createAddress common.Address, leftOverGas uint64, err error) {
+	// CHANGE(taiko): match current alethia-reth semantics by marking CALL-family
+	// opcodes as spawned at dispatch entry, including short-circuit call paths.
+	evm.markPendingCreateSpawn()
+
 	if evm.Config.Tracer != nil {
 		evm.captureBegin(evm.depth, typ, caller, address, code, gas, value.ToBig())
 		defer func(startGas uint64) {
 			evm.captureEnd(evm.depth, startGas, leftOverGas, ret, err)
 		}(gas)
 	}
-	// CHANGE(taiko): match current alethia-reth semantics by marking CREATE-family
-	// opcodes as spawned at dispatch entry, including short-circuit create paths.
-	evm.markPendingCreateSpawn()
 	// Depth check execution. Fail if we're trying to execute above the
 	// limit.
 	if evm.depth > int(params.CallCreateDepth) {
