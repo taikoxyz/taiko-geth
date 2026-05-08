@@ -229,11 +229,25 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			if operation.memorySize != nil {
 				memSize, overflow := operation.memorySize(stack)
 				if overflow {
+					if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+						evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+						if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, gasAfterStatic); zkErr != nil {
+							evm.setZkGasErr()
+							return nil, ErrZkGasLimitExceeded
+						}
+					}
 					return nil, ErrGasUintOverflow
 				}
 				// memory is expanded in words of 32 bytes. Gas
 				// is also calculated in words.
 				if memorySize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
+					if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+						evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+						if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, gasAfterStatic); zkErr != nil {
+							evm.setZkGasErr()
+							return nil, ErrZkGasLimitExceeded
+						}
+					}
 					return nil, ErrGasUintOverflow
 				}
 			}
