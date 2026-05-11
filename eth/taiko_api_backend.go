@@ -87,10 +87,10 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 const maxBatchLookupBlocks = 192 * 21_600
 
 var batchLookupBlockThresholds = map[uint64]uint64{
-	params.TaikoMainnetNetworkID.Uint64():  0,
+	params.TaikoMainnetNetworkID.Uint64():  4_990_434,
 	params.TaikoInternalNetworkID.Uint64(): 0,
 	params.MasayaDevnetNetworkID.Uint64():  0,
-	params.TaikoHoodiNetworkID.Uint64():    0,
+	params.TaikoHoodiNetworkID.Uint64():    3_951_005,
 }
 
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
