@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // ErrProposalLastBlockUncertain indicates the last block for the proposal is not yet deterministic.
@@ -85,6 +86,15 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 // when searching for the last block of a given batch ID.
 const maxBatchLookupBlocks = 192 * 21_600
 
+// CHANGE(taiko): Add per-network minimum block thresholds for batch lookup results.
+// The thresholds are the last Pacaya block IDs for each network.
+var batchLookupBlockThresholds = map[uint64]uint64{
+	params.TaikoMainnetNetworkID.Uint64():  4_990_434,
+	params.TaikoInternalNetworkID.Uint64(): 0,
+	params.MasayaDevnetNetworkID.Uint64():  0,
+	params.TaikoHoodiNetworkID.Uint64():    3_951_005,
+}
+
 // TaikoAuthAPIBackend handles L2 node related authorized RPC calls.
 type TaikoAuthAPIBackend struct {
 	eth *Ethereum
@@ -109,6 +119,9 @@ func (a *TaikoAuthAPIBackend) LastL1OriginByBatchID(batchID *math.HexOrDecimal25
 			return nil, ethereum.NotFound
 		}
 	}
+	if a.batchLookupResultBelowThreshold((*big.Int)(blockID)) {
+		return nil, nil
+	}
 
 	return rawdb.ReadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
 }
@@ -120,10 +133,20 @@ func (a *TaikoAuthAPIBackend) LastBlockIDByBatchID(batchID *math.HexOrDecimal256
 		return nil, err
 	}
 	if blockID != nil {
+		if a.batchLookupResultBelowThreshold((*big.Int)(blockID)) {
+			return nil, nil
+		}
 		return blockID, nil
 	}
 
-	return a.getLastBlockByBatchId((*big.Int)(batchID))
+	blockID, err = a.getLastBlockByBatchId((*big.Int)(batchID))
+	if err != nil {
+		return nil, err
+	}
+	if a.batchLookupResultBelowThreshold((*big.Int)(blockID)) {
+		return nil, nil
+	}
+	return blockID, nil
 }
 
 // LastCertainBlockIDByBatchID returns the ID of the last block for the given batch in the rawdb.
@@ -131,6 +154,9 @@ func (a *TaikoAuthAPIBackend) LastCertainBlockIDByBatchID(batchID *math.HexOrDec
 	blockID, err := rawdb.ReadBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID))
 	if err != nil && !errors.Is(err, ethereum.NotFound) {
 		return nil, err
+	}
+	if a.batchLookupResultBelowThreshold((*big.Int)(blockID)) {
+		return nil, nil
 	}
 	return blockID, nil
 }
@@ -144,8 +170,23 @@ func (a *TaikoAuthAPIBackend) LastCertainL1OriginByBatchID(batchID *math.HexOrDe
 	if blockID == nil {
 		return nil, nil
 	}
+	if a.batchLookupResultBelowThreshold((*big.Int)(blockID)) {
+		return nil, nil
+	}
 
 	return rawdb.ReadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
+}
+
+// CHANGE(taiko): Gate batch lookup results by network-specific block thresholds.
+func (a *TaikoAuthAPIBackend) batchLookupResultBelowThreshold(blockID *big.Int) bool {
+	if blockID == nil {
+		return false
+	}
+	threshold := batchLookupBlockThresholds[a.eth.networkID]
+	if threshold == 0 {
+		return false
+	}
+	return blockID.Cmp(new(big.Int).SetUint64(threshold)) < 0
 }
 
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
