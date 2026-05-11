@@ -221,6 +221,66 @@ func TestLastCertainL1OriginByBatchID(t *testing.T) {
 	}
 }
 
+func TestBatchLookupMethodsReturnNilBelowNetworkThreshold(t *testing.T) {
+	const networkID = 999
+	batchID := big.NewInt(1)
+	blockID := big.NewInt(2)
+	threshold := uint64(3)
+
+	originalThreshold, hadThreshold := batchLookupBlockThresholds[networkID]
+	batchLookupBlockThresholds[networkID] = threshold
+	defer func() {
+		if hadThreshold {
+			batchLookupBlockThresholds[networkID] = originalThreshold
+		} else {
+			delete(batchLookupBlockThresholds, networkID)
+		}
+	}()
+
+	db := rawdb.NewMemoryDatabase()
+	backend := &TaikoAuthAPIBackend{eth: &Ethereum{chainDb: db, networkID: networkID}}
+	expectedOrigin := &rawdb.L1Origin{
+		BlockID:       blockID,
+		L2BlockHash:   common.HexToHash("0x1"),
+		L1BlockHeight: big.NewInt(3),
+		L1BlockHash:   common.HexToHash("0x2"),
+	}
+	rawdb.WriteBatchToLastBlockID(db, batchID, blockID)
+	rawdb.WriteL1Origin(db, blockID, expectedOrigin)
+
+	l1Origin, err := backend.LastL1OriginByBatchID((*math.HexOrDecimal256)(batchID))
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if l1Origin != nil {
+		t.Fatalf("expected nil l1Origin, got %v", l1Origin)
+	}
+
+	lastBlockID, err := backend.LastBlockIDByBatchID((*math.HexOrDecimal256)(batchID))
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if lastBlockID != nil {
+		t.Fatalf("expected nil blockID, got %v", lastBlockID)
+	}
+
+	certainBlockID, err := backend.LastCertainBlockIDByBatchID((*math.HexOrDecimal256)(batchID))
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if certainBlockID != nil {
+		t.Fatalf("expected nil certain blockID, got %v", certainBlockID)
+	}
+
+	certainL1Origin, err := backend.LastCertainL1OriginByBatchID((*math.HexOrDecimal256)(batchID))
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if certainL1Origin != nil {
+		t.Fatalf("expected nil certain l1Origin, got %v", certainL1Origin)
+	}
+}
+
 func newShastaTestChain(t *testing.T) (ethdb.Database, *core.BlockChain, *big.Int, []*types.Block) {
 	t.Helper()
 
