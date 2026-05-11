@@ -87,6 +87,7 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 const maxBatchLookupBlocks = 192 * 21_600
 
 // CHANGE(taiko): Add per-network minimum block thresholds for batch lookup results.
+// The thresholds are the last Pacaya block IDs for each network.
 var batchLookupBlockThresholds = map[uint64]uint64{
 	params.TaikoMainnetNetworkID.Uint64():  4_990_434,
 	params.TaikoInternalNetworkID.Uint64(): 0,
