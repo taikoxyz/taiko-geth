@@ -86,6 +86,7 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 // when searching for the last block of a given batch ID.
 const maxBatchLookupBlocks = 192 * 21_600
 
+// CHANGE(taiko): Add per-network minimum block thresholds for batch lookup results.
 var batchLookupBlockThresholds = map[uint64]uint64{
 	params.TaikoMainnetNetworkID.Uint64():  4_990_434,
 	params.TaikoInternalNetworkID.Uint64(): 0,
@@ -175,6 +176,7 @@ func (a *TaikoAuthAPIBackend) LastCertainL1OriginByBatchID(batchID *math.HexOrDe
 	return rawdb.ReadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
 }
 
+// CHANGE(taiko): Gate batch lookup results by network-specific block thresholds.
 func (a *TaikoAuthAPIBackend) batchLookupResultBelowThreshold(blockID *big.Int) bool {
 	if blockID == nil {
 		return false
