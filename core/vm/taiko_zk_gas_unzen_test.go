@@ -24,6 +24,26 @@ func TestUnzenBlockLimits(t *testing.T) {
 	}
 }
 
+// TestUnzenSchedule_TxIntrinsicZkGas pins the per-network Unzen per-tx
+// intrinsic zk-gas charges: Devnet/Internal/Hoodi/Mainnet at 243_000, Masaya
+// at 0. Masaya's zero pin is consensus-critical — header difficulty on Unzen
+// blocks encodes the finalized block zk gas, so changing the charge for
+// already-finalized Masaya blocks would break their consensus.
+func TestUnzenSchedule_TxIntrinsicZkGas(t *testing.T) {
+	if got := TxIntrinsicZkGas; got != 243_000 {
+		t.Fatalf("TxIntrinsicZkGas = %d, want 243_000", got)
+	}
+	if got := MasayaTxIntrinsicZkGas; got != 0 {
+		t.Fatalf("MasayaTxIntrinsicZkGas = %d, want 0", got)
+	}
+	if got := UnzenZkGasSchedule.TxIntrinsicZkGas; got != 243_000 {
+		t.Fatalf("UnzenZkGasSchedule.TxIntrinsicZkGas = %d, want 243_000", got)
+	}
+	if got := MasayaUnzenZkGasSchedule.TxIntrinsicZkGas; got != 0 {
+		t.Fatalf("MasayaUnzenZkGasSchedule.TxIntrinsicZkGas = %d, want 0", got)
+	}
+}
+
 // TestMasayaUnzenSchedule_SharesTablesWithDefault asserts byte-identity of
 // every non-block-limit field. This guards against accidental drift between
 // the two schedules — only the block budget should differ.
