@@ -252,6 +252,17 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 		zkGp   *GasPool
 	)
 	if evm.Config.ZkGasMeter != nil {
+		// CHANGE(taiko): charge the per-tx intrinsic zk gas before EVM execution
+		// begins (zk-gas spec: taikoxyz/taiko-mono#21669). The charge accumulates
+		// into the in-flight tx total and is committed alongside opcode and
+		// precompile usage on success; a schedule value of 0 (Masaya) makes this
+		// a no-op. If the intrinsic alone exceeds the remaining block budget,
+		// return ErrZkGasLimitExceeded so the outer loop truncates (non-anchor)
+		// or fails (anchor). No state has been mutated yet, so no revert is
+		// needed — return before taking the snapshot.
+		if err := evm.Config.ZkGasMeter.ChargeTxIntrinsic(); err != nil {
+			return nil, err
+		}
 		zkSnap = statedb.Snapshot()
 		zkGp = gp.Snapshot()
 	}
