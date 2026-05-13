@@ -251,3 +251,144 @@ func TestApplyTransactionWithEVM_UnzenCommitThenTruncate(t *testing.T) {
 		t.Fatalf("gas pool changed after exhausted tx: got %d want %d", got, postTxAGp)
 	}
 }
+
+// CHANGE(taiko): TestApplyTransactionWithEVM_Unzen_IncludesTxIntrinsicInBlockZkGas
+// confirms the per-tx intrinsic zk gas (taikoxyz/taiko-mono#21669) flows from
+// the meter into the finalized block total when a transaction commits on the
+// default Unzen schedule. A pure value transfer to a code-less destination
+// charges no opcode zk gas, so the finalized block total equals exactly the
+// intrinsic charge — pinning that the wiring in ApplyTransactionWithEVM
+// reaches the commit path.
+func TestApplyTransactionWithEVM_Unzen_IncludesTxIntrinsicInBlockZkGas(t *testing.T) {
+	chainConfig := unzenTestChainConfig(t)
+	chainConfig.ChainID = big.NewInt(167000) // Mainnet → default UnzenZkGasSchedule
+	schedule := vm.UnzenZkGasScheduleFor(chainConfig.ChainID)
+	if schedule.TxIntrinsicZkGas != vm.TxIntrinsicZkGas {
+		t.Fatalf("test prerequisite: default schedule TxIntrinsicZkGas = %d, want %d",
+			schedule.TxIntrinsicZkGas, vm.TxIntrinsicZkGas)
+	}
+
+	senderKey, _ := crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	sender := crypto.PubkeyToAddress(senderKey.PublicKey)
+	recipient := common.HexToAddress("0x000000000000000000000000000000000000c0de")
+	initialBalance := new(big.Int).SetUint64(1_000_000_000_000_000_000)
+
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.SetBalance(sender, uint256.MustFromBig(initialBalance), 0)
+	statedb.Finalise(true)
+
+	tx, err := types.SignTx(
+		types.NewTransaction(0, recipient, big.NewInt(1), params.TxGas, big.NewInt(1_000_000_000), nil),
+		types.LatestSigner(chainConfig),
+		senderKey,
+	)
+	if err != nil {
+		t.Fatalf("sign tx: %v", err)
+	}
+	msg, err := TransactionToMessage(tx, types.LatestSigner(chainConfig), big.NewInt(1_000_000_000))
+	if err != nil {
+		t.Fatalf("to message: %v", err)
+	}
+
+	blockCtx := vm.BlockContext{
+		CanTransfer: CanTransfer,
+		Transfer:    Transfer,
+		GetHash:     func(uint64) common.Hash { return common.Hash{} },
+		Coinbase:    common.Address{},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Difficulty:  big.NewInt(0),
+		BaseFee:     big.NewInt(1_000_000_000),
+		GasLimit:    30_000_000,
+		Random:      &common.Hash{},
+		BlobBaseFee: big.NewInt(1),
+	}
+	gp := NewGasPool(30_000_000)
+	meter := vm.NewZkGasMeter(schedule)
+	vmConfig := vm.Config{ZkGasMeter: meter}
+	evm := vm.NewEVM(blockCtx, statedb, chainConfig, vmConfig)
+
+	receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockCtx.BlockNumber, common.Hash{}, blockCtx.Time, tx, evm)
+	if err != nil {
+		t.Fatalf("ApplyTransactionWithEVM: %v", err)
+	}
+	if receipt == nil || receipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("expected successful receipt, got %+v", receipt)
+	}
+	if err := meter.CommitTransaction(); err != nil {
+		t.Fatalf("CommitTransaction: %v", err)
+	}
+	if got := meter.BlockZkGasUsed(); got != vm.TxIntrinsicZkGas {
+		t.Fatalf("BlockZkGasUsed after value transfer = %d, want %d (intrinsic only)", got, vm.TxIntrinsicZkGas)
+	}
+}
+
+// CHANGE(taiko): TestApplyTransactionWithEVM_Masaya_DoesNotChargeTxIntrinsic
+// confirms the Masaya pin: on the Taiko Masaya network the per-tx intrinsic
+// charge is 0, so finalized block zk gas excludes the intrinsic. Masaya
+// activated Unzen before the spec change landed and its header difficulty
+// already encodes the finalized block zk gas, so retroactively charging the
+// intrinsic would break consensus on already-finalized Masaya blocks.
+func TestApplyTransactionWithEVM_Masaya_DoesNotChargeTxIntrinsic(t *testing.T) {
+	chainConfig := unzenTestChainConfig(t)
+	chainConfig.ChainID = new(big.Int).Set(params.MasayaDevnetNetworkID)
+	schedule := vm.UnzenZkGasScheduleFor(chainConfig.ChainID)
+	if schedule.TxIntrinsicZkGas != vm.MasayaTxIntrinsicZkGas {
+		t.Fatalf("test prerequisite: Masaya schedule TxIntrinsicZkGas = %d, want %d",
+			schedule.TxIntrinsicZkGas, vm.MasayaTxIntrinsicZkGas)
+	}
+
+	senderKey, _ := crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+	sender := crypto.PubkeyToAddress(senderKey.PublicKey)
+	recipient := common.HexToAddress("0x000000000000000000000000000000000000c0de")
+	initialBalance := new(big.Int).SetUint64(1_000_000_000_000_000_000)
+
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.SetBalance(sender, uint256.MustFromBig(initialBalance), 0)
+	statedb.Finalise(true)
+
+	tx, err := types.SignTx(
+		types.NewTransaction(0, recipient, big.NewInt(1), params.TxGas, big.NewInt(1_000_000_000), nil),
+		types.LatestSigner(chainConfig),
+		senderKey,
+	)
+	if err != nil {
+		t.Fatalf("sign tx: %v", err)
+	}
+	msg, err := TransactionToMessage(tx, types.LatestSigner(chainConfig), big.NewInt(1_000_000_000))
+	if err != nil {
+		t.Fatalf("to message: %v", err)
+	}
+
+	blockCtx := vm.BlockContext{
+		CanTransfer: CanTransfer,
+		Transfer:    Transfer,
+		GetHash:     func(uint64) common.Hash { return common.Hash{} },
+		Coinbase:    common.Address{},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Difficulty:  big.NewInt(0),
+		BaseFee:     big.NewInt(1_000_000_000),
+		GasLimit:    30_000_000,
+		Random:      &common.Hash{},
+		BlobBaseFee: big.NewInt(1),
+	}
+	gp := NewGasPool(30_000_000)
+	meter := vm.NewZkGasMeter(schedule)
+	vmConfig := vm.Config{ZkGasMeter: meter}
+	evm := vm.NewEVM(blockCtx, statedb, chainConfig, vmConfig)
+
+	receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockCtx.BlockNumber, common.Hash{}, blockCtx.Time, tx, evm)
+	if err != nil {
+		t.Fatalf("ApplyTransactionWithEVM: %v", err)
+	}
+	if receipt == nil || receipt.Status != types.ReceiptStatusSuccessful {
+		t.Fatalf("expected successful receipt, got %+v", receipt)
+	}
+	if err := meter.CommitTransaction(); err != nil {
+		t.Fatalf("CommitTransaction: %v", err)
+	}
+	if got := meter.BlockZkGasUsed(); got != 0 {
+		t.Fatalf("Masaya value-transfer BlockZkGasUsed = %d, want 0 (no intrinsic, no opcode work)", got)
+	}
+}

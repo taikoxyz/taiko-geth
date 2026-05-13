@@ -20,7 +20,12 @@ type SpawnEstimates struct {
 
 // CHANGE(taiko): ZkGasSchedule defines consensus-owned zk gas parameters for a Taiko fork.
 type ZkGasSchedule struct {
-	BlockLimit            uint64
+	BlockLimit uint64
+	// TxIntrinsicZkGas is the fixed per-tx intrinsic zk-gas charge applied once
+	// per block transaction before opcode and precompile metering begins.
+	// Sourced from the zk-gas spec (taikoxyz/taiko-mono#21669); a value of 0
+	// makes the per-tx charge a no-op.
+	TxIntrinsicZkGas      uint64
 	OpcodeMultipliers     [256]uint16
 	PrecompileMultipliers [256]uint16
 	SpawnEstimates        SpawnEstimates
@@ -48,6 +53,16 @@ func (m *ZkGasMeter) ChargeOpcode(opcode byte, rawGas uint64) error {
 func (m *ZkGasMeter) ChargePrecompile(addrLowByte byte, gasUsed uint64) error {
 	multiplier := uint64(m.schedule.PrecompileMultipliers[addrLowByte])
 	return m.charge(gasUsed, multiplier)
+}
+
+// ChargeTxIntrinsic charges the fixed per-tx intrinsic zk gas defined by the
+// active schedule into the in-flight tx total. The charge is committed into
+// the finalized block total alongside opcode/precompile usage on transaction
+// commit and discarded on revert. A schedule value of 0 makes this a no-op.
+// Returns ErrZkGasLimitExceeded if the charge alone would exceed the remaining
+// block budget.
+func (m *ZkGasMeter) ChargeTxIntrinsic() error {
+	return m.charge(m.schedule.TxIntrinsicZkGas, 1)
 }
 
 // CommitTransaction promotes the current tx zk gas into the finalized block total.

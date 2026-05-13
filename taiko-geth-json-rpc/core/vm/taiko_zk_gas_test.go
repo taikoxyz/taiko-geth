@@ -144,6 +144,71 @@ func TestZkGasMeter_ChargePrecompile(t *testing.T) {
 	}
 }
 
+func TestZkGasMeter_ChargeTxIntrinsic_AddsToInFlight(t *testing.T) {
+	s := testSchedule()
+	s.TxIntrinsicZkGas = 243_000
+	m := NewZkGasMeter(s)
+
+	if err := m.ChargeTxIntrinsic(); err != nil {
+		t.Fatalf("unexpected error charging tx intrinsic: %v", err)
+	}
+	if m.TxZkGasUsed() != 243_000 {
+		t.Fatalf("expected txZkGasUsed=243000, got %d", m.TxZkGasUsed())
+	}
+	if m.BlockZkGasUsed() != 0 {
+		t.Fatalf("expected blockZkGasUsed=0 before commit, got %d", m.BlockZkGasUsed())
+	}
+
+	if err := m.CommitTransaction(); err != nil {
+		t.Fatalf("unexpected error committing: %v", err)
+	}
+	if m.BlockZkGasUsed() != 243_000 {
+		t.Fatalf("expected blockZkGasUsed=243000 after commit, got %d", m.BlockZkGasUsed())
+	}
+}
+
+func TestZkGasMeter_ChargeTxIntrinsic_NoopWhenScheduleZero(t *testing.T) {
+	s := testSchedule()
+	s.TxIntrinsicZkGas = 0
+	m := NewZkGasMeter(s)
+
+	if err := m.ChargeTxIntrinsic(); err != nil {
+		t.Fatalf("unexpected error charging zero tx intrinsic: %v", err)
+	}
+	if m.TxZkGasUsed() != 0 {
+		t.Fatalf("expected txZkGasUsed=0 after zero-intrinsic charge, got %d", m.TxZkGasUsed())
+	}
+}
+
+func TestZkGasMeter_ChargeTxIntrinsic_ReturnsLimitExceeded(t *testing.T) {
+	// Build a schedule where the block limit can be filled to (limit -
+	// intrinsic + 1) using an opcode with multiplier 1 (CREATE 0xf0 in the
+	// shared Unzen tables). The next ChargeTxIntrinsic alone then exceeds
+	// the remaining block budget.
+	s := testSchedule()
+	s.TxIntrinsicZkGas = 243_000
+	if s.OpcodeMultipliers[0xf0] != 1 {
+		t.Fatalf("test prerequisite: CREATE opcode multiplier must be 1, got %d", s.OpcodeMultipliers[0xf0])
+	}
+	m := NewZkGasMeter(s)
+
+	prefill := s.BlockLimit - s.TxIntrinsicZkGas + 1
+	if err := m.ChargeOpcode(0xf0, prefill); err != nil {
+		t.Fatalf("prefill charge failed: %v", err)
+	}
+	if err := m.CommitTransaction(); err != nil {
+		t.Fatalf("prefill commit failed: %v", err)
+	}
+
+	if err := m.ChargeTxIntrinsic(); err != ErrZkGasLimitExceeded {
+		t.Fatalf("expected ErrZkGasLimitExceeded, got %v", err)
+	}
+	// In-flight tx total must remain unchanged when the charge is rejected.
+	if m.TxZkGasUsed() != 0 {
+		t.Fatalf("expected txZkGasUsed=0 after rejected intrinsic charge, got %d", m.TxZkGasUsed())
+	}
+}
+
 func TestZkGasMeter_CommitExceedsLimit(t *testing.T) {
 	s := &ZkGasSchedule{
 		BlockLimit: 500,
