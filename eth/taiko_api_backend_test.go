@@ -109,7 +109,8 @@ func TestMaxBatchLookupBlocks(t *testing.T) {
 }
 
 func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
-	chainLength := int(maxBatchLookupBlocks + 2)
+	const maxLookback = 3
+	chainLength := maxLookback + 2
 
 	proposalBytes := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
 	proposalID := new(big.Int).SetBytes(proposalBytes)
@@ -183,7 +184,7 @@ func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
 	rawdb.WriteHeadL1Origin(db, headBlock.Number())
 	chain.HeaderChain().SetCurrentHeader(headBlock.Header())
 
-	blockID, err := backend.getLastBlockByBatchId(proposalID)
+	blockID, err := backend.getLastBlockByBatchIdWithLimit(proposalID, maxLookback)
 	if !errors.Is(err, ErrProposalLastBlockLookbackExceeded) {
 		t.Fatalf("expected ErrProposalLastBlockLookbackExceeded, got %v", err)
 	}
