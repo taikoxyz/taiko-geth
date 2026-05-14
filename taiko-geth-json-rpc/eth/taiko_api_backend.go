@@ -84,7 +84,7 @@ func (s *TaikoAPIBackend) GetSyncMode() (string, error) {
 
 // maxBatchLookupBlocks defines the maximum number of blocks to look back
 // when searching for the last block of a given batch ID.
-const maxBatchLookupBlocks = 192 * 21_600
+const maxBatchLookupBlocks = 768 * 21_600
 
 // CHANGE(taiko): Add per-network minimum block thresholds for batch lookup results.
 // The thresholds are the last Pacaya block IDs for each network.
