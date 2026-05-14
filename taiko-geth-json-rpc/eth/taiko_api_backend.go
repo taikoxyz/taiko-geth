@@ -191,6 +191,10 @@ func (a *TaikoAuthAPIBackend) batchLookupResultBelowThreshold(blockID *big.Int) 
 
 // getLastBlockByBatchId traverses the blockchain backwards to find the last Shasta block of the given Shasta batch ID.
 func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.Big, error) {
+	return a.getLastBlockByBatchIdWithLimit(batchID, maxBatchLookupBlocks)
+}
+
+func (a *TaikoAuthAPIBackend) getLastBlockByBatchIdWithLimit(batchID *big.Int, maxLookback uint64) (*hexutil.Big, error) {
 	// We start from the head L1 origin and traverse backwards until we find
 	// the matching batch ID, to ignore all preconfirmation blocks at the chain tip.
 	var (
@@ -202,7 +206,7 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchId(batchID *big.Int) (*hexutil.
 	for currentBlock != nil &&
 		currentBlock.Transactions().Len() > 0 &&
 		bytes.HasPrefix(currentBlock.Transactions()[0].Data(), taiko.AnchorV4Selector) {
-		if lookedBack >= maxBatchLookupBlocks {
+		if lookedBack >= maxLookback {
 			return nil, ErrProposalLastBlockLookbackExceeded
 		}
 		lookedBack++
