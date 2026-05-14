@@ -102,6 +102,12 @@ func TestGetLastBlockByBatchIdUncertainAtHead(t *testing.T) {
 	}
 }
 
+func TestMaxBatchLookupBlocks(t *testing.T) {
+	if maxBatchLookupBlocks != 768*21_600 {
+		t.Fatalf("expected maxBatchLookupBlocks %d, got %d", 768*21_600, maxBatchLookupBlocks)
+	}
+}
+
 func TestGetLastBlockByBatchIdLookbackLimit(t *testing.T) {
 	chainLength := int(maxBatchLookupBlocks + 2)
 
