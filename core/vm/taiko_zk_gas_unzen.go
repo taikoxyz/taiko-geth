@@ -27,15 +27,30 @@ const TxIntrinsicZkGas uint64 = 243_000
 // retroactively would break consensus on already-finalized Masaya blocks.
 const MasayaTxIntrinsicZkGas uint64 = 0
 
+// CHANGE(taiko): ZkGasMeteringOverhead is the fixed zk-gas charge applied on
+// every opcode execution and every precompile call on Devnet, Hoodi, and
+// Mainnet during Unzen, on top of `rawGas * multiplier`. Sourced from the
+// zk-gas spec (taikoxyz/taiko-mono#21695); covers the proving cost of the
+// zk-gas metering hook itself.
+const ZkGasMeteringOverhead uint64 = 90
+
+// CHANGE(taiko): MasayaZkGasMeteringOverhead is the per-hook overhead applied
+// on the Taiko Masaya network during Unzen. Pinned at 0 because Masaya
+// activated Unzen before the spec change landed; header difficulty on Unzen
+// blocks encodes the finalized block zk gas, so changing the per-hook charge
+// retroactively would break consensus on already-finalized Masaya blocks.
+const MasayaZkGasMeteringOverhead uint64 = 0
+
 // CHANGE(taiko): UnzenZkGasSchedule is the consensus zk-gas schedule used by
 // Devnet, Hoodi, and Mainnet during the Unzen fork.
-var UnzenZkGasSchedule = unzenZkGasScheduleWith(BlockZkGasLimit, TxIntrinsicZkGas)
+var UnzenZkGasSchedule = unzenZkGasScheduleWith(BlockZkGasLimit, TxIntrinsicZkGas, ZkGasMeteringOverhead)
 
 // CHANGE(taiko): MasayaUnzenZkGasSchedule is the consensus zk-gas schedule
 // used by the Taiko Masaya network during the Unzen fork. Opcode multipliers,
 // precompile multipliers, and spawn estimates are identical to
-// UnzenZkGasSchedule; the per-block budget and per-tx intrinsic charge differ.
-var MasayaUnzenZkGasSchedule = unzenZkGasScheduleWith(MasayaBlockZkGasLimit, MasayaTxIntrinsicZkGas)
+// UnzenZkGasSchedule; the per-block budget, per-tx intrinsic charge, and
+// per-hook metering overhead differ.
+var MasayaUnzenZkGasSchedule = unzenZkGasScheduleWith(MasayaBlockZkGasLimit, MasayaTxIntrinsicZkGas, MasayaZkGasMeteringOverhead)
 
 // CHANGE(taiko): UnzenZkGasScheduleFor returns the Unzen zk-gas schedule for
 // the given chain id. Taiko Masaya (167011) runs the 1B-budget schedule; all
@@ -48,13 +63,15 @@ func UnzenZkGasScheduleFor(chainID *big.Int) *ZkGasSchedule {
 }
 
 // unzenZkGasScheduleWith builds an Unzen-shaped schedule with the requested
-// block limit and per-tx intrinsic charge. Opcode multipliers, precompile
-// multipliers, and spawn estimates are identical across all networks; only
-// the block budget and per-tx intrinsic charge differ.
-func unzenZkGasScheduleWith(blockLimit, txIntrinsicZkGas uint64) ZkGasSchedule {
+// block limit, per-tx intrinsic charge, and per-hook metering overhead.
+// Opcode multipliers, precompile multipliers, and spawn estimates are
+// identical across all networks; only the block budget, per-tx intrinsic
+// charge, and per-hook metering overhead differ.
+func unzenZkGasScheduleWith(blockLimit, txIntrinsicZkGas, zkGasMeteringOverhead uint64) ZkGasSchedule {
 	s := ZkGasSchedule{
-		BlockLimit:       blockLimit,
-		TxIntrinsicZkGas: txIntrinsicZkGas,
+		BlockLimit:            blockLimit,
+		TxIntrinsicZkGas:      txIntrinsicZkGas,
+		ZkGasMeteringOverhead: zkGasMeteringOverhead,
 		SpawnEstimates: SpawnEstimates{
 			Call:         12500,
 			CallCode:     12500,

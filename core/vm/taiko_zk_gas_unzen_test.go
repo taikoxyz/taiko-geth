@@ -44,6 +44,26 @@ func TestUnzenSchedule_TxIntrinsicZkGas(t *testing.T) {
 	}
 }
 
+// TestUnzenSchedule_ZkGasMeteringOverhead pins the per-network Unzen per-hook
+// metering overhead: Devnet/Internal/Hoodi/Mainnet at 90, Masaya at 0. Masaya's
+// zero pin is consensus-critical — header difficulty on Unzen blocks encodes
+// the finalized block zk gas, so changing the charge for already-finalized
+// Masaya blocks would break their consensus.
+func TestUnzenSchedule_ZkGasMeteringOverhead(t *testing.T) {
+	if got := ZkGasMeteringOverhead; got != 90 {
+		t.Fatalf("ZkGasMeteringOverhead = %d, want 90", got)
+	}
+	if got := MasayaZkGasMeteringOverhead; got != 0 {
+		t.Fatalf("MasayaZkGasMeteringOverhead = %d, want 0", got)
+	}
+	if got := UnzenZkGasSchedule.ZkGasMeteringOverhead; got != 90 {
+		t.Fatalf("UnzenZkGasSchedule.ZkGasMeteringOverhead = %d, want 90", got)
+	}
+	if got := MasayaUnzenZkGasSchedule.ZkGasMeteringOverhead; got != 0 {
+		t.Fatalf("MasayaUnzenZkGasSchedule.ZkGasMeteringOverhead = %d, want 0", got)
+	}
+}
+
 // TestMasayaUnzenSchedule_SharesTablesWithDefault asserts byte-identity of
 // every non-block-limit field. This guards against accidental drift between
 // the two schedules — only the block budget should differ.

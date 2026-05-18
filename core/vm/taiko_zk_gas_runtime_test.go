@@ -291,7 +291,7 @@ func TestUnzenZkGasParity_EmptyCodeCallShortCircuitUsesSpawnEstimate(t *testing.
 	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
+	want := UnzenZkGasSchedule.SpawnEstimates.Call*uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)]) + UnzenZkGasSchedule.ZkGasMeteringOverhead
 	if got := meter.TxZkGasUsed(); got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
@@ -311,7 +311,7 @@ func TestUnzenZkGasParity_EmptyCodeStaticCallShortCircuitUsesSpawnEstimate(t *te
 	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	want := UnzenZkGasSchedule.SpawnEstimates.StaticCall * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(STATICCALL)])
+	want := UnzenZkGasSchedule.SpawnEstimates.StaticCall*uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(STATICCALL)]) + UnzenZkGasSchedule.ZkGasMeteringOverhead
 	if got := meter.TxZkGasUsed(); got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
@@ -333,7 +333,7 @@ func TestUnzenZkGasParity_CallOutOfFundsShortCircuitUsesSpawnEstimate(t *testing
 	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
+	want := UnzenZkGasSchedule.SpawnEstimates.Call*uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)]) + UnzenZkGasSchedule.ZkGasMeteringOverhead
 	if got := meter.TxZkGasUsed(); got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
@@ -355,7 +355,7 @@ func TestUnzenZkGasParity_CreateOutOfFundsShortCircuitUsesSpawnEstimate(t *testi
 	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	want := UnzenZkGasSchedule.SpawnEstimates.Create * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CREATE)])
+	want := UnzenZkGasSchedule.SpawnEstimates.Create*uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CREATE)]) + UnzenZkGasSchedule.ZkGasMeteringOverhead
 	if got := meter.TxZkGasUsed(); got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}
@@ -380,7 +380,7 @@ func TestUnzenZkGasParity_DepthExceededCallShortCircuitUsesSpawnEstimate(t *test
 	if err := evm.zkGasTracker.FinishAndCharge(depth, gasLeft); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
-	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
+	want := UnzenZkGasSchedule.SpawnEstimates.Call*uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)]) + UnzenZkGasSchedule.ZkGasMeteringOverhead
 	if got := meter.TxZkGasUsed(); got != want {
 		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
 	}

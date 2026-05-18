@@ -25,7 +25,13 @@ type ZkGasSchedule struct {
 	// per block transaction before opcode and precompile metering begins.
 	// Sourced from the zk-gas spec (taikoxyz/taiko-mono#21669); a value of 0
 	// makes the per-tx charge a no-op.
-	TxIntrinsicZkGas      uint64
+	TxIntrinsicZkGas uint64
+	// ZkGasMeteringOverhead is the fixed zk-gas charged on every opcode
+	// execution and every precompile call, on top of `rawGas * multiplier`.
+	// Covers the proving cost of the zk-gas metering hook itself. Sourced
+	// from the zk-gas spec (taikoxyz/taiko-mono#21695); a value of 0 makes
+	// the per-hook charge a no-op.
+	ZkGasMeteringOverhead uint64
 	OpcodeMultipliers     [256]uint16
 	PrecompileMultipliers [256]uint16
 	SpawnEstimates        SpawnEstimates
@@ -43,16 +49,36 @@ func NewZkGasMeter(schedule *ZkGasSchedule) *ZkGasMeter {
 	return &ZkGasMeter{schedule: schedule}
 }
 
-// ChargeOpcode charges zk gas for a single opcode execution: rawGas * multiplier.
+// ChargeOpcode charges zk gas for a single opcode execution:
+// rawGas * multiplier + ZkGasMeteringOverhead. A schedule overhead of 0
+// makes the addition a no-op.
 func (m *ZkGasMeter) ChargeOpcode(opcode byte, rawGas uint64) error {
 	multiplier := uint64(m.schedule.OpcodeMultipliers[opcode])
-	return m.charge(rawGas, multiplier)
+	cost, overflow := safeMul(rawGas, multiplier)
+	if overflow {
+		return ErrZkGasLimitExceeded
+	}
+	cost, overflow = safeAdd(cost, m.schedule.ZkGasMeteringOverhead)
+	if overflow {
+		return ErrZkGasLimitExceeded
+	}
+	return m.chargeAmount(cost)
 }
 
-// ChargePrecompile charges zk gas for a precompile execution: gasUsed * multiplier.
+// ChargePrecompile charges zk gas for a precompile execution:
+// gasUsed * multiplier + ZkGasMeteringOverhead. A schedule overhead of 0
+// makes the addition a no-op.
 func (m *ZkGasMeter) ChargePrecompile(addrLowByte byte, gasUsed uint64) error {
 	multiplier := uint64(m.schedule.PrecompileMultipliers[addrLowByte])
-	return m.charge(gasUsed, multiplier)
+	cost, overflow := safeMul(gasUsed, multiplier)
+	if overflow {
+		return ErrZkGasLimitExceeded
+	}
+	cost, overflow = safeAdd(cost, m.schedule.ZkGasMeteringOverhead)
+	if overflow {
+		return ErrZkGasLimitExceeded
+	}
+	return m.chargeAmount(cost)
 }
 
 // ChargeTxIntrinsic charges the fixed per-tx intrinsic zk gas defined by the
@@ -127,12 +153,19 @@ func IsSpawnOpcode(op OpCode) bool {
 	}
 }
 
-// charge applies a checked zk gas charge against the current transaction and block budget.
+// charge applies a checked `base * multiplier` zk gas charge against the
+// current transaction and block budget.
 func (m *ZkGasMeter) charge(base, multiplier uint64) error {
 	cost, overflow := safeMul(base, multiplier)
 	if overflow {
 		return ErrZkGasLimitExceeded
 	}
+	return m.chargeAmount(cost)
+}
+
+// chargeAmount applies a precomputed zk gas amount against the current
+// transaction and block budget.
+func (m *ZkGasMeter) chargeAmount(cost uint64) error {
 	nextTx, overflow := safeAdd(m.txZkGasUsed, cost)
 	if overflow {
 		return ErrZkGasLimitExceeded

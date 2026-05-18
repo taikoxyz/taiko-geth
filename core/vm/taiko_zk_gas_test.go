@@ -144,6 +144,58 @@ func TestZkGasMeter_ChargePrecompile(t *testing.T) {
 	}
 }
 
+func TestZkGasMeter_ChargeOpcode_AddsOverheadOnDefaultUnzen(t *testing.T) {
+	m := NewZkGasMeter(&UnzenZkGasSchedule)
+
+	// ADD opcode: rawGas=3, multiplier=12, +overhead=90 -> cost=126.
+	if err := m.ChargeOpcode(0x01, 3); err != nil {
+		t.Fatalf("unexpected error charging ADD: %v", err)
+	}
+	want := 3*uint64(UnzenZkGasSchedule.OpcodeMultipliers[0x01]) + ZkGasMeteringOverhead
+	if got := m.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d (raw*mult + overhead)", got, want)
+	}
+}
+
+func TestZkGasMeter_ChargeOpcode_NoOverheadOnMasaya(t *testing.T) {
+	m := NewZkGasMeter(&MasayaUnzenZkGasSchedule)
+
+	// ADD opcode on Masaya: overhead is pinned at 0, so cost is raw*mult only.
+	if err := m.ChargeOpcode(0x01, 3); err != nil {
+		t.Fatalf("unexpected error charging ADD: %v", err)
+	}
+	want := 3 * uint64(MasayaUnzenZkGasSchedule.OpcodeMultipliers[0x01])
+	if got := m.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d (raw*mult, no overhead)", got, want)
+	}
+}
+
+func TestZkGasMeter_ChargePrecompile_AddsOverheadOnDefaultUnzen(t *testing.T) {
+	m := NewZkGasMeter(&UnzenZkGasSchedule)
+
+	// identity precompile (0x04): gasUsed=18, multiplier=2, +overhead=90 -> cost=126.
+	if err := m.ChargePrecompile(0x04, 18); err != nil {
+		t.Fatalf("unexpected error charging identity: %v", err)
+	}
+	want := 18*uint64(UnzenZkGasSchedule.PrecompileMultipliers[0x04]) + ZkGasMeteringOverhead
+	if got := m.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d (gasUsed*mult + overhead)", got, want)
+	}
+}
+
+func TestZkGasMeter_ChargePrecompile_NoOverheadOnMasaya(t *testing.T) {
+	m := NewZkGasMeter(&MasayaUnzenZkGasSchedule)
+
+	// identity precompile on Masaya: overhead pinned at 0.
+	if err := m.ChargePrecompile(0x04, 18); err != nil {
+		t.Fatalf("unexpected error charging identity: %v", err)
+	}
+	want := 18 * uint64(MasayaUnzenZkGasSchedule.PrecompileMultipliers[0x04])
+	if got := m.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d (gasUsed*mult, no overhead)", got, want)
+	}
+}
+
 func TestZkGasMeter_ChargeTxIntrinsic_AddsToInFlight(t *testing.T) {
 	s := testSchedule()
 	s.TxIntrinsicZkGas = 243_000
