@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
@@ -44,18 +45,67 @@ func TestUnzenSchedule_TxIntrinsicZkGas(t *testing.T) {
 	}
 }
 
-// TestMasayaUnzenSchedule_SharesTablesWithDefault asserts byte-identity of
-// every non-block-limit field. This guards against accidental drift between
-// the two schedules — only the block budget should differ.
-func TestMasayaUnzenSchedule_SharesTablesWithDefault(t *testing.T) {
-	if MasayaUnzenZkGasSchedule.OpcodeMultipliers != UnzenZkGasSchedule.OpcodeMultipliers {
-		t.Fatal("MasayaUnzenZkGasSchedule.OpcodeMultipliers differs from UnzenZkGasSchedule")
+// TestMasayaUnzenSchedule_FreezesPreRecalibrationMultipliers asserts that the
+// recalibration changed the default opcode and precompile tables while Masaya
+// stays frozen, so the two schedules' tables must now differ. Spawn estimates
+// were not recalibrated and remain identical across networks.
+func TestMasayaUnzenSchedule_FreezesPreRecalibrationMultipliers(t *testing.T) {
+	if MasayaUnzenZkGasSchedule.OpcodeMultipliers == UnzenZkGasSchedule.OpcodeMultipliers {
+		t.Fatal("MasayaUnzenZkGasSchedule.OpcodeMultipliers must differ from the recalibrated default")
 	}
-	if MasayaUnzenZkGasSchedule.PrecompileMultipliers != UnzenZkGasSchedule.PrecompileMultipliers {
-		t.Fatal("MasayaUnzenZkGasSchedule.PrecompileMultipliers differs from UnzenZkGasSchedule")
+	if MasayaUnzenZkGasSchedule.PrecompileMultipliers == UnzenZkGasSchedule.PrecompileMultipliers {
+		t.Fatal("MasayaUnzenZkGasSchedule.PrecompileMultipliers must differ from the recalibrated default")
+	}
+	// Spot-check known recalibrated entries so this guard fails if the two
+	// tables ever realign: keccak256 (0x20) went 85 -> 31 for the default while
+	// Masaya stays at 85; modexp (0x05) went 1363 -> 923 while Masaya stays at 1363.
+	if MasayaUnzenZkGasSchedule.OpcodeMultipliers[0x20] == UnzenZkGasSchedule.OpcodeMultipliers[0x20] {
+		t.Fatal("keccak256 (0x20) opcode multiplier must differ between Masaya and default")
+	}
+	if MasayaUnzenZkGasSchedule.PrecompileMultipliers[0x05] == UnzenZkGasSchedule.PrecompileMultipliers[0x05] {
+		t.Fatal("modexp (0x05) precompile multiplier must differ between Masaya and default")
 	}
 	if MasayaUnzenZkGasSchedule.SpawnEstimates != UnzenZkGasSchedule.SpawnEstimates {
 		t.Fatal("MasayaUnzenZkGasSchedule.SpawnEstimates differs from UnzenZkGasSchedule")
+	}
+}
+
+// TestUnzenSchedule_Multipliers pins representative recalibrated default
+// multipliers and the corresponding frozen Masaya values, so any accidental
+// drift in either table is caught.
+func TestUnzenSchedule_Multipliers(t *testing.T) {
+	// Recalibrated default schedule.
+	if got := UnzenZkGasSchedule.OpcodeMultipliers[0x20]; got != 31 {
+		t.Fatalf("default keccak256 (0x20) = %d, want 31", got)
+	}
+	if got := UnzenZkGasSchedule.OpcodeMultipliers[0xf1]; got != 20 {
+		t.Fatalf("default CALL (0xf1) = %d, want 20", got)
+	}
+	if got := UnzenZkGasSchedule.OpcodeMultipliers[0xfe]; got != 0 {
+		t.Fatalf("default INVALID (0xfe) = %d, want 0", got)
+	}
+	if got := UnzenZkGasSchedule.OpcodeMultipliers[0xac]; got != math.MaxUint16 {
+		t.Fatalf("default unlisted (0xac) = %d, want failsafe %d", got, uint16(math.MaxUint16))
+	}
+	if got := UnzenZkGasSchedule.PrecompileMultipliers[0x05]; got != 923 {
+		t.Fatalf("default modexp (0x05) = %d, want 923", got)
+	}
+	if got := UnzenZkGasSchedule.PrecompileMultipliers[0x01]; got != 47 {
+		t.Fatalf("default ecrecover (0x01) = %d, want 47", got)
+	}
+	if got := UnzenZkGasSchedule.PrecompileMultipliers[0x04]; got != 6 {
+		t.Fatalf("default identity (0x04) = %d, want 6", got)
+	}
+	if got := UnzenZkGasSchedule.PrecompileMultipliers[0x14]; got != math.MaxUint16 {
+		t.Fatalf("default unlisted precompile (0x14) = %d, want failsafe %d", got, uint16(math.MaxUint16))
+	}
+
+	// Frozen Masaya schedule.
+	if got := MasayaUnzenZkGasSchedule.OpcodeMultipliers[0x20]; got != 85 {
+		t.Fatalf("Masaya keccak256 (0x20) = %d, want frozen 85", got)
+	}
+	if got := MasayaUnzenZkGasSchedule.PrecompileMultipliers[0x05]; got != 1363 {
+		t.Fatalf("Masaya modexp (0x05) = %d, want frozen 1363", got)
 	}
 }
 
