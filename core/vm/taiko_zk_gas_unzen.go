@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// CHANGE(taiko): zk-gas block limit on Devnet, Hoodi, and Mainnet during Unzen.
+// CHANGE(taiko): zk-gas block limit on Devnet, Internal, Hoodi, and Mainnet during Unzen.
 const BlockZkGasLimit uint64 = 100_000_000
 
 // CHANGE(taiko): zk-gas block limit on the Taiko Masaya network during Unzen.
@@ -28,8 +28,8 @@ const TxIntrinsicZkGas uint64 = 243_000
 const MasayaTxIntrinsicZkGas uint64 = 0
 
 // CHANGE(taiko): UnzenZkGasSchedule is the consensus zk-gas schedule used by
-// Devnet, Hoodi, and Mainnet during the Unzen fork, with the recalibrated
-// opcode and precompile multipliers.
+// Devnet, Internal, Hoodi, and Mainnet during the Unzen fork, with the
+// recalibrated opcode and precompile multipliers.
 var UnzenZkGasSchedule = unzenZkGasScheduleWith(
 	BlockZkGasLimit,
 	TxIntrinsicZkGas,
