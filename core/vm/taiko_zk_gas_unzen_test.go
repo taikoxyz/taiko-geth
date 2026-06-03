@@ -79,6 +79,9 @@ func TestUnzenSchedule_Multipliers(t *testing.T) {
 	if got := UnzenZkGasSchedule.OpcodeMultipliers[0x20]; got != 31 {
 		t.Fatalf("default keccak256 (0x20) = %d, want 31", got)
 	}
+	if got := UnzenZkGasSchedule.OpcodeMultipliers[0x1e]; got != 14 {
+		t.Fatalf("default CLZ (0x1e) = %d, want 14", got)
+	}
 	if got := UnzenZkGasSchedule.OpcodeMultipliers[0xf1]; got != 20 {
 		t.Fatalf("default CALL (0xf1) = %d, want 20", got)
 	}
@@ -107,6 +110,9 @@ func TestUnzenSchedule_Multipliers(t *testing.T) {
 	// Frozen Masaya schedule.
 	if got := MasayaUnzenZkGasSchedule.OpcodeMultipliers[0x20]; got != 85 {
 		t.Fatalf("Masaya keccak256 (0x20) = %d, want frozen 85", got)
+	}
+	if got := MasayaUnzenZkGasSchedule.OpcodeMultipliers[0x1e]; got != math.MaxUint16 {
+		t.Fatalf("Masaya CLZ (0x1e) = %d, want frozen failsafe %d", got, uint16(math.MaxUint16))
 	}
 	if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x05}); got != 1363 {
 		t.Fatalf("Masaya modexp (0x05) = %d, want frozen 1363", got)

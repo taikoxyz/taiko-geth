@@ -86,6 +86,9 @@ func unzenZkGasScheduleWith(blockLimit, txIntrinsicZkGas uint64, opcodeMultiplie
 // table, pinned at the pre-recalibration values. Recalibrating these
 // retroactively would break consensus on Masaya's already-finalized Unzen
 // blocks, so they stay frozen — same rationale as MasayaTxIntrinsicZkGas.
+// CLZ (0x1e, EIP-7939) is intentionally absent and resolves to the failsafe;
+// the default schedule added it in taikoxyz/taiko-mono#21749, but Masaya's
+// table must stay frozen for the same consensus reason.
 func masayaUnzenOpcodeMultipliers() [256]uint16 {
 	var m [256]uint16
 	for i := range m {
@@ -310,6 +313,7 @@ func unzenOpcodeMultipliers() [256]uint16 {
 	m[0x1b] = 24  // SHL
 	m[0x1c] = 22  // SHR
 	m[0x1d] = 21  // SAR
+	m[0x1e] = 14  // CLZ
 	m[0x20] = 31  // KECCAK256
 	m[0x30] = 19  // ADDRESS
 	m[0x31] = 4   // BALANCE
