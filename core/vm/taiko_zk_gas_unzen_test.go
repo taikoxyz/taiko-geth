@@ -174,8 +174,8 @@ func TestHighRangePrecompileCollisionResolvesToFailsafe(t *testing.T) {
 // TestFullAddressLookupPreservesCanonicalPrecompileMultipliers pins every canonical
 // precompile (0x01..=0x13) to its exact value on both schedules, so finalized blocks
 // stay byte-identical — including Masaya, whose finalized block zk-gas total is committed
-// to the header difficulty field. The len()==17 assertions guard against a dropped or
-// duplicated entry: either changes the count.
+// to the header difficulty field. The len() assertions (default 18, Masaya 17) guard
+// against a dropped or duplicated entry: either changes the count.
 func TestFullAddressLookupPreservesCanonicalPrecompileMultipliers(t *testing.T) {
 	defaultExpected := map[byte]uint16{
 		0x01: 47, 0x02: 10, 0x03: 4, 0x04: 6, 0x05: 923, 0x06: 19, 0x07: 58,
