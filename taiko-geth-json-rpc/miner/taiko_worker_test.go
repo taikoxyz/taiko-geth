@@ -125,9 +125,6 @@ func TestApplyTransaction_SealerZkGasExhaustionSurface(t *testing.T) {
 	for i := range schedule.OpcodeMultipliers {
 		schedule.OpcodeMultipliers[i] = math.MaxUint16
 	}
-	for i := range schedule.PrecompileMultipliers {
-		schedule.PrecompileMultipliers[i] = math.MaxUint16
-	}
 
 	blockCtx := vm.BlockContext{
 		CanTransfer: core.CanTransfer,

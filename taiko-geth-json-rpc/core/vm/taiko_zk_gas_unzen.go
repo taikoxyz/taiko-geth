@@ -4,6 +4,7 @@ import (
 	"math"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -64,7 +65,7 @@ func UnzenZkGasScheduleFor(chainID *big.Int) *ZkGasSchedule {
 // unzenZkGasScheduleWith builds an Unzen-shaped schedule from the requested
 // block limit, per-tx intrinsic charge, and opcode/precompile multiplier
 // tables. Spawn estimates are identical across all networks.
-func unzenZkGasScheduleWith(blockLimit, txIntrinsicZkGas uint64, opcodeMultipliers, precompileMultipliers [256]uint16) ZkGasSchedule {
+func unzenZkGasScheduleWith(blockLimit, txIntrinsicZkGas uint64, opcodeMultipliers [256]uint16, precompileMultipliers map[common.Address]uint16) ZkGasSchedule {
 	return ZkGasSchedule{
 		BlockLimit:            blockLimit,
 		TxIntrinsicZkGas:      txIntrinsicZkGas,
@@ -243,31 +244,31 @@ func masayaUnzenOpcodeMultipliers() [256]uint16 {
 }
 
 // masayaUnzenPrecompileMultipliers returns the frozen Masaya precompile
-// multiplier table, pinned at the pre-recalibration values. Frozen for the same
-// consensus reason as masayaUnzenOpcodeMultipliers.
-func masayaUnzenPrecompileMultipliers() [256]uint16 {
-	var m [256]uint16
-	for i := range m {
-		m[i] = math.MaxUint16
+// multiplier table, keyed by full precompile address and pinned at the
+// pre-recalibration values. Frozen for the same consensus reason as
+// masayaUnzenOpcodeMultipliers. Canonical precompiles all live at 0x00…00XX, so
+// common.Address{19: 0xNN} spells their keys. Absent addresses resolve to
+// FailsafeMultiplier.
+func masayaUnzenPrecompileMultipliers() map[common.Address]uint16 {
+	return map[common.Address]uint16{
+		{19: 0x01}: 81,   // ecrecover
+		{19: 0x02}: 10,   // sha256
+		{19: 0x03}: 3,    // ripemd160
+		{19: 0x04}: 2,    // identity
+		{19: 0x05}: 1363, // modexp
+		{19: 0x06}: 38,   // bn128_add
+		{19: 0x07}: 87,   // bn128_mul
+		{19: 0x08}: 82,   // bn128_pairing
+		{19: 0x09}: 243,  // blake2f
+		{19: 0x0a}: 398,  // point_evaluation
+		{19: 0x0b}: 112,  // bls12_g1add
+		{19: 0x0c}: 52,   // bls12_g1msm
+		{19: 0x0e}: 111,  // bls12_g2add
+		{19: 0x0f}: 39,   // bls12_g2msm
+		{19: 0x11}: 134,  // bls12_pairing
+		{19: 0x12}: 159,  // bls12_map_fp_to_g1
+		{19: 0x13}: 112,  // bls12_map_fp2_to_g2
 	}
-	m[0x01] = 81   // ecrecover
-	m[0x02] = 10   // sha256
-	m[0x03] = 3    // ripemd160
-	m[0x04] = 2    // identity
-	m[0x05] = 1363 // modexp
-	m[0x06] = 38   // bn128_add
-	m[0x07] = 87   // bn128_mul
-	m[0x08] = 82   // bn128_pairing
-	m[0x09] = 243  // blake2f
-	m[0x0a] = 398  // point_evaluation
-	m[0x0b] = 112  // bls12_g1add
-	m[0x0c] = 52   // bls12_g1msm
-	m[0x0e] = 111  // bls12_g2add
-	m[0x0f] = 39   // bls12_g2msm
-	m[0x11] = 134  // bls12_pairing
-	m[0x12] = 159  // bls12_map_fp_to_g1
-	m[0x13] = 112  // bls12_map_fp2_to_g2
-	return m
 }
 
 // unzenOpcodeMultipliers returns the recalibrated default opcode multiplier
@@ -430,28 +431,27 @@ func unzenOpcodeMultipliers() [256]uint16 {
 }
 
 // unzenPrecompileMultipliers returns the recalibrated default precompile
-// multiplier table, with fail-safe defaults for unlisted entries.
-func unzenPrecompileMultipliers() [256]uint16 {
-	var m [256]uint16
-	for i := range m {
-		m[i] = math.MaxUint16
+// multiplier table, keyed by full precompile address. Canonical precompiles all
+// live at 0x00…00XX, so common.Address{19: 0xNN} spells their keys. Absent
+// addresses resolve to FailsafeMultiplier.
+func unzenPrecompileMultipliers() map[common.Address]uint16 {
+	return map[common.Address]uint16{
+		{19: 0x01}: 47,  // ecrecover
+		{19: 0x02}: 10,  // sha256
+		{19: 0x03}: 4,   // ripemd160
+		{19: 0x04}: 6,   // identity
+		{19: 0x05}: 923, // modexp
+		{19: 0x06}: 19,  // bn128_add
+		{19: 0x07}: 58,  // bn128_mul
+		{19: 0x08}: 54,  // bn128_pairing
+		{19: 0x09}: 166, // blake2f
+		{19: 0x0a}: 859, // point_evaluation
+		{19: 0x0b}: 201, // bls12_g1add
+		{19: 0x0c}: 93,  // bls12_g1msm
+		{19: 0x0e}: 230, // bls12_g2add
+		{19: 0x0f}: 71,  // bls12_g2msm
+		{19: 0x11}: 365, // bls12_pairing
+		{19: 0x12}: 246, // bls12_map_fp_to_g1
+		{19: 0x13}: 208, // bls12_map_fp2_to_g2
 	}
-	m[0x01] = 47  // ecrecover
-	m[0x02] = 10  // sha256
-	m[0x03] = 4   // ripemd160
-	m[0x04] = 6   // identity
-	m[0x05] = 923 // modexp
-	m[0x06] = 19  // bn128_add
-	m[0x07] = 58  // bn128_mul
-	m[0x08] = 54  // bn128_pairing
-	m[0x09] = 166 // blake2f
-	m[0x0a] = 859 // point_evaluation
-	m[0x0b] = 201 // bls12_g1add
-	m[0x0c] = 93  // bls12_g1msm
-	m[0x0e] = 230 // bls12_g2add
-	m[0x0f] = 71  // bls12_g2msm
-	m[0x11] = 365 // bls12_pairing
-	m[0x12] = 246 // bls12_map_fp_to_g1
-	m[0x13] = 208 // bls12_map_fp2_to_g2
-	return m
 }
