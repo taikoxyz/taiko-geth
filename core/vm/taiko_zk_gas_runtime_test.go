@@ -649,7 +649,7 @@ func TestUnzenZkGas_SuccessfulPrecompileExceedingBlockLimit_StickyError(t *testi
 
 	schedule := stickySchedule()
 	// Identity precompile multiplier sized so even minimal gas use overshoots BlockLimit=1000.
-	schedule.PrecompileMultipliers[0x04] = 10_000
+	schedule.PrecompileMultipliers[common.Address{19: 0x04}] = 10_000
 
 	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
@@ -888,7 +888,7 @@ func (c *zkGasTraceCollector) CanonicalTxZkGas(schedule *ZkGasSchedule) (uint64,
 		if !frame.precompile {
 			continue
 		}
-		if err := meter.ChargePrecompile(frame.to[19], frame.startGas-frame.leftOverGas); err != nil {
+		if err := meter.ChargePrecompile(frame.to, frame.startGas-frame.leftOverGas); err != nil {
 			return 0, err
 		}
 	}

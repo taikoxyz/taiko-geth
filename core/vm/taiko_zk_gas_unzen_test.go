@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -53,8 +54,8 @@ func TestMasayaUnzenSchedule_FreezesPreRecalibrationMultipliers(t *testing.T) {
 	if MasayaUnzenZkGasSchedule.OpcodeMultipliers == UnzenZkGasSchedule.OpcodeMultipliers {
 		t.Fatal("MasayaUnzenZkGasSchedule.OpcodeMultipliers must differ from the recalibrated default")
 	}
-	if MasayaUnzenZkGasSchedule.PrecompileMultipliers == UnzenZkGasSchedule.PrecompileMultipliers {
-		t.Fatal("MasayaUnzenZkGasSchedule.PrecompileMultipliers must differ from the recalibrated default")
+	if MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x01}) == UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x01}) {
+		t.Fatal("MasayaUnzenZkGasSchedule precompile table must differ from the recalibrated default")
 	}
 	// Spot-check known recalibrated entries so this guard fails if the two
 	// tables ever realign: keccak256 (0x20) went 85 -> 31 for the default while
@@ -62,7 +63,7 @@ func TestMasayaUnzenSchedule_FreezesPreRecalibrationMultipliers(t *testing.T) {
 	if MasayaUnzenZkGasSchedule.OpcodeMultipliers[0x20] == UnzenZkGasSchedule.OpcodeMultipliers[0x20] {
 		t.Fatal("keccak256 (0x20) opcode multiplier must differ between Masaya and default")
 	}
-	if MasayaUnzenZkGasSchedule.PrecompileMultipliers[0x05] == UnzenZkGasSchedule.PrecompileMultipliers[0x05] {
+	if MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x05}) == UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x05}) {
 		t.Fatal("modexp (0x05) precompile multiplier must differ between Masaya and default")
 	}
 	if MasayaUnzenZkGasSchedule.SpawnEstimates != UnzenZkGasSchedule.SpawnEstimates {
@@ -87,16 +88,16 @@ func TestUnzenSchedule_Multipliers(t *testing.T) {
 	if got := UnzenZkGasSchedule.OpcodeMultipliers[0xac]; got != math.MaxUint16 {
 		t.Fatalf("default unlisted (0xac) = %d, want failsafe %d", got, uint16(math.MaxUint16))
 	}
-	if got := UnzenZkGasSchedule.PrecompileMultipliers[0x05]; got != 923 {
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x05}); got != 923 {
 		t.Fatalf("default modexp (0x05) = %d, want 923", got)
 	}
-	if got := UnzenZkGasSchedule.PrecompileMultipliers[0x01]; got != 47 {
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x01}); got != 47 {
 		t.Fatalf("default ecrecover (0x01) = %d, want 47", got)
 	}
-	if got := UnzenZkGasSchedule.PrecompileMultipliers[0x04]; got != 6 {
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x04}); got != 6 {
 		t.Fatalf("default identity (0x04) = %d, want 6", got)
 	}
-	if got := UnzenZkGasSchedule.PrecompileMultipliers[0x14]; got != math.MaxUint16 {
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x14}); got != math.MaxUint16 {
 		t.Fatalf("default unlisted precompile (0x14) = %d, want failsafe %d", got, uint16(math.MaxUint16))
 	}
 
@@ -104,7 +105,7 @@ func TestUnzenSchedule_Multipliers(t *testing.T) {
 	if got := MasayaUnzenZkGasSchedule.OpcodeMultipliers[0x20]; got != 85 {
 		t.Fatalf("Masaya keccak256 (0x20) = %d, want frozen 85", got)
 	}
-	if got := MasayaUnzenZkGasSchedule.PrecompileMultipliers[0x05]; got != 1363 {
+	if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x05}); got != 1363 {
 		t.Fatalf("Masaya modexp (0x05) = %d, want frozen 1363", got)
 	}
 }
@@ -131,6 +132,84 @@ func TestUnzenZkGasScheduleFor(t *testing.T) {
 		got := UnzenZkGasScheduleFor(c.chainID)
 		if got != c.want {
 			t.Fatalf("UnzenZkGasScheduleFor(%s) = %p, want %p", c.name, got, c.want)
+		}
+	}
+}
+
+// TestHighRangePrecompileCollisionResolvesToFailsafe is the regression guard: a
+// high-range precompile whose low byte collides with a canonical one must resolve
+// to the failsafe, not the colliding canonical multiplier. No such precompile
+// exists in the Unzen fork today.
+func TestHighRangePrecompileCollisionResolvesToFailsafe(t *testing.T) {
+	// L1Sload-style address: low byte 0x01 collides with ecrecover, upper bytes differ.
+	collider := common.HexToAddress("0x1670000000000000000000000000000000010001")
+	// identity-style collider: low byte 0x04.
+	identityCollider := common.HexToAddress("0x1670000000000000000000000000000000010004")
+	ecrecover := common.Address{19: 0x01}
+
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(ecrecover); got != 47 {
+		t.Fatalf("default ecrecover = %d, want 47", got)
+	}
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(collider); got != math.MaxUint16 {
+		t.Fatalf("default collider = %d, want failsafe %d", got, uint16(math.MaxUint16))
+	}
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(identityCollider); got != math.MaxUint16 {
+		t.Fatalf("default identity collider = %d, want failsafe %d", got, uint16(math.MaxUint16))
+	}
+
+	if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(ecrecover); got != 81 {
+		t.Fatalf("Masaya ecrecover = %d, want frozen 81", got)
+	}
+	if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(collider); got != math.MaxUint16 {
+		t.Fatalf("Masaya collider = %d, want failsafe %d", got, uint16(math.MaxUint16))
+	}
+	if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(identityCollider); got != math.MaxUint16 {
+		t.Fatalf("Masaya identity collider = %d, want failsafe %d", got, uint16(math.MaxUint16))
+	}
+}
+
+// TestFullAddressLookupPreservesCanonicalPrecompileMultipliers pins every canonical
+// precompile (0x01..=0x13) to its exact value on both schedules, so finalized blocks
+// stay byte-identical — including Masaya, whose finalized block zk-gas total is committed
+// to the header difficulty field. The len()==17 assertions guard against a dropped or
+// duplicated entry: either changes the count.
+func TestFullAddressLookupPreservesCanonicalPrecompileMultipliers(t *testing.T) {
+	defaultExpected := map[byte]uint16{
+		0x01: 47, 0x02: 10, 0x03: 4, 0x04: 6, 0x05: 923, 0x06: 19, 0x07: 58,
+		0x08: 54, 0x09: 166, 0x0a: 859, 0x0b: 201, 0x0c: 93, 0x0e: 230, 0x0f: 71,
+		0x11: 365, 0x12: 246, 0x13: 208,
+	}
+	for b, want := range defaultExpected {
+		if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: b}); got != want {
+			t.Errorf("default precompile %#04x = %d, want %d", b, got, want)
+		}
+	}
+	if got := len(UnzenZkGasSchedule.PrecompileMultipliers); got != 17 {
+		t.Errorf("default precompile table has %d entries, want 17", got)
+	}
+
+	masayaExpected := map[byte]uint16{
+		0x01: 81, 0x02: 10, 0x03: 3, 0x04: 2, 0x05: 1363, 0x06: 38, 0x07: 87,
+		0x08: 82, 0x09: 243, 0x0a: 398, 0x0b: 112, 0x0c: 52, 0x0e: 111, 0x0f: 39,
+		0x11: 134, 0x12: 159, 0x13: 112,
+	}
+	for b, want := range masayaExpected {
+		if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: b}); got != want {
+			t.Errorf("Masaya precompile %#04x = %d, want %d", b, got, want)
+		}
+	}
+	if got := len(MasayaUnzenZkGasSchedule.PrecompileMultipliers); got != 17 {
+		t.Errorf("Masaya precompile table has %d entries, want 17", got)
+	}
+
+	// Gaps in the canonical range (0x0d, 0x10 unassigned) and out-of-range bytes
+	// resolve to the failsafe on both schedules.
+	for _, b := range []byte{0x0d, 0x10, 0x14} {
+		if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: b}); got != math.MaxUint16 {
+			t.Errorf("default unlisted %#04x = %d, want failsafe", b, got)
+		}
+		if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: b}); got != math.MaxUint16 {
+			t.Errorf("Masaya unlisted %#04x = %d, want failsafe", b, got)
 		}
 	}
 }

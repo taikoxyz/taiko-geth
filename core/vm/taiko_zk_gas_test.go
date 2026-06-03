@@ -3,6 +3,8 @@ package vm
 import (
 	"math"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 func testSchedule() *ZkGasSchedule {
@@ -28,12 +30,12 @@ func testSchedule() *ZkGasSchedule {
 	s.OpcodeMultipliers[0xf1] = 25 // CALL
 	s.OpcodeMultipliers[0xf0] = 1  // CREATE
 
-	// Set a precompile multiplier for testing.
-	for i := range s.PrecompileMultipliers {
-		s.PrecompileMultipliers[i] = math.MaxUint16
+	// Set precompile multipliers for testing; unlisted addresses resolve to
+	// FailsafeMultiplier via PrecompileMultiplier.
+	s.PrecompileMultipliers = map[common.Address]uint16{
+		{19: 0x01}: 81, // ecrecover
+		{19: 0x02}: 10, // sha256
 	}
-	s.PrecompileMultipliers[0x01] = 81 // ecrecover
-	s.PrecompileMultipliers[0x02] = 10 // sha256
 	return s
 }
 
@@ -128,7 +130,7 @@ func TestZkGasMeter_ChargePrecompile(t *testing.T) {
 	m := NewZkGasMeter(testSchedule())
 
 	// ecrecover: gasUsed=3000, multiplier=81, cost=243000
-	if err := m.ChargePrecompile(0x01, 3000); err != nil {
+	if err := m.ChargePrecompile(common.Address{19: 0x01}, 3000); err != nil {
 		t.Fatalf("unexpected error charging ecrecover: %v", err)
 	}
 	if m.TxZkGasUsed() != 243000 {
@@ -136,7 +138,7 @@ func TestZkGasMeter_ChargePrecompile(t *testing.T) {
 	}
 
 	// sha256: gasUsed=100, multiplier=10, cost=1000, total=244000
-	if err := m.ChargePrecompile(0x02, 100); err != nil {
+	if err := m.ChargePrecompile(common.Address{19: 0x02}, 100); err != nil {
 		t.Fatalf("unexpected error charging sha256: %v", err)
 	}
 	if m.TxZkGasUsed() != 244000 {
@@ -294,15 +296,6 @@ func TestUnzenSchedule_SpotChecks(t *testing.T) {
 		{"JUMP opcode", 0x56, s.OpcodeMultipliers, 4},
 		// Failsafe: unassigned opcode should be MaxUint16
 		{"unassigned opcode 0xB0", 0xB0, s.OpcodeMultipliers, math.MaxUint16},
-		// Precompile checks
-		{"ecrecover precompile", 0x01, s.PrecompileMultipliers, 47},
-		{"modexp precompile", 0x05, s.PrecompileMultipliers, 923},
-		{"bn128_mul precompile", 0x07, s.PrecompileMultipliers, 58},
-		{"point_evaluation precompile", 0x0a, s.PrecompileMultipliers, 859},
-		{"blake2f precompile", 0x09, s.PrecompileMultipliers, 166},
-		{"identity precompile", 0x04, s.PrecompileMultipliers, 6},
-		// Failsafe: unassigned precompile should be MaxUint16
-		{"unassigned precompile 0xFF", 0xFF, s.PrecompileMultipliers, math.MaxUint16},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -315,6 +308,31 @@ func TestUnzenSchedule_SpotChecks(t *testing.T) {
 	// Block limit check
 	if s.BlockLimit != 100_000_000 {
 		t.Errorf("expected BlockLimit=100000000, got %d", s.BlockLimit)
+	}
+}
+
+func TestUnzenSchedule_PrecompileSpotChecks(t *testing.T) {
+	s := &UnzenZkGasSchedule
+	tests := []struct {
+		name string
+		addr common.Address
+		want uint16
+	}{
+		{"ecrecover precompile", common.Address{19: 0x01}, 47},
+		{"modexp precompile", common.Address{19: 0x05}, 923},
+		{"bn128_mul precompile", common.Address{19: 0x07}, 58},
+		{"point_evaluation precompile", common.Address{19: 0x0a}, 859},
+		{"blake2f precompile", common.Address{19: 0x09}, 166},
+		{"identity precompile", common.Address{19: 0x04}, 6},
+		// Failsafe: unassigned precompile resolves to FailsafeMultiplier.
+		{"unassigned precompile 0xFF", common.Address{19: 0xFF}, math.MaxUint16},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := s.PrecompileMultiplier(tt.addr); got != tt.want {
+				t.Errorf("got %d, want %d", got, tt.want)
+			}
+		})
 	}
 }
 
