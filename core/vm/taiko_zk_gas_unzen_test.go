@@ -171,16 +171,18 @@ func TestHighRangePrecompileCollisionResolvesToFailsafe(t *testing.T) {
 	}
 }
 
-// TestFullAddressLookupPreservesCanonicalPrecompileMultipliers pins every canonical
-// precompile (0x01..=0x13) to its exact value on both schedules, so finalized blocks
-// stay byte-identical — including Masaya, whose finalized block zk-gas total is committed
-// to the header difficulty field. The len() assertions (default 18, Masaya 17) guard
-// against a dropped or duplicated entry: either changes the count.
+// TestFullAddressLookupPreservesCanonicalPrecompileMultipliers pins every precompile
+// multiplier on both schedules to its exact value, so finalized blocks stay
+// byte-identical — including Masaya, whose finalized block zk-gas total is committed
+// to the header difficulty field. The default schedule keys BLS12 at the canonical
+// Osaka addresses (0x0b..0x11); Masaya stays frozen at the pre-final EIP-2537 draft
+// addresses (0x0b,0x0c,0x0e,0x0f,0x11,0x12,0x13). The len() assertions (default 18,
+// Masaya 17) guard against a dropped or duplicated entry: either changes the count.
 func TestFullAddressLookupPreservesCanonicalPrecompileMultipliers(t *testing.T) {
 	defaultExpected := map[byte]uint16{
 		0x01: 47, 0x02: 10, 0x03: 4, 0x04: 6, 0x05: 923, 0x06: 19, 0x07: 58,
-		0x08: 54, 0x09: 166, 0x0a: 859, 0x0b: 201, 0x0c: 93, 0x0e: 230, 0x0f: 71,
-		0x11: 365, 0x12: 246, 0x13: 208,
+		0x08: 54, 0x09: 166, 0x0a: 859, 0x0b: 201, 0x0c: 93, 0x0d: 230, 0x0e: 71,
+		0x0f: 365, 0x10: 246, 0x11: 208,
 	}
 	for b, want := range defaultExpected {
 		if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: b}); got != want {
@@ -216,12 +218,16 @@ func TestFullAddressLookupPreservesCanonicalPrecompileMultipliers(t *testing.T) 
 		t.Errorf("Masaya precompile table has %d entries, want 17", got)
 	}
 
-	// Gaps in the canonical range (0x0d, 0x10 unassigned) and out-of-range bytes
-	// resolve to the failsafe on both schedules.
-	for _, b := range []byte{0x0d, 0x10, 0x14} {
+	// The default schedule keys BLS12 at the canonical Osaka addresses, so its gaps
+	// are 0x12/0x13 (vacated by the re-keying) plus out-of-range 0x14.
+	for _, b := range []byte{0x12, 0x13, 0x14} {
 		if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: b}); got != math.MaxUint16 {
 			t.Errorf("default unlisted %#04x = %d, want failsafe", b, got)
 		}
+	}
+	// Masaya stays frozen at the pre-final draft addresses, so its gaps remain
+	// 0x0d/0x10 plus out-of-range 0x14.
+	for _, b := range []byte{0x0d, 0x10, 0x14} {
 		if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: b}); got != math.MaxUint16 {
 			t.Errorf("Masaya unlisted %#04x = %d, want failsafe", b, got)
 		}
