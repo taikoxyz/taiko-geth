@@ -3,10 +3,16 @@ package vm
 import (
 	"errors"
 	"math"
+
+	"github.com/ethereum/go-ethereum/common"
 )
 
 // CHANGE(taiko): ErrZkGasLimitExceeded is returned when zk gas arithmetic overflows or exceeds the block limit.
 var ErrZkGasLimitExceeded = errors.New("zk gas limit exceeded")
+
+// CHANGE(taiko): FailsafeMultiplier is the multiplier applied to any precompile
+// absent from a schedule's table, via PrecompileMultiplier.
+const FailsafeMultiplier uint16 = math.MaxUint16
 
 // CHANGE(taiko): SpawnEstimates holds fixed raw-gas estimates for spawn opcodes.
 type SpawnEstimates struct {
@@ -25,9 +31,12 @@ type ZkGasSchedule struct {
 	// per block transaction before opcode and precompile metering begins.
 	// Sourced from the zk-gas spec (taikoxyz/taiko-mono#21669); a value of 0
 	// makes the per-tx charge a no-op.
-	TxIntrinsicZkGas      uint64
-	OpcodeMultipliers     [256]uint16
-	PrecompileMultipliers [256]uint16
+	TxIntrinsicZkGas  uint64
+	OpcodeMultipliers [256]uint16
+	// PrecompileMultipliers maps a precompile's full 20-byte address to its
+	// proving-cost multiplier. Addresses absent from the map resolve to
+	// FailsafeMultiplier via PrecompileMultiplier.
+	PrecompileMultipliers map[common.Address]uint16
 	SpawnEstimates        SpawnEstimates
 }
 
@@ -49,10 +58,20 @@ func (m *ZkGasMeter) ChargeOpcode(opcode byte, rawGas uint64) error {
 	return m.charge(rawGas, multiplier)
 }
 
-// ChargePrecompile charges zk gas for a precompile execution: gasUsed * multiplier.
-func (m *ZkGasMeter) ChargePrecompile(addrLowByte byte, gasUsed uint64) error {
-	multiplier := uint64(m.schedule.PrecompileMultipliers[addrLowByte])
+// ChargePrecompile charges zk gas for a precompile execution: gasUsed * multiplier,
+// where multiplier is keyed by the precompile's full 20-byte address.
+func (m *ZkGasMeter) ChargePrecompile(addr common.Address, gasUsed uint64) error {
+	multiplier := uint64(m.schedule.PrecompileMultiplier(addr))
 	return m.charge(gasUsed, multiplier)
+}
+
+// PrecompileMultiplier returns the proving-cost multiplier for addr, or
+// FailsafeMultiplier when the precompile is not listed in this schedule.
+func (s *ZkGasSchedule) PrecompileMultiplier(addr common.Address) uint16 {
+	if mult, ok := s.PrecompileMultipliers[addr]; ok {
+		return mult
+	}
+	return FailsafeMultiplier
 }
 
 // ChargeTxIntrinsic charges the fixed per-tx intrinsic zk gas defined by the

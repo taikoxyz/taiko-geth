@@ -49,12 +49,12 @@ func stickySchedule() *ZkGasSchedule {
 	for i := range s.OpcodeMultipliers {
 		s.OpcodeMultipliers[i] = 0
 	}
-	for i := range s.PrecompileMultipliers {
-		s.PrecompileMultipliers[i] = 1
+	// Every canonical precompile (0x01..0x13) charges 1×; the failed-precompile
+	// charge of startGas (100_000) alone overshoots BlockLimit=1_000.
+	s.PrecompileMultipliers = make(map[common.Address]uint16)
+	for b := byte(0x01); b <= 0x13; b++ {
+		s.PrecompileMultipliers[common.Address{19: b}] = 1
 	}
-	// PrecompileMultipliers[0x0a]=1 — the failed-precompile charge of startGas
-	// (100_000) alone overshoots BlockLimit=1_000.
-	s.PrecompileMultipliers[0x0a] = 1
 	return s
 }
 
@@ -98,8 +98,10 @@ func TestEVMCall_PrecompileOverLimit_RevertsCallSnapshot(t *testing.T) {
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	statedb.Finalise(true)
 
-	schedule := &ZkGasSchedule{BlockLimit: 1}
-	schedule.PrecompileMultipliers[0x04] = 1
+	schedule := &ZkGasSchedule{
+		BlockLimit:            1,
+		PrecompileMultipliers: map[common.Address]uint16{{19: 0x04}: 1},
+	}
 	meter := NewZkGasMeter(schedule)
 	evm := NewEVM(BlockContext{
 		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },

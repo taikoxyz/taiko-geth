@@ -26,12 +26,9 @@ func stickyExecutorSchedule() *vm.ZkGasSchedule {
 	for i := range s.OpcodeMultipliers {
 		s.OpcodeMultipliers[i] = 0
 	}
-	for i := range s.PrecompileMultipliers {
-		s.PrecompileMultipliers[i] = 1
-	}
-	// PrecompileMultipliers[0x0a]=1 — the failed-precompile charge of startGas
-	// (100_000) alone overshoots BlockLimit=1_000.
-	s.PrecompileMultipliers[0x0a] = 1
+	// point_evaluation (0x0a) charges 1×; the failed-precompile charge of
+	// startGas (100_000) alone overshoots BlockLimit=1_000.
+	s.PrecompileMultipliers = map[common.Address]uint16{{19: 0x0a}: 1}
 	return s
 }
 

@@ -42,9 +42,6 @@ func unzenTestScheduleExhausting() *vm.ZkGasSchedule {
 	for i := range s.OpcodeMultipliers {
 		s.OpcodeMultipliers[i] = math.MaxUint16
 	}
-	for i := range s.PrecompileMultipliers {
-		s.PrecompileMultipliers[i] = math.MaxUint16
-	}
 	return s
 }
 
@@ -184,9 +181,6 @@ func TestApplyTransactionWithEVM_UnzenCommitThenTruncate(t *testing.T) {
 	schedule := &vm.ZkGasSchedule{BlockLimit: 50_000}
 	for i := range schedule.OpcodeMultipliers {
 		schedule.OpcodeMultipliers[i] = 10
-	}
-	for i := range schedule.PrecompileMultipliers {
-		schedule.PrecompileMultipliers[i] = math.MaxUint16
 	}
 
 	gp := NewGasPool(30_000_000)
