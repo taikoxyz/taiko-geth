@@ -97,6 +97,9 @@ func TestUnzenSchedule_Multipliers(t *testing.T) {
 	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x04}); got != 6 {
 		t.Fatalf("default identity (0x04) = %d, want 6", got)
 	}
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{18: 0x01}); got != 163 {
+		t.Fatalf("default p256verify (0x100) = %d, want 163", got)
+	}
 	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x14}); got != math.MaxUint16 {
 		t.Fatalf("default unlisted precompile (0x14) = %d, want failsafe %d", got, uint16(math.MaxUint16))
 	}
@@ -184,8 +187,13 @@ func TestFullAddressLookupPreservesCanonicalPrecompileMultipliers(t *testing.T) 
 			t.Errorf("default precompile %#04x = %d, want %d", b, got, want)
 		}
 	}
-	if got := len(UnzenZkGasSchedule.PrecompileMultipliers); got != 17 {
-		t.Errorf("default precompile table has %d entries, want 17", got)
+	// p256verify (RIP-7212) lives at the two-byte address 0x100, keyed as
+	// {18: 0x01}; added to the default table in taiko-mono#21748.
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{18: 0x01}); got != 163 {
+		t.Errorf("default p256verify (0x100) = %d, want 163", got)
+	}
+	if got := len(UnzenZkGasSchedule.PrecompileMultipliers); got != 18 {
+		t.Errorf("default precompile table has %d entries, want 18", got)
 	}
 
 	masayaExpected := map[byte]uint16{
@@ -197,6 +205,12 @@ func TestFullAddressLookupPreservesCanonicalPrecompileMultipliers(t *testing.T) 
 		if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: b}); got != want {
 			t.Errorf("Masaya precompile %#04x = %d, want %d", b, got, want)
 		}
+	}
+	// Masaya stays frozen: p256verify was never in its finalized schedule, so it
+	// must resolve to the failsafe, not 163. Adding it would break consensus on
+	// already-finalized Masaya Unzen blocks.
+	if got := MasayaUnzenZkGasSchedule.PrecompileMultiplier(common.Address{18: 0x01}); got != math.MaxUint16 {
+		t.Errorf("Masaya p256verify (0x100) = %d, want failsafe %d", got, uint16(math.MaxUint16))
 	}
 	if got := len(MasayaUnzenZkGasSchedule.PrecompileMultipliers); got != 17 {
 		t.Errorf("Masaya precompile table has %d entries, want 17", got)

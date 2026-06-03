@@ -248,7 +248,9 @@ func masayaUnzenOpcodeMultipliers() [256]uint16 {
 // pre-recalibration values. Frozen for the same consensus reason as
 // masayaUnzenOpcodeMultipliers. Canonical precompiles all live at 0x00…00XX, so
 // common.Address{19: 0xNN} spells their keys. Absent addresses resolve to
-// FailsafeMultiplier.
+// FailsafeMultiplier. p256verify (RIP-7212, 0x100) is deliberately omitted here:
+// it was never in Masaya's finalized schedule, so adding it would break
+// consensus on already-finalized Masaya Unzen blocks.
 func masayaUnzenPrecompileMultipliers() map[common.Address]uint16 {
 	return map[common.Address]uint16{
 		{19: 0x01}: 81,   // ecrecover
@@ -431,9 +433,10 @@ func unzenOpcodeMultipliers() [256]uint16 {
 }
 
 // unzenPrecompileMultipliers returns the recalibrated default precompile
-// multiplier table, keyed by full precompile address. Canonical precompiles all
-// live at 0x00…00XX, so common.Address{19: 0xNN} spells their keys. Absent
-// addresses resolve to FailsafeMultiplier.
+// multiplier table, keyed by full precompile address. Canonical precompiles
+// live at 0x00…00XX, so common.Address{19: 0xNN} spells their keys; p256verify
+// (RIP-7212) is the exception at the two-byte address 0x100, keyed as
+// common.Address{18: 0x01}. Absent addresses resolve to FailsafeMultiplier.
 func unzenPrecompileMultipliers() map[common.Address]uint16 {
 	return map[common.Address]uint16{
 		{19: 0x01}: 47,  // ecrecover
@@ -453,5 +456,8 @@ func unzenPrecompileMultipliers() map[common.Address]uint16 {
 		{19: 0x11}: 365, // bls12_pairing
 		{19: 0x12}: 246, // bls12_map_fp_to_g1
 		{19: 0x13}: 208, // bls12_map_fp2_to_g2
+		// p256verify (RIP-7212) lives at the two-byte address 0x100, so its key
+		// is {18: 0x01}, not the {19: 0xNN} form the canonical precompiles use.
+		{18: 0x01}: 163, // p256verify
 	}
 }
