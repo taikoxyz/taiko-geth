@@ -319,7 +319,7 @@ func TestUnzenSchedule_PrecompileSpotChecks(t *testing.T) {
 		want uint16
 	}{
 		{"ecrecover precompile", common.Address{19: 0x01}, 47},
-		{"modexp precompile", common.Address{19: 0x05}, 923},
+		{"modexp precompile", common.Address{19: 0x05}, 154},
 		{"bn128_mul precompile", common.Address{19: 0x07}, 58},
 		{"point_evaluation precompile", common.Address{19: 0x0a}, 859},
 		{"blake2f precompile", common.Address{19: 0x09}, 166},

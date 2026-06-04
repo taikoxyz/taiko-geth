@@ -59,7 +59,7 @@ func TestMasayaUnzenSchedule_FreezesPreRecalibrationMultipliers(t *testing.T) {
 	}
 	// Spot-check known recalibrated entries so this guard fails if the two
 	// tables ever realign: keccak256 (0x20) went 85 -> 31 for the default while
-	// Masaya stays at 85; modexp (0x05) went 1363 -> 923 while Masaya stays at 1363.
+	// Masaya stays at 85; modexp (0x05) went 1363 -> 154 while Masaya stays at 1363.
 	if MasayaUnzenZkGasSchedule.OpcodeMultipliers[0x20] == UnzenZkGasSchedule.OpcodeMultipliers[0x20] {
 		t.Fatal("keccak256 (0x20) opcode multiplier must differ between Masaya and default")
 	}
@@ -91,8 +91,8 @@ func TestUnzenSchedule_Multipliers(t *testing.T) {
 	if got := UnzenZkGasSchedule.OpcodeMultipliers[0xac]; got != math.MaxUint16 {
 		t.Fatalf("default unlisted (0xac) = %d, want failsafe %d", got, uint16(math.MaxUint16))
 	}
-	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x05}); got != 923 {
-		t.Fatalf("default modexp (0x05) = %d, want 923", got)
+	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x05}); got != 154 {
+		t.Fatalf("default modexp (0x05) = %d, want 154", got)
 	}
 	if got := UnzenZkGasSchedule.PrecompileMultiplier(common.Address{19: 0x01}); got != 47 {
 		t.Fatalf("default ecrecover (0x01) = %d, want 47", got)
@@ -186,7 +186,7 @@ func TestHighRangePrecompileCollisionResolvesToFailsafe(t *testing.T) {
 // Masaya 17) guard against a dropped or duplicated entry: either changes the count.
 func TestFullAddressLookupPreservesCanonicalPrecompileMultipliers(t *testing.T) {
 	defaultExpected := map[byte]uint16{
-		0x01: 47, 0x02: 10, 0x03: 4, 0x04: 6, 0x05: 923, 0x06: 19, 0x07: 58,
+		0x01: 47, 0x02: 10, 0x03: 4, 0x04: 6, 0x05: 154, 0x06: 19, 0x07: 58,
 		0x08: 54, 0x09: 166, 0x0a: 859, 0x0b: 201, 0x0c: 93, 0x0d: 230, 0x0e: 71,
 		0x0f: 365, 0x10: 246, 0x11: 208,
 	}
