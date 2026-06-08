@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
@@ -37,4 +38,27 @@ func TestTaikoGenesisBlock_MasayaActivatesUnzenAtGenesis(t *testing.T) {
 	}
 	t.Logf("Masaya chain ID: %d", params.MasayaDevnetNetworkID.Uint64())
 	t.Logf("Masaya genesis hash: %s", genesis.ToBlock().Hash())
+}
+
+func TestTaikoGenesisBlock_MasayaDoesNotContaminateMainnetForkTimes(t *testing.T) {
+	TaikoGenesisBlock(params.MasayaDevnetNetworkID.Uint64())
+
+	genesis := TaikoGenesisBlock(params.TaikoMainnetNetworkID.Uint64())
+	cfg := genesis.Config
+	if cfg.UnzenTime == nil {
+		t.Fatal("UnzenTime is nil, want MaxUint64")
+	}
+	if got := *cfg.UnzenTime; got != math.MaxUint64 {
+		t.Fatalf("UnzenTime = %d, want %d", got, uint64(math.MaxUint64))
+	}
+	zeroBlock := big.NewInt(0)
+	if cfg.IsCancun(zeroBlock, 0) {
+		t.Fatal("Mainnet Cancun fork is active at genesis after constructing Masaya")
+	}
+	if cfg.IsPrague(zeroBlock, 0) {
+		t.Fatal("Mainnet Prague fork is active at genesis after constructing Masaya")
+	}
+	if cfg.IsOsaka(zeroBlock, 0) {
+		t.Fatal("Mainnet Osaka fork is active at genesis after constructing Masaya")
+	}
 }

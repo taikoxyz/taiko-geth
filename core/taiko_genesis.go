@@ -34,7 +34,9 @@ var (
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
 func TaikoGenesisBlock(networkID uint64) *Genesis {
-	chainConfig := params.TaikoChainConfig
+	// CHANGE(taiko): Each generated genesis needs an isolated chain config because
+	// fork timestamps are overwritten per network below.
+	chainConfig := *params.TaikoChainConfig
 
 	var allocJSON []byte
 	switch networkID {
@@ -101,7 +103,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	}
 
 	return &Genesis{
-		Config:     chainConfig,
+		Config:     &chainConfig,
 		ExtraData:  []byte{},
 		GasLimit:   uint64(15_000_000),
 		Difficulty: common.Big0,
