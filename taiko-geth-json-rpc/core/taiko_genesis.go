@@ -27,14 +27,16 @@ var (
 	HoodiShastaTime    uint64 = 1_770_296_400
 
 	DevnetUnzenTime  uint64 = 0
-	MasayaUnzenTime  uint64 = 1_778_158_800
+	MasayaUnzenTime  uint64 = 0
 	MainnetUnzenTime uint64 = math.MaxUint64
 	HoodiUnzenTime   uint64 = math.MaxUint64
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
 func TaikoGenesisBlock(networkID uint64) *Genesis {
-	chainConfig := params.TaikoChainConfig
+	// CHANGE(taiko): Each generated genesis needs an isolated chain config because
+	// fork timestamps are overwritten per network below.
+	chainConfig := *params.TaikoChainConfig
 
 	var allocJSON []byte
 	switch networkID {
@@ -101,7 +103,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 	}
 
 	return &Genesis{
-		Config:     chainConfig,
+		Config:     &chainConfig,
 		ExtraData:  []byte{},
 		GasLimit:   uint64(15_000_000),
 		Difficulty: common.Big0,

@@ -88,7 +88,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// CHANGE(taiko): initialize zk gas meter for Unzen blocks.
 	// Must be set before NewEVM since it copies cfg by value.
 	if config.IsUnzen(header.Time) {
-		cfg.ZkGasMeter = vm.NewZkGasMeter(vm.UnzenZkGasScheduleFor(config.ChainID))
+		cfg.ZkGasMeter = vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
 		// CHANGE(taiko): Unzen imported blocks must not contain blob transactions.
 		for i, tx := range block.Transactions() {
 			if tx.Type() == types.BlobTxType {
@@ -255,11 +255,10 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 		// CHANGE(taiko): charge the per-tx intrinsic zk gas before EVM execution
 		// begins (zk-gas spec: taikoxyz/taiko-mono#21669). The charge accumulates
 		// into the in-flight tx total and is committed alongside opcode and
-		// precompile usage on success; a schedule value of 0 (Masaya) makes this
-		// a no-op. If the intrinsic alone exceeds the remaining block budget,
-		// return ErrZkGasLimitExceeded so the outer loop truncates (non-anchor)
-		// or fails (anchor). No state has been mutated yet, so no revert is
-		// needed — return before taking the snapshot.
+		// precompile usage on success. If the intrinsic alone exceeds the
+		// remaining block budget, return ErrZkGasLimitExceeded so the outer loop
+		// truncates (non-anchor) or fails (anchor). No state has been mutated yet,
+		// so no revert is needed — return before taking the snapshot.
 		if err := evm.Config.ZkGasMeter.ChargeTxIntrinsic(); err != nil {
 			return nil, err
 		}
