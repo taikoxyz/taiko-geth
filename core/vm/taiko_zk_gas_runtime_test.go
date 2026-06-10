@@ -930,3 +930,76 @@ func (c *zkGasTraceCollector) isPrecompile(addr common.Address) bool {
 	_, ok := c.precompiles[addr]
 	return ok
 }
+
+// CHANGE(taiko): TestUnzenZkGas_PreExecutionFailuresMirrorRevmStaticGas pins
+// the zk gas charged for opcodes that fail before go-ethereum deducts any
+// gas (stack underflow/overflow and REVM's not-activated opcodes). REVM
+// deducts its instruction-table static gas in step() before the instruction
+// body runs, so these steps must still charge static-gas zk gas. Every
+// expected value below was probed against alethia-reth under the Unzen
+// schedule.
+func TestUnzenZkGas_PreExecutionFailuresMirrorRevmStaticGas(t *testing.T) {
+	push0Overflow := make([]byte, 1025)
+	for i := range push0Overflow {
+		push0Overflow[i] = byte(PUSH0)
+	}
+
+	tests := []struct {
+		name      string
+		code      []byte
+		gas       uint64
+		wantZkGas uint64
+	}{
+		// 3 static * 19 multiplier.
+		{"add stack underflow", []byte{byte(ADD)}, 100_000, 57},
+		// REVM SLOAD static gas is 100 post-Berlin (go-ethereum carries it as dynamic gas): 100 * 3.
+		{"sload stack underflow", []byte{byte(SLOAD)}, 100_000, 300},
+		// REVM LOG0 static gas is 375 (go-ethereum carries it as dynamic gas): 375 * 3.
+		{"log0 stack underflow", []byte{byte(LOG0)}, 100_000, 1125},
+		// REVM EXP static gas is 10 (go-ethereum carries it as dynamic gas): 10 * 21.
+		{"exp stack underflow", []byte{byte(EXP)}, 100_000, 210},
+		// REVM CREATE static gas is 0 (the 32000 is charged inside the instruction body).
+		{"create stack underflow", []byte{byte(CREATE)}, 100_000, 0},
+		// 3 static * 31 multiplier.
+		{"swap1 stack underflow", []byte{byte(SWAP1)}, 100_000, 93},
+		// Static gas exceeds the 2 gas remaining, so REVM hits OOG first and
+		// spends everything: 2 * 19.
+		{"add stack underflow with unpayable static gas", []byte{byte(ADD)}, 2, 38},
+		// DUPN halts NotActivated in REVM after its 3 static gas is deducted;
+		// the fail-safe multiplier applies: 3 * 65535.
+		{"dupn not activated", []byte{0xe6}, 100_000, 196_605},
+		// SLOTNUM static gas is 2: 2 * 65535.
+		{"slotnum not activated", []byte{0x4b}, 100_000, 131_070},
+		// 1024 successful PUSH0 steps plus the overflowing one all charge 2 * 13.
+		{"push0 stack overflow", push0Overflow, 1_000_000, 26_650},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meter := NewZkGasMeter(&UnzenZkGasSchedule)
+			contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
+
+			rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+			statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+			statedb.CreateAccount(contractAddr)
+			statedb.SetCode(contractAddr, tt.code, tracing.CodeChangeUnspecified)
+			statedb.Finalise(true)
+
+			evm := NewEVM(BlockContext{
+				CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+				Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+				BlockNumber: big.NewInt(1),
+				Time:        1,
+				Random:      &common.Hash{},
+			}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+			statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
+
+			if _, _, err := evm.Call(common.Address{}, contractAddr, nil, tt.gas, new(uint256.Int)); err == nil {
+				t.Fatalf("Call succeeded, want a pre-execution failure")
+			}
+			if got := meter.TxZkGasUsed(); got != tt.wantZkGas {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.wantZkGas)
+			}
+		})
+	}
+}
