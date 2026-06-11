@@ -40,6 +40,51 @@ func TestTaikoGenesisBlock_MasayaActivatesUnzenAtGenesis(t *testing.T) {
 	t.Logf("Masaya genesis hash: %s", genesis.ToBlock().Hash())
 }
 
+func TestTaikoGenesisBlock_HoodiActivatesUnzenAtScheduledTime(t *testing.T) {
+	genesis := TaikoGenesisBlock(params.TaikoHoodiNetworkID.Uint64())
+	cfg := genesis.Config
+	if cfg.ChainID.Cmp(params.TaikoHoodiNetworkID) != 0 {
+		t.Fatalf("ChainID = %v, want %v", cfg.ChainID, params.TaikoHoodiNetworkID)
+	}
+
+	const hoodiUnzenTime uint64 = 1_781_787_600
+	if cfg.UnzenTime == nil {
+		t.Fatalf("UnzenTime is nil, want %d", hoodiUnzenTime)
+	}
+	if got := *cfg.UnzenTime; got != hoodiUnzenTime {
+		t.Fatalf("UnzenTime = %d, want %d", got, hoodiUnzenTime)
+	}
+
+	zeroBlock := big.NewInt(0)
+	before := hoodiUnzenTime - 1
+	if cfg.IsUnzen(before) {
+		t.Fatalf("Hoodi Unzen fork is active at timestamp %d", before)
+	}
+	if !cfg.IsUnzen(hoodiUnzenTime) {
+		t.Fatalf("Hoodi Unzen fork is not active at timestamp %d", hoodiUnzenTime)
+	}
+	if cfg.IsCancun(zeroBlock, before) {
+		t.Fatalf("Hoodi Cancun fork is active at timestamp %d", before)
+	}
+	if !cfg.IsCancun(zeroBlock, hoodiUnzenTime) {
+		t.Fatalf("Hoodi Cancun fork is not active at timestamp %d", hoodiUnzenTime)
+	}
+	if cfg.IsPrague(zeroBlock, before) {
+		t.Fatalf("Hoodi Prague fork is active at timestamp %d", before)
+	}
+	if !cfg.IsPrague(zeroBlock, hoodiUnzenTime) {
+		t.Fatalf("Hoodi Prague fork is not active at timestamp %d", hoodiUnzenTime)
+	}
+	if cfg.IsOsaka(zeroBlock, before) {
+		t.Fatalf("Hoodi Osaka fork is active at timestamp %d", before)
+	}
+	if !cfg.IsOsaka(zeroBlock, hoodiUnzenTime) {
+		t.Fatalf("Hoodi Osaka fork is not active at timestamp %d", hoodiUnzenTime)
+	}
+	t.Logf("Taiko Hoodi chain ID: %d", params.TaikoHoodiNetworkID.Uint64())
+	t.Logf("Taiko Hoodi genesis hash: %s", genesis.ToBlock().Hash())
+}
+
 func TestTaikoGenesisBlock_MasayaDoesNotContaminateMainnetForkTimes(t *testing.T) {
 	TaikoGenesisBlock(params.MasayaDevnetNetworkID.Uint64())
 
