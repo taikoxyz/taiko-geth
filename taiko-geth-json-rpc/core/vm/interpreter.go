@@ -199,8 +199,27 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		cost = operation.constantGas // For tracing
 		// Validate stack
 		if sLen := stack.len(); sLen < operation.minStack {
+			// CHANGE(taiko): REVM deducts the instruction-table static gas in
+			// step() before the instruction body pops the stack, so a stack
+			// underflow still charges the static gas as zk gas (or all
+			// remaining frame gas when even the static charge cannot be paid).
+			if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+				evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+				if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasPreExecutionGasAfter(op, gasBefore)); zkErr != nil {
+					evm.setZkGasErr()
+					return nil, ErrZkGasLimitExceeded
+				}
+			}
 			return nil, &ErrStackUnderflow{stackLen: sLen, required: operation.minStack}
 		} else if sLen > operation.maxStack {
+			// CHANGE(taiko): same REVM static-gas mirror as the underflow path.
+			if evm.zkGasTracker != nil && evm.zkGasErr == nil {
+				evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+				if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasPreExecutionGasAfter(op, gasBefore)); zkErr != nil {
+					evm.setZkGasErr()
+					return nil, ErrZkGasLimitExceeded
+				}
+			}
 			return nil, &ErrStackOverflow{stackLen: sLen, limit: operation.maxStack}
 		}
 		// for tracing: this gas consumption event is emitted below in the debug section.

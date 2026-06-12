@@ -1,10 +1,160 @@
 package vm
 
 import (
+	"errors"
+
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
+
+// CHANGE(taiko): zkGasRevmStaticGas mirrors the static gas REVM's instruction
+// table deducts in Interpreter::step before the instruction body runs
+// (revm-interpreter 35.0.1 instruction_table_gas_changes_spec, with the
+// BERLIN repricing applied; Unzen maps to OSAKA). go-ethereum's own
+// constantGas values cannot stand in for these: go-ethereum classifies
+// several base costs as dynamic gas (SLOAD, EXP, LOG0-LOG4) or as constant
+// gas REVM charges inside the instruction body (CREATE/CREATE2 carry 32000
+// here but 0 in REVM's table), and REVM additionally ships Amsterdam-gated
+// opcodes (SLOTNUM, DUPN, SWAPN, EXCHANGE) that go-ethereum treats as
+// undefined. Opcodes unknown to REVM's table stay at 0.
+// AI prompt: When upgrading revm, regenerate this table from the new
+// revm-interpreter instruction table for the fork Unzen maps to.
+var zkGasRevmStaticGas = [256]uint64{
+	ADD:        3,
+	MUL:        5,
+	SUB:        3,
+	DIV:        5,
+	SDIV:       5,
+	MOD:        5,
+	SMOD:       5,
+	ADDMOD:     8,
+	MULMOD:     8,
+	EXP:        10,
+	SIGNEXTEND: 5,
+
+	LT:     3,
+	GT:     3,
+	SLT:    3,
+	SGT:    3,
+	EQ:     3,
+	ISZERO: 3,
+	AND:    3,
+	OR:     3,
+	XOR:    3,
+	NOT:    3,
+	BYTE:   3,
+	SHL:    3,
+	SHR:    3,
+	SAR:    3,
+	CLZ:    5,
+
+	KECCAK256: 30,
+
+	ADDRESS:        2,
+	BALANCE:        100,
+	ORIGIN:         2,
+	CALLER:         2,
+	CALLVALUE:      2,
+	CALLDATALOAD:   3,
+	CALLDATASIZE:   2,
+	CALLDATACOPY:   3,
+	CODESIZE:       2,
+	CODECOPY:       3,
+	GASPRICE:       2,
+	EXTCODESIZE:    100,
+	EXTCODECOPY:    100,
+	RETURNDATASIZE: 2,
+	RETURNDATACOPY: 3,
+	EXTCODEHASH:    100,
+
+	BLOCKHASH:   20,
+	COINBASE:    2,
+	TIMESTAMP:   2,
+	NUMBER:      2,
+	DIFFICULTY:  2,
+	GASLIMIT:    2,
+	CHAINID:     2,
+	SELFBALANCE: 5,
+	BASEFEE:     2,
+	BLOBHASH:    3,
+	BLOBBASEFEE: 2,
+	0x4b:        2, // SLOTNUM (Amsterdam, EIP-7843)
+
+	POP:      2,
+	MLOAD:    3,
+	MSTORE:   3,
+	MSTORE8:  3,
+	SLOAD:    100,
+	JUMP:     8,
+	JUMPI:    10,
+	PC:       2,
+	MSIZE:    2,
+	GAS:      2,
+	JUMPDEST: 1,
+	TLOAD:    100,
+	TSTORE:   100,
+	MCOPY:    3,
+	PUSH0:    2,
+
+	PUSH1: 3, PUSH2: 3, PUSH3: 3, PUSH4: 3, PUSH5: 3, PUSH6: 3, PUSH7: 3, PUSH8: 3,
+	PUSH9: 3, PUSH10: 3, PUSH11: 3, PUSH12: 3, PUSH13: 3, PUSH14: 3, PUSH15: 3, PUSH16: 3,
+	PUSH17: 3, PUSH18: 3, PUSH19: 3, PUSH20: 3, PUSH21: 3, PUSH22: 3, PUSH23: 3, PUSH24: 3,
+	PUSH25: 3, PUSH26: 3, PUSH27: 3, PUSH28: 3, PUSH29: 3, PUSH30: 3, PUSH31: 3, PUSH32: 3,
+
+	DUP1: 3, DUP2: 3, DUP3: 3, DUP4: 3, DUP5: 3, DUP6: 3, DUP7: 3, DUP8: 3,
+	DUP9: 3, DUP10: 3, DUP11: 3, DUP12: 3, DUP13: 3, DUP14: 3, DUP15: 3, DUP16: 3,
+
+	SWAP1: 3, SWAP2: 3, SWAP3: 3, SWAP4: 3, SWAP5: 3, SWAP6: 3, SWAP7: 3, SWAP8: 3,
+	SWAP9: 3, SWAP10: 3, SWAP11: 3, SWAP12: 3, SWAP13: 3, SWAP14: 3, SWAP15: 3, SWAP16: 3,
+
+	LOG0: 375,
+	LOG1: 375,
+	LOG2: 375,
+	LOG3: 375,
+	LOG4: 375,
+
+	0xe6: 3, // DUPN (Amsterdam, EIP-663)
+	0xe7: 3, // SWAPN (Amsterdam, EIP-663)
+	0xe8: 3, // EXCHANGE (Amsterdam, EIP-663)
+
+	CALL:         100,
+	CALLCODE:     100,
+	DELEGATECALL: 100,
+	STATICCALL:   100,
+	SELFDESTRUCT: 5000,
+}
+
+// CHANGE(taiko): zkGasPreExecutionGasAfter mirrors REVM's callback-visible gas
+// for opcodes that fail before go-ethereum deducts any gas. REVM charges the
+// instruction-table static gas in step() before the instruction body runs, so
+// a stack underflow/overflow (or the not-activated halt of an opcode REVM
+// ships but Unzen does not enable) still surfaces a net delta of the table's
+// static gas — or all remaining frame gas when even the static charge cannot
+// be paid, because REVM's halt_oog spends everything.
+func zkGasPreExecutionGasAfter(op OpCode, gasBefore uint64) uint64 {
+	staticGas := zkGasRevmStaticGas[op]
+	if gasBefore < staticGas {
+		return 0
+	}
+	return gasBefore - staticGas
+}
+
+// CHANGE(taiko): isRevmNotActivatedOpcode reports opcodes that REVM ships in
+// its instruction table behind a fork gate Unzen (OSAKA) does not enable.
+// go-ethereum treats them as undefined opcodes and charges no gas, but REVM
+// deducts their table static gas in step() before the instruction halts with
+// NotActivated, so zk gas metering must charge them the same way.
+// AI prompt: When upgrading revm, update this list from the fork-gated opcodes
+// present in REVM's instruction table but not activated for Unzen.
+func isRevmNotActivatedOpcode(op OpCode) bool {
+	switch byte(op) {
+	case 0x4b, 0xe6, 0xe7, 0xe8: // SLOTNUM, DUPN, SWAPN, EXCHANGE (Amsterdam)
+		return true
+	default:
+		return false
+	}
+}
 
 // CHANGE(taiko): zkGasPendingStep stores the in-flight opcode state for one EVM depth.
 type zkGasPendingStep struct {
@@ -248,6 +398,13 @@ func zkGasStepGasAfter(op OpCode, err error, gasBefore, gasAfter uint64) uint64 
 	}
 	if err == ErrWriteProtection && op >= LOG0 && op <= LOG4 && gasBefore >= params.LogGas {
 		return gasBefore - params.LogGas
+	}
+	// Opcodes REVM ships behind a fork gate Unzen does not enable execute as
+	// undefined opcodes here (no gas movement), but REVM deducts their table
+	// static gas before halting with NotActivated.
+	var invalidOpcode *ErrInvalidOpCode
+	if errors.As(err, &invalidOpcode) && isRevmNotActivatedOpcode(op) {
+		return zkGasPreExecutionGasAfter(op, gasBefore)
 	}
 	return gasAfter
 }
