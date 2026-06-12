@@ -1,51 +1,5 @@
 # Changelog
 
-## [2.5.0](https://github.com/taikoxyz/taiko-geth/compare/v2.4.0...v2.5.0) (2026-06-12)
-
-
-### Features
-
-* **consensus:** differentiate Unzen zk-gas block limit by network — Masaya 1B, others 100M ([#553](https://github.com/taikoxyz/taiko-geth/issues/553)) ([7e38f6d](https://github.com/taikoxyz/taiko-geth/commit/7e38f6dca9f76703a8902bb3bfb90ceca0d8fad7))
-* **consensus:** Uzen fork — ZK gas metering, Osaka EVM, engine API ([#543](https://github.com/taikoxyz/taiko-geth/issues/543)) ([e33be20](https://github.com/taikoxyz/taiko-geth/commit/e33be202c76f8ec9abdddbeed1c260b5cc52a7c2))
-* **core:** set Masaya Unzen fork time to `2026-05-07 13:00:00 UTC` ([#552](https://github.com/taikoxyz/taiko-geth/issues/552)) ([f636489](https://github.com/taikoxyz/taiko-geth/commit/f636489ae176d8c9957eb7b1990c6be09969c56e))
-* **eth:** gate batch lookup results by network ([#558](https://github.com/taikoxyz/taiko-geth/issues/558)) ([676428d](https://github.com/taikoxyz/taiko-geth/commit/676428dc7ea79d7fd0162d8e9c82f30de519b05f))
-* **repo:** `go-ethereum` v1.17.2 upstream merge ([#541](https://github.com/taikoxyz/taiko-geth/issues/541)) ([f367d18](https://github.com/taikoxyz/taiko-geth/commit/f367d18451e56d4c82d204e54fa7530cba9b42b3))
-* **taiko_genesis:** reset Masaya Unzen zk-gas schedule ([#569](https://github.com/taikoxyz/taiko-geth/issues/569)) ([20c1c28](https://github.com/taikoxyz/taiko-geth/commit/20c1c28a3ea094f22c8f5bd82d9275dbb03568db))
-* **taiko_genesis:** schedule Hoodi Unzen fork ([#571](https://github.com/taikoxyz/taiko-geth/issues/571)) ([3ea282a](https://github.com/taikoxyz/taiko-geth/commit/3ea282a772c10a066c9cbc897fdc6d1e66e35e62))
-* **taiko_genesis:** set Hoodi Unzen fork time to `2026-05-21 13:00:00 UTC` ([#557](https://github.com/taikoxyz/taiko-geth/issues/557)) ([6c6a4df](https://github.com/taikoxyz/taiko-geth/commit/6c6a4df06d461513a40a4bf70eda18681d9ea411))
-* **taiko:** introduce auth api `taikoAuth_lastCertainL1OriginByBatchID` ([#537](https://github.com/taikoxyz/taiko-geth/issues/537)) ([d903f61](https://github.com/taikoxyz/taiko-geth/commit/d903f618271ec8a0bb3d364e7fc12ea29387c257))
-* **vm:** add `p256verify` zk-gas multiplier to Unzen default ([#566](https://github.com/taikoxyz/taiko-geth/issues/566)) ([7fc5e0c](https://github.com/taikoxyz/taiko-geth/commit/7fc5e0c4d58491b9cd462f2c9d1ad057c46e2ff2))
-* **vm:** add `TX_INTRINSIC_ZK_GAS` to Unzen zk gas accounting ([#560](https://github.com/taikoxyz/taiko-geth/issues/560)) ([9d62780](https://github.com/taikoxyz/taiko-geth/commit/9d62780bfc852d5440b09b40cb54ed5efaf58183))
-* **vm:** key Unzen precompile zk-gas multipliers by full address ([#565](https://github.com/taikoxyz/taiko-geth/issues/565)) ([e31c289](https://github.com/taikoxyz/taiko-geth/commit/e31c2898cda399a123ae750419d0e35c18472874))
-* **vm:** lower default Unzen modexp zk-gas multiplier to 154 ([#568](https://github.com/taikoxyz/taiko-geth/issues/568)) ([312ef68](https://github.com/taikoxyz/taiko-geth/commit/312ef681a061240fc037f99f9b11e2f2e3fdf549))
-* **vm:** recalibrate Unzen zk gas multipliers, freeze Masaya ([#564](https://github.com/taikoxyz/taiko-geth/issues/564)) ([9692375](https://github.com/taikoxyz/taiko-geth/commit/96923758c5e43e51eecde8617a7bd70cfa9163d8))
-
-
-### Bug Fixes
-
-* **cmd:** honor taiko network id when selecting genesis ([#549](https://github.com/taikoxyz/taiko-geth/issues/549)) ([71a3f7e](https://github.com/taikoxyz/taiko-geth/commit/71a3f7e495ce07b25f48a3fd3513a3d92aa7c2ca))
-* **core:** align Unzen zk-gas accounting ([#554](https://github.com/taikoxyz/taiko-geth/issues/554)) ([d1291a1](https://github.com/taikoxyz/taiko-geth/commit/d1291a14cb7e851ef9b5930cfa096021346aea20))
-* **core:** revert state on Uzen zk-gas-exhausted tx to match alethia-reth ([#550](https://github.com/taikoxyz/taiko-geth/issues/550)) ([534e816](https://github.com/taikoxyz/taiko-geth/commit/534e816aed33a157b2919b4ff78a9bad2f8fcfb7))
-* **hoodi:** disable unzen fork ([#562](https://github.com/taikoxyz/taiko-geth/issues/562)) ([b0eeb37](https://github.com/taikoxyz/taiko-geth/commit/b0eeb37b979855457a470140ced7d8266afd8851))
-* **vm:** align Unzen zk gas on memory size overflow ([#556](https://github.com/taikoxyz/taiko-geth/issues/556)) ([5ec860d](https://github.com/taikoxyz/taiko-geth/commit/5ec860d6684ebe41d1430ac30dfdf5f0a8bc7745))
-* **vm:** align Uzen zk gas metering ([#547](https://github.com/taikoxyz/taiko-geth/issues/547)) ([742bd51](https://github.com/taikoxyz/taiko-geth/commit/742bd51a55aec8c2cc43ae23ebae613ae9b29311))
-
-
-### Chores
-
-* **cmd:** introduce `--taiko.internal-uzen-time` flag ([#546](https://github.com/taikoxyz/taiko-geth/issues/546)) ([a331479](https://github.com/taikoxyz/taiko-geth/commit/a331479154bc2adec77e3dc0a96c0191bd871ac9))
-* **consensus:** lower EIP-4396 skip log to debug ([#548](https://github.com/taikoxyz/taiko-geth/issues/548)) ([58a6d54](https://github.com/taikoxyz/taiko-geth/commit/58a6d541c57bb02701d84af71db9c1d3bf53fc63))
-* **eth:** increase batch lookup window ([#559](https://github.com/taikoxyz/taiko-geth/issues/559)) ([4d58aab](https://github.com/taikoxyz/taiko-geth/commit/4d58aabf2090da187dc8428e4d8c07643d9a07b6))
-* **repo:** update fork name to `Unzen` ([#551](https://github.com/taikoxyz/taiko-geth/issues/551)) ([810480e](https://github.com/taikoxyz/taiko-geth/commit/810480e7eee6205115346ef5085e64af9b66114c))
-* **taiko_genesis:** update devnet JSON ([#539](https://github.com/taikoxyz/taiko-geth/issues/539)) ([426e558](https://github.com/taikoxyz/taiko-geth/commit/426e558946fd341d5579abbc17f4dbb156080615))
-* **taiko_genesis:** update devnet JSON ([#545](https://github.com/taikoxyz/taiko-geth/issues/545)) ([4bd21e0](https://github.com/taikoxyz/taiko-geth/commit/4bd21e02f5d7aa3b1a256f455d6b92722335979a))
-* **vm:** correct Unzen BLS12 precompile addresses and add CLZ opcode ([#567](https://github.com/taikoxyz/taiko-geth/issues/567)) ([56bdb63](https://github.com/taikoxyz/taiko-geth/commit/56bdb63a6212c64d81fa9aef4b7c5ffe38853b95))
-
-
-### Tests
-
-* **eth:** reduce the lookup blocks in test ([#561](https://github.com/taikoxyz/taiko-geth/issues/561)) ([d96bf98](https://github.com/taikoxyz/taiko-geth/commit/d96bf981fce8a520991f490de8789b4290ecd3f1))
-
 ## [2.4.0](https://github.com/taikoxyz/taiko-geth/compare/v2.3.0...v2.4.0) (2026-03-24)
 
 
