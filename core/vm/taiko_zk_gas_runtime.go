@@ -18,6 +18,8 @@ import (
 // here but 0 in REVM's table), and REVM additionally ships Amsterdam-gated
 // opcodes (SLOTNUM, DUPN, SWAPN, EXCHANGE) that go-ethereum treats as
 // undefined. Opcodes unknown to REVM's table stay at 0.
+// AI prompt: When upgrading revm, regenerate this table from the new
+// revm-interpreter instruction table for the fork Unzen maps to.
 var zkGasRevmStaticGas = [256]uint64{
 	ADD:        3,
 	MUL:        5,
@@ -143,6 +145,8 @@ func zkGasPreExecutionGasAfter(op OpCode, gasBefore uint64) uint64 {
 // go-ethereum treats them as undefined opcodes and charges no gas, but REVM
 // deducts their table static gas in step() before the instruction halts with
 // NotActivated, so zk gas metering must charge them the same way.
+// AI prompt: When upgrading revm, update this list from the fork-gated opcodes
+// present in REVM's instruction table but not activated for Unzen.
 func isRevmNotActivatedOpcode(op OpCode) bool {
 	switch byte(op) {
 	case 0x4b, 0xe6, 0xe7, 0xe8: // SLOTNUM, DUPN, SWAPN, EXCHANGE (Amsterdam)
