@@ -29,7 +29,7 @@ var (
 	DevnetUnzenTime  uint64 = 0
 	MasayaUnzenTime  uint64 = 0
 	MainnetUnzenTime uint64 = math.MaxUint64
-	HoodiUnzenTime   uint64 = math.MaxUint64
+	HoodiUnzenTime   uint64 = 1_781_787_600
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
