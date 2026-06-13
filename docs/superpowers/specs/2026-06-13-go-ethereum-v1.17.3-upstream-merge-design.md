@@ -17,6 +17,15 @@ New upstream features (e.g. EIP-7981 wiring) are **not adopted** in this PR — 
 feature integration is deferred to follow-up PRs. This mirrors PR #541's workflow
 and PR shape.
 
+> **Note (discovered during planning, via merge dry-run):** v1.17.3 includes a
+> significant upstream EVM gas refactor — gas became a 2-D vector
+> `GasBudget{RegularGas, StateGas}` (#34691 "turn gas into a vector", #34712
+> "introduce gas budget") plus a uint256 `core.Message` (#34934). Adapting Taiko's
+> ZK-gas layer and anchor logic to this new API is **required to preserve
+> behavior** and is therefore in-scope — this is adaptation forced by upstream, not
+> feature adoption. It makes the merge consensus-sensitive rather than trivial.
+> See §5. Resolution of the affected files is gated on a human review checkpoint.
+
 ### Pinned commits (use SHAs, not the local tags)
 
 - go-ethereum **v1.17.2** = `be4dc0c4be2fe316dbdd0a73e48421f64978232f`
@@ -57,28 +66,37 @@ changes as applied to Taiko (plus our resolutions and the version bump).
 
 ## 3. Conflict resolution
 
-Resolve the conflict-candidate files **by hand, file-by-file**, preserving every
-`CHANGE(taiko):` block and `taiko_*.go` integration while taking upstream's
-changes everywhere else. Each resolution is checked against the upstream commit
-that touched the file so semantics are understood, not just textually merged.
+The merge dry-run (graft + `git merge v1.17.3`) produced **7 conflicted files** —
+the other ~15 `CHANGE(taiko)` candidates auto-merged cleanly. Resolve each **by
+hand**, preserving every `CHANGE(taiko):` block while taking upstream's changes,
+checked against the upstream commit that drove the conflict.
 
-Conflict-candidate files (upstream-changed ∩ `CHANGE(taiko)`):
+**Mechanical / low-risk (3):**
+- `appveyor.yml` — upstream **deleted** it (#34720); Taiko had edits → accept the
+  deletion (Taiko uses gitea/github workflows).
+- `beacon/engine/gen_ed.go` — generated file; regenerate via `go generate` rather
+  than hand-merge.
+- `beacon/engine/types.go` (1 hunk) — keep upstream's `slotNumber,omitempty` tag
+  **and** Taiko's `ExecutableData` additions (`TxHash`, `WithdrawalsHash`,
+  `HeaderDifficulty`, `TaikoBlock`, `HeaderDifficultyOrZero`).
+- `params/config.go` (1 hunk) — keep Taiko's `IsOntake`/`IsPacaya`/`IsShasta`/
+  `IsUnzen` helpers **and** upstream's `IsVerkleGenesis`→`IsUBTGenesis` rename.
 
-```
-beacon/engine/types.go        core/vm/evm.go              eth/state_accessor.go
-cmd/geth/main.go              core/vm/interpreter.go      eth/tracers/api.go
-cmd/utils/flags.go            eth/api_backend.go          internal/ethapi/api.go
-core/blockchain.go            eth/api_debug.go            miner/payload_building.go
-core/evm.go                   eth/catalyst/api.go         miner/worker.go
-core/state_processor.go       eth/ethconfig/config.go     params/config.go
-core/state_transition.go      core/tracing/hooks.go       params/protocol_params.go
-core/txpool/validation.go
-```
+**Consensus-critical — gated on human review (3):**
+- `core/state_transition.go` (3 hunks) — upstream uint256 `Message`; re-apply
+  Taiko's `IsAnchor` field, anchor balance-skip, and anchor gas-refund guard
+  against the new uint256 types.
+- `core/vm/evm.go` (10 hunks) — every Call-family signature went
+  `uint64`→`GasBudget`; re-apply `markPending{Call,Create}Spawn`, the
+  `gasBeforePrecompile`/`ChargePrecompile` zk-gas charging, and `zkGasErr`/
+  `zkGasTracker` fields, adopting upstream's new `RunPrecompiledContract(..., gas
+  GasBudget, ..., rules)` signature. Zk-gas helpers consume `.RegularGas`.
+- `core/vm/interpreter.go` (2 hunks) — keep Taiko's `zkGasTracker` OOG handling,
+  using upstream's `contract.Gas.RegularGas`/`dynamicCost.RegularGas`.
 
-Highest-care files (consensus / state / mining): `core/state_transition.go`,
-`core/state_processor.go`, `core/blockchain.go`, `core/evm.go`,
-`core/vm/{evm,interpreter}.go`, `miner/{worker,payload_building}.go`,
-`eth/catalyst/api.go`, `internal/ethapi/api.go`, `params/{config,protocol_params}.go`.
+After resolving, a **compile-fix pass** is expected (bounded to `core/vm` + `core`)
+where Taiko's zk-gas helpers (`precompileZkGasUsed`, `ZkGasStepTracker.Begin/
+FinishAndCharge`) are adapted to read `.RegularGas` from `GasBudget`.
 
 ## 4. Dependencies & generated code
 
@@ -88,15 +106,23 @@ Highest-care files (consensus / state / mining): `core/state_transition.go`,
 - If upstream regenerated any bindings/protobuf within the delta, re-run the
   relevant `go generate` and commit the output.
 
-## 5. Consensus-impact review (flagged, not changed)
+## 5. Consensus-impact review (flagged for review)
 
 Called out explicitly in the PR body for protocol-team awareness. Confirm Taiko's
 behavior is unchanged unless its chain/fork config opts in:
 
-- **EIP-7981** (access-list gas cost increase) — gated behind an upstream fork;
-  confirm Taiko's chain config does not auto-activate it.
-- **`core.Message` → uint256** — touches `state_transition` / `state_processor`;
-  verify anchor-tx handling and ZK-gas accounting are preserved.
+- **🔴 Gas-vector / `GasBudget` refactor (#34691, #34712) — headline risk.**
+  Upstream replaced EVM `gas uint64` with `GasBudget{RegularGas, StateGas}` across
+  the call API, interpreter, and precompiles. Taiko's ZK-gas layer
+  (`zkGasTracker`, `zkGasErr`, `ChargePrecompile`, `precompileZkGasUsed`) and
+  anchor logic must be re-expressed on top of it. The contract: Taiko's existing
+  gas semantics map to `GasBudget.RegularGas`; the new `StateGas` dimension is
+  upstream-only and is **not** wired into Taiko's ZK-gas accounting in this PR.
+  These resolutions are the human-review-checkpoint deliverable.
+- **`core.Message` → uint256 (#34934)** — `state_transition` / `state_processor`;
+  verify anchor-tx handling and the anchor balance/gas-refund skip are preserved.
+- **EIP-7981** (access-list gas cost increase, #34755) — gated behind an upstream
+  fork; confirm Taiko's chain config does not auto-activate it.
 - **catalyst reorg-to-parent** + **`eth_call` header block-overrides** — verify
   Taiko payload-building / API paths are unaffected.
 
