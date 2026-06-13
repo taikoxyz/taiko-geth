@@ -457,23 +457,29 @@ final passing output for the Task 10 review and the PR body.
 
 ---
 
-## Task 10: 🔴 HUMAN REVIEW CHECKPOINT (do not commit until approved)
+## Task 10: Orchestrator review of consensus-critical resolutions
 
-**Files:** none (review gate)
+**Files:** none (review gate — performed by the orchestrator, NOT a subagent)
 
-- [ ] **Step 1: Present the consensus-critical diffs**
+Execution is subagent-driven and culminates in a **draft PR** (the user's review
+surface). The orchestrator reviews the 3 consensus-critical resolutions before the
+merge is committed; the draft PR carries these notes for the user's own review.
 
-Run and share with the user:
+- [ ] **Step 1: Inspect the consensus-critical diffs**
+
+Run:
 ```bash
 git diff --cached -- core/state_transition.go core/vm/evm.go core/vm/interpreter.go
 ```
-Summarize for each file: which hunks took upstream, which preserved `CHANGE(taiko)`,
-and every `.RegularGas` bridge applied. Include the Task 9 passing-test output.
+Verify for each file: upstream changes adopted, every `CHANGE(taiko)` block
+preserved, `.RegularGas` bridges correct, and **no ZK-gas semantic change**.
+Confirm the Task 9 tests passed. If a subagent made any non-type-bridge change,
+re-dispatch that task with corrections before proceeding.
 
-- [ ] **Step 2: Wait for explicit approval**
+- [ ] **Step 2: Capture per-file resolution notes for the PR body**
 
-Do not proceed to Task 11 until the user approves. Apply any requested changes
-(re-stage, re-run Task 8/9), then re-present.
+Record, per file, which hunks took upstream and which preserved `CHANGE(taiko)`.
+These become the consensus-impact section of the draft PR.
 
 ---
 
@@ -552,9 +558,9 @@ docs-removal commits (no superpowers docs in the tree).
 
 Run: `git push -u origin feat/go-ethereum-v1.17.3-upstream-merge`
 
-- [ ] **Step 3: Open the PR**
+- [ ] **Step 3: Open the DRAFT PR**
 
-Run `gh pr create` with title
+Run `gh pr create --draft` with title
 `feat(repo): go-ethereum v1.17.3 upstream merge` and a body covering:
 - The delta (138 commits, 312 files) and the graft-base technique (one-line
   reviewer note explaining the synthetic `-s ours` commit).
