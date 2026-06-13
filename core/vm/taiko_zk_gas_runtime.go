@@ -268,13 +268,13 @@ func zkGasPreMemoryCost(evm *EVM, op OpCode, stack *Stack, gasBefore, gasAfterSt
 	case op == MLOAD || op == MSTORE || op == MSTORE8 || op == RETURN || op == REVERT:
 		return 0, gasAfterStatic, true
 	case op == KECCAK256:
-		cost, ok := zkGasWordCost(stack.Back(1), params.Keccak256WordGas)
+		cost, ok := zkGasWordCost(stack.back(1), params.Keccak256WordGas)
 		return cost, gasAfterStatic, ok
 	case op == CALLDATACOPY || op == CODECOPY || op == MCOPY || op == RETURNDATACOPY:
-		cost, ok := zkGasWordCost(stack.Back(2), params.CopyGas)
+		cost, ok := zkGasWordCost(stack.back(2), params.CopyGas)
 		return cost, gasAfterStatic, ok
 	case op == EXTCODECOPY:
-		cost, ok := zkGasWordCost(stack.Back(3), params.CopyGas)
+		cost, ok := zkGasWordCost(stack.back(3), params.CopyGas)
 		return cost, gasAfterStatic, ok
 	case op >= LOG0 && op <= LOG4:
 		cost, ok := zkGasLogPreMemoryCost(op, stack)
@@ -325,11 +325,11 @@ func zkGasMemoryExpansionCost(currentMemorySize, memoryLastGasCost, memorySize u
 }
 
 func zkGasCallMemorySizes(stack *Stack, inOffset, inLen, outOffset, outLen int) (uint64, uint64, bool) {
-	inputSize, overflow := calcMemSize64(stack.Back(inOffset), stack.Back(inLen))
+	inputSize, overflow := calcMemSize64(stack.back(inOffset), stack.back(inLen))
 	if overflow {
 		return 0, 0, false
 	}
-	outputSize, overflow := calcMemSize64(stack.Back(outOffset), stack.Back(outLen))
+	outputSize, overflow := calcMemSize64(stack.back(outOffset), stack.back(outLen))
 	if overflow {
 		return 0, 0, false
 	}
@@ -361,7 +361,7 @@ func zkGasWordCost(value *uint256.Int, perWord uint64) (uint64, bool) {
 }
 
 func zkGasLogPreMemoryCost(op OpCode, stack *Stack) (uint64, bool) {
-	requestedSize, overflow := stack.Back(1).Uint64WithOverflow()
+	requestedSize, overflow := stack.back(1).Uint64WithOverflow()
 	if overflow {
 		return 0, false
 	}
@@ -385,7 +385,7 @@ func zkGasCreatePreMemoryCost(evm *EVM, stack *Stack) (uint64, bool) {
 	if !evm.chainRules.IsShanghai {
 		return 0, true
 	}
-	return zkGasWordCost(stack.Back(2), params.InitCodeWordGas)
+	return zkGasWordCost(stack.back(2), params.InitCodeWordGas)
 }
 
 // CHANGE(taiko): zkGasStepGasAfter mirrors REVM's callback-visible gas delta

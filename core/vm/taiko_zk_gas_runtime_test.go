@@ -125,7 +125,7 @@ func TestEVMSetZkGasMeterInitializesLateBoundTracker(t *testing.T) {
 
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 100_000, new(uint256.Int)); err != nil {
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(100_000), new(uint256.Int)); err != nil {
 		t.Fatalf("Call returned error: %v", err)
 	}
 
@@ -191,7 +191,7 @@ func TestUnzenZkGasParity_StaticLogWriteProtectionUsesRevmStaticGas(t *testing.T
 	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &outerAddr, ActivePrecompiles(rules), nil)
 
-	if _, _, err := evm.Call(common.Address{}, outerAddr, nil, 200_000, new(uint256.Int)); err != nil {
+	if _, _, err := evm.Call(common.Address{}, outerAddr, nil, NewGasBudget(200_000), new(uint256.Int)); err != nil {
 		t.Fatalf("Call returned error: %v", err)
 	}
 	if got, want := meter.TxZkGasUsed(), params.LogGas*7; got != want {
@@ -244,7 +244,7 @@ func TestUnzenZkGasParity_StaticCreateWriteProtectionUsesRevmStaticGas(t *testin
 			}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
 			statedb.Prepare(rules, common.Address{}, common.Address{}, &outerAddr, ActivePrecompiles(rules), nil)
 
-			if _, _, err := evm.Call(common.Address{}, outerAddr, nil, 200_000, new(uint256.Int)); err != nil {
+			if _, _, err := evm.Call(common.Address{}, outerAddr, nil, NewGasBudget(200_000), new(uint256.Int)); err != nil {
 				t.Fatalf("Call returned error: %v", err)
 			}
 			if got, want := meter.TxZkGasUsed(), uint64(0); got != want {
@@ -281,14 +281,14 @@ func TestUnzenZkGasParity_EmptyCodeCallShortCircuitUsesSpawnEstimate(t *testing.
 	evm, meter := newUnzenShortCircuitEVM(t, nil)
 
 	evm.zkGasTracker.Begin(0, byte(CALL), 1_000)
-	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, 1_000, new(uint256.Int))
+	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, NewGasBudget(1_000), new(uint256.Int))
 	if err != nil {
 		t.Fatalf("Call error = %v, want nil", err)
 	}
-	if gasLeft != 1_000 {
-		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	if gasLeft.RegularGas != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft.RegularGas, 1_000)
 	}
-	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
+	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft.RegularGas); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
 	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
@@ -301,14 +301,14 @@ func TestUnzenZkGasParity_EmptyCodeStaticCallShortCircuitUsesSpawnEstimate(t *te
 	evm, meter := newUnzenShortCircuitEVM(t, nil)
 
 	evm.zkGasTracker.Begin(0, byte(STATICCALL), 1_000)
-	_, gasLeft, err := evm.StaticCall(common.Address{}, common.Address{0xfe}, nil, 1_000)
+	_, gasLeft, err := evm.StaticCall(common.Address{}, common.Address{0xfe}, nil, NewGasBudget(1_000))
 	if err != nil {
 		t.Fatalf("StaticCall error = %v, want nil", err)
 	}
-	if gasLeft != 1_000 {
-		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	if gasLeft.RegularGas != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft.RegularGas, 1_000)
 	}
-	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
+	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft.RegularGas); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
 	want := UnzenZkGasSchedule.SpawnEstimates.StaticCall * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(STATICCALL)])
@@ -323,14 +323,14 @@ func TestUnzenZkGasParity_CallOutOfFundsShortCircuitUsesSpawnEstimate(t *testing
 	})
 
 	evm.zkGasTracker.Begin(0, byte(CALL), 1_000)
-	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, 1_000, uint256.NewInt(1))
+	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, NewGasBudget(1_000), uint256.NewInt(1))
 	if err != ErrInsufficientBalance {
 		t.Fatalf("Call error = %v, want %v", err, ErrInsufficientBalance)
 	}
-	if gasLeft != 1_000 {
-		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	if gasLeft.RegularGas != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft.RegularGas, 1_000)
 	}
-	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
+	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft.RegularGas); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
 	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
@@ -345,14 +345,14 @@ func TestUnzenZkGasParity_CreateOutOfFundsShortCircuitUsesSpawnEstimate(t *testi
 	})
 
 	evm.zkGasTracker.Begin(0, byte(CREATE), 1_000)
-	_, _, gasLeft, err := evm.Create(common.Address{}, []byte{byte(STOP)}, 1_000, uint256.NewInt(1))
+	_, _, gasLeft, err := evm.Create(common.Address{}, []byte{byte(STOP)}, NewGasBudget(1_000), uint256.NewInt(1))
 	if err != ErrInsufficientBalance {
 		t.Fatalf("Create error = %v, want %v", err, ErrInsufficientBalance)
 	}
-	if gasLeft != 1_000 {
-		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	if gasLeft.RegularGas != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft.RegularGas, 1_000)
 	}
-	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft); err != nil {
+	if err := evm.zkGasTracker.FinishAndCharge(0, gasLeft.RegularGas); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
 	want := UnzenZkGasSchedule.SpawnEstimates.Create * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CREATE)])
@@ -370,14 +370,14 @@ func TestUnzenZkGasParity_DepthExceededCallShortCircuitUsesSpawnEstimate(t *test
 	evm.depth = depth
 	evm.zkGasTracker.Begin(depth, byte(CALL), 1_000)
 
-	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, 1_000, new(uint256.Int))
+	_, gasLeft, err := evm.Call(common.Address{}, common.Address{0x11}, nil, NewGasBudget(1_000), new(uint256.Int))
 	if err != ErrDepth {
 		t.Fatalf("Call error = %v, want %v", err, ErrDepth)
 	}
-	if gasLeft != 1_000 {
-		t.Fatalf("gasLeft = %d, want %d", gasLeft, 1_000)
+	if gasLeft.RegularGas != 1_000 {
+		t.Fatalf("gasLeft = %d, want %d", gasLeft.RegularGas, 1_000)
 	}
-	if err := evm.zkGasTracker.FinishAndCharge(depth, gasLeft); err != nil {
+	if err := evm.zkGasTracker.FinishAndCharge(depth, gasLeft.RegularGas); err != nil {
 		t.Fatalf("FinishAndCharge returned error: %v", err)
 	}
 	want := UnzenZkGasSchedule.SpawnEstimates.Call * uint64(UnzenZkGasSchedule.OpcodeMultipliers[byte(CALL)])
@@ -414,7 +414,7 @@ func TestUnzenZkGas_StaticGasOutOfGasChargesFullPreStepGas(t *testing.T) {
 	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 8, new(uint256.Int)); err != ErrOutOfGas {
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(8), new(uint256.Int)); err != ErrOutOfGas {
 		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
 	}
 	if got, want := meter.TxZkGasUsed(), uint64(2*5); got != want {
@@ -451,7 +451,7 @@ func TestUnzenZkGas_MemoryExpansionOutOfGasChargesOnlyStaticGas(t *testing.T) {
 	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 11, new(uint256.Int)); err != ErrOutOfGas {
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(11), new(uint256.Int)); err != ErrOutOfGas {
 		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
 	}
 	if got, want := meter.TxZkGasUsed(), uint64(3*7); got != want {
@@ -487,7 +487,7 @@ func TestUnzenZkGas_Block4796MstoreOverflowChargesStaticGas(t *testing.T) {
 	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 100_000, new(uint256.Int)); err != ErrGasUintOverflow {
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(100_000), new(uint256.Int)); err != ErrGasUintOverflow {
 		t.Fatalf("Call error = %v, want %v", err, ErrGasUintOverflow)
 	}
 	if got, want := meter.TxZkGasUsed(), uint64(3*22); got != want {
@@ -523,7 +523,7 @@ func TestUnzenZkGas_KeccakMemoryExpansionOutOfGasChargesPreResizeGas(t *testing.
 	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 51, new(uint256.Int)); err != ErrOutOfGas {
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(51), new(uint256.Int)); err != ErrOutOfGas {
 		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
 	}
 	if got, want := meter.TxZkGasUsed(), (params.Keccak256Gas+2*params.Keccak256WordGas)*7; got != want {
@@ -560,7 +560,7 @@ func TestUnzenZkGas_CallMemoryExpansionOutOfGasChargesOnlyStaticGas(t *testing.T
 	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 123, new(uint256.Int)); !errors.Is(err, ErrOutOfGas) {
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(123), new(uint256.Int)); !errors.Is(err, ErrOutOfGas) {
 		t.Fatalf("Call error = %v, want %v", err, ErrOutOfGas)
 	}
 	if got, want := meter.TxZkGasUsed(), params.WarmStorageReadCostEIP2929*7; got != want {
@@ -617,7 +617,7 @@ func TestUnzenZkGas_FailedPrecompileExceedingBlockLimit_StickyError(t *testing.T
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	_, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(200_000), new(uint256.Int))
 	if err != ErrZkGasLimitExceeded {
 		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
 	}
@@ -669,7 +669,7 @@ func TestUnzenZkGas_SuccessfulPrecompileExceedingBlockLimit_StickyError(t *testi
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	_, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(200_000), new(uint256.Int))
 	if err != ErrZkGasLimitExceeded {
 		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
 	}
@@ -725,7 +725,7 @@ func TestUnzenZkGas_InnerFrameOpcodeExceedingBlockLimit_StickyError(t *testing.T
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	_, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(200_000), new(uint256.Int))
 	if err != ErrZkGasLimitExceeded {
 		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
 	}
@@ -789,7 +789,7 @@ func executeUnzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[c
 	})
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int)); err != nil {
+	if _, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(200_000), new(uint256.Int)); err != nil {
 		t.Fatalf("Call returned error: %v", err)
 	}
 
@@ -994,7 +994,7 @@ func TestUnzenZkGas_PreExecutionFailuresMirrorRevmStaticGas(t *testing.T) {
 			}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
 			statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-			if _, _, err := evm.Call(common.Address{}, contractAddr, nil, tt.gas, new(uint256.Int)); err == nil {
+			if _, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(tt.gas), new(uint256.Int)); err == nil {
 				t.Fatalf("Call succeeded, want a pre-execution failure")
 			}
 			if got := meter.TxZkGasUsed(); got != tt.wantZkGas {
