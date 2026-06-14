@@ -341,7 +341,14 @@ func (w *Miner) sealBlockWith(
 		env.header.RequestsHash = &emptyRequests
 	}
 
-	block, err := w.engine.FinalizeAndAssemble(
+	// CHANGE(taiko): upstream v1.17.3 removed FinalizeAndAssemble from the
+	// consensus.Engine interface; the Taiko engine still provides it (with anchor
+	// validation and Unzen blob checks), so dispatch on the concrete type.
+	taikoEngine, ok := w.engine.(*taiko.Taiko)
+	if !ok {
+		return nil, fmt.Errorf("sealBlockWith requires the Taiko consensus engine, got %T", w.engine)
+	}
+	block, err := taikoEngine.FinalizeAndAssemble(
 		ctx,
 		w.chain,
 		env.header,
