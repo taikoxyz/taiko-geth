@@ -80,7 +80,7 @@ func TestEVMCall_PrecompileOverLimit_SetsStickyError(t *testing.T) {
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	_, _, _ = evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	_, _, _ = evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(200_000), new(uint256.Int))
 
 	if evm.zkGasErr != ErrZkGasLimitExceeded {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded set after over-limit precompile", evm.zkGasErr)
@@ -114,7 +114,7 @@ func TestEVMCall_PrecompileOverLimit_RevertsCallSnapshot(t *testing.T) {
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &precompileAddr, ActivePrecompiles(rules), nil)
 
-	_, _, err := evm.Call(common.Address{}, precompileAddr, []byte{1, 2, 3, 4}, 100_000, new(uint256.Int))
+	_, _, err := evm.Call(common.Address{}, precompileAddr, []byte{1, 2, 3, 4}, NewGasBudget(100_000), new(uint256.Int))
 	if err != ErrZkGasLimitExceeded {
 		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
 	}
@@ -150,7 +150,7 @@ func TestRun_FinishAndChargeOverLimit_SetsStickyError(t *testing.T) {
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb.Prepare(rules, common.Address{}, common.Address{}, &contractAddr, ActivePrecompiles(rules), nil)
 
-	_, _, err := evm.Call(common.Address{}, contractAddr, nil, 200_000, new(uint256.Int))
+	_, _, err := evm.Call(common.Address{}, contractAddr, nil, NewGasBudget(200_000), new(uint256.Int))
 	if err != ErrZkGasLimitExceeded {
 		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
 	}
