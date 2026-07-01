@@ -2,7 +2,12 @@ package eth
 
 import (
 	"encoding/json"
+	"math/big"
 	"testing"
+
+	"github.com/ethereum/go-ethereum/core/stateless"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 func TestDecodeTxListWitnessTxsEmpty(t *testing.T) {
@@ -35,5 +40,29 @@ func TestTxListWitnessOptionsCamelCase(t *testing.T) {
 	}
 	if !opts.SkipZkGasDifficultyCheck {
 		t.Fatalf("expected skip flag to be true")
+	}
+}
+
+func TestNewTxListExecutionWitness(t *testing.T) {
+	hdr := &types.Header{Number: big.NewInt(7)}
+	w := &stateless.Witness{
+		Headers: []*types.Header{hdr},
+		State:   map[string]struct{}{"node": {}},
+		Codes:   map[string]struct{}{"code": {}},
+		Keys:    map[string]struct{}{"key": {}},
+	}
+	out, err := newTxListExecutionWitness(w)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(out.State) != 1 || len(out.Codes) != 1 || len(out.Keys) != 1 || len(out.Headers) != 1 {
+		t.Fatalf("unexpected lengths: %+v", out)
+	}
+	var decoded types.Header
+	if err := rlp.DecodeBytes(out.Headers[0], &decoded); err != nil {
+		t.Fatalf("headers must RLP-decode to a header: %v", err)
+	}
+	if decoded.Number.Uint64() != 7 {
+		t.Fatalf("wrong header decoded: %d", decoded.Number.Uint64())
 	}
 }

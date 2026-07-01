@@ -10,6 +10,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -37,6 +38,34 @@ type txListExecutionWitness struct {
 	Codes   []hexutil.Bytes `json:"codes"`
 	Keys    []hexutil.Bytes `json:"keys"`
 	Headers []hexutil.Bytes `json:"headers"`
+}
+
+// newTxListExecutionWitness converts the internal witness to the cross-client
+// wire format, RLP-encoding each ancestor header.
+func newTxListExecutionWitness(w *stateless.Witness) (*txListExecutionWitness, error) {
+	out := &txListExecutionWitness{
+		State:   make([]hexutil.Bytes, 0, len(w.State)),
+		Codes:   make([]hexutil.Bytes, 0, len(w.Codes)),
+		Keys:    make([]hexutil.Bytes, 0, len(w.Keys)),
+		Headers: make([]hexutil.Bytes, 0, len(w.Headers)),
+	}
+	for node := range w.State {
+		out.State = append(out.State, []byte(node))
+	}
+	for code := range w.Codes {
+		out.Codes = append(out.Codes, []byte(code))
+	}
+	for key := range w.Keys {
+		out.Keys = append(out.Keys, []byte(key))
+	}
+	for _, header := range w.Headers {
+		enc, err := rlp.EncodeToBytes(header)
+		if err != nil {
+			return nil, fmt.Errorf("failed to rlp-encode witness header %v: %w", header.Number, err)
+		}
+		out.Headers = append(out.Headers, enc)
+	}
+	return out, nil
 }
 
 // decodeTxListWitnessTxs decodes an RLP list of transactions. It errors only on
