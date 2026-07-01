@@ -666,4 +666,20 @@ func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
 			t.Fatalf("HistoryStorage BLOCKHASH slot proof node %d/%d missing from witness state", i+1, len(stProof))
 		}
 	}
+
+	// Root-preserving: the extra HistoryStorage slot reads are pure reads, so the
+	// witness must still re-execute the block's canonical body to its state root.
+	// (The replay anchor is identical to the block's own tx; the BLOCKHASH-only
+	// extras are a harmless superset for the canonical execution.)
+	hdr := block.Header()
+	hdr.Root = common.Hash{}
+	hdr.ReceiptHash = common.Hash{}
+	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
+	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
+	if err != nil {
+		t.Fatalf("ExecuteStateless: %v", err)
+	}
+	if got != block.Root() {
+		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	}
 }
