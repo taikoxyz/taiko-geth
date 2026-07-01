@@ -116,6 +116,50 @@ func zkGasDifficultyMismatch(headerDifficulty *big.Int, recomputed uint64) bool 
 	return headerDifficulty == nil || headerDifficulty.Cmp(new(big.Int).SetUint64(recomputed)) != 0
 }
 
+// CHANGE(taiko): recoverableNonAnchorTxErrors is the transaction-error set the
+// tx-list replay tolerates by skipping a non-anchor transaction — the same
+// recoverable class canonical block building skips: zk-gas truncation, a gas
+// limit exceeding the block's remaining gas, and the message pre-check
+// (invalid-transaction) failures from core/error.go. Any error outside this set
+// is fatal, so the RPC never emits a witness for a tx list canonical execution
+// would reject.
+var recoverableNonAnchorTxErrors = []error{
+	vm.ErrZkGasLimitExceeded,
+	core.ErrGasLimitReached,
+	core.ErrGasLimitOverflow,
+	core.ErrNonceTooLow,
+	core.ErrNonceTooHigh,
+	core.ErrNonceMax,
+	core.ErrInsufficientFunds,
+	core.ErrInsufficientFundsForTransfer,
+	core.ErrInsufficientBalanceWitness,
+	core.ErrGasUintOverflow,
+	core.ErrIntrinsicGas,
+	core.ErrFloorDataGas,
+	core.ErrTxTypeNotSupported,
+	core.ErrTipAboveFeeCap,
+	core.ErrTipVeryHigh,
+	core.ErrFeeCapVeryHigh,
+	core.ErrFeeCapTooLow,
+	core.ErrSenderNoEOA,
+	core.ErrBlobFeeCapTooLow,
+	core.ErrMissingBlobHashes,
+	core.ErrTooManyBlobs,
+	core.ErrBlobTxCreate,
+	core.ErrEmptyAuthList,
+	core.ErrSetCodeTxCreate,
+	core.ErrGasLimitTooHigh,
+}
+
+func isRecoverableNonAnchorTxError(err error) bool {
+	for _, target := range recoverableNonAnchorTxErrors {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
 // CHANGE(taiko): buildTxListWitness replays txs on top of the parent state of
 // `block` and returns the collected execution witness plus the committed
 // (post-filter) transactions. It mirrors the block-builder's filtering: the
@@ -144,6 +188,17 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	if config.IsUnzen(header.Time) {
 		zkGasMeter = vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
 		evm.SetZkGasMeter(zkGasMeter)
+	}
+
+	// CHANGE(taiko): apply the same pre-execution system calls as canonical block
+	// processing (EIP-4788 beacon-block-root, EIP-2935 parent-block-hash) before
+	// replaying transactions, so the witness captures their state accesses and the
+	// replay reproduces the canonical post-state.
+	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
+		core.ProcessBeaconBlockRoot(*beaconRoot, evm)
+	}
+	if config.IsPrague(block.Number(), block.Time()) || config.IsVerkle(block.Number(), block.Time()) {
+		core.ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 
 	gasPool := core.NewGasPool(header.GasLimit)
@@ -184,14 +239,19 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 		if _, err := core.ApplyTransaction(evm, gasPool, statedb, header, tx); err != nil {
 			statedb.RevertToSnapshot(snap)
 			gasPool.Set(gpSnap)
+			if isAnchor {
+				return nil, nil, fmt.Errorf("anchor transaction failed: %w", err)
+			}
+			// CHANGE(taiko): tolerate only the recoverable error set the block
+			// builder skips for non-anchor txs; any other error is fatal.
+			if !isRecoverableNonAnchorTxError(err) {
+				return nil, nil, fmt.Errorf("non-anchor transaction at index %d failed: %w", i, err)
+			}
 			// A non-anchor zk-gas-limit error truncates the block.
-			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
+			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
 				zkGasMeter.ResetTransaction()
 				evm.ResetZkGasErr()
 				break
-			}
-			if isAnchor {
-				return nil, nil, fmt.Errorf("anchor transaction failed: %w", err)
 			}
 			continue
 		}

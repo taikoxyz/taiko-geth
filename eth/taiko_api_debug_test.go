@@ -2,11 +2,15 @@ package eth
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -52,6 +56,34 @@ func TestZkGasDifficultyMismatch(t *testing.T) {
 	}
 	if !zkGasDifficultyMismatch(nil, 0) {
 		t.Fatalf("nil difficulty must be a mismatch")
+	}
+}
+
+func TestIsRecoverableNonAnchorTxError(t *testing.T) {
+	recoverable := []error{
+		vm.ErrZkGasLimitExceeded,
+		core.ErrNonceTooLow,
+		core.ErrNonceTooHigh,
+		core.ErrInsufficientFunds,
+		core.ErrIntrinsicGas,
+		core.ErrGasLimitReached,
+		core.ErrFeeCapTooLow,
+	}
+	for _, err := range recoverable {
+		if !isRecoverableNonAnchorTxError(err) {
+			t.Fatalf("expected %v to be recoverable", err)
+		}
+		wrapped := fmt.Errorf("apply tx: %w", err)
+		if !isRecoverableNonAnchorTxError(wrapped) {
+			t.Fatalf("expected wrapped %v to be recoverable", wrapped)
+		}
+	}
+
+	if isRecoverableNonAnchorTxError(errors.New("boom")) {
+		t.Fatalf("unrelated error must not be recoverable")
+	}
+	if isRecoverableNonAnchorTxError(fmt.Errorf("wrapped: %w", errors.New("boom"))) {
+		t.Fatalf("wrapped unrelated error must not be recoverable")
 	}
 }
 

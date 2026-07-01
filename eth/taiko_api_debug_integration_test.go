@@ -175,3 +175,113 @@ func TestExecutionWitnessForTxListRejectsCanonicalMode(t *testing.T) {
 		t.Fatalf("expected error for unsupported mode")
 	}
 }
+
+// txListWitnessBeaconChain builds an in-memory Taiko chain on a Cancun/Prague
+// -active config whose blocks carry an explicit non-zero ParentBeaconRoot, with
+// the EIP-4788 beacon-roots and EIP-2935 history-storage system contracts
+// deployed in genesis. This exercises the pre-execution system calls that
+// buildTxListWitness must replay so the witness captures their state accesses.
+func txListWitnessBeaconChain(t *testing.T, n int) (*core.BlockChain, []*types.Block) {
+	t.Helper()
+	key, _ := crypto.GenerateKey()
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+
+	cfg := *params.MergedTestChainConfig
+	cfg.Taiko = true
+	cfg.ChainID = big.NewInt(167000)
+
+	gspec := &core.Genesis{
+		Config: &cfg,
+		Alloc: types.GenesisAlloc{
+			addr:                         {Balance: big.NewInt(1e18)},
+			params.BeaconRootsAddress:    {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+			params.HistoryStorageAddress: {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
+		},
+	}
+	engine := beacon.New(ethash.NewFaker())
+	db := rawdb.NewMemoryDatabase()
+
+	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *core.BlockGen) {
+		// CHANGE(taiko): set an explicit non-zero beacon root so the EIP-4788
+		// system call writes storage and the block header carries a canonical,
+		// non-zero ParentBeaconRoot for the witness replay to reproduce.
+		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
+
+		signer := types.LatestSigner(&cfg)
+		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
+		}), signer, key)
+		if err := tx0.MarkAsAnchor(); err != nil {
+			t.Fatalf("mark anchor: %v", err)
+		}
+		gen.AddTx(tx0)
+		tx1, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(2),
+		}), signer, key)
+		gen.AddTx(tx1)
+	})
+
+	bc, err := core.NewBlockChain(db, gspec, engine, nil)
+	if err != nil {
+		t.Fatalf("new blockchain: %v", err)
+	}
+	if _, err := bc.InsertChain(blocks); err != nil {
+		t.Fatalf("insert chain: %v", err)
+	}
+	return bc, blocks
+}
+
+// TestBuildTxListWitnessAppliesPreExecutionSystemCalls verifies buildTxListWitness
+// runs the EIP-4788 beacon-block-root system call before replaying transactions,
+// so the witness records the beacon-roots system-contract account. Without the
+// pre-execution system calls the account is never touched and this key is absent.
+func TestBuildTxListWitnessAppliesPreExecutionSystemCalls(t *testing.T) {
+	bc, blocks := txListWitnessBeaconChain(t, 2)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+
+	// Sanity: the block must actually carry a non-nil, non-zero beacon root,
+	// otherwise this test would not exercise the EIP-4788 pre-execution call.
+	beaconRoot := block.BeaconRoot()
+	if beaconRoot == nil {
+		t.Fatalf("test block has no ParentBeaconRoot; cannot exercise EIP-4788")
+	}
+	if *beaconRoot == (common.Hash{}) {
+		t.Fatalf("test block has zero ParentBeaconRoot; expected an explicit non-zero root")
+	}
+
+	witness, committed, err := buildTxListWitness(bc, block, block.Transactions(), txListWitnessOptions{})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+	if len(committed) != len(block.Transactions()) {
+		t.Fatalf("expected all %d txs committed, got %d", len(block.Transactions()), len(committed))
+	}
+
+	// Required regression guard: the EIP-4788 beacon-roots system contract must
+	// appear in the witness key preimages. It is only recorded if the
+	// pre-execution beacon-block-root system call ran during witness building.
+	if _, ok := witness.Keys[string(params.BeaconRootsAddress.Bytes())]; !ok {
+		t.Fatalf("beacon-roots system-contract address missing from witness keys; " +
+			"pre-execution EIP-4788 system call was not applied")
+	}
+
+	// Self-consistency: re-executing statelessly from the witness alone must
+	// reproduce the canonical post-state root. This exercises the full
+	// pre-execution + transaction replay path and fails if the witness omits
+	// state the canonical execution touched.
+	hdr := block.Header()
+	hdr.Root = common.Hash{}
+	hdr.ReceiptHash = common.Hash{}
+	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
+	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
+	if err != nil {
+		t.Fatalf("ExecuteStateless: %v", err)
+	}
+	if got != block.Root() {
+		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	}
+}
