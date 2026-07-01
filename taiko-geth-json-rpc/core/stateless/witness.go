@@ -41,6 +41,9 @@ type Witness struct {
 	Headers []*types.Header     // Past headers in reverse order (0=parent, 1=parent's-parent, etc). First *must* be set.
 	Codes   map[string]struct{} // Set of bytecodes ran or accessed
 	State   map[string]struct{} // Set of MPT state trie nodes (account and storage together)
+	// CHANGE(taiko): unhashed preimages (20-byte addresses / 32-byte storage slots)
+	// touched during execution, needed by consumers that rebuild a sparse state trie.
+	Keys map[string]struct{}
 
 	chain HeaderReader  // Chain reader to convert block hash ops to header proofs
 	stats *WitnessStats // Optional statistics collector
@@ -65,6 +68,7 @@ func NewWitness(context *types.Header, chain HeaderReader, enableStats bool) (*W
 		Headers: headers,
 		Codes:   make(map[string]struct{}),
 		State:   make(map[string]struct{}),
+		Keys:    make(map[string]struct{}),
 		chain:   chain,
 	}
 	if enableStats {
@@ -119,8 +123,21 @@ func (w *Witness) ReportMetrics(blockNumber uint64) {
 	w.stats.ReportMetrics(blockNumber)
 }
 
-func (w *Witness) AddKey() {
-	panic("not yet implemented")
+// AddKey records the unhashed preimage of a state key: a 20-byte account
+// address or a 32-byte storage slot. Consumers that rebuild a sparse state
+// trie need these preimages to locate the leaves the execution touched.
+//
+// CHANGE(taiko): added to support the cross-client execution witness RPC.
+func (w *Witness) AddKey(key []byte) {
+	if len(key) == 0 {
+		return
+	}
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	if w.Keys == nil {
+		w.Keys = make(map[string]struct{})
+	}
+	w.Keys[string(key)] = struct{}{}
 }
 
 // Copy deep-copies the witness object.  Witness.Block isn't deep-copied as it
@@ -130,6 +147,7 @@ func (w *Witness) Copy() *Witness {
 		Headers: slices.Clone(w.Headers),
 		Codes:   maps.Clone(w.Codes),
 		State:   maps.Clone(w.State),
+		Keys:    maps.Clone(w.Keys), // CHANGE(taiko): clone collected state-key preimages
 		chain:   w.chain,
 	}
 	if w.stats != nil {

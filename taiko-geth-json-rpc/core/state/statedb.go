@@ -585,6 +585,11 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 	if _, ok := s.stateObjectsDestruct[addr]; ok {
 		return nil
 	}
+	// CHANGE(taiko): record the unhashed account address so tx-list execution
+	// witnesses carry account-key preimages for stateless trie reconstruction.
+	if s.witness != nil {
+		s.witness.AddKey(addr.Bytes())
+	}
 	s.AccountLoaded++
 
 	start := time.Now()
