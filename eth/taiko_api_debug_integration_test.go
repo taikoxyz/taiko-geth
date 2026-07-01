@@ -525,3 +525,145 @@ func TestBuildTxListWitnessAppliesPreExecutionSystemCalls(t *testing.T) {
 		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
 	}
 }
+
+// storageProofNodes returns the storage-trie proof (RLP nodes) for slot in
+// addr's storage against the state rooted at stateRoot.
+func storageProofNodes(t *testing.T, bc *core.BlockChain, stateRoot common.Hash, addr common.Address, slot common.Hash) [][]byte {
+	t.Helper()
+	accTrie, err := trie.NewStateTrie(trie.StateTrieID(stateRoot), bc.TrieDB())
+	if err != nil {
+		t.Fatalf("open state trie at %s: %v", stateRoot, err)
+	}
+	acct, err := accTrie.GetAccount(addr)
+	if err != nil {
+		t.Fatalf("get account %s: %v", addr, err)
+	}
+	if acct == nil {
+		t.Fatalf("account %s absent from state %s", addr, stateRoot)
+	}
+	stTrie, err := trie.NewStateTrie(trie.StorageTrieID(stateRoot, crypto.Keccak256Hash(addr.Bytes()), acct.Root), bc.TrieDB())
+	if err != nil {
+		t.Fatalf("open storage trie for %s: %v", addr, err)
+	}
+	var nodes proofNodeList
+	if err := stTrie.Prove(crypto.Keccak256(slot.Bytes()), &nodes); err != nil {
+		t.Fatalf("prove slot %s: %v", slot, err)
+	}
+	return nodes
+}
+
+// TestBuildTxListWitnessIncludesBlockhashHistoryStorage is a regression guard:
+// when a transaction resolves a historical block hash via BLOCKHASH, the witness
+// must include the EIP-2935 HistoryStorage (0x00..2935) storage-trie proof for
+// the ring-buffer slot backing that hash.
+//
+// go-geth serves BLOCKHASH from the header chain and witnesses it as headers, so
+// the HistoryStorage slot's storage nodes are absent. go-geth's own stateless
+// re-execution also reads BLOCKHASH from headers, so the state-root
+// self-consistency check cannot catch the gap; a cross-client stateless executor
+// that resolves BLOCKHASH from the HistoryStorage contract fails to resolve its
+// storage trie ("state trie unresolved") without those nodes.
+//
+// BLOCKHASH cannot run during chain generation (no chain context), so the
+// BLOCKHASH transaction is supplied at replay time — exactly how the RPC feeds an
+// explicit tx list to buildTxListWitness.
+func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
+	key, _ := crypto.GenerateKey()
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+
+	// Contract: PUSH0, BLOCKHASH, PUSH0, SSTORE, STOP => stores blockhash(0).
+	bhContract := common.HexToAddress("0x00000000000000000000000000000000b10c4a54")
+	bhCode := []byte{0x5f, 0x40, 0x5f, 0x55, 0x00}
+
+	cfg := *params.MergedTestChainConfig // Prague-active (PragueTime == 0)
+	cfg.Taiko = true
+	cfg.ChainID = big.NewInt(167000)
+
+	// Deep pre-populated HistoryStorage (slots 100..699) so the slot-0 proof
+	// spans multiple nodes; leaves slots 0/1 fresh for the blocks' own EIP-2935
+	// system calls. A shallow trie would hide the regression behind the root.
+	hist := make(map[common.Hash]common.Hash)
+	for i := 100; i < 700; i++ {
+		var slot, val common.Hash
+		binary.BigEndian.PutUint64(slot[24:], uint64(i))
+		val[0] = 0xab
+		binary.BigEndian.PutUint64(val[24:], uint64(i)+1)
+		hist[slot] = val
+	}
+	gspec := &core.Genesis{
+		Config: &cfg,
+		Alloc: types.GenesisAlloc{
+			addr:                             {Balance: big.NewInt(1e18)},
+			bhContract:                       {Nonce: 1, Code: bhCode, Balance: common.Big0},
+			params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+			params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0, Storage: hist},
+			params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
+			params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
+		},
+	}
+	engine := beacon.New(ethash.NewFaker())
+	db := rawdb.NewMemoryDatabase()
+
+	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
+		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
+		signer := types.LatestSigner(&cfg)
+		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
+		}), signer, key)
+		if err := tx0.MarkAsAnchor(); err != nil {
+			t.Fatalf("mark anchor: %v", err)
+		}
+		gen.AddTx(tx0)
+	})
+
+	bc, err := core.NewBlockChain(db, gspec, engine, nil)
+	if err != nil {
+		t.Fatalf("new blockchain: %v", err)
+	}
+	defer bc.Stop()
+	if _, err := bc.InsertChain(blocks); err != nil {
+		t.Fatalf("insert chain: %v", err)
+	}
+
+	block := blocks[len(blocks)-1] // block 2; parent = block 1 (addr nonce == 1)
+	parent := bc.GetHeaderByHash(block.ParentHash())
+
+	// BLOCKHASH(0) reads HistoryStorage slot 0. Block 2's own EIP-2935 system
+	// call writes slot 1, so slot 0 enters the witness only if the BLOCKHASH read
+	// path does. Sanity-check the proof is multi-node so this guards something.
+	var slot common.Hash // slot 0
+	stProof := storageProofNodes(t, bc, parent.Root, params.HistoryStorageAddress, slot)
+	if len(stProof) < 2 {
+		t.Fatalf("HistoryStorage slot-0 proof has %d node(s); need a deeper trie to guard the regression", len(stProof))
+	}
+
+	signer := types.LatestSigner(&cfg)
+	anchor, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: cfg.ChainID, Nonce: 1, GasTipCap: big.NewInt(0),
+		GasFeeCap: block.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
+	}), signer, key)
+	callBH, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: cfg.ChainID, Nonce: 2, GasTipCap: big.NewInt(0),
+		GasFeeCap: block.BaseFee(), Gas: 100000, To: &bhContract, Value: big.NewInt(0),
+	}), signer, key)
+	replay := types.Transactions{anchor, callBH}
+
+	witness, committed, err := buildTxListWitness(bc, block, replay, txListWitnessOptions{SkipZkGasDifficultyCheck: true})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+	if len(committed) != 2 {
+		t.Fatalf("expected anchor + BLOCKHASH tx committed, got %d", len(committed))
+	}
+
+	if _, ok := witness.Keys[string(slot.Bytes())]; !ok {
+		t.Fatalf("HistoryStorage BLOCKHASH slot key preimage missing from witness keys")
+	}
+	for i, node := range stProof {
+		if _, ok := witness.State[string(node)]; !ok {
+			t.Fatalf("HistoryStorage BLOCKHASH slot proof node %d/%d missing from witness state", i+1, len(stProof))
+		}
+	}
+}
