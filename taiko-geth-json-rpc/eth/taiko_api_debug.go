@@ -13,11 +13,13 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/stateless"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/holiman/uint256"
 )
 
 // Block-level transaction-list size limits. The raw guard bounds the work of
@@ -288,6 +290,25 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// Apply post-execution changes (withdrawals / header finalization), then
 	// flush the trie so the witness state-node set is complete.
 	bc.Engine().Finalize(bc, header, statedb, &types.Body{Withdrawals: block.Withdrawals()})
+
+	// CHANGE(taiko): witness the system-call caller account (params.SystemAddress,
+	// 0xff..fe). EVM.Call skips the value transfer for system calls (see
+	// core/vm/evm.go), so the caller account is never loaded during the EIP-4788 /
+	// EIP-2935 / EIP-7002 / EIP-7251 system calls and its account-trie path never
+	// enters the witness. This node's own stateless re-execution skips the caller
+	// too, so the gap is invisible to a state-root self-consistency check — but a
+	// cross-client stateless executor that loads the system caller during those
+	// system calls cannot resolve the account without its account-trie proof (and
+	// key preimage). A zero-value balance add loads the account (recording the key)
+	// and, via empty-account clearing in IntermediateRoot, walks its account-trie
+	// path (recording the proof nodes) without changing the post-state root. Only
+	// done when a system call actually ran, so the witness matches cross-client
+	// contents exactly.
+	if block.BeaconRoot() != nil ||
+		config.IsPrague(block.Number(), block.Time()) ||
+		config.IsVerkle(block.Number(), block.Time()) {
+		statedb.AddBalance(params.SystemAddress, uint256.NewInt(0), tracing.BalanceChangeUnspecified)
+	}
 	statedb.IntermediateRoot(true)
 
 	return statedb.Witness(), committed, nil
