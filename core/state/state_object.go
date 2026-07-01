@@ -188,6 +188,11 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 	if value, cached := s.originStorage[key]; cached {
 		return value
 	}
+	// CHANGE(taiko): record the unhashed storage slot key so tx-list execution
+	// witnesses carry storage-key preimages for stateless trie reconstruction.
+	if s.db.witness != nil {
+		s.db.witness.AddKey(key.Bytes())
+	}
 	// If the object was destructed in *this* block (and potentially resurrected),
 	// the storage has been cleared out, and we should *not* consult the previous
 	// database about any storage values. The only possible alternatives are:
