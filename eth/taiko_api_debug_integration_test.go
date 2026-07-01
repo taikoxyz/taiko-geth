@@ -14,6 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // txListWitnessTestChain builds an in-memory chain of `n` blocks. Block bodies
@@ -136,5 +138,40 @@ func TestBuildTxListWitnessAnchorFailureIsFatal(t *testing.T) {
 
 	if _, _, err := buildTxListWitness(bc, block, types.Transactions{badAnchor}, txListWitnessOptions{}); err == nil {
 		t.Fatalf("expected fatal error for failed anchor transaction")
+	}
+}
+
+func TestExecutionWitnessForTxListEndToEnd(t *testing.T) {
+	bc, blocks := txListWitnessTestChain(t, 2)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+
+	rlpTxs, err := rlp.EncodeToBytes(block.Transactions())
+	if err != nil {
+		t.Fatalf("encode txs: %v", err)
+	}
+	bn := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(block.NumberU64()))
+
+	out, err := executionWitnessForTxList(bc, bn, rlpTxs, nil, nil)
+	if err != nil {
+		t.Fatalf("executionWitnessForTxList: %v", err)
+	}
+	if len(out.State) == 0 || len(out.Headers) == 0 || len(out.Keys) == 0 {
+		t.Fatalf("empty witness fields: %+v", out)
+	}
+	// headers must RLP-decode to a header.
+	var h types.Header
+	if err := rlp.DecodeBytes(out.Headers[0], &h); err != nil {
+		t.Fatalf("headers must be RLP: %v", err)
+	}
+}
+
+func TestExecutionWitnessForTxListRejectsCanonicalMode(t *testing.T) {
+	bc, blocks := txListWitnessTestChain(t, 1)
+	defer bc.Stop()
+	bn := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(blocks[0].NumberU64()))
+	mode := "canonical"
+	if _, err := executionWitnessForTxList(bc, bn, []byte{0xc0}, &mode, nil); err == nil {
+		t.Fatalf("expected error for unsupported mode")
 	}
 }

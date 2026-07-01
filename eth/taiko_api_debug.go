@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 // Block-level transaction-list size limits. The raw guard bounds the work of
@@ -216,4 +217,63 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	statedb.IntermediateRoot(true)
 
 	return statedb.Witness(), committed, nil
+}
+
+// ExecutionWitnessForTxList replays the given RLP transaction list on top of the
+// parent state of the requested block and returns the execution witness.
+//
+// Params: (blockNrOrHash, txListRLP, mode?, options?). Only the legacy witness
+// mode is supported.
+func (api *DebugAPI) ExecutionWitnessForTxList(bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*txListExecutionWitness, error) {
+	return executionWitnessForTxList(api.eth.blockchain, bn, txList, mode, opts)
+}
+
+func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*txListExecutionWitness, error) {
+	if mode != nil && *mode != "" && *mode != "legacy" {
+		return nil, fmt.Errorf("unsupported witness mode %q", *mode)
+	}
+	var options txListWitnessOptions
+	if opts != nil {
+		options = *opts
+	}
+	if err := checkTxListSize(txList); err != nil {
+		return nil, err
+	}
+	block, err := resolveWitnessBlock(bc, bn)
+	if err != nil {
+		return nil, err
+	}
+	txs, err := decodeTxListWitnessTxs(txList)
+	if err != nil {
+		return nil, err
+	}
+	witness, _, err := buildTxListWitness(bc, block, txs, options)
+	if err != nil {
+		return nil, err
+	}
+	return newTxListExecutionWitness(witness)
+}
+
+func resolveWitnessBlock(bc *core.BlockChain, bn rpc.BlockNumberOrHash) (*types.Block, error) {
+	if hash, ok := bn.Hash(); ok {
+		block := bc.GetBlockByHash(hash)
+		if block == nil {
+			return nil, fmt.Errorf("block %s not found", hash)
+		}
+		return block, nil
+	}
+	number, _ := bn.Number()
+	if number < 0 { // latest / pending / finalized / safe
+		current := bc.CurrentBlock()
+		block := bc.GetBlockByNumber(current.Number.Uint64())
+		if block == nil {
+			return nil, errors.New("current block not found")
+		}
+		return block, nil
+	}
+	block := bc.GetBlockByNumber(uint64(number))
+	if block == nil {
+		return nil, fmt.Errorf("block %d not found", number)
+	}
+	return block, nil
 }
