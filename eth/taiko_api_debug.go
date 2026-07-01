@@ -116,11 +116,11 @@ func zkGasDifficultyMismatch(headerDifficulty *big.Int, recomputed uint64) bool 
 	return headerDifficulty == nil || headerDifficulty.Cmp(new(big.Int).SetUint64(recomputed)) != 0
 }
 
-// buildTxListWitness replays txs on top of the parent state of `block` and
-// returns the collected execution witness plus the committed (post-filter)
-// transactions. It mirrors the block-builder's filtering: the anchor (index 0)
-// must succeed; non-anchor failures are skipped; a non-anchor zk-gas-limit
-// error truncates the block.
+// CHANGE(taiko): buildTxListWitness replays txs on top of the parent state of
+// `block` and returns the collected execution witness plus the committed
+// (post-filter) transactions. It mirrors the block-builder's filtering: the
+// anchor (index 0) must succeed; non-anchor failures are skipped; a non-anchor
+// zk-gas-limit error truncates the block.
 func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Transactions, opts txListWitnessOptions) (*stateless.Witness, types.Transactions, error) {
 	config := bc.Config()
 	header := block.Header() // copy; safe to mutate during finalize
@@ -219,8 +219,9 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	return statedb.Witness(), committed, nil
 }
 
-// ExecutionWitnessForTxList replays the given RLP transaction list on top of the
-// parent state of the requested block and returns the execution witness.
+// CHANGE(taiko): ExecutionWitnessForTxList replays the given RLP transaction
+// list on top of the parent state of the requested block and returns the
+// execution witness.
 //
 // Params: (blockNrOrHash, txListRLP, mode?, options?). Only the legacy witness
 // mode is supported.
@@ -228,6 +229,9 @@ func (api *DebugAPI) ExecutionWitnessForTxList(bn rpc.BlockNumberOrHash, txList 
 	return executionWitnessForTxList(api.eth.blockchain, bn, txList, mode, opts)
 }
 
+// CHANGE(taiko): executionWitnessForTxList validates the request, resolves the
+// target block, decodes the transaction list, and returns the cross-client
+// execution witness produced by replaying it on the parent state.
 func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*txListExecutionWitness, error) {
 	if mode != nil && *mode != "" && *mode != "legacy" {
 		return nil, fmt.Errorf("unsupported witness mode %q", *mode)
@@ -254,6 +258,9 @@ func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, tx
 	return newTxListExecutionWitness(witness)
 }
 
+// CHANGE(taiko): resolveWitnessBlock resolves a block number or hash to a block
+// for witness generation. Negative sentinels (latest/pending/finalized/safe)
+// resolve to the current chain head.
 func resolveWitnessBlock(bc *core.BlockChain, bn rpc.BlockNumberOrHash) (*types.Block, error) {
 	if hash, ok := bn.Hash(); ok {
 		block := bc.GetBlockByHash(hash)
@@ -265,6 +272,9 @@ func resolveWitnessBlock(bc *core.BlockChain, bn rpc.BlockNumberOrHash) (*types.
 	number, _ := bn.Number()
 	if number < 0 { // latest / pending / finalized / safe
 		current := bc.CurrentBlock()
+		if current == nil {
+			return nil, errors.New("current block not available")
+		}
 		block := bc.GetBlockByNumber(current.Number.Uint64())
 		if block == nil {
 			return nil, errors.New("current block not found")
