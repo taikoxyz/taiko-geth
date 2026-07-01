@@ -6,12 +6,15 @@ package eth
 import (
 	"bytes"
 	"compress/zlib"
+	"errors"
 	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 )
@@ -110,4 +113,107 @@ func zlibCompressedLen(raw []byte) (int, error) {
 // from the block header difficulty.
 func zkGasDifficultyMismatch(headerDifficulty *big.Int, recomputed uint64) bool {
 	return headerDifficulty == nil || headerDifficulty.Cmp(new(big.Int).SetUint64(recomputed)) != 0
+}
+
+// buildTxListWitness replays txs on top of the parent state of `block` and
+// returns the collected execution witness plus the committed (post-filter)
+// transactions. It mirrors the block-builder's filtering: the anchor (index 0)
+// must succeed; non-anchor failures are skipped; a non-anchor zk-gas-limit
+// error truncates the block.
+func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Transactions, opts txListWitnessOptions) (*stateless.Witness, types.Transactions, error) {
+	config := bc.Config()
+	header := block.Header() // copy; safe to mutate during finalize
+	parent := bc.GetHeader(header.ParentHash, header.Number.Uint64()-1)
+	if parent == nil {
+		return nil, nil, fmt.Errorf("parent of block %d not found", header.Number)
+	}
+	statedb, err := bc.StateAt(parent.Root)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open state at parent root %s: %w", parent.Root, err)
+	}
+	witness, err := stateless.NewWitness(header, bc, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	statedb.StartPrefetcher("txlist-witness", witness)
+	defer statedb.StopPrefetcher()
+
+	evm := vm.NewEVM(core.NewEVMBlockContext(header, bc, &header.Coinbase), statedb, config, vm.Config{})
+	var zkGasMeter *vm.ZkGasMeter
+	if config.IsUnzen(header.Time) {
+		zkGasMeter = vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
+		evm.SetZkGasMeter(zkGasMeter)
+	}
+
+	gasPool := core.NewGasPool(header.GasLimit)
+	rules := config.Rules(header.Number, true, header.Time)
+	signer := types.LatestSignerForChainID(config.ChainID)
+
+	committed := make(types.Transactions, 0, len(txs))
+	for i, tx := range txs {
+		isAnchor := i == 0 && config.Taiko
+		if isAnchor {
+			if err := tx.MarkAsAnchor(); err != nil {
+				return nil, nil, fmt.Errorf("anchor transaction invalid: %w", err)
+			}
+		}
+		if tx.Type() == types.BlobTxType {
+			if isAnchor {
+				return nil, nil, errors.New("anchor transaction must not be a blob transaction")
+			}
+			continue
+		}
+		sender, err := signer.Sender(tx)
+		if err != nil {
+			if isAnchor {
+				return nil, nil, fmt.Errorf("anchor transaction sender unrecoverable: %w", err)
+			}
+			continue
+		}
+
+		statedb.Prepare(rules, sender, header.Coinbase, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
+		statedb.SetTxContext(tx.Hash(), len(committed))
+		if zkGasMeter != nil {
+			zkGasMeter.ResetTransaction()
+			evm.ResetZkGasErr()
+		}
+
+		snap := statedb.Snapshot()
+		gpSnap := gasPool.Snapshot()
+		if _, err := core.ApplyTransaction(evm, gasPool, statedb, header, tx); err != nil {
+			statedb.RevertToSnapshot(snap)
+			gasPool.Set(gpSnap)
+			// A non-anchor zk-gas-limit error truncates the block.
+			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
+				zkGasMeter.ResetTransaction()
+				evm.ResetZkGasErr()
+				break
+			}
+			if isAnchor {
+				return nil, nil, fmt.Errorf("anchor transaction failed: %w", err)
+			}
+			continue
+		}
+		if zkGasMeter != nil {
+			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
+				zkGasMeter.ResetTransaction()
+				break
+			}
+		}
+		committed = append(committed, tx)
+	}
+
+	if zkGasMeter != nil && !opts.SkipZkGasDifficultyCheck {
+		recomputed := zkGasMeter.BlockZkGasUsed()
+		if zkGasDifficultyMismatch(header.Difficulty, recomputed) {
+			return nil, nil, fmt.Errorf("zk gas difficulty mismatch: header has %v, recomputed %d", header.Difficulty, recomputed)
+		}
+	}
+
+	// Apply post-execution changes (withdrawals / header finalization), then
+	// flush the trie so the witness state-node set is complete.
+	bc.Engine().Finalize(bc, header, statedb, &types.Body{Withdrawals: block.Withdrawals()})
+	statedb.IntermediateRoot(true)
+
+	return statedb.Witness(), committed, nil
 }

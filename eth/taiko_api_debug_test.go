@@ -43,6 +43,18 @@ func TestTxListWitnessOptionsCamelCase(t *testing.T) {
 	}
 }
 
+func TestZkGasDifficultyMismatch(t *testing.T) {
+	if zkGasDifficultyMismatch(big.NewInt(100), 100) {
+		t.Fatalf("equal values must not be a mismatch")
+	}
+	if !zkGasDifficultyMismatch(big.NewInt(99), 100) {
+		t.Fatalf("unequal values must be a mismatch")
+	}
+	if !zkGasDifficultyMismatch(nil, 0) {
+		t.Fatalf("nil difficulty must be a mismatch")
+	}
+}
+
 func TestNewTxListExecutionWitness(t *testing.T) {
 	hdr := &types.Header{Number: big.NewInt(7)}
 	w := &stateless.Witness{
