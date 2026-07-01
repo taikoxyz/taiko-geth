@@ -264,6 +264,20 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 		committed = append(committed, tx)
 	}
 
+	// CHANGE(taiko): mirror canonical Prague post-execution system calls (EIP-7002
+	// withdrawal queue, EIP-7251 consolidation queue) so the witness captures their
+	// state accesses before finalization. EIP-6110 deposit-log parsing reads logs
+	// only and touches no state, so it is not needed for the witness.
+	if config.IsPrague(block.Number(), block.Time()) {
+		var requests [][]byte
+		if err := core.ProcessWithdrawalQueue(&requests, evm); err != nil {
+			return nil, nil, fmt.Errorf("post-execution withdrawal queue system call failed: %w", err)
+		}
+		if err := core.ProcessConsolidationQueue(&requests, evm); err != nil {
+			return nil, nil, fmt.Errorf("post-execution consolidation queue system call failed: %w", err)
+		}
+	}
+
 	if zkGasMeter != nil && !opts.SkipZkGasDifficultyCheck {
 		recomputed := zkGasMeter.BlockZkGasUsed()
 		if zkGasDifficultyMismatch(header.Difficulty, recomputed) {

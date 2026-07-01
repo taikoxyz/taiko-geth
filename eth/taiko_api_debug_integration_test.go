@@ -234,6 +234,117 @@ func txListWitnessBeaconChain(t *testing.T, n int) (*core.BlockChain, []*types.B
 	return bc, blocks
 }
 
+// txListWitnessPragueChain builds an in-memory Taiko chain on a Prague-active
+// config with the EIP-4788 beacon-roots, EIP-2935 history-storage, EIP-7002
+// withdrawal-queue and EIP-7251 consolidation-queue system contracts deployed in
+// genesis. This exercises both the pre-execution system calls and the Prague
+// post-execution system calls (withdrawal/consolidation queues) that
+// buildTxListWitness must replay so the witness captures their state accesses.
+func txListWitnessPragueChain(t *testing.T, n int) (*core.BlockChain, []*types.Block) {
+	t.Helper()
+	key, _ := crypto.GenerateKey()
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+
+	cfg := *params.MergedTestChainConfig // Prague-active (PragueTime == 0)
+	cfg.Taiko = true
+	cfg.ChainID = big.NewInt(167000)
+
+	gspec := &core.Genesis{
+		Config: &cfg,
+		Alloc: types.GenesisAlloc{
+			addr:                             {Balance: big.NewInt(1e18)},
+			params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+			params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
+			params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
+			params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
+		},
+	}
+	engine := beacon.New(ethash.NewFaker())
+	db := rawdb.NewMemoryDatabase()
+
+	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *core.BlockGen) {
+		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
+
+		signer := types.LatestSigner(&cfg)
+		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
+		}), signer, key)
+		if err := tx0.MarkAsAnchor(); err != nil {
+			t.Fatalf("mark anchor: %v", err)
+		}
+		gen.AddTx(tx0)
+		tx1, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(2),
+		}), signer, key)
+		gen.AddTx(tx1)
+	})
+
+	bc, err := core.NewBlockChain(db, gspec, engine, nil)
+	if err != nil {
+		t.Fatalf("new blockchain: %v", err)
+	}
+	if _, err := bc.InsertChain(blocks); err != nil {
+		t.Fatalf("insert chain: %v", err)
+	}
+	return bc, blocks
+}
+
+// TestBuildTxListWitnessAppliesPostExecutionSystemCalls verifies buildTxListWitness
+// runs the Prague post-execution system calls (EIP-7002 withdrawal queue and
+// EIP-7251 consolidation queue) after replaying transactions, so the witness
+// records both queue system-contract accounts. Without the post-execution system
+// calls neither account is touched and these keys are absent.
+func TestBuildTxListWitnessAppliesPostExecutionSystemCalls(t *testing.T) {
+	bc, blocks := txListWitnessPragueChain(t, 2)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+
+	// Sanity: the target block must be Prague-active, otherwise postExecution
+	// (and this test) would not exercise the EIP-7002/7251 system calls.
+	if !bc.Config().IsPrague(block.Number(), block.Time()) {
+		t.Fatalf("test block is not Prague-active; cannot exercise post-execution system calls")
+	}
+
+	witness, committed, err := buildTxListWitness(bc, block, block.Transactions(), txListWitnessOptions{})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+	if len(committed) != len(block.Transactions()) {
+		t.Fatalf("expected all %d txs committed, got %d", len(block.Transactions()), len(committed))
+	}
+
+	// Required regression guard: both Prague post-execution queue system contracts
+	// must appear in the witness key preimages. They are only recorded if the
+	// post-execution system calls ran during witness building.
+	if _, ok := witness.Keys[string(params.WithdrawalQueueAddress.Bytes())]; !ok {
+		t.Fatalf("withdrawal-queue system-contract address missing from witness keys; " +
+			"post-execution EIP-7002 system call was not applied")
+	}
+	if _, ok := witness.Keys[string(params.ConsolidationQueueAddress.Bytes())]; !ok {
+		t.Fatalf("consolidation-queue system-contract address missing from witness keys; " +
+			"post-execution EIP-7251 system call was not applied")
+	}
+
+	// Self-consistency: re-executing statelessly from the witness alone must
+	// reproduce the canonical post-state root. This exercises the full
+	// pre-execution + transaction replay + post-execution path and fails if the
+	// witness omits state the canonical execution touched.
+	hdr := block.Header()
+	hdr.Root = common.Hash{}
+	hdr.ReceiptHash = common.Hash{}
+	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
+	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
+	if err != nil {
+		t.Fatalf("ExecuteStateless: %v", err)
+	}
+	if got != block.Root() {
+		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	}
+}
+
 // TestBuildTxListWitnessAppliesPreExecutionSystemCalls verifies buildTxListWitness
 // runs the EIP-4788 beacon-block-root system call before replaying transactions,
 // so the witness records the beacon-roots system-contract account. Without the
