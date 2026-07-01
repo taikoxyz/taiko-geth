@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"encoding/binary"
 	"math/big"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
 // txListWitnessTestChain builds an in-memory chain of `n` blocks. Block bodies
@@ -332,6 +334,133 @@ func TestBuildTxListWitnessAppliesPostExecutionSystemCalls(t *testing.T) {
 	// reproduce the canonical post-state root. This exercises the full
 	// pre-execution + transaction replay + post-execution path and fails if the
 	// witness omits state the canonical execution touched.
+	hdr := block.Header()
+	hdr.Root = common.Hash{}
+	hdr.ReceiptHash = common.Hash{}
+	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
+	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
+	if err != nil {
+		t.Fatalf("ExecuteStateless: %v", err)
+	}
+	if got != block.Root() {
+		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	}
+}
+
+// txListWitnessDeepPragueChain builds a Prague-active Taiko chain whose genesis
+// funds many extra accounts, so the account trie is deep enough that the
+// SystemAddress exclusion proof spans multiple trie nodes (not just the root).
+// This is what makes the "missing system-caller node" regression observable: a
+// shallow trie hides it because the root node alone proves the exclusion.
+func txListWitnessDeepPragueChain(t *testing.T, extraAccounts int) (*core.BlockChain, []*types.Block) {
+	t.Helper()
+	key, _ := crypto.GenerateKey()
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+
+	cfg := *params.MergedTestChainConfig // Prague-active (PragueTime == 0)
+	cfg.Taiko = true
+	cfg.ChainID = big.NewInt(167000)
+
+	alloc := types.GenesisAlloc{
+		addr:                             {Balance: big.NewInt(1e18)},
+		params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+		params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
+		params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
+		params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
+	}
+	for i := range extraAccounts {
+		var a common.Address
+		binary.BigEndian.PutUint64(a[:8], uint64(i+1))
+		a[19] = 0x11
+		alloc[a] = types.Account{Balance: big.NewInt(1)}
+	}
+	gspec := &core.Genesis{Config: &cfg, Alloc: alloc}
+	engine := beacon.New(ethash.NewFaker())
+	db := rawdb.NewMemoryDatabase()
+
+	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
+		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
+		signer := types.LatestSigner(&cfg)
+		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
+		}), signer, key)
+		if err := tx0.MarkAsAnchor(); err != nil {
+			t.Fatalf("mark anchor: %v", err)
+		}
+		gen.AddTx(tx0)
+	})
+
+	bc, err := core.NewBlockChain(db, gspec, engine, nil)
+	if err != nil {
+		t.Fatalf("new blockchain: %v", err)
+	}
+	if _, err := bc.InsertChain(blocks); err != nil {
+		t.Fatalf("insert chain: %v", err)
+	}
+	return bc, blocks
+}
+
+// accountProofNodes returns the account-trie proof (list of RLP-encoded nodes)
+// for addr against the state trie rooted at root.
+func accountProofNodes(t *testing.T, bc *core.BlockChain, root common.Hash, addr common.Address) [][]byte {
+	t.Helper()
+	accTrie, err := trie.NewStateTrie(trie.StateTrieID(root), bc.TrieDB())
+	if err != nil {
+		t.Fatalf("open state trie at %s: %v", root, err)
+	}
+	var nodes proofNodeList
+	if err := accTrie.Prove(crypto.Keccak256(addr.Bytes()), &nodes); err != nil {
+		t.Fatalf("prove %s: %v", addr, err)
+	}
+	return nodes
+}
+
+type proofNodeList [][]byte
+
+func (p *proofNodeList) Put(key, value []byte) error { *p = append(*p, value); return nil }
+func (p *proofNodeList) Delete(key []byte) error     { return nil }
+
+// TestBuildTxListWitnessIncludesSystemCallCaller is a regression guard: the
+// system-call caller account (params.SystemAddress, 0xff..fe) must appear in the
+// witness — both its key preimage and every node of its account-trie proof.
+//
+// go-geth skips the value transfer for system calls, so it never loads the system
+// caller and its account-trie path is absent from the witness. go-geth's own
+// stateless re-execution skips it too, so the state-root self-consistency check
+// cannot catch the gap; a cross-client stateless executor that loads the caller
+// during its EIP-4788/2935/7002/7251 system calls fails to resolve the account
+// without those nodes. The deep trie makes the missing nodes observable.
+func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
+	bc, blocks := txListWitnessDeepPragueChain(t, 2000)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+	parent := bc.GetHeaderByHash(block.ParentHash())
+
+	// Sanity: the trie must be deep enough that the exclusion proof is more than
+	// the root node, otherwise this test would pass trivially and guard nothing.
+	sysProof := accountProofNodes(t, bc, parent.Root, params.SystemAddress)
+	if len(sysProof) < 2 {
+		t.Fatalf("SystemAddress exclusion proof has %d node(s); need a deeper trie to guard the regression", len(sysProof))
+	}
+
+	witness, _, err := buildTxListWitness(bc, block, block.Transactions(), txListWitnessOptions{})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+
+	if _, ok := witness.Keys[string(params.SystemAddress.Bytes())]; !ok {
+		t.Fatalf("system-call caller %s missing from witness keys", params.SystemAddress)
+	}
+	for i, node := range sysProof {
+		if _, ok := witness.State[string(node)]; !ok {
+			t.Fatalf("system-call caller account-trie proof node %d/%d missing from witness state", i+1, len(sysProof))
+		}
+	}
+
+	// The witness must still re-execute statelessly to the canonical root: the
+	// extra system-caller nodes must not have perturbed the post-state.
 	hdr := block.Header()
 	hdr.Root = common.Hash{}
 	hdr.ReceiptHash = common.Hash{}
