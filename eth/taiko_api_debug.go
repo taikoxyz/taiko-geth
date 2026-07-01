@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/stateless"
@@ -185,7 +186,24 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	statedb.StartPrefetcher("txlist-witness", witness)
 	defer statedb.StopPrefetcher()
 
-	evm := vm.NewEVM(core.NewEVMBlockContext(header, bc, &header.Coinbase), statedb, config, vm.Config{})
+	// CHANGE(taiko): record the block numbers whose hashes the transactions
+	// resolve via the BLOCKHASH opcode. go-geth serves these from the header
+	// chain and witnesses them as headers, but an EIP-2935 stateless executor
+	// resolves them from the HistoryStorage contract's storage. We collect the
+	// numbers here and pull the backing storage slots into the witness below.
+	var blockHashNums []uint64
+	seenBlockHash := make(map[uint64]struct{})
+	evm := vm.NewEVM(core.NewEVMBlockContext(header, bc, &header.Coinbase), statedb, config, vm.Config{
+		Tracer: &tracing.Hooks{
+			OnBlockHashRead: func(number uint64, _ common.Hash) {
+				if _, ok := seenBlockHash[number]; ok {
+					return
+				}
+				seenBlockHash[number] = struct{}{}
+				blockHashNums = append(blockHashNums, number)
+			},
+		},
+	})
 	var zkGasMeter *vm.ZkGasMeter
 	if config.IsUnzen(header.Time) {
 		zkGasMeter = vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
@@ -308,6 +326,22 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 		config.IsPrague(block.Number(), block.Time()) ||
 		config.IsVerkle(block.Number(), block.Time()) {
 		statedb.AddBalance(params.SystemAddress, uint256.NewInt(0), tracing.BalanceChangeUnspecified)
+	}
+
+	// CHANGE(taiko): witness the EIP-2935 HistoryStorage slots backing the block
+	// hashes the transactions resolved via BLOCKHASH. go-geth reads those hashes
+	// from the header chain, so their storage-trie proofs never enter the witness
+	// otherwise; a cross-client stateless executor that resolves BLOCKHASH from
+	// the HistoryStorage contract cannot resolve the account without them. The
+	// slot value equals the block hash go-geth already returned, so this pure
+	// read records the key preimage and loads the storage-trie path without
+	// changing the post-state. EIP-2935 (Prague) stores hash(n) at slot
+	// n % HistoryServeWindow; the served window is a subset of BLOCKHASH's.
+	if config.IsPrague(block.Number(), block.Time()) || config.IsVerkle(block.Number(), block.Time()) {
+		for _, num := range blockHashNums {
+			slot := common.BigToHash(new(big.Int).SetUint64(num % params.HistoryServeWindow))
+			statedb.GetState(params.HistoryStorageAddress, slot)
+		}
 	}
 	statedb.IntermediateRoot(true)
 
