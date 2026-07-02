@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"encoding/binary"
+	"maps"
 	"math/big"
 	"testing"
 
@@ -22,45 +23,74 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-// txListWitnessTestChain builds an in-memory chain of `n` blocks. Block bodies
-// have a DynamicFeeTx first (so the Taiko anchor-marking path is exercised),
-// followed by a simple value transfer. Returns the blockchain and the blocks.
-func txListWitnessTestChain(t *testing.T, n int) (*core.BlockChain, []*types.Block) {
+// witnessChainConfig parameterizes newTxListWitnessChain. The zero value builds
+// a two-block chain whose blocks each carry a single anchor transaction.
+type witnessChainConfig struct {
+	blocks        int                // chain length; 0 means 2
+	transferTxs   int                // plain transfers per block after the anchor
+	beaconRoot    bool               // give every block a non-zero ParentBeaconRoot
+	alloc         types.GenesisAlloc // extra genesis accounts (system/test contracts)
+	extraAccounts int                // filler accounts that deepen the account trie
+}
+
+// newTxListWitnessChain builds an in-memory Taiko chain on a Cancun+Prague
+// -active config. Every block starts with a DynamicFeeTx marked as the anchor
+// (exercising the Taiko anchor path) followed by cfg.transferTxs value
+// transfers, all sent by the returned funded key.
+func newTxListWitnessChain(t *testing.T, cfg witnessChainConfig) (*core.BlockChain, []*types.Block, *ecdsa.PrivateKey) {
 	t.Helper()
+	if cfg.blocks == 0 {
+		cfg.blocks = 2
+	}
 	key, _ := crypto.GenerateKey()
 	addr := crypto.PubkeyToAddress(key.PublicKey)
 	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
 
-	cfg := *params.MergedTestChainConfig
-	cfg.Taiko = true
-	cfg.ChainID = big.NewInt(167000)
+	chainCfg := *params.MergedTestChainConfig
+	chainCfg.Taiko = true
+	chainCfg.ChainID = big.NewInt(167000)
 
-	gspec := &core.Genesis{
-		Config: &cfg,
-		Alloc:  types.GenesisAlloc{addr: {Balance: big.NewInt(1e18)}},
+	alloc := types.GenesisAlloc{addr: {Balance: big.NewInt(1e18)}}
+	maps.Copy(alloc, cfg.alloc)
+	// Filler accounts deepen the account trie so exclusion proofs span multiple
+	// nodes: a shallow trie proves absence with the root node alone, hiding
+	// missing-node regressions.
+	for i := range cfg.extraAccounts {
+		var a common.Address
+		binary.BigEndian.PutUint64(a[:8], uint64(i+1))
+		a[19] = 0x11
+		alloc[a] = types.Account{Balance: big.NewInt(1)}
 	}
+
+	gspec := &core.Genesis{Config: &chainCfg, Alloc: alloc}
 	engine := beacon.New(ethash.NewFaker())
 	db := rawdb.NewMemoryDatabase()
 
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *core.BlockGen) {
-		signer := types.LatestSigner(&cfg)
-		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-		}), signer, key)
-		// CHANGE(taiko): mark the block's first tx as the anchor during generation
-		// so GenerateChain's fee accounting matches the Taiko block-import path
-		// (which marks index 0 as anchor and skips base-fee redirection); otherwise
-		// InsertChain rejects the block with an invalid merkle root.
-		if err := tx0.MarkAsAnchor(); err != nil {
-			t.Fatalf("mark anchor: %v", err)
+	signer := types.LatestSigner(&chainCfg)
+	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, cfg.blocks, func(i int, gen *core.BlockGen) {
+		if cfg.beaconRoot {
+			// CHANGE(taiko): an explicit non-zero beacon root makes the EIP-4788
+			// system call write storage and gives the block header a canonical,
+			// non-zero ParentBeaconRoot for the witness replay to reproduce.
+			gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
 		}
-		gen.AddTx(tx0)
-		tx1, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(2),
-		}), signer, key)
-		gen.AddTx(tx1)
+		for j := 0; j <= cfg.transferTxs; j++ {
+			tx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+				ChainID: chainCfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+				GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(int64(j + 1)),
+			}), signer, key)
+			if j == 0 {
+				// CHANGE(taiko): mark the block's first tx as the anchor during
+				// generation so GenerateChain's fee accounting matches the Taiko
+				// block-import path (which marks index 0 as anchor and skips
+				// base-fee redirection); otherwise InsertChain rejects the block
+				// with an invalid merkle root.
+				if err := tx.MarkAsAnchor(); err != nil {
+					t.Fatalf("mark anchor: %v", err)
+				}
+			}
+			gen.AddTx(tx)
+		}
 	})
 
 	bc, err := core.NewBlockChain(db, gspec, engine, nil)
@@ -70,12 +100,40 @@ func txListWitnessTestChain(t *testing.T, n int) (*core.BlockChain, []*types.Blo
 	if _, err := bc.InsertChain(blocks); err != nil {
 		t.Fatalf("insert chain: %v", err)
 	}
-	return bc, blocks
+	t.Cleanup(bc.Stop)
+	return bc, blocks, key
+}
+
+// systemContractsAlloc returns the EIP-4788 beacon-roots and EIP-2935
+// history-storage system contracts for a genesis alloc, so the pre-execution
+// system calls run against deployed contracts.
+func systemContractsAlloc() types.GenesisAlloc {
+	return types.GenesisAlloc{
+		params.BeaconRootsAddress:    {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+		params.HistoryStorageAddress: {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
+	}
+}
+
+// assertStatelessReplay re-executes the block's canonical body from the witness
+// alone and asserts it reproduces the canonical post-state root. Witnesses that
+// carry extra pure-read state are a harmless superset for this check.
+func assertStatelessReplay(t *testing.T, bc *core.BlockChain, block *types.Block, witness *stateless.Witness) {
+	t.Helper()
+	hdr := block.Header()
+	hdr.Root = common.Hash{}
+	hdr.ReceiptHash = common.Hash{}
+	replay := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
+	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, replay, witness)
+	if err != nil {
+		t.Fatalf("ExecuteStateless: %v", err)
+	}
+	if got != block.Root() {
+		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	}
 }
 
 func TestBuildTxListWitnessReproducesStateRoot(t *testing.T) {
-	bc, blocks := txListWitnessTestChain(t, 2)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{transferTxs: 1})
 	block := blocks[len(blocks)-1]
 
 	witness, committed, err := buildTxListWitness(bc, block, block.Transactions(), txListWitnessOptions{})
@@ -88,24 +146,11 @@ func TestBuildTxListWitnessReproducesStateRoot(t *testing.T) {
 	if len(witness.Keys) == 0 {
 		t.Fatalf("expected populated keys")
 	}
-
-	// Re-execute statelessly using only the witness; the state root must match.
-	hdr := block.Header()
-	hdr.Root = common.Hash{}
-	hdr.ReceiptHash = common.Hash{}
-	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
-	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
-	if err != nil {
-		t.Fatalf("ExecuteStateless: %v", err)
-	}
-	if got != block.Root() {
-		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
-	}
+	assertStatelessReplay(t, bc, block, witness)
 }
 
 func TestBuildTxListWitnessSkipsInvalidNonAnchorTx(t *testing.T) {
-	bc, blocks := txListWitnessTestChain(t, 1)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{blocks: 1, transferTxs: 1})
 	block := blocks[0]
 
 	key, _ := crypto.GenerateKey() // unknown, unfunded sender
@@ -128,8 +173,7 @@ func TestBuildTxListWitnessSkipsInvalidNonAnchorTx(t *testing.T) {
 }
 
 func TestBuildTxListWitnessAnchorFailureIsFatal(t *testing.T) {
-	bc, blocks := txListWitnessTestChain(t, 1)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{blocks: 1, transferTxs: 1})
 	block := blocks[0]
 
 	key, _ := crypto.GenerateKey() // unfunded
@@ -146,8 +190,7 @@ func TestBuildTxListWitnessAnchorFailureIsFatal(t *testing.T) {
 }
 
 func TestExecutionWitnessForTxListEndToEnd(t *testing.T) {
-	bc, blocks := txListWitnessTestChain(t, 2)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{transferTxs: 1})
 	block := blocks[len(blocks)-1]
 
 	rlpTxs, err := rlp.EncodeToBytes(block.Transactions())
@@ -171,8 +214,7 @@ func TestExecutionWitnessForTxListEndToEnd(t *testing.T) {
 }
 
 func TestExecutionWitnessForTxListRejectsCanonicalMode(t *testing.T) {
-	bc, blocks := txListWitnessTestChain(t, 1)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{blocks: 1})
 	bn := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(blocks[0].NumberU64()))
 	mode := "canonical"
 	if _, err := executionWitnessForTxList(bc, bn, []byte{0xc0}, &mode, nil); err == nil {
@@ -180,130 +222,18 @@ func TestExecutionWitnessForTxListRejectsCanonicalMode(t *testing.T) {
 	}
 }
 
-// txListWitnessBeaconChain builds an in-memory Taiko chain on a Cancun/Prague
-// -active config whose blocks carry an explicit non-zero ParentBeaconRoot, with
-// the EIP-4788 beacon-roots and EIP-2935 history-storage system contracts
-// deployed in genesis. This exercises the pre-execution system calls that
-// buildTxListWitness must replay so the witness captures their state accesses.
-func txListWitnessBeaconChain(t *testing.T, n int) (*core.BlockChain, []*types.Block) {
-	t.Helper()
-	key, _ := crypto.GenerateKey()
-	addr := crypto.PubkeyToAddress(key.PublicKey)
-	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
-
-	cfg := *params.MergedTestChainConfig
-	cfg.Taiko = true
-	cfg.ChainID = big.NewInt(167000)
-
-	gspec := &core.Genesis{
-		Config: &cfg,
-		Alloc: types.GenesisAlloc{
-			addr:                         {Balance: big.NewInt(1e18)},
-			params.BeaconRootsAddress:    {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-			params.HistoryStorageAddress: {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
-		},
-	}
-	engine := beacon.New(ethash.NewFaker())
-	db := rawdb.NewMemoryDatabase()
-
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *core.BlockGen) {
-		// CHANGE(taiko): set an explicit non-zero beacon root so the EIP-4788
-		// system call writes storage and the block header carries a canonical,
-		// non-zero ParentBeaconRoot for the witness replay to reproduce.
-		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
-
-		signer := types.LatestSigner(&cfg)
-		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-		}), signer, key)
-		if err := tx0.MarkAsAnchor(); err != nil {
-			t.Fatalf("mark anchor: %v", err)
-		}
-		gen.AddTx(tx0)
-		tx1, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(2),
-		}), signer, key)
-		gen.AddTx(tx1)
-	})
-
-	bc, err := core.NewBlockChain(db, gspec, engine, nil)
-	if err != nil {
-		t.Fatalf("new blockchain: %v", err)
-	}
-	if _, err := bc.InsertChain(blocks); err != nil {
-		t.Fatalf("insert chain: %v", err)
-	}
-	return bc, blocks
-}
-
-// txListWitnessPragueChain builds an in-memory Taiko chain on a Prague-active
-// config with the EIP-4788 beacon-roots, EIP-2935 history-storage, EIP-7002
-// withdrawal-queue and EIP-7251 consolidation-queue system contracts deployed in
-// genesis. This exercises both the pre-execution system calls and the Prague
-// post-execution system calls (withdrawal/consolidation queues) that
-// buildTxListWitness must replay so the witness captures their state accesses.
-func txListWitnessPragueChain(t *testing.T, n int) (*core.BlockChain, []*types.Block) {
-	t.Helper()
-	key, _ := crypto.GenerateKey()
-	addr := crypto.PubkeyToAddress(key.PublicKey)
-	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
-
-	cfg := *params.MergedTestChainConfig // Prague-active (PragueTime == 0)
-	cfg.Taiko = true
-	cfg.ChainID = big.NewInt(167000)
-
-	gspec := &core.Genesis{
-		Config: &cfg,
-		Alloc: types.GenesisAlloc{
-			addr:                             {Balance: big.NewInt(1e18)},
-			params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-			params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
-			params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
-			params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
-		},
-	}
-	engine := beacon.New(ethash.NewFaker())
-	db := rawdb.NewMemoryDatabase()
-
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, n, func(i int, gen *core.BlockGen) {
-		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
-
-		signer := types.LatestSigner(&cfg)
-		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-		}), signer, key)
-		if err := tx0.MarkAsAnchor(); err != nil {
-			t.Fatalf("mark anchor: %v", err)
-		}
-		gen.AddTx(tx0)
-		tx1, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(2),
-		}), signer, key)
-		gen.AddTx(tx1)
-	})
-
-	bc, err := core.NewBlockChain(db, gspec, engine, nil)
-	if err != nil {
-		t.Fatalf("new blockchain: %v", err)
-	}
-	if _, err := bc.InsertChain(blocks); err != nil {
-		t.Fatalf("insert chain: %v", err)
-	}
-	return bc, blocks
-}
-
-// TestBuildTxListWitnessAppliesPostExecutionSystemCalls verifies buildTxListWitness
-// runs the Prague post-execution system calls (EIP-7002 withdrawal queue and
-// EIP-7251 consolidation queue) after replaying transactions, so the witness
-// records both queue system-contract accounts. Without the post-execution system
-// calls neither account is touched and these keys are absent.
+// TestBuildTxListWitnessSkipsPostExecutionQueueCalls is a regression guard: the
+// replay must NOT run the Prague post-execution system calls (EIP-7002
+// withdrawal queue, EIP-7251 consolidation queue). The cross-client reference
+// block executor never performs them (its requests are unconditionally empty),
+// so witnessing the queue contracts' account state would leak geth-only nodes
+// into the witness. The queue contracts are deliberately deployed here so the
+// guard proves the replay leaves them untouched even when present.
 func TestBuildTxListWitnessSkipsPostExecutionQueueCalls(t *testing.T) {
-	bc, blocks := txListWitnessPragueChain(t, 2)
-	defer bc.Stop()
+	alloc := systemContractsAlloc()
+	alloc[params.WithdrawalQueueAddress] = types.Account{Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0}
+	alloc[params.ConsolidationQueueAddress] = types.Account{Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0}
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{transferTxs: 1, beaconRoot: true, alloc: alloc})
 	block := blocks[len(blocks)-1]
 
 	// Sanity: the target block must be Prague-active, otherwise this test would
@@ -320,12 +250,6 @@ func TestBuildTxListWitnessSkipsPostExecutionQueueCalls(t *testing.T) {
 		t.Fatalf("expected all %d txs committed, got %d", len(block.Transactions()), len(committed))
 	}
 
-	// The reference block executor never performs the EIP-7002/7251 queue system
-	// calls (its requests are unconditionally empty), so the replay must not
-	// touch the queue contracts either — even when they are deployed. Their
-	// account state entering the witness (previously via key preimages and
-	// account-trie paths) was a cross-client witness difference.
-	//
 	// No stateless re-execution check here: with the queue contracts deployed,
 	// canonical processing does call them, so this witness intentionally lacks
 	// their state. Real Taiko networks do not deploy the queue contracts.
@@ -337,61 +261,6 @@ func TestBuildTxListWitnessSkipsPostExecutionQueueCalls(t *testing.T) {
 		t.Fatalf("consolidation-queue system-contract address must not appear in witness keys; " +
 			"the reference executor never runs the EIP-7251 system call")
 	}
-}
-
-// txListWitnessDeepPragueChain builds a Prague-active Taiko chain whose genesis
-// funds many extra accounts, so the account trie is deep enough that the
-// SystemAddress exclusion proof spans multiple trie nodes (not just the root).
-// This is what makes the "missing system-caller node" regression observable: a
-// shallow trie hides it because the root node alone proves the exclusion.
-func txListWitnessDeepPragueChain(t *testing.T, extraAccounts int) (*core.BlockChain, []*types.Block) {
-	t.Helper()
-	key, _ := crypto.GenerateKey()
-	addr := crypto.PubkeyToAddress(key.PublicKey)
-	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
-
-	cfg := *params.MergedTestChainConfig // Prague-active (PragueTime == 0)
-	cfg.Taiko = true
-	cfg.ChainID = big.NewInt(167000)
-
-	// Deliberately no EIP-7002/7251 queue contracts: real Taiko networks do not
-	// deploy them and the replay must not touch them.
-	alloc := types.GenesisAlloc{
-		addr:                         {Balance: big.NewInt(1e18)},
-		params.BeaconRootsAddress:    {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-		params.HistoryStorageAddress: {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
-	}
-	for i := range extraAccounts {
-		var a common.Address
-		binary.BigEndian.PutUint64(a[:8], uint64(i+1))
-		a[19] = 0x11
-		alloc[a] = types.Account{Balance: big.NewInt(1)}
-	}
-	gspec := &core.Genesis{Config: &cfg, Alloc: alloc}
-	engine := beacon.New(ethash.NewFaker())
-	db := rawdb.NewMemoryDatabase()
-
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
-		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
-		signer := types.LatestSigner(&cfg)
-		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-		}), signer, key)
-		if err := tx0.MarkAsAnchor(); err != nil {
-			t.Fatalf("mark anchor: %v", err)
-		}
-		gen.AddTx(tx0)
-	})
-
-	bc, err := core.NewBlockChain(db, gspec, engine, nil)
-	if err != nil {
-		t.Fatalf("new blockchain: %v", err)
-	}
-	if _, err := bc.InsertChain(blocks); err != nil {
-		t.Fatalf("insert chain: %v", err)
-	}
-	return bc, blocks
 }
 
 // accountProofNodes returns the account-trie proof (list of RLP-encoded nodes)
@@ -427,8 +296,9 @@ func (p *proofNodeList) Delete(key []byte) error     { return nil }
 // explicit load its exclusion path is missing and the witness under-covers.
 // The deep trie makes the missing nodes observable.
 func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
-	bc, blocks := txListWitnessDeepPragueChain(t, 2000)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{
+		beaconRoot: true, alloc: systemContractsAlloc(), extraAccounts: 2000,
+	})
 	block := blocks[len(blocks)-1]
 	parent := bc.GetHeaderByHash(block.ParentHash())
 
@@ -454,68 +324,7 @@ func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
 	}
 
 	// The witness must still re-execute statelessly to the canonical root.
-	hdr := block.Header()
-	hdr.Root = common.Hash{}
-	hdr.ReceiptHash = common.Hash{}
-	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
-	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
-	if err != nil {
-		t.Fatalf("ExecuteStateless: %v", err)
-	}
-	if got != block.Root() {
-		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
-	}
-}
-
-// txListWitnessAbsentSystemContractChain builds a deep Prague-active Taiko chain
-// that does NOT deploy the EIP system contracts, matching a Taiko L2 that
-// activates Prague/Cancun without them. Blocks carry a non-zero ParentBeaconRoot
-// so the EIP-4788 pre-execution call runs against the absent beacon-roots
-// contract, and the account trie is deep so an absent contract's exclusion proof
-// spans multiple nodes.
-func txListWitnessAbsentSystemContractChain(t *testing.T, extraAccounts int) (*core.BlockChain, []*types.Block) {
-	t.Helper()
-	key, _ := crypto.GenerateKey()
-	addr := crypto.PubkeyToAddress(key.PublicKey)
-	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
-
-	cfg := *params.MergedTestChainConfig // Prague-active (PragueTime == 0)
-	cfg.Taiko = true
-	cfg.ChainID = big.NewInt(167000)
-
-	alloc := types.GenesisAlloc{addr: {Balance: big.NewInt(1e18)}}
-	// Deep account trie; deliberately no BeaconRoots/HistoryStorage/queue contracts.
-	for i := range extraAccounts {
-		var a common.Address
-		binary.BigEndian.PutUint64(a[:8], uint64(i+1))
-		a[19] = 0x11
-		alloc[a] = types.Account{Balance: big.NewInt(1)}
-	}
-	gspec := &core.Genesis{Config: &cfg, Alloc: alloc}
-	engine := beacon.New(ethash.NewFaker())
-	db := rawdb.NewMemoryDatabase()
-
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
-		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
-		signer := types.LatestSigner(&cfg)
-		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-		}), signer, key)
-		if err := tx0.MarkAsAnchor(); err != nil {
-			t.Fatalf("mark anchor: %v", err)
-		}
-		gen.AddTx(tx0)
-	})
-
-	bc, err := core.NewBlockChain(db, gspec, engine, nil)
-	if err != nil {
-		t.Fatalf("new blockchain: %v", err)
-	}
-	if _, err := bc.InsertChain(blocks); err != nil {
-		t.Fatalf("insert chain: %v", err)
-	}
-	return bc, blocks
+	assertStatelessReplay(t, bc, block, witness)
 }
 
 // TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof is a regression
@@ -533,8 +342,7 @@ func txListWitnessAbsentSystemContractChain(t *testing.T, extraAccounts int) (*c
 // from the sparse trie fails ("state trie unresolved") without those nodes. The
 // deep trie makes the missing intermediate nodes observable.
 func TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof(t *testing.T) {
-	bc, blocks := txListWitnessAbsentSystemContractChain(t, 2000)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{beaconRoot: true, extraAccounts: 2000})
 	block := blocks[len(blocks)-1]
 	parent := bc.GetHeaderByHash(block.ParentHash())
 
@@ -582,22 +390,11 @@ func TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof(t *testing
 
 	// The extra exclusion-proof nodes must not perturb the post-state: the witness
 	// must still re-execute statelessly to the canonical root.
-	hdr := block.Header()
-	hdr.Root = common.Hash{}
-	hdr.ReceiptHash = common.Hash{}
-	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
-	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
-	if err != nil {
-		t.Fatalf("ExecuteStateless: %v", err)
-	}
-	if got != block.Root() {
-		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
-	}
+	assertStatelessReplay(t, bc, block, witness)
 }
 
 func TestExecutionWitnessIncludesAbsentSystemContractExclusionProof(t *testing.T) {
-	bc, blocks := txListWitnessAbsentSystemContractChain(t, 2000)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{beaconRoot: true, extraAccounts: 2000})
 	block := blocks[len(blocks)-1]
 	parent := bc.GetHeaderByHash(block.ParentHash())
 
@@ -649,8 +446,9 @@ func TestExecutionWitnessIncludesAbsentSystemContractExclusionProof(t *testing.T
 // so the witness records the beacon-roots system-contract account. Without the
 // pre-execution system calls the account is never touched and this key is absent.
 func TestBuildTxListWitnessAppliesPreExecutionSystemCalls(t *testing.T) {
-	bc, blocks := txListWitnessBeaconChain(t, 2)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{
+		transferTxs: 1, beaconRoot: true, alloc: systemContractsAlloc(),
+	})
 	block := blocks[len(blocks)-1]
 
 	// Sanity: the block must actually carry a non-nil, non-zero beacon root,
@@ -683,17 +481,7 @@ func TestBuildTxListWitnessAppliesPreExecutionSystemCalls(t *testing.T) {
 	// reproduce the canonical post-state root. This exercises the full
 	// pre-execution + transaction replay path and fails if the witness omits
 	// state the canonical execution touched.
-	hdr := block.Header()
-	hdr.Root = common.Hash{}
-	hdr.ReceiptHash = common.Hash{}
-	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
-	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
-	if err != nil {
-		t.Fatalf("ExecuteStateless: %v", err)
-	}
-	if got != block.Root() {
-		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
-	}
+	assertStatelessReplay(t, bc, block, witness)
 }
 
 // storageProofNodes returns the storage-trie proof (RLP nodes) for slot in
@@ -738,17 +526,8 @@ func storageProofNodes(t *testing.T, bc *core.BlockChain, stateRoot common.Hash,
 // BLOCKHASH transaction is supplied at replay time — exactly how the RPC feeds an
 // explicit tx list to buildTxListWitness.
 func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
-	key, _ := crypto.GenerateKey()
-	addr := crypto.PubkeyToAddress(key.PublicKey)
-	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
-
 	// Contract: PUSH0, BLOCKHASH, PUSH0, SSTORE, STOP => stores blockhash(0).
 	bhContract := common.HexToAddress("0x00000000000000000000000000000000b10c4a54")
-	bhCode := []byte{0x5f, 0x40, 0x5f, 0x55, 0x00}
-
-	cfg := *params.MergedTestChainConfig // Prague-active (PragueTime == 0)
-	cfg.Taiko = true
-	cfg.ChainID = big.NewInt(167000)
 
 	// Deep pre-populated HistoryStorage (slots 100..699) so the slot-0 proof
 	// spans multiple nodes; leaves slots 0/1 fresh for the blocks' own EIP-2935
@@ -761,41 +540,14 @@ func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
 		binary.BigEndian.PutUint64(val[24:], uint64(i)+1)
 		hist[slot] = val
 	}
-	gspec := &core.Genesis{
-		Config: &cfg,
-		Alloc: types.GenesisAlloc{
-			addr:                         {Balance: big.NewInt(1e18)},
-			bhContract:                   {Nonce: 1, Code: bhCode, Balance: common.Big0},
-			params.BeaconRootsAddress:    {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-			params.HistoryStorageAddress: {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0, Storage: hist},
-		},
-	}
-	engine := beacon.New(ethash.NewFaker())
-	db := rawdb.NewMemoryDatabase()
+	alloc := systemContractsAlloc()
+	histAccount := alloc[params.HistoryStorageAddress]
+	histAccount.Storage = hist
+	alloc[params.HistoryStorageAddress] = histAccount
+	alloc[bhContract] = types.Account{Nonce: 1, Code: []byte{0x5f, 0x40, 0x5f, 0x55, 0x00}, Balance: common.Big0}
 
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
-		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
-		signer := types.LatestSigner(&cfg)
-		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-		}), signer, key)
-		if err := tx0.MarkAsAnchor(); err != nil {
-			t.Fatalf("mark anchor: %v", err)
-		}
-		gen.AddTx(tx0)
-	})
-
-	bc, err := core.NewBlockChain(db, gspec, engine, nil)
-	if err != nil {
-		t.Fatalf("new blockchain: %v", err)
-	}
-	defer bc.Stop()
-	if _, err := bc.InsertChain(blocks); err != nil {
-		t.Fatalf("insert chain: %v", err)
-	}
-
-	block := blocks[len(blocks)-1] // block 2; parent = block 1 (addr nonce == 1)
+	bc, blocks, key := newTxListWitnessChain(t, witnessChainConfig{beaconRoot: true, alloc: alloc})
+	block := blocks[len(blocks)-1] // block 2; parent = block 1 (sender nonce == 1)
 	parent := bc.GetHeaderByHash(block.ParentHash())
 
 	// BLOCKHASH(0) reads HistoryStorage slot 0. Block 2's own EIP-2935 system
@@ -807,16 +559,12 @@ func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
 		t.Fatalf("HistoryStorage slot-0 proof has %d node(s); need a deeper trie to guard the regression", len(stProof))
 	}
 
-	signer := types.LatestSigner(&cfg)
-	anchor, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-		ChainID: cfg.ChainID, Nonce: 1, GasTipCap: big.NewInt(0),
-		GasFeeCap: block.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-	}), signer, key)
+	signer := types.LatestSigner(bc.Config())
 	callBH, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-		ChainID: cfg.ChainID, Nonce: 2, GasTipCap: big.NewInt(0),
+		ChainID: bc.Config().ChainID, Nonce: 2, GasTipCap: big.NewInt(0),
 		GasFeeCap: block.BaseFee(), Gas: 100000, To: &bhContract, Value: big.NewInt(0),
 	}), signer, key)
-	replay := types.Transactions{anchor, callBH}
+	replay := types.Transactions{block.Transactions()[0], callBH}
 
 	witness, committed, err := buildTxListWitness(bc, block, replay, txListWitnessOptions{SkipZkGasDifficultyCheck: true})
 	if err != nil {
@@ -839,72 +587,7 @@ func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
 	// witness must still re-execute the block's canonical body to its state root.
 	// (The replay anchor is identical to the block's own tx; the BLOCKHASH-only
 	// extras are a harmless superset for the canonical execution.)
-	hdr := block.Header()
-	hdr.Root = common.Hash{}
-	hdr.ReceiptHash = common.Hash{}
-	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
-	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
-	if err != nil {
-		t.Fatalf("ExecuteStateless: %v", err)
-	}
-	if got != block.Root() {
-		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
-	}
-}
-
-// txListWitnessUntouchedStorageChain builds a Taiko chain whose genesis deploys
-// a contract with populated storage and code that never touches storage (a
-// single STOP). Calling it loads the account and code but walks no storage-trie
-// path, which is exactly the case where the cross-client legacy witness format
-// still carries the account's parent-state storage-trie root node.
-func txListWitnessUntouchedStorageChain(t *testing.T, storContract common.Address) (*core.BlockChain, []*types.Block, *ecdsa.PrivateKey) {
-	t.Helper()
-	key, _ := crypto.GenerateKey()
-	addr := crypto.PubkeyToAddress(key.PublicKey)
-	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
-
-	cfg := *params.MergedTestChainConfig
-	cfg.Taiko = true
-	cfg.ChainID = big.NewInt(167000)
-
-	gspec := &core.Genesis{
-		Config: &cfg,
-		Alloc: types.GenesisAlloc{
-			addr: {Balance: big.NewInt(1e18)},
-			storContract: {
-				Nonce:   1,
-				Code:    []byte{0x00}, // STOP: loads account+code, reads no slot
-				Balance: common.Big0,
-				Storage: map[common.Hash]common.Hash{
-					common.HexToHash("0x01"): common.HexToHash("0xff"),
-					common.HexToHash("0x02"): common.HexToHash("0xfe"),
-				},
-			},
-		},
-	}
-	engine := beacon.New(ethash.NewFaker())
-	db := rawdb.NewMemoryDatabase()
-
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
-		signer := types.LatestSigner(&cfg)
-		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-		}), signer, key)
-		if err := tx0.MarkAsAnchor(); err != nil {
-			t.Fatalf("mark anchor: %v", err)
-		}
-		gen.AddTx(tx0)
-	})
-
-	bc, err := core.NewBlockChain(db, gspec, engine, nil)
-	if err != nil {
-		t.Fatalf("new blockchain: %v", err)
-	}
-	if _, err := bc.InsertChain(blocks); err != nil {
-		t.Fatalf("insert chain: %v", err)
-	}
-	return bc, blocks, key
+	assertStatelessReplay(t, bc, block, witness)
 }
 
 // TestBuildTxListWitnessIncludesUntouchedStorageRootNode is a regression guard
@@ -920,9 +603,20 @@ func txListWitnessUntouchedStorageChain(t *testing.T, storContract common.Addres
 // carries the storage root hash), which is why the state-root self-consistency
 // check cannot catch the gap.
 func TestBuildTxListWitnessIncludesUntouchedStorageRootNode(t *testing.T) {
+	// STOP-only code with populated storage: calling it loads the account and
+	// code but walks no storage-trie path.
 	storContract := common.HexToAddress("0x000000000000000000000000000000005700a6e1")
-	bc, blocks, key := txListWitnessUntouchedStorageChain(t, storContract)
-	defer bc.Stop()
+	bc, blocks, key := newTxListWitnessChain(t, witnessChainConfig{alloc: types.GenesisAlloc{
+		storContract: {
+			Nonce:   1,
+			Code:    []byte{0x00}, // STOP: loads account+code, reads no slot
+			Balance: common.Big0,
+			Storage: map[common.Hash]common.Hash{
+				common.HexToHash("0x01"): common.HexToHash("0xff"),
+				common.HexToHash("0x02"): common.HexToHash("0xfe"),
+			},
+		},
+	}})
 	block := blocks[len(blocks)-1]
 	parent := bc.GetHeaderByHash(block.ParentHash())
 
@@ -953,27 +647,16 @@ func TestBuildTxListWitnessIncludesUntouchedStorageRootNode(t *testing.T) {
 
 	// The extra nodes are pure pre-state reads: the witness must still re-execute
 	// the canonical block body to the canonical post-state root.
-	hdr := block.Header()
-	hdr.Root = common.Hash{}
-	hdr.ReceiptHash = common.Hash{}
-	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
-	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
-	if err != nil {
-		t.Fatalf("ExecuteStateless: %v", err)
-	}
-	if got != block.Root() {
-		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
-	}
+	assertStatelessReplay(t, bc, block, witness)
 }
 
 // TestExecutionWitnessForTxListOmitsAbsentAccountKeys verifies the wire-level
 // keys field only carries preimages of accounts that exist when the replay
 // finishes: absent system contracts and the system caller are probed by the
-// pre/post-execution system calls but must not surface as keys, while existing
+// pre-execution system calls but must not surface as keys, while existing
 // accounts (the sender) must keep theirs.
 func TestExecutionWitnessForTxListOmitsAbsentAccountKeys(t *testing.T) {
-	bc, blocks := txListWitnessAbsentSystemContractChain(t, 16)
-	defer bc.Stop()
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{beaconRoot: true, extraAccounts: 16})
 	block := blocks[len(blocks)-1]
 
 	rlpTxs, err := rlp.EncodeToBytes(block.Transactions())
@@ -1023,9 +706,7 @@ func TestExecutionWitnessForTxListOmitsAbsentAccountKeys(t *testing.T) {
 // called afterwards. A read-driven collector records code only on code reads,
 // so a deploy-and-stop transaction leaves the runtime bytecode out.
 func TestBuildTxListWitnessIncludesCreatedContractCode(t *testing.T) {
-	storContract := common.HexToAddress("0x000000000000000000000000000000005700a6e2")
-	bc, blocks, senderKey := txListWitnessUntouchedStorageChain(t, storContract)
-	defer bc.Stop()
+	bc, blocks, senderKey := newTxListWitnessChain(t, witnessChainConfig{})
 	block := blocks[len(blocks)-1]
 
 	// Init code returns the 2-byte runtime {PUSH0, STOP}.
@@ -1052,64 +733,30 @@ func TestBuildTxListWitnessIncludesCreatedContractCode(t *testing.T) {
 	}
 }
 
-// txListWitnessStorageShapeChain builds a Taiko chain whose genesis deploys a
-// contract with exactly two storage slots chosen so their hashed keys share a
+// newStorageShapeChain builds a Taiko chain whose genesis deploys a contract
+// with exactly two storage slots chosen so their hashed keys share a
 // three-nibble prefix: the storage trie is an extension (key c25) into a
 // two-child branch. The contract code stores calldata: SSTORE(calldata[0:32] ->
 // calldata[32:64]), letting replayed transactions insert or delete chosen slots.
 //
 //	slot 3   -> keccak c2575a0e...
 //	slot 497 -> keccak c254b84a...
-func txListWitnessStorageShapeChain(t *testing.T) (*core.BlockChain, []*types.Block, *ecdsa.PrivateKey, common.Address) {
+func newStorageShapeChain(t *testing.T) (*core.BlockChain, []*types.Block, *ecdsa.PrivateKey, common.Address) {
 	t.Helper()
-	key, _ := crypto.GenerateKey()
-	addr := crypto.PubkeyToAddress(key.PublicKey)
-	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
 	contract := common.HexToAddress("0x000000000000000000000000000000005700a6e3")
-
-	cfg := *params.MergedTestChainConfig
-	cfg.Taiko = true
-	cfg.ChainID = big.NewInt(167000)
-
 	val := common.HexToHash("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
-	gspec := &core.Genesis{
-		Config: &cfg,
-		Alloc: types.GenesisAlloc{
-			addr: {Balance: big.NewInt(1e18)},
-			contract: {
-				Nonce: 1,
-				// PUSH1 32 CALLDATALOAD PUSH1 0 CALLDATALOAD SSTORE STOP
-				Code:    []byte{0x60, 0x20, 0x35, 0x60, 0x00, 0x35, 0x55, 0x00},
-				Balance: common.Big0,
-				Storage: map[common.Hash]common.Hash{
-					common.HexToHash("0x03"):  val, // keccak c2575a0e...
-					common.HexToHash("0x1f1"): val, // keccak c254b84a...
-				},
+	bc, blocks, key := newTxListWitnessChain(t, witnessChainConfig{alloc: types.GenesisAlloc{
+		contract: {
+			Nonce: 1,
+			// PUSH1 32 CALLDATALOAD PUSH1 0 CALLDATALOAD SSTORE STOP
+			Code:    []byte{0x60, 0x20, 0x35, 0x60, 0x00, 0x35, 0x55, 0x00},
+			Balance: common.Big0,
+			Storage: map[common.Hash]common.Hash{
+				common.HexToHash("0x03"):  val, // keccak c2575a0e...
+				common.HexToHash("0x1f1"): val, // keccak c254b84a...
 			},
 		},
-	}
-	engine := beacon.New(ethash.NewFaker())
-	db := rawdb.NewMemoryDatabase()
-
-	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
-		signer := types.LatestSigner(&cfg)
-		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
-			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
-			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
-		}), signer, key)
-		if err := tx0.MarkAsAnchor(); err != nil {
-			t.Fatalf("mark anchor: %v", err)
-		}
-		gen.AddTx(tx0)
-	})
-
-	bc, err := core.NewBlockChain(db, gspec, engine, nil)
-	if err != nil {
-		t.Fatalf("new blockchain: %v", err)
-	}
-	if _, err := bc.InsertChain(blocks); err != nil {
-		t.Fatalf("insert chain: %v", err)
-	}
+	}})
 	return bc, blocks, key, contract
 }
 
@@ -1134,8 +781,7 @@ func storeCallTx(t *testing.T, bc *core.BlockChain, key *ecdsa.PrivateKey, contr
 // slot 3 (ext, branch, leaf) and slot 497.
 func runStorageShapeReplay(t *testing.T, slot, value common.Hash) (*stateless.Witness, [][]byte, [][]byte) {
 	t.Helper()
-	bc, blocks, key, contract := txListWitnessStorageShapeChain(t)
-	t.Cleanup(bc.Stop)
+	bc, blocks, key, contract := newStorageShapeChain(t)
 	block := blocks[len(blocks)-1]
 	parent := bc.GetHeaderByHash(block.ParentHash())
 
