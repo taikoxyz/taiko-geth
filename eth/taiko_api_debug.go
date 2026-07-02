@@ -39,18 +39,19 @@ type txListWitnessOptions struct {
 	SkipZkGasDifficultyCheck bool `json:"skipZkGasDifficultyCheck"`
 }
 
-// txListExecutionWitness is the cross-client execution-witness wire format.
-type txListExecutionWitness struct {
+// executionWitness is the alethia-reth-compatible debug execution-witness wire
+// format. All fields are byte arrays in JSON; headers are RLP-encoded.
+type executionWitness struct {
 	State   []hexutil.Bytes `json:"state"`
 	Codes   []hexutil.Bytes `json:"codes"`
 	Keys    []hexutil.Bytes `json:"keys"`
 	Headers []hexutil.Bytes `json:"headers"`
 }
 
-// newTxListExecutionWitness converts the internal witness to the cross-client
-// wire format, RLP-encoding each ancestor header.
-func newTxListExecutionWitness(w *stateless.Witness) (*txListExecutionWitness, error) {
-	out := &txListExecutionWitness{
+// newExecutionWitness converts the internal witness to the cross-client debug
+// RPC wire format, RLP-encoding each ancestor header.
+func newExecutionWitness(w *stateless.Witness) (*executionWitness, error) {
+	out := &executionWitness{
 		State:   make([]hexutil.Bytes, 0, len(w.State)),
 		Codes:   make([]hexutil.Bytes, 0, len(w.Codes)),
 		Keys:    make([]hexutil.Bytes, 0, len(w.Keys)),
@@ -354,14 +355,14 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 //
 // Params: (blockNrOrHash, txListRLP, mode?, options?). Only the legacy witness
 // mode is supported.
-func (api *DebugAPI) ExecutionWitnessForTxList(bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*txListExecutionWitness, error) {
+func (api *DebugAPI) ExecutionWitnessForTxList(bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*executionWitness, error) {
 	return executionWitnessForTxList(api.eth.blockchain, bn, txList, mode, opts)
 }
 
 // CHANGE(taiko): executionWitnessForTxList validates the request, resolves the
 // target block, decodes the transaction list, and returns the cross-client
 // execution witness produced by replaying it on the parent state.
-func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*txListExecutionWitness, error) {
+func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*executionWitness, error) {
 	if mode != nil && *mode != "" && *mode != "legacy" {
 		return nil, fmt.Errorf("unsupported witness mode %q", *mode)
 	}
@@ -384,7 +385,7 @@ func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, tx
 	if err != nil {
 		return nil, err
 	}
-	return newTxListExecutionWitness(witness)
+	return newExecutionWitness(witness)
 }
 
 // CHANGE(taiko): resolveWitnessBlock resolves a block number or hash to a block
