@@ -301,15 +301,15 @@ func txListWitnessPragueChain(t *testing.T, n int) (*core.BlockChain, []*types.B
 // EIP-7251 consolidation queue) after replaying transactions, so the witness
 // records both queue system-contract accounts. Without the post-execution system
 // calls neither account is touched and these keys are absent.
-func TestBuildTxListWitnessAppliesPostExecutionSystemCalls(t *testing.T) {
+func TestBuildTxListWitnessSkipsPostExecutionQueueCalls(t *testing.T) {
 	bc, blocks := txListWitnessPragueChain(t, 2)
 	defer bc.Stop()
 	block := blocks[len(blocks)-1]
 
-	// Sanity: the target block must be Prague-active, otherwise postExecution
-	// (and this test) would not exercise the EIP-7002/7251 system calls.
+	// Sanity: the target block must be Prague-active, otherwise this test would
+	// not guard against the EIP-7002/7251 system calls sneaking back in.
 	if !bc.Config().IsPrague(block.Number(), block.Time()) {
-		t.Fatalf("test block is not Prague-active; cannot exercise post-execution system calls")
+		t.Fatalf("test block is not Prague-active; cannot exercise post-execution queue behavior")
 	}
 
 	witness, committed, err := buildTxListWitness(bc, block, block.Transactions(), txListWitnessOptions{})
@@ -320,32 +320,22 @@ func TestBuildTxListWitnessAppliesPostExecutionSystemCalls(t *testing.T) {
 		t.Fatalf("expected all %d txs committed, got %d", len(block.Transactions()), len(committed))
 	}
 
-	// Required regression guard: both Prague post-execution queue system contracts
-	// must appear in the witness key preimages. They are only recorded if the
-	// post-execution system calls ran during witness building.
-	if _, ok := witness.Keys[string(params.WithdrawalQueueAddress.Bytes())]; !ok {
-		t.Fatalf("withdrawal-queue system-contract address missing from witness keys; " +
-			"post-execution EIP-7002 system call was not applied")
+	// The reference block executor never performs the EIP-7002/7251 queue system
+	// calls (its requests are unconditionally empty), so the replay must not
+	// touch the queue contracts either — even when they are deployed. Their
+	// account state entering the witness (previously via key preimages and
+	// account-trie paths) was a cross-client witness difference.
+	//
+	// No stateless re-execution check here: with the queue contracts deployed,
+	// canonical processing does call them, so this witness intentionally lacks
+	// their state. Real Taiko networks do not deploy the queue contracts.
+	if _, ok := witness.Keys[string(params.WithdrawalQueueAddress.Bytes())]; ok {
+		t.Fatalf("withdrawal-queue system-contract address must not appear in witness keys; " +
+			"the reference executor never runs the EIP-7002 system call")
 	}
-	if _, ok := witness.Keys[string(params.ConsolidationQueueAddress.Bytes())]; !ok {
-		t.Fatalf("consolidation-queue system-contract address missing from witness keys; " +
-			"post-execution EIP-7251 system call was not applied")
-	}
-
-	// Self-consistency: re-executing statelessly from the witness alone must
-	// reproduce the canonical post-state root. This exercises the full
-	// pre-execution + transaction replay + post-execution path and fails if the
-	// witness omits state the canonical execution touched.
-	hdr := block.Header()
-	hdr.Root = common.Hash{}
-	hdr.ReceiptHash = common.Hash{}
-	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
-	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
-	if err != nil {
-		t.Fatalf("ExecuteStateless: %v", err)
-	}
-	if got != block.Root() {
-		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	if _, ok := witness.Keys[string(params.ConsolidationQueueAddress.Bytes())]; ok {
+		t.Fatalf("consolidation-queue system-contract address must not appear in witness keys; " +
+			"the reference executor never runs the EIP-7251 system call")
 	}
 }
 
@@ -364,12 +354,12 @@ func txListWitnessDeepPragueChain(t *testing.T, extraAccounts int) (*core.BlockC
 	cfg.Taiko = true
 	cfg.ChainID = big.NewInt(167000)
 
+	// Deliberately no EIP-7002/7251 queue contracts: real Taiko networks do not
+	// deploy them and the replay must not touch them.
 	alloc := types.GenesisAlloc{
-		addr:                             {Balance: big.NewInt(1e18)},
-		params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-		params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
-		params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
-		params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
+		addr:                         {Balance: big.NewInt(1e18)},
+		params.BeaconRootsAddress:    {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+		params.HistoryStorageAddress: {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0},
 	}
 	for i := range extraAccounts {
 		var a common.Address
@@ -424,21 +414,19 @@ type proofNodeList [][]byte
 func (p *proofNodeList) Put(key, value []byte) error { *p = append(*p, value); return nil }
 func (p *proofNodeList) Delete(key []byte) error     { return nil }
 
-// TestBuildTxListWitnessIncludesSystemCallCaller is a regression guard: every
-// node of the system-call caller account's (params.SystemAddress, 0xff..fe)
-// account-trie proof must appear in the witness state.
+// TestBuildTxListWitnessDoesNotWitnessSystemCallCaller is a regression guard:
+// the system-call caller account (params.SystemAddress, 0xff..fe) must not be
+// witnessed. The reference EVM never loads the caller for system calls (no
+// pre-execution phase, no value transfer), so its witness carries neither the
+// caller's key preimage nor any account-trie node unique to the caller's
+// exclusion path. Loading it here (a previous zero-value balance touch did)
+// walked its account-trie path and leaked geth-only nodes into the witness on
+// blocks where no other touched account shares those path prefixes.
 //
-// go-geth skips the value transfer for system calls, so it never loads the system
-// caller and its account-trie path is absent from the witness. go-geth's own
-// stateless re-execution skips it too, so the state-root self-consistency check
-// cannot catch the gap; a cross-client stateless executor that loads the caller
-// during its EIP-4788/2935/7002/7251 system calls fails to resolve the account
-// without those nodes. The deep trie makes the missing nodes observable.
-//
-// The caller's key preimage must NOT appear: the cross-client wire format only
-// carries keys of accounts that exist when execution finishes, and the system
-// caller account never exists.
-func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
+// The deep trie makes any leak observable: the exclusion proof spans multiple
+// nodes and its terminal node is unique to the caller's path among the touched
+// accounts.
+func TestBuildTxListWitnessDoesNotWitnessSystemCallCaller(t *testing.T) {
 	bc, blocks := txListWitnessDeepPragueChain(t, 2000)
 	defer bc.Stop()
 	block := blocks[len(blocks)-1]
@@ -457,16 +445,16 @@ func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
 	}
 
 	if _, ok := witness.Keys[string(params.SystemAddress.Bytes())]; ok {
-		t.Fatalf("system-call caller %s must not appear in witness keys; only accounts existing post-execution carry key preimages", params.SystemAddress)
+		t.Fatalf("system-call caller %s must not appear in witness keys", params.SystemAddress)
 	}
-	for i, node := range sysProof {
-		if _, ok := witness.State[string(node)]; !ok {
-			t.Fatalf("system-call caller account-trie proof node %d/%d missing from witness state", i+1, len(sysProof))
-		}
+	// The terminal exclusion-proof node lies past the touched accounts'
+	// divergence from the caller's path; witnessing it means the caller account
+	// was loaded during the replay.
+	if _, ok := witness.State[string(sysProof[len(sysProof)-1])]; ok {
+		t.Fatalf("system-call caller exclusion-proof node present in witness state; the caller must not be loaded")
 	}
 
-	// The witness must still re-execute statelessly to the canonical root: the
-	// extra system-caller nodes must not have perturbed the post-state.
+	// The witness must still re-execute statelessly to the canonical root.
 	hdr := block.Header()
 	hdr.Root = common.Hash{}
 	hdr.ReceiptHash = common.Hash{}
@@ -777,12 +765,10 @@ func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
 	gspec := &core.Genesis{
 		Config: &cfg,
 		Alloc: types.GenesisAlloc{
-			addr:                             {Balance: big.NewInt(1e18)},
-			bhContract:                       {Nonce: 1, Code: bhCode, Balance: common.Big0},
-			params.BeaconRootsAddress:        {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
-			params.HistoryStorageAddress:     {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0, Storage: hist},
-			params.WithdrawalQueueAddress:    {Nonce: 1, Code: params.WithdrawalQueueCode, Balance: common.Big0},
-			params.ConsolidationQueueAddress: {Nonce: 1, Code: params.ConsolidationQueueCode, Balance: common.Big0},
+			addr:                         {Balance: big.NewInt(1e18)},
+			bhContract:                   {Nonce: 1, Code: bhCode, Balance: common.Big0},
+			params.BeaconRootsAddress:    {Nonce: 1, Code: params.BeaconRootsCode, Balance: common.Big0},
+			params.HistoryStorageAddress: {Nonce: 1, Code: params.HistoryStorageCode, Balance: common.Big0, Storage: hist},
 		},
 	}
 	engine := beacon.New(ethash.NewFaker())

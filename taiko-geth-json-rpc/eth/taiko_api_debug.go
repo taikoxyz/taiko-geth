@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/triedb/database"
-	"github.com/holiman/uint256"
 )
 
 // Block-level transaction-list size limits. The raw guard bounds the work of
@@ -304,19 +303,12 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 		committed = append(committed, tx)
 	}
 
-	// CHANGE(taiko): mirror canonical Prague post-execution system calls (EIP-7002
-	// withdrawal queue, EIP-7251 consolidation queue) so the witness captures their
-	// state accesses before finalization. EIP-6110 deposit-log parsing reads logs
-	// only and touches no state, so it is not needed for the witness.
-	if config.IsPrague(block.Number(), block.Time()) {
-		var requests [][]byte
-		if err := core.ProcessWithdrawalQueue(&requests, evm); err != nil {
-			return nil, nil, fmt.Errorf("post-execution withdrawal queue system call failed: %w", err)
-		}
-		if err := core.ProcessConsolidationQueue(&requests, evm); err != nil {
-			return nil, nil, fmt.Errorf("post-execution consolidation queue system call failed: %w", err)
-		}
-	}
+	// CHANGE(taiko): the EIP-7002 withdrawal-queue and EIP-7251 consolidation-queue
+	// post-execution system calls are deliberately NOT replayed: the cross-client
+	// reference block executor never performs them (its requests are
+	// unconditionally empty), so running them here would witness the queue
+	// contracts' account state that the reference witness does not carry.
+	// EIP-6110 deposit-log parsing reads logs only and touches no state.
 
 	if zkGasMeter != nil && !opts.SkipZkGasDifficultyCheck {
 		recomputed := zkGasMeter.BlockZkGasUsed()
@@ -329,24 +321,13 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// flush the trie so the witness state-node set is complete.
 	bc.Engine().Finalize(bc, header, statedb, &types.Body{Withdrawals: block.Withdrawals()})
 
-	// CHANGE(taiko): witness the system-call caller account (params.SystemAddress,
-	// 0xff..fe). EVM.Call skips the value transfer for system calls (see
-	// core/vm/evm.go), so the caller account is never loaded during the EIP-4788 /
-	// EIP-2935 / EIP-7002 / EIP-7251 system calls and its account-trie path never
-	// enters the witness. This node's own stateless re-execution skips the caller
-	// too, so the gap is invisible to a state-root self-consistency check — but a
-	// cross-client stateless executor that loads the system caller during those
-	// system calls cannot resolve the account without its account-trie proof (and
-	// key preimage). A zero-value balance add loads the account (recording the key)
-	// and, via empty-account clearing in IntermediateRoot, walks its account-trie
-	// path (recording the proof nodes) without changing the post-state root. Only
-	// done when a system call actually ran, so the witness matches cross-client
-	// contents exactly.
-	if block.BeaconRoot() != nil ||
-		config.IsPrague(block.Number(), block.Time()) ||
-		config.IsVerkle(block.Number(), block.Time()) {
-		statedb.AddBalance(params.SystemAddress, uint256.NewInt(0), tracing.BalanceChangeUnspecified)
-	}
+	// CHANGE(taiko): the system-call caller account (params.SystemAddress,
+	// 0xff..fe) is deliberately NOT witnessed. The reference EVM never loads the
+	// caller for system calls (no pre-execution phase, no value transfer), so its
+	// witness carries neither the caller's key preimage nor any node unique to
+	// the caller's account-trie exclusion path. Touching the caller here would
+	// leak such nodes into the witness on blocks where no other touched account
+	// shares the path prefixes.
 
 	// CHANGE(taiko): witness the EIP-2935 HistoryStorage slots backing the block
 	// hashes the transactions resolved via BLOCKHASH. go-geth reads those hashes
