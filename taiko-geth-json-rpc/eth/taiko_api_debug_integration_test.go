@@ -414,19 +414,19 @@ type proofNodeList [][]byte
 func (p *proofNodeList) Put(key, value []byte) error { *p = append(*p, value); return nil }
 func (p *proofNodeList) Delete(key []byte) error     { return nil }
 
-// TestBuildTxListWitnessDoesNotWitnessSystemCallCaller is a regression guard:
-// the system-call caller account (params.SystemAddress, 0xff..fe) must not be
-// witnessed. The reference EVM never loads the caller for system calls (no
-// pre-execution phase, no value transfer), so its witness carries neither the
-// caller's key preimage nor any account-trie node unique to the caller's
-// exclusion path. Loading it here (a previous zero-value balance touch did)
-// walked its account-trie path and leaked geth-only nodes into the witness on
-// blocks where no other touched account shares those path prefixes.
+// TestBuildTxListWitnessIncludesSystemCallCaller is a regression guard: the
+// system-call caller account's (params.SystemAddress, 0xff..fe) account-trie
+// exclusion proof must appear in the witness state — every node of it,
+// including the terminal divergence node — while its key preimage must not.
 //
-// The deep trie makes any leak observable: the exclusion proof spans multiple
-// nodes and its terminal node is unique to the caller's path among the touched
-// accounts.
-func TestBuildTxListWitnessDoesNotWitnessSystemCallCaller(t *testing.T) {
+// The reference EVM touches the caller during the EIP-4788/2935 system calls,
+// so the reference witness proves the account's absence (verified against a
+// live reference node: the terminal exclusion node is present there). The
+// caller account never exists, so per the existence rule it carries no key
+// preimage. go-geth's system calls skip the caller entirely, so without an
+// explicit load its exclusion path is missing and the witness under-covers.
+// The deep trie makes the missing nodes observable.
+func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
 	bc, blocks := txListWitnessDeepPragueChain(t, 2000)
 	defer bc.Stop()
 	block := blocks[len(blocks)-1]
@@ -447,11 +447,10 @@ func TestBuildTxListWitnessDoesNotWitnessSystemCallCaller(t *testing.T) {
 	if _, ok := witness.Keys[string(params.SystemAddress.Bytes())]; ok {
 		t.Fatalf("system-call caller %s must not appear in witness keys", params.SystemAddress)
 	}
-	// The terminal exclusion-proof node lies past the touched accounts'
-	// divergence from the caller's path; witnessing it means the caller account
-	// was loaded during the replay.
-	if _, ok := witness.State[string(sysProof[len(sysProof)-1])]; ok {
-		t.Fatalf("system-call caller exclusion-proof node present in witness state; the caller must not be loaded")
+	for i, node := range sysProof {
+		if _, ok := witness.State[string(node)]; !ok {
+			t.Fatalf("system-call caller exclusion-proof node %d/%d missing from witness state", i+1, len(sysProof))
+		}
 	}
 
 	// The witness must still re-execute statelessly to the canonical root.
