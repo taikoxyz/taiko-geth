@@ -140,6 +140,15 @@ func (w *Witness) AddKey(key []byte) {
 	w.Keys[string(key)] = struct{}{}
 }
 
+// DeleteKey removes a previously recorded state-key preimage from the witness.
+//
+// CHANGE(taiko): added to support the cross-client execution witness RPC.
+func (w *Witness) DeleteKey(key []byte) {
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	delete(w.Keys, string(key))
+}
+
 // Copy deep-copies the witness object.  Witness.Block isn't deep-copied as it
 // is never mutated by Witness
 func (w *Witness) Copy() *Witness {
