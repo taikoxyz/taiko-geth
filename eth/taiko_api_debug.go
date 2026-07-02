@@ -41,43 +41,6 @@ type txListWitnessOptions struct {
 	SkipZkGasDifficultyCheck bool `json:"skipZkGasDifficultyCheck"`
 }
 
-// executionWitness is the cross-client debug execution-witness wire
-// format. All fields are byte arrays in JSON; headers are RLP-encoded.
-type executionWitness struct {
-	State   []hexutil.Bytes `json:"state"`
-	Codes   []hexutil.Bytes `json:"codes"`
-	Keys    []hexutil.Bytes `json:"keys"`
-	Headers []hexutil.Bytes `json:"headers"`
-}
-
-// newExecutionWitness converts the internal witness to the cross-client debug
-// RPC wire format, RLP-encoding each ancestor header.
-func newExecutionWitness(w *stateless.Witness) (*executionWitness, error) {
-	out := &executionWitness{
-		State:   make([]hexutil.Bytes, 0, len(w.State)),
-		Codes:   make([]hexutil.Bytes, 0, len(w.Codes)),
-		Keys:    make([]hexutil.Bytes, 0, len(w.Keys)),
-		Headers: make([]hexutil.Bytes, 0, len(w.Headers)),
-	}
-	for node := range w.State {
-		out.State = append(out.State, []byte(node))
-	}
-	for code := range w.Codes {
-		out.Codes = append(out.Codes, []byte(code))
-	}
-	for key := range w.Keys {
-		out.Keys = append(out.Keys, []byte(key))
-	}
-	for _, header := range w.Headers {
-		enc, err := rlp.EncodeToBytes(header)
-		if err != nil {
-			return nil, fmt.Errorf("failed to rlp-encode witness header %v: %w", header.Number, err)
-		}
-		out.Headers = append(out.Headers, enc)
-	}
-	return out, nil
-}
-
 // decodeTxListWitnessTxs decodes an RLP list of transactions. It errors only on
 // a malformed top-level list; unrecoverable-signer transactions are filtered
 // later during replay, matching block-building behavior.
@@ -189,28 +152,13 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	statedb.StartPrefetcher("txlist-witness", witness)
 	defer statedb.StopPrefetcher()
 
-	// CHANGE(taiko): record the block numbers whose hashes the transactions
-	// resolve via the BLOCKHASH opcode. go-geth serves these from the header
-	// chain and witnesses them as headers, but an EIP-2935 stateless executor
-	// resolves them from the HistoryStorage contract's storage. We collect the
-	// numbers here and pull the backing storage slots into the witness below.
-	//
-	// CHANGE(taiko): also record which storage slots the replay writes, per
-	// account. The wire-format alignment pass below needs the written slots to
-	// find inserts that split an extension node in the parent trie. State-level
+	// CHANGE(taiko): record which storage slots the replay writes, per account.
+	// The wire-format alignment pass below needs the written slots to find
+	// inserts that split an extension node in the parent trie. State-level
 	// hooks only fire through a hooked state wrapper, so the EVM runs on the
 	// wrapper while the replay keeps operating on the underlying statedb.
-	var blockHashNums []uint64
-	seenBlockHash := make(map[uint64]struct{})
 	storageWrites := make(map[common.Address]map[common.Hash]struct{})
 	hooks := &tracing.Hooks{
-		OnBlockHashRead: func(number uint64, _ common.Hash) {
-			if _, ok := seenBlockHash[number]; ok {
-				return
-			}
-			seenBlockHash[number] = struct{}{}
-			blockHashNums = append(blockHashNums, number)
-		},
 		OnStorageChange: func(addr common.Address, slot common.Hash, _, _ common.Hash) {
 			slots, ok := storageWrites[addr]
 			if !ok {
@@ -220,9 +168,7 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 			slots[slot] = struct{}{}
 		},
 	}
-	evm := vm.NewEVM(core.NewEVMBlockContext(header, bc, &header.Coinbase), state.NewHookedState(statedb, hooks), config, vm.Config{
-		Tracer: hooks,
-	})
+	evm := vm.NewEVM(core.NewEVMBlockContext(header, bc, &header.Coinbase), state.NewHookedState(statedb, hooks), config, vm.Config{})
 	var zkGasMeter *vm.ZkGasMeter
 	if config.IsUnzen(header.Time) {
 		zkGasMeter = vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
@@ -232,11 +178,15 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// CHANGE(taiko): apply the same pre-execution system calls as canonical block
 	// processing (EIP-4788 beacon-block-root, EIP-2935 parent-block-hash) before
 	// replaying transactions, so the witness captures their state accesses and the
-	// replay reproduces the canonical post-state.
-	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
+	// replay reproduces the canonical post-state. BLOCKHASH needs no equivalent:
+	// the opcode itself records the resolved ancestor headers in the witness, and
+	// the cross-client stateless executor serves BLOCKHASH from those headers.
+	beaconRoot := block.BeaconRoot()
+	pragueActive := config.IsPrague(block.Number(), block.Time()) || config.IsVerkle(block.Number(), block.Time())
+	if beaconRoot != nil {
 		core.ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
-	if config.IsPrague(block.Number(), block.Time()) || config.IsVerkle(block.Number(), block.Time()) {
+	if pragueActive {
 		core.ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 
@@ -330,26 +280,8 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// account and prefetches the exclusion proof. The caller never exists, so
 	// the existence rule keeps its key preimage out of the response, matching
 	// the reference exactly. Only done when a system call actually ran.
-	if block.BeaconRoot() != nil ||
-		config.IsPrague(block.Number(), block.Time()) ||
-		config.IsVerkle(block.Number(), block.Time()) {
+	if beaconRoot != nil || pragueActive {
 		statedb.GetBalance(params.SystemAddress)
-	}
-
-	// CHANGE(taiko): witness the EIP-2935 HistoryStorage slots backing the block
-	// hashes the transactions resolved via BLOCKHASH. go-geth reads those hashes
-	// from the header chain, so their storage-trie proofs never enter the witness
-	// otherwise; a cross-client stateless executor that resolves BLOCKHASH from
-	// the HistoryStorage contract cannot resolve the account without them. The
-	// slot value equals the block hash go-geth already returned, so this pure
-	// read records the key preimage and loads the storage-trie path without
-	// changing the post-state. EIP-2935 (Prague) stores hash(n) at slot
-	// n % HistoryServeWindow; the served window is a subset of BLOCKHASH's.
-	if config.IsPrague(block.Number(), block.Time()) || config.IsVerkle(block.Number(), block.Time()) {
-		for _, num := range blockHashNums {
-			slot := common.BigToHash(new(big.Int).SetUint64(num % params.HistoryServeWindow))
-			statedb.GetState(params.HistoryStorageAddress, slot)
-		}
 	}
 	statedb.IntermediateRoot(true)
 
@@ -575,14 +507,14 @@ func compactToNibbles(compact []byte) ([]byte, bool) {
 //
 // Params: (blockNrOrHash, txListRLP, mode?, options?). Only the legacy witness
 // mode is supported.
-func (api *DebugAPI) ExecutionWitnessForTxList(bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*executionWitness, error) {
+func (api *DebugAPI) ExecutionWitnessForTxList(bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*stateless.ExecutionWitness, error) {
 	return executionWitnessForTxList(api.eth.blockchain, bn, txList, mode, opts)
 }
 
 // CHANGE(taiko): executionWitnessForTxList validates the request, resolves the
 // target block, decodes the transaction list, and returns the cross-client
 // execution witness produced by replaying it on the parent state.
-func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*executionWitness, error) {
+func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*stateless.ExecutionWitness, error) {
 	if mode != nil && *mode != "" && *mode != "legacy" {
 		return nil, fmt.Errorf("unsupported witness mode %q", *mode)
 	}
@@ -605,7 +537,7 @@ func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, tx
 	if err != nil {
 		return nil, err
 	}
-	return newExecutionWitness(witness)
+	return stateless.NewExecutionWitness(witness)
 }
 
 // CHANGE(taiko): resolveWitnessBlock resolves a block number or hash to a block
