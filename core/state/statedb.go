@@ -602,6 +602,21 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 
 	// Short circuit if the account is not found
 	if acct == nil {
+		// CHANGE(taiko): when building an execution witness, prefetch the absent
+		// account's trie path so its account-trie exclusion proof enters the
+		// witness. Execution can read an absent account — e.g. an EIP-4788 /
+		// EIP-2935 system call to a system contract that is not deployed on the
+		// chain, or a plain CALL to an empty address. Its key preimage is already
+		// recorded above, but without the exclusion-proof nodes a cross-client
+		// stateless executor cannot resolve the account from the sparse trie
+		// ("state trie unresolved"). go-geth's own stateless re-execution tolerates
+		// the gap, so this is invisible to a state-root self-consistency check.
+		// Gated on witness collection, so normal execution is unaffected.
+		if s.witness != nil && s.prefetcher != nil {
+			if err = s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, []common.Address{addr}, nil, true); err != nil {
+				log.Error("Failed to prefetch absent account for witness", "addr", addr, "err", err)
+			}
+		}
 		return nil
 	}
 	// Schedule the resolved account for prefetching if it's enabled.

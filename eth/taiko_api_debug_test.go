@@ -87,7 +87,7 @@ func TestIsRecoverableNonAnchorTxError(t *testing.T) {
 	}
 }
 
-func TestNewTxListExecutionWitness(t *testing.T) {
+func TestNewExecutionWitness(t *testing.T) {
 	hdr := &types.Header{Number: big.NewInt(7)}
 	w := &stateless.Witness{
 		Headers: []*types.Header{hdr},
@@ -95,12 +95,15 @@ func TestNewTxListExecutionWitness(t *testing.T) {
 		Codes:   map[string]struct{}{"code": {}},
 		Keys:    map[string]struct{}{"key": {}},
 	}
-	out, err := newTxListExecutionWitness(w)
+	out, err := newExecutionWitness(w)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(out.State) != 1 || len(out.Codes) != 1 || len(out.Keys) != 1 || len(out.Headers) != 1 {
 		t.Fatalf("unexpected lengths: %+v", out)
+	}
+	if string(out.State[0]) != "node" || string(out.Codes[0]) != "code" || string(out.Keys[0]) != "key" {
+		t.Fatalf("unexpected witness bytes: %+v", out)
 	}
 	var decoded types.Header
 	if err := rlp.DecodeBytes(out.Headers[0], &decoded); err != nil {
