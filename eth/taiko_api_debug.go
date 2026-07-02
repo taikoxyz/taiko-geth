@@ -39,7 +39,7 @@ type txListWitnessOptions struct {
 	SkipZkGasDifficultyCheck bool `json:"skipZkGasDifficultyCheck"`
 }
 
-// executionWitness is the alethia-reth-compatible debug execution-witness wire
+// executionWitness is the cross-client debug execution-witness wire
 // format. All fields are byte arrays in JSON; headers are RLP-encoded.
 type executionWitness struct {
 	State   []hexutil.Bytes `json:"state"`

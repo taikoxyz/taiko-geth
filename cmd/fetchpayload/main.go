@@ -140,9 +140,9 @@ func main() {
 	}
 }
 
-// executionWitnessResponse is the debug_executionWitness JSON wire shape used by
-// taiko-geth and alethia-reth: headers are RLP-encoded byte arrays, while the
-// rest of the witness fields are already raw bytes.
+// executionWitnessResponse is the cross-client debug_executionWitness JSON wire
+// shape: headers are RLP-encoded byte arrays, while the rest of the witness
+// fields are already raw bytes.
 type executionWitnessResponse struct {
 	State   []hexutil.Bytes `json:"state"`
 	Codes   []hexutil.Bytes `json:"codes"`

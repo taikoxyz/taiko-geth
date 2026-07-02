@@ -511,7 +511,7 @@ func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*executionWitne
 }
 
 // CHANGE(taiko): executionWitnessForBlock re-executes a canonical block with
-// witness collection enabled and returns the alethia-reth-compatible debug RPC
+// witness collection enabled and returns the cross-client debug RPC
 // wire shape.
 func executionWitnessForBlock(bc *core.BlockChain, block *types.Block) (*executionWitness, error) {
 	parent := bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
