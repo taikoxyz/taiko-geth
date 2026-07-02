@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
@@ -502,15 +501,22 @@ func (api *DebugAPI) StateSize(blockHashOrNumber *rpc.BlockNumberOrHash) (interf
 	}, nil
 }
 
-func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*stateless.ExtWitness, error) {
+func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*executionWitness, error) {
 	bc := api.eth.blockchain
 	block, err := api.eth.APIBackend.BlockByNumberOrHash(context.Background(), bn)
 	if err != nil {
-		return &stateless.ExtWitness{}, fmt.Errorf("block %v not found", bn)
+		return &executionWitness{}, fmt.Errorf("block %v not found", bn)
 	}
+	return executionWitnessForBlock(bc, block)
+}
+
+// CHANGE(taiko): executionWitnessForBlock re-executes a canonical block with
+// witness collection enabled and returns the alethia-reth-compatible debug RPC
+// wire shape.
+func executionWitnessForBlock(bc *core.BlockChain, block *types.Block) (*executionWitness, error) {
 	parent := bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 	if parent == nil {
-		return &stateless.ExtWitness{}, fmt.Errorf("block %v found, but parent missing", bn)
+		return &executionWitness{}, fmt.Errorf("block %v found, but parent missing", block.Number())
 	}
 	config := core.ExecuteConfig{
 		WriteState:   false,
@@ -521,5 +527,5 @@ func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*stateless.ExtW
 	if err != nil {
 		return nil, err
 	}
-	return result.Witness().ToExtWitness(), nil
+	return newExecutionWitness(result.Witness())
 }

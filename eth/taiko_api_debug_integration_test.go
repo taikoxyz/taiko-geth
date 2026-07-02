@@ -601,6 +601,60 @@ func TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof(t *testing
 	}
 }
 
+func TestExecutionWitnessIncludesAbsentSystemContractExclusionProof(t *testing.T) {
+	bc, blocks := txListWitnessAbsentSystemContractChain(t, 2000)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+	parent := bc.GetHeaderByHash(block.ParentHash())
+
+	out, err := executionWitnessForBlock(bc, block)
+	if err != nil {
+		t.Fatalf("executionWitnessForBlock: %v", err)
+	}
+	if len(out.State) == 0 || len(out.Keys) == 0 || len(out.Headers) == 0 {
+		t.Fatalf("empty witness fields: %+v", out)
+	}
+	var decoded types.Header
+	if err := rlp.DecodeBytes(out.Headers[0], &decoded); err != nil {
+		t.Fatalf("headers must be RLP: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		addr common.Address
+	}{
+		{"history-storage", params.HistoryStorageAddress},
+		{"beacon-roots", params.BeaconRootsAddress},
+	} {
+		proof := accountProofNodes(t, bc, parent.Root, tc.addr)
+		if len(proof) < 2 {
+			t.Fatalf("%s exclusion proof has %d node(s); need a deeper trie to guard the regression", tc.name, len(proof))
+		}
+		keyFound := false
+		for _, key := range out.Keys {
+			if string(key) == string(tc.addr.Bytes()) {
+				keyFound = true
+				break
+			}
+		}
+		if !keyFound {
+			t.Fatalf("%s (%s) missing from witness keys", tc.name, tc.addr)
+		}
+		for i, node := range proof {
+			stateFound := false
+			for _, got := range out.State {
+				if string(got) == string(node) {
+					stateFound = true
+					break
+				}
+			}
+			if !stateFound {
+				t.Fatalf("%s exclusion-proof node %d/%d missing from witness state", tc.name, i+1, len(proof))
+			}
+		}
+	}
+}
+
 // TestBuildTxListWitnessAppliesPreExecutionSystemCalls verifies buildTxListWitness
 // runs the EIP-4788 beacon-block-root system call before replaying transactions,
 // so the witness records the beacon-roots system-contract account. Without the
