@@ -321,13 +321,20 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// flush the trie so the witness state-node set is complete.
 	bc.Engine().Finalize(bc, header, statedb, &types.Body{Withdrawals: block.Withdrawals()})
 
-	// CHANGE(taiko): the system-call caller account (params.SystemAddress,
-	// 0xff..fe) is deliberately NOT witnessed. The reference EVM never loads the
-	// caller for system calls (no pre-execution phase, no value transfer), so its
-	// witness carries neither the caller's key preimage nor any node unique to
-	// the caller's account-trie exclusion path. Touching the caller here would
-	// leak such nodes into the witness on blocks where no other touched account
-	// shares the path prefixes.
+	// CHANGE(taiko): witness the system-call caller account (params.SystemAddress,
+	// 0xff..fe). The reference EVM touches the caller during the EIP-4788/2935
+	// system calls, so the reference witness carries the account's account-trie
+	// exclusion proof — including its terminal divergence node, which no other
+	// touched account shares (verified against a live reference node). go-geth's
+	// system calls skip the caller entirely, so an explicit read loads the
+	// account and prefetches the exclusion proof. The caller never exists, so
+	// the existence rule keeps its key preimage out of the response, matching
+	// the reference exactly. Only done when a system call actually ran.
+	if block.BeaconRoot() != nil ||
+		config.IsPrague(block.Number(), block.Time()) ||
+		config.IsVerkle(block.Number(), block.Time()) {
+		statedb.GetBalance(params.SystemAddress)
+	}
 
 	// CHANGE(taiko): witness the EIP-2935 HistoryStorage slots backing the block
 	// hashes the transactions resolved via BLOCKHASH. go-geth reads those hashes
