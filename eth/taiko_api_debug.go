@@ -13,10 +13,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -346,7 +348,74 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	}
 	statedb.IntermediateRoot(true)
 
+	// CHANGE(taiko): post-process the collected witness into the cross-client
+	// legacy witness format (storage-trie root nodes, created bytecode, and
+	// existence-filtered keys).
+	if err := alignWitnessForWireFormat(bc, parent.Root, statedb, witness); err != nil {
+		return nil, nil, err
+	}
+
 	return statedb.Witness(), committed, nil
+}
+
+// CHANGE(taiko): alignWitnessForWireFormat post-processes the collected witness
+// so the RPC response matches the cross-client legacy execution-witness format.
+// For every account loaded during the replay (the 20-byte witness keys):
+//
+//   - state additionally carries the account's parent-state storage-trie root
+//     node even when the replay never walked its storage. The root node of an
+//     empty (or absent) storage trie is the RLP empty string, 0x80. Accounts
+//     whose storage the replay did walk already carry their root node, so the
+//     set-insert is a no-op for them.
+//   - codes additionally carries bytecode deployed during the replay: code is
+//     otherwise only witnessed when read, so a contract created but never
+//     called afterwards would be missing.
+//   - keys keeps only accounts that still exist when the replay finishes.
+//     Accounts that were merely probed (absent system contracts, the system
+//     caller) or cleared during finalization carry account-trie exclusion
+//     proofs in state, but no key preimage.
+func alignWitnessForWireFormat(bc *core.BlockChain, parentRoot common.Hash, statedb *state.StateDB, witness *stateless.Witness) error {
+	preState, err := bc.StateAt(parentRoot)
+	if err != nil {
+		return fmt.Errorf("failed to open pre-state at %s: %w", parentRoot, err)
+	}
+	reader, err := bc.TrieDB().NodeReader(parentRoot)
+	if err != nil {
+		return fmt.Errorf("failed to open trie reader at %s: %w", parentRoot, err)
+	}
+	// Snapshot the loaded account addresses first: the statedb reads below may
+	// re-record keys of absent accounts, which are pruned at the end.
+	addrs := make([]common.Address, 0, len(witness.Keys))
+	for key := range witness.Keys {
+		if len(key) == common.AddressLength {
+			addrs = append(addrs, common.BytesToAddress([]byte(key)))
+		}
+	}
+	for _, addr := range addrs {
+		// Parent-state storage-trie root node (0x80 for empty or absent tries).
+		storageRoot := preState.GetStorageRoot(addr)
+		if storageRoot == (common.Hash{}) || storageRoot == types.EmptyRootHash {
+			witness.AddState(map[string][]byte{"": {0x80}}, types.EmptyRootHash)
+		} else {
+			owner := crypto.Keccak256Hash(addr.Bytes())
+			blob, err := reader.Node(owner, nil, storageRoot)
+			if err != nil || len(blob) == 0 {
+				return fmt.Errorf("storage-trie root node %s of account %s unavailable: %w", storageRoot, addr, err)
+			}
+			witness.AddState(map[string][]byte{"": blob}, owner)
+		}
+		// Bytecode deployed during the replay. The GetCode read records the blob
+		// in the witness.
+		postCodeHash := statedb.GetCodeHash(addr)
+		if postCodeHash != (common.Hash{}) && postCodeHash != types.EmptyCodeHash && postCodeHash != preState.GetCodeHash(addr) {
+			statedb.GetCode(addr)
+		}
+		// Keys carry only accounts existing post-execution.
+		if !statedb.Exist(addr) {
+			witness.DeleteKey(addr.Bytes())
+		}
+	}
+	return nil
 }
 
 // CHANGE(taiko): ExecutionWitnessForTxList replays the given RLP transaction
