@@ -84,14 +84,18 @@ func main() {
 	fmt.Printf("Fetched block %d (%#x)\n", block.NumberU64(), block.Hash())
 
 	// Fetch the execution witness via the debug namespace.
-	var extWitness stateless.ExtWitness
-	err = client.Client().CallContext(ctx, &extWitness, "debug_executionWitness", rpc.BlockNumber(block.NumberU64()))
+	var rpcWitness executionWitnessResponse
+	err = client.Client().CallContext(ctx, &rpcWitness, "debug_executionWitness", rpc.BlockNumber(block.NumberU64()))
 	if err != nil {
 		fatal("failed to fetch execution witness: %v", err)
 	}
+	extWitness, err := rpcWitness.toExtWitness()
+	if err != nil {
+		fatal("failed to decode execution witness: %v", err)
+	}
 
 	witness := new(stateless.Witness)
-	err = witness.FromExtWitness(&extWitness)
+	err = witness.FromExtWitness(extWitness)
 	if err != nil {
 		fatal("failed to convert witness: %v", err)
 	}
@@ -121,7 +125,7 @@ func main() {
 		case "hex":
 			data = []byte(hexutil.Encode(rlpBytes))
 		case "json":
-			data, err = marshalJSONPayload(chainID, block, &extWitness)
+			data, err = marshalJSONPayload(chainID, block, extWitness)
 			if err != nil {
 				fatal("failed to JSON-encode payload: %v", err)
 			}
@@ -134,6 +138,37 @@ func main() {
 		}
 		fmt.Printf("Wrote %s (%d bytes)\n", outPath, len(data))
 	}
+}
+
+// executionWitnessResponse is the cross-client debug_executionWitness JSON wire
+// shape: headers are RLP-encoded byte arrays, while the rest of the witness
+// fields are already raw bytes.
+type executionWitnessResponse struct {
+	State   []hexutil.Bytes `json:"state"`
+	Codes   []hexutil.Bytes `json:"codes"`
+	Keys    []hexutil.Bytes `json:"keys"`
+	Headers []hexutil.Bytes `json:"headers"`
+}
+
+func (w *executionWitnessResponse) toExtWitness() (*stateless.ExtWitness, error) {
+	ext := &stateless.ExtWitness{
+		State: make([]hexutil.Bytes, len(w.State)),
+		Codes: make([]hexutil.Bytes, len(w.Codes)),
+		Keys:  make([]hexutil.Bytes, len(w.Keys)),
+	}
+	copy(ext.State, w.State)
+	copy(ext.Codes, w.Codes)
+	copy(ext.Keys, w.Keys)
+
+	ext.Headers = make([]*types.Header, 0, len(w.Headers))
+	for i, enc := range w.Headers {
+		var header types.Header
+		if err := rlp.DecodeBytes(enc, &header); err != nil {
+			return nil, fmt.Errorf("header %d: %w", i, err)
+		}
+		ext.Headers = append(ext.Headers, &header)
+	}
+	return ext, nil
 }
 
 // parseBlockNumber converts a CLI string to *big.Int.

@@ -474,6 +474,187 @@ func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
 	}
 }
 
+// txListWitnessAbsentSystemContractChain builds a deep Prague-active Taiko chain
+// that does NOT deploy the EIP system contracts, matching a Taiko L2 that
+// activates Prague/Cancun without them. Blocks carry a non-zero ParentBeaconRoot
+// so the EIP-4788 pre-execution call runs against the absent beacon-roots
+// contract, and the account trie is deep so an absent contract's exclusion proof
+// spans multiple nodes.
+func txListWitnessAbsentSystemContractChain(t *testing.T, extraAccounts int) (*core.BlockChain, []*types.Block) {
+	t.Helper()
+	key, _ := crypto.GenerateKey()
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+
+	cfg := *params.MergedTestChainConfig // Prague-active (PragueTime == 0)
+	cfg.Taiko = true
+	cfg.ChainID = big.NewInt(167000)
+
+	alloc := types.GenesisAlloc{addr: {Balance: big.NewInt(1e18)}}
+	// Deep account trie; deliberately no BeaconRoots/HistoryStorage/queue contracts.
+	for i := range extraAccounts {
+		var a common.Address
+		binary.BigEndian.PutUint64(a[:8], uint64(i+1))
+		a[19] = 0x11
+		alloc[a] = types.Account{Balance: big.NewInt(1)}
+	}
+	gspec := &core.Genesis{Config: &cfg, Alloc: alloc}
+	engine := beacon.New(ethash.NewFaker())
+	db := rawdb.NewMemoryDatabase()
+
+	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
+		gen.SetParentBeaconRoot(common.HexToHash("0x00000000000000000000000000000000000000000000000000000000cafebabe"))
+		signer := types.LatestSigner(&cfg)
+		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
+		}), signer, key)
+		if err := tx0.MarkAsAnchor(); err != nil {
+			t.Fatalf("mark anchor: %v", err)
+		}
+		gen.AddTx(tx0)
+	})
+
+	bc, err := core.NewBlockChain(db, gspec, engine, nil)
+	if err != nil {
+		t.Fatalf("new blockchain: %v", err)
+	}
+	if _, err := bc.InsertChain(blocks); err != nil {
+		t.Fatalf("insert chain: %v", err)
+	}
+	return bc, blocks
+}
+
+// TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof is a regression
+// guard: a system contract touched by a pre-execution system call but NOT deployed
+// on-chain (as on a Taiko L2 that activates Prague/Cancun without the EIP system
+// contracts) must appear in the witness with a COMPLETE account-trie exclusion
+// proof, not just a key preimage.
+//
+// go-geth loads the absent contract during the EIP-4788/EIP-2935 system call and
+// records its address in the witness keys, but getStateObject returns at the
+// acct==nil check before prefetching, so the account-trie exclusion-proof nodes
+// never enter the witness. go-geth's own stateless re-execution reads the same
+// absent account and tolerates the gap, so the state-root self-consistency check
+// stays green; a cross-client stateless executor that resolves the absent account
+// from the sparse trie fails ("state trie unresolved") without those nodes. The
+// deep trie makes the missing intermediate nodes observable.
+func TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof(t *testing.T) {
+	bc, blocks := txListWitnessAbsentSystemContractChain(t, 2000)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+	parent := bc.GetHeaderByHash(block.ParentHash())
+
+	// The system contracts must actually be absent, otherwise this would test the
+	// inclusion path instead of the absent-account exclusion path.
+	statedb, err := bc.StateAt(parent.Root)
+	if err != nil {
+		t.Fatalf("state at parent: %v", err)
+	}
+	for _, addr := range []common.Address{params.HistoryStorageAddress, params.BeaconRootsAddress} {
+		if len(statedb.GetCode(addr)) != 0 {
+			t.Fatalf("%s unexpectedly deployed; test requires an absent contract", addr)
+		}
+	}
+
+	witness, _, err := buildTxListWitness(bc, block, block.Transactions(), txListWitnessOptions{})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+
+	// Both the EIP-2935 history-storage and EIP-4788 beacon-roots contracts are
+	// touched by the pre-execution system calls. Each must carry its key preimage
+	// AND every node of its account-trie exclusion proof.
+	for _, tc := range []struct {
+		name string
+		addr common.Address
+	}{
+		{"history-storage", params.HistoryStorageAddress},
+		{"beacon-roots", params.BeaconRootsAddress},
+	} {
+		proof := accountProofNodes(t, bc, parent.Root, tc.addr)
+		if len(proof) < 2 {
+			t.Fatalf("%s exclusion proof has %d node(s); need a deeper trie to guard the regression", tc.name, len(proof))
+		}
+		if _, ok := witness.Keys[string(tc.addr.Bytes())]; !ok {
+			t.Fatalf("%s (%s) missing from witness keys", tc.name, tc.addr)
+		}
+		for i, node := range proof {
+			if _, ok := witness.State[string(node)]; !ok {
+				t.Fatalf("%s exclusion-proof node %d/%d missing from witness state", tc.name, i+1, len(proof))
+			}
+		}
+	}
+
+	// The extra exclusion-proof nodes must not perturb the post-state: the witness
+	// must still re-execute statelessly to the canonical root.
+	hdr := block.Header()
+	hdr.Root = common.Hash{}
+	hdr.ReceiptHash = common.Hash{}
+	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
+	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
+	if err != nil {
+		t.Fatalf("ExecuteStateless: %v", err)
+	}
+	if got != block.Root() {
+		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	}
+}
+
+func TestExecutionWitnessIncludesAbsentSystemContractExclusionProof(t *testing.T) {
+	bc, blocks := txListWitnessAbsentSystemContractChain(t, 2000)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+	parent := bc.GetHeaderByHash(block.ParentHash())
+
+	out, err := executionWitnessForBlock(bc, block)
+	if err != nil {
+		t.Fatalf("executionWitnessForBlock: %v", err)
+	}
+	if len(out.State) == 0 || len(out.Keys) == 0 || len(out.Headers) == 0 {
+		t.Fatalf("empty witness fields: %+v", out)
+	}
+	var decoded types.Header
+	if err := rlp.DecodeBytes(out.Headers[0], &decoded); err != nil {
+		t.Fatalf("headers must be RLP: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		addr common.Address
+	}{
+		{"history-storage", params.HistoryStorageAddress},
+		{"beacon-roots", params.BeaconRootsAddress},
+	} {
+		proof := accountProofNodes(t, bc, parent.Root, tc.addr)
+		if len(proof) < 2 {
+			t.Fatalf("%s exclusion proof has %d node(s); need a deeper trie to guard the regression", tc.name, len(proof))
+		}
+		keyFound := false
+		for _, key := range out.Keys {
+			if string(key) == string(tc.addr.Bytes()) {
+				keyFound = true
+				break
+			}
+		}
+		if !keyFound {
+			t.Fatalf("%s (%s) missing from witness keys", tc.name, tc.addr)
+		}
+		for i, node := range proof {
+			stateFound := false
+			for _, got := range out.State {
+				if string(got) == string(node) {
+					stateFound = true
+					break
+				}
+			}
+			if !stateFound {
+				t.Fatalf("%s exclusion-proof node %d/%d missing from witness state", tc.name, i+1, len(proof))
+			}
+		}
+	}
+}
+
 // TestBuildTxListWitnessAppliesPreExecutionSystemCalls verifies buildTxListWitness
 // runs the EIP-4788 beacon-block-root system call before replaying transactions,
 // so the witness records the beacon-roots system-contract account. Without the
