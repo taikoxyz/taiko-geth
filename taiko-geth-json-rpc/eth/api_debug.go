@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/internal/ethapi"
@@ -501,11 +502,11 @@ func (api *DebugAPI) StateSize(blockHashOrNumber *rpc.BlockNumberOrHash) (interf
 	}, nil
 }
 
-func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*executionWitness, error) {
+func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*stateless.ExecutionWitness, error) {
 	bc := api.eth.blockchain
 	block, err := api.eth.APIBackend.BlockByNumberOrHash(context.Background(), bn)
 	if err != nil {
-		return &executionWitness{}, fmt.Errorf("block %v not found", bn)
+		return nil, fmt.Errorf("block %v not found", bn)
 	}
 	return executionWitnessForBlock(bc, block)
 }
@@ -515,10 +516,10 @@ func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*executionWitne
 // wire shape. It replays the block's own transaction list through the same
 // witness builder as debug_executionWitnessForTxList, so both endpoints emit
 // identical witness content for a canonical block.
-func executionWitnessForBlock(bc *core.BlockChain, block *types.Block) (*executionWitness, error) {
+func executionWitnessForBlock(bc *core.BlockChain, block *types.Block) (*stateless.ExecutionWitness, error) {
 	witness, _, err := buildTxListWitness(bc, block, block.Transactions(), txListWitnessOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return newExecutionWitness(witness)
+	return stateless.NewExecutionWitness(witness)
 }
