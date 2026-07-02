@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -1063,5 +1064,153 @@ func TestBuildTxListWitnessIncludesCreatedContractCode(t *testing.T) {
 
 	if _, ok := witness.Codes[string(runtime)]; !ok {
 		t.Fatalf("bytecode deployed during replay missing from witness codes")
+	}
+}
+
+// txListWitnessStorageShapeChain builds a Taiko chain whose genesis deploys a
+// contract with exactly two storage slots chosen so their hashed keys share a
+// three-nibble prefix: the storage trie is an extension (key c25) into a
+// two-child branch. The contract code stores calldata: SSTORE(calldata[0:32] ->
+// calldata[32:64]), letting replayed transactions insert or delete chosen slots.
+//
+//	slot 3   -> keccak c2575a0e...
+//	slot 497 -> keccak c254b84a...
+func txListWitnessStorageShapeChain(t *testing.T) (*core.BlockChain, []*types.Block, *ecdsa.PrivateKey, common.Address) {
+	t.Helper()
+	key, _ := crypto.GenerateKey()
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+	contract := common.HexToAddress("0x000000000000000000000000000000005700a6e3")
+
+	cfg := *params.MergedTestChainConfig
+	cfg.Taiko = true
+	cfg.ChainID = big.NewInt(167000)
+
+	val := common.HexToHash("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+	gspec := &core.Genesis{
+		Config: &cfg,
+		Alloc: types.GenesisAlloc{
+			addr: {Balance: big.NewInt(1e18)},
+			contract: {
+				Nonce: 1,
+				// PUSH1 32 CALLDATALOAD PUSH1 0 CALLDATALOAD SSTORE STOP
+				Code:    []byte{0x60, 0x20, 0x35, 0x60, 0x00, 0x35, 0x55, 0x00},
+				Balance: common.Big0,
+				Storage: map[common.Hash]common.Hash{
+					common.HexToHash("0x03"):  val, // keccak c2575a0e...
+					common.HexToHash("0x1f1"): val, // keccak c254b84a...
+				},
+			},
+		},
+	}
+	engine := beacon.New(ethash.NewFaker())
+	db := rawdb.NewMemoryDatabase()
+
+	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
+		signer := types.LatestSigner(&cfg)
+		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
+		}), signer, key)
+		if err := tx0.MarkAsAnchor(); err != nil {
+			t.Fatalf("mark anchor: %v", err)
+		}
+		gen.AddTx(tx0)
+	})
+
+	bc, err := core.NewBlockChain(db, gspec, engine, nil)
+	if err != nil {
+		t.Fatalf("new blockchain: %v", err)
+	}
+	if _, err := bc.InsertChain(blocks); err != nil {
+		t.Fatalf("insert chain: %v", err)
+	}
+	return bc, blocks, key, contract
+}
+
+// storeCallTx signs a transaction calling the storage-shape contract with
+// calldata SSTORE(slot -> value).
+func storeCallTx(t *testing.T, bc *core.BlockChain, key *ecdsa.PrivateKey, contract common.Address, baseFee *big.Int, nonce uint64, slot, value common.Hash) *types.Transaction {
+	t.Helper()
+	data := append(slot.Bytes(), value.Bytes()...)
+	signer := types.LatestSigner(bc.Config())
+	tx, err := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: bc.Config().ChainID, Nonce: nonce, GasTipCap: big.NewInt(0),
+		GasFeeCap: baseFee, Gas: 200000, To: &contract, Value: big.NewInt(0), Data: data,
+	}), signer, key)
+	if err != nil {
+		t.Fatalf("sign store tx: %v", err)
+	}
+	return tx
+}
+
+// runStorageShapeReplay replays [anchor, SSTORE(slot->value)] on the shape
+// chain and returns the witness plus the parent-state proof nodes of genesis
+// slot 3 (ext, branch, leaf) and slot 497.
+func runStorageShapeReplay(t *testing.T, slot, value common.Hash) (*stateless.Witness, [][]byte, [][]byte) {
+	t.Helper()
+	bc, blocks, key, contract := txListWitnessStorageShapeChain(t)
+	t.Cleanup(bc.Stop)
+	block := blocks[len(blocks)-1]
+	parent := bc.GetHeaderByHash(block.ParentHash())
+
+	proof3 := storageProofNodes(t, bc, parent.Root, contract, common.HexToHash("0x03"))
+	proof497 := storageProofNodes(t, bc, parent.Root, contract, common.HexToHash("0x1f1"))
+	// Shape guard: ext -> branch -> leaf. A different shape would silently
+	// invalidate what these tests guard.
+	if len(proof3) != 3 || len(proof497) != 3 {
+		t.Fatalf("unexpected storage trie shape: proof lengths %d/%d, want 3/3", len(proof3), len(proof497))
+	}
+
+	call := storeCallTx(t, bc, key, contract, block.BaseFee(), 2, slot, value)
+	replay := types.Transactions{block.Transactions()[0], call}
+	witness, committed, err := buildTxListWitness(bc, block, replay, txListWitnessOptions{SkipZkGasDifficultyCheck: true})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+	if len(committed) != 2 {
+		t.Fatalf("expected anchor + store call committed, got %d", len(committed))
+	}
+	return witness, proof3, proof497
+}
+
+// TestBuildTxListWitnessRevealsExtensionChildOnInsert is a regression guard for
+// the cross-client legacy witness format: inserting a storage slot whose hashed
+// key splits an extension node must reveal the extension's child node in the
+// witness state. Slot 241 hashes to c29b...: it shares two nibbles with the
+// genesis extension (key c25) and splits it at its final nibble, so the
+// exclusion proof ends at the extension and the child branch is otherwise
+// absent from the witness.
+func TestBuildTxListWitnessRevealsExtensionChildOnInsert(t *testing.T) {
+	witness, proof3, _ := runStorageShapeReplay(t,
+		common.HexToHash("0xf1"), common.HexToHash("0x01"))
+	if _, ok := witness.State[string(proof3[1])]; !ok {
+		t.Fatalf("extension child branch missing from witness state after extension-splitting insert")
+	}
+}
+
+// TestBuildTxListWitnessRevealsExtensionChildOnMidKeySplitInsert covers the
+// mid-key variant: slot 10 hashes to c65a..., sharing only one nibble with the
+// genesis extension (key c25), so the split leaves a shortened extension in
+// place. The reference sparse-trie mutation still requires the extension's
+// child node revealed.
+func TestBuildTxListWitnessRevealsExtensionChildOnMidKeySplitInsert(t *testing.T) {
+	witness, proof3, _ := runStorageShapeReplay(t,
+		common.HexToHash("0x0a"), common.HexToHash("0x01"))
+	if _, ok := witness.State[string(proof3[1])]; !ok {
+		t.Fatalf("extension child branch missing from witness state after mid-key extension-splitting insert")
+	}
+}
+
+// TestBuildTxListWitnessRevealsCollapseSiblingOnDelete is a regression guard
+// for the cross-client legacy witness format: deleting a storage slot whose
+// removal leaves its parent branch with a single surviving child must reveal
+// that surviving child node (here the untouched leaf of slot 497), because the
+// reference sparse-trie collapse cannot merge the branch without it.
+func TestBuildTxListWitnessRevealsCollapseSiblingOnDelete(t *testing.T) {
+	witness, _, proof497 := runStorageShapeReplay(t,
+		common.HexToHash("0x03"), common.Hash{})
+	if _, ok := witness.State[string(proof497[2])]; !ok {
+		t.Fatalf("surviving sibling leaf missing from witness state after branch-collapsing delete")
 	}
 }

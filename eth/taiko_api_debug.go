@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/triedb/database"
 	"github.com/holiman/uint256"
 )
 
@@ -194,18 +195,34 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// chain and witnesses them as headers, but an EIP-2935 stateless executor
 	// resolves them from the HistoryStorage contract's storage. We collect the
 	// numbers here and pull the backing storage slots into the witness below.
+	//
+	// CHANGE(taiko): also record which storage slots the replay writes, per
+	// account. The wire-format alignment pass below needs the written slots to
+	// find inserts that split an extension node in the parent trie. State-level
+	// hooks only fire through a hooked state wrapper, so the EVM runs on the
+	// wrapper while the replay keeps operating on the underlying statedb.
 	var blockHashNums []uint64
 	seenBlockHash := make(map[uint64]struct{})
-	evm := vm.NewEVM(core.NewEVMBlockContext(header, bc, &header.Coinbase), statedb, config, vm.Config{
-		Tracer: &tracing.Hooks{
-			OnBlockHashRead: func(number uint64, _ common.Hash) {
-				if _, ok := seenBlockHash[number]; ok {
-					return
-				}
-				seenBlockHash[number] = struct{}{}
-				blockHashNums = append(blockHashNums, number)
-			},
+	storageWrites := make(map[common.Address]map[common.Hash]struct{})
+	hooks := &tracing.Hooks{
+		OnBlockHashRead: func(number uint64, _ common.Hash) {
+			if _, ok := seenBlockHash[number]; ok {
+				return
+			}
+			seenBlockHash[number] = struct{}{}
+			blockHashNums = append(blockHashNums, number)
 		},
+		OnStorageChange: func(addr common.Address, slot common.Hash, _, _ common.Hash) {
+			slots, ok := storageWrites[addr]
+			if !ok {
+				slots = make(map[common.Hash]struct{})
+				storageWrites[addr] = slots
+			}
+			slots[slot] = struct{}{}
+		},
+	}
+	evm := vm.NewEVM(core.NewEVMBlockContext(header, bc, &header.Coinbase), state.NewHookedState(statedb, hooks), config, vm.Config{
+		Tracer: hooks,
 	})
 	var zkGasMeter *vm.ZkGasMeter
 	if config.IsUnzen(header.Time) {
@@ -349,9 +366,9 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	statedb.IntermediateRoot(true)
 
 	// CHANGE(taiko): post-process the collected witness into the cross-client
-	// legacy witness format (storage-trie root nodes, created bytecode, and
-	// existence-filtered keys).
-	if err := alignWitnessForWireFormat(bc, parent.Root, statedb, witness); err != nil {
+	// legacy witness format (storage-trie root nodes, extension-split reveals,
+	// created bytecode, and existence-filtered keys).
+	if err := alignWitnessForWireFormat(bc, parent.Root, statedb, witness, storageWrites); err != nil {
 		return nil, nil, err
 	}
 
@@ -374,7 +391,13 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 //     Accounts that were merely probed (absent system contracts, the system
 //     caller) or cleared during finalization carry account-trie exclusion
 //     proofs in state, but no key preimage.
-func alignWitnessForWireFormat(bc *core.BlockChain, parentRoot common.Hash, statedb *state.StateDB, witness *stateless.Witness) error {
+//   - state additionally carries the child node of every extension node that
+//     an insert splits. The insert's exclusion proof ends at the extension, but
+//     the reference sparse-trie mutation cannot restructure the extension
+//     without its child revealed. Deletions need no equivalent: collapsing a
+//     branch resolves the surviving sibling through the witness-tracking trie
+//     reader already.
+func alignWitnessForWireFormat(bc *core.BlockChain, parentRoot common.Hash, statedb *state.StateDB, witness *stateless.Witness, storageWrites map[common.Address]map[common.Hash]struct{}) error {
 	preState, err := bc.StateAt(parentRoot)
 	if err != nil {
 		return fmt.Errorf("failed to open pre-state at %s: %w", parentRoot, err)
@@ -410,12 +433,152 @@ func alignWitnessForWireFormat(bc *core.BlockChain, parentRoot common.Hash, stat
 		if postCodeHash != (common.Hash{}) && postCodeHash != types.EmptyCodeHash && postCodeHash != preState.GetCodeHash(addr) {
 			statedb.GetCode(addr)
 		}
+		// Extension-split reveal for accounts created by the replay.
+		if !preState.Exist(addr) && statedb.Exist(addr) {
+			if err := revealExtensionChild(reader, witness, common.Hash{}, parentRoot, crypto.Keccak256(addr.Bytes())); err != nil {
+				return err
+			}
+		}
 		// Keys carry only accounts existing post-execution.
 		if !statedb.Exist(addr) {
 			witness.DeleteKey(addr.Bytes())
 		}
 	}
+	// Extension-split reveal for storage slots inserted by the replay. Written
+	// slots are cached in the statedb, so the post-value reads stay off the trie
+	// and record nothing new.
+	for addr, slots := range storageWrites {
+		storageRoot := preState.GetStorageRoot(addr)
+		if storageRoot == (common.Hash{}) || storageRoot == types.EmptyRootHash {
+			continue // no parent storage trie, nothing to split
+		}
+		owner := crypto.Keccak256Hash(addr.Bytes())
+		for slot := range slots {
+			if preState.GetState(addr, slot) != (common.Hash{}) {
+				continue // update or delete, not an insert
+			}
+			if statedb.GetState(addr, slot) == (common.Hash{}) {
+				continue // written back to zero, no leaf inserted
+			}
+			if err := revealExtensionChild(reader, witness, owner, storageRoot, crypto.Keccak256(slot.Bytes())); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
+}
+
+// CHANGE(taiko): revealExtensionChild walks the trie rooted at root along the
+// hashed key of an inserted leaf. If the walk diverges inside an extension
+// node's key — the insert splits the extension — the extension's child node is
+// added to the witness state. All other divergence shapes (vacant branch slot,
+// mismatching leaf) need no extra node: the insert's exclusion proof already
+// carries everything the reference sparse-trie mutation resolves.
+func revealExtensionChild(reader database.NodeReader, witness *stateless.Witness, owner common.Hash, root common.Hash, hashedKey []byte) error {
+	keyNibbles := make([]byte, 0, 2*len(hashedKey))
+	for _, b := range hashedKey {
+		keyNibbles = append(keyNibbles, b>>4, b&0x0f)
+	}
+	path := make([]byte, 0, len(keyNibbles))
+	blob, err := reader.Node(owner, path, root)
+	if err != nil || len(blob) == 0 {
+		return fmt.Errorf("trie node %s at root of %s unavailable: %w", root, owner, err)
+	}
+	for {
+		elems, _, err := rlp.SplitList(blob)
+		if err != nil {
+			return fmt.Errorf("malformed trie node at path %x of %s: %w", path, owner, err)
+		}
+		count, err := rlp.CountValues(elems)
+		if err != nil {
+			return fmt.Errorf("malformed trie node at path %x of %s: %w", path, owner, err)
+		}
+		switch count {
+		case 17: // branch node: step into the child at the next key nibble
+			if len(path) >= len(keyNibbles) {
+				return nil
+			}
+			rest := elems
+			for i := 0; i < int(keyNibbles[len(path)]); i++ {
+				if _, _, rest, err = rlp.Split(rest); err != nil {
+					return fmt.Errorf("malformed branch node at path %x of %s: %w", path, owner, err)
+				}
+			}
+			kind, child, _, err := rlp.Split(rest)
+			if err != nil {
+				return fmt.Errorf("malformed branch node at path %x of %s: %w", path, owner, err)
+			}
+			if kind == rlp.List { // embedded child: its bytes are already witnessed with the branch
+				return nil
+			}
+			if len(child) == 0 { // vacant slot: the insert lands here
+				return nil
+			}
+			path = append(path, keyNibbles[len(path)])
+			if blob, err = reader.Node(owner, path, common.BytesToHash(child)); err != nil || len(blob) == 0 {
+				return fmt.Errorf("trie node at path %x of %s unavailable: %w", path, owner, err)
+			}
+		case 2: // short node: leaf or extension
+			compact, rest, err := rlp.SplitString(elems)
+			if err != nil {
+				return fmt.Errorf("malformed short node at path %x of %s: %w", path, owner, err)
+			}
+			nibbles, isLeaf := compactToNibbles(compact)
+			if isLeaf {
+				return nil // divergent or matching leaf: revealed by the exclusion proof
+			}
+			if remaining := keyNibbles[len(path):]; len(remaining) >= len(nibbles) && bytes.Equal(remaining[:len(nibbles)], nibbles) {
+				// Key continues through the extension: follow its child.
+				kind, child, _, err := rlp.Split(rest)
+				if err != nil {
+					return fmt.Errorf("malformed extension node at path %x of %s: %w", path, owner, err)
+				}
+				if kind == rlp.List {
+					return nil // embedded child, witnessed with the extension
+				}
+				path = append(path, nibbles...)
+				if blob, err = reader.Node(owner, path, common.BytesToHash(child)); err != nil || len(blob) == 0 {
+					return fmt.Errorf("trie node at path %x of %s unavailable: %w", path, owner, err)
+				}
+				continue
+			}
+			// The insert splits this extension: reveal its child node.
+			kind, child, _, err := rlp.Split(rest)
+			if err != nil {
+				return fmt.Errorf("malformed extension node at path %x of %s: %w", path, owner, err)
+			}
+			if kind == rlp.List {
+				return nil // embedded child, witnessed with the extension
+			}
+			childPath := append(append([]byte{}, path...), nibbles...)
+			blob, err := reader.Node(owner, childPath, common.BytesToHash(child))
+			if err != nil || len(blob) == 0 {
+				return fmt.Errorf("extension child node at path %x of %s unavailable: %w", childPath, owner, err)
+			}
+			witness.AddState(map[string][]byte{"": blob}, owner)
+			return nil
+		default:
+			return fmt.Errorf("unexpected trie node with %d items at path %x of %s", count, path, owner)
+		}
+	}
+}
+
+// compactToNibbles decodes a hex-prefix (compact) encoded trie path into its
+// nibbles and reports whether the node is a leaf.
+func compactToNibbles(compact []byte) ([]byte, bool) {
+	if len(compact) == 0 {
+		return nil, false
+	}
+	flag := compact[0] >> 4
+	isLeaf := flag >= 2
+	nibbles := make([]byte, 0, 2*len(compact))
+	if flag&1 == 1 { // odd length: first nibble lives in the flag byte
+		nibbles = append(nibbles, compact[0]&0x0f)
+	}
+	for _, b := range compact[1:] {
+		nibbles = append(nibbles, b>>4, b&0x0f)
+	}
+	return nibbles, isLeaf
 }
 
 // CHANGE(taiko): ExecutionWitnessForTxList replays the given RLP transaction
