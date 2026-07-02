@@ -510,54 +510,24 @@ func storageProofNodes(t *testing.T, bc *core.BlockChain, stateRoot common.Hash,
 	return nodes
 }
 
-// TestBuildTxListWitnessIncludesBlockhashHistoryStorage is a regression guard:
-// when a transaction resolves a historical block hash via BLOCKHASH, the witness
-// must include the EIP-2935 HistoryStorage (0x00..2935) storage-trie proof for
-// the ring-buffer slot backing that hash.
-//
-// go-geth serves BLOCKHASH from the header chain and witnesses it as headers, so
-// the HistoryStorage slot's storage nodes are absent. go-geth's own stateless
-// re-execution also reads BLOCKHASH from headers, so the state-root
-// self-consistency check cannot catch the gap; a cross-client stateless executor
-// that resolves BLOCKHASH from the HistoryStorage contract fails to resolve its
-// storage trie ("state trie unresolved") without those nodes.
+// TestBuildTxListWitnessRecordsBlockhashAncestorHeaders is a regression guard:
+// when a replayed transaction resolves a historical block hash via BLOCKHASH,
+// the witness must carry that ancestor's header. The cross-client stateless
+// executor serves BLOCKHASH from the witness ancestor headers (EIP-2935 does
+// not change the opcode's semantics), so a missing header would make the
+// replay unverifiable. The EIP-2935 history contract's storage is not involved
+// — real Taiko networks do not deploy the contract, matching this chain.
 //
 // BLOCKHASH cannot run during chain generation (no chain context), so the
-// BLOCKHASH transaction is supplied at replay time — exactly how the RPC feeds an
-// explicit tx list to buildTxListWitness.
-func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
-	// Contract: PUSH0, BLOCKHASH, PUSH0, SSTORE, STOP => stores blockhash(0).
+// BLOCKHASH transaction is supplied at replay time — exactly how the RPC feeds
+// an explicit tx list to buildTxListWitness.
+func TestBuildTxListWitnessRecordsBlockhashAncestorHeaders(t *testing.T) {
+	// Contract: PUSH0, BLOCKHASH, POP, STOP => resolves blockhash(0).
 	bhContract := common.HexToAddress("0x00000000000000000000000000000000b10c4a54")
-
-	// Deep pre-populated HistoryStorage (slots 100..699) so the slot-0 proof
-	// spans multiple nodes; leaves slots 0/1 fresh for the blocks' own EIP-2935
-	// system calls. A shallow trie would hide the regression behind the root.
-	hist := make(map[common.Hash]common.Hash)
-	for i := 100; i < 700; i++ {
-		var slot, val common.Hash
-		binary.BigEndian.PutUint64(slot[24:], uint64(i))
-		val[0] = 0xab
-		binary.BigEndian.PutUint64(val[24:], uint64(i)+1)
-		hist[slot] = val
-	}
-	alloc := systemContractsAlloc()
-	histAccount := alloc[params.HistoryStorageAddress]
-	histAccount.Storage = hist
-	alloc[params.HistoryStorageAddress] = histAccount
-	alloc[bhContract] = types.Account{Nonce: 1, Code: []byte{0x5f, 0x40, 0x5f, 0x55, 0x00}, Balance: common.Big0}
-
-	bc, blocks, key := newTxListWitnessChain(t, witnessChainConfig{beaconRoot: true, alloc: alloc})
-	block := blocks[len(blocks)-1] // block 2; parent = block 1 (sender nonce == 1)
-	parent := bc.GetHeaderByHash(block.ParentHash())
-
-	// BLOCKHASH(0) reads HistoryStorage slot 0. Block 2's own EIP-2935 system
-	// call writes slot 1, so slot 0 enters the witness only if the BLOCKHASH read
-	// path does. Sanity-check the proof is multi-node so this guards something.
-	var slot common.Hash // slot 0
-	stProof := storageProofNodes(t, bc, parent.Root, params.HistoryStorageAddress, slot)
-	if len(stProof) < 2 {
-		t.Fatalf("HistoryStorage slot-0 proof has %d node(s); need a deeper trie to guard the regression", len(stProof))
-	}
+	bc, blocks, key := newTxListWitnessChain(t, witnessChainConfig{alloc: types.GenesisAlloc{
+		bhContract: {Nonce: 1, Code: []byte{0x5f, 0x40, 0x50, 0x00}, Balance: common.Big0},
+	}})
+	block := blocks[len(blocks)-1] // block 2: blockhash(0) is inside the 256-block window
 
 	signer := types.LatestSigner(bc.Config())
 	callBH, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
@@ -574,19 +544,19 @@ func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
 		t.Fatalf("expected anchor + BLOCKHASH tx committed, got %d", len(committed))
 	}
 
-	if _, ok := witness.Keys[string(slot.Bytes())]; !ok {
-		t.Fatalf("HistoryStorage BLOCKHASH slot key preimage missing from witness keys")
-	}
-	for i, node := range stProof {
-		if _, ok := witness.State[string(node)]; !ok {
-			t.Fatalf("HistoryStorage BLOCKHASH slot proof node %d/%d missing from witness state", i+1, len(stProof))
+	found := false
+	for _, hdr := range witness.Headers {
+		if hdr.Number.Uint64() == 0 {
+			found = true
+			break
 		}
 	}
+	if !found {
+		t.Fatalf("ancestor header 0 resolved via BLOCKHASH missing from witness headers")
+	}
 
-	// Root-preserving: the extra HistoryStorage slot reads are pure reads, so the
-	// witness must still re-execute the block's canonical body to its state root.
-	// (The replay anchor is identical to the block's own tx; the BLOCKHASH-only
-	// extras are a harmless superset for the canonical execution.)
+	// The header pull is a pure read: the witness must still re-execute the
+	// block's canonical body to the canonical post-state root.
 	assertStatelessReplay(t, bc, block, witness)
 }
 
