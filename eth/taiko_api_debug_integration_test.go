@@ -2,6 +2,7 @@ package eth
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/binary"
 	"math/big"
 	"testing"
@@ -422,9 +423,9 @@ type proofNodeList [][]byte
 func (p *proofNodeList) Put(key, value []byte) error { *p = append(*p, value); return nil }
 func (p *proofNodeList) Delete(key []byte) error     { return nil }
 
-// TestBuildTxListWitnessIncludesSystemCallCaller is a regression guard: the
-// system-call caller account (params.SystemAddress, 0xff..fe) must appear in the
-// witness — both its key preimage and every node of its account-trie proof.
+// TestBuildTxListWitnessIncludesSystemCallCaller is a regression guard: every
+// node of the system-call caller account's (params.SystemAddress, 0xff..fe)
+// account-trie proof must appear in the witness state.
 //
 // go-geth skips the value transfer for system calls, so it never loads the system
 // caller and its account-trie path is absent from the witness. go-geth's own
@@ -432,6 +433,10 @@ func (p *proofNodeList) Delete(key []byte) error     { return nil }
 // cannot catch the gap; a cross-client stateless executor that loads the caller
 // during its EIP-4788/2935/7002/7251 system calls fails to resolve the account
 // without those nodes. The deep trie makes the missing nodes observable.
+//
+// The caller's key preimage must NOT appear: the cross-client wire format only
+// carries keys of accounts that exist when execution finishes, and the system
+// caller account never exists.
 func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
 	bc, blocks := txListWitnessDeepPragueChain(t, 2000)
 	defer bc.Stop()
@@ -450,8 +455,8 @@ func TestBuildTxListWitnessIncludesSystemCallCaller(t *testing.T) {
 		t.Fatalf("buildTxListWitness: %v", err)
 	}
 
-	if _, ok := witness.Keys[string(params.SystemAddress.Bytes())]; !ok {
-		t.Fatalf("system-call caller %s missing from witness keys", params.SystemAddress)
+	if _, ok := witness.Keys[string(params.SystemAddress.Bytes())]; ok {
+		t.Fatalf("system-call caller %s must not appear in witness keys; only accounts existing post-execution carry key preimages", params.SystemAddress)
 	}
 	for i, node := range sysProof {
 		if _, ok := witness.State[string(node)]; !ok {
@@ -563,8 +568,9 @@ func TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof(t *testing
 	}
 
 	// Both the EIP-2935 history-storage and EIP-4788 beacon-roots contracts are
-	// touched by the pre-execution system calls. Each must carry its key preimage
-	// AND every node of its account-trie exclusion proof.
+	// touched by the pre-execution system calls. Each must carry every node of
+	// its account-trie exclusion proof, but no key preimage: the cross-client
+	// wire format only carries keys of accounts that exist post-execution.
 	for _, tc := range []struct {
 		name string
 		addr common.Address
@@ -576,8 +582,8 @@ func TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof(t *testing
 		if len(proof) < 2 {
 			t.Fatalf("%s exclusion proof has %d node(s); need a deeper trie to guard the regression", tc.name, len(proof))
 		}
-		if _, ok := witness.Keys[string(tc.addr.Bytes())]; !ok {
-			t.Fatalf("%s (%s) missing from witness keys", tc.name, tc.addr)
+		if _, ok := witness.Keys[string(tc.addr.Bytes())]; ok {
+			t.Fatalf("%s (%s) must not appear in witness keys; the account does not exist", tc.name, tc.addr)
 		}
 		for i, node := range proof {
 			if _, ok := witness.State[string(node)]; !ok {
@@ -630,15 +636,10 @@ func TestExecutionWitnessIncludesAbsentSystemContractExclusionProof(t *testing.T
 		if len(proof) < 2 {
 			t.Fatalf("%s exclusion proof has %d node(s); need a deeper trie to guard the regression", tc.name, len(proof))
 		}
-		keyFound := false
 		for _, key := range out.Keys {
 			if string(key) == string(tc.addr.Bytes()) {
-				keyFound = true
-				break
+				t.Fatalf("%s (%s) must not appear in witness keys; the account does not exist", tc.name, tc.addr)
 			}
-		}
-		if !keyFound {
-			t.Fatalf("%s (%s) missing from witness keys", tc.name, tc.addr)
 		}
 		for i, node := range proof {
 			stateFound := false
@@ -862,5 +863,205 @@ func TestBuildTxListWitnessIncludesBlockhashHistoryStorage(t *testing.T) {
 	}
 	if got != block.Root() {
 		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	}
+}
+
+// txListWitnessUntouchedStorageChain builds a Taiko chain whose genesis deploys
+// a contract with populated storage and code that never touches storage (a
+// single STOP). Calling it loads the account and code but walks no storage-trie
+// path, which is exactly the case where the cross-client legacy witness format
+// still carries the account's parent-state storage-trie root node.
+func txListWitnessUntouchedStorageChain(t *testing.T, storContract common.Address) (*core.BlockChain, []*types.Block, *ecdsa.PrivateKey) {
+	t.Helper()
+	key, _ := crypto.GenerateKey()
+	addr := crypto.PubkeyToAddress(key.PublicKey)
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+
+	cfg := *params.MergedTestChainConfig
+	cfg.Taiko = true
+	cfg.ChainID = big.NewInt(167000)
+
+	gspec := &core.Genesis{
+		Config: &cfg,
+		Alloc: types.GenesisAlloc{
+			addr: {Balance: big.NewInt(1e18)},
+			storContract: {
+				Nonce:   1,
+				Code:    []byte{0x00}, // STOP: loads account+code, reads no slot
+				Balance: common.Big0,
+				Storage: map[common.Hash]common.Hash{
+					common.HexToHash("0x01"): common.HexToHash("0xff"),
+					common.HexToHash("0x02"): common.HexToHash("0xfe"),
+				},
+			},
+		},
+	}
+	engine := beacon.New(ethash.NewFaker())
+	db := rawdb.NewMemoryDatabase()
+
+	_, blocks, _ := core.GenerateChainWithGenesis(gspec, engine, 2, func(i int, gen *core.BlockGen) {
+		signer := types.LatestSigner(&cfg)
+		tx0, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+			ChainID: cfg.ChainID, Nonce: gen.TxNonce(addr), GasTipCap: big.NewInt(0),
+			GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(1),
+		}), signer, key)
+		if err := tx0.MarkAsAnchor(); err != nil {
+			t.Fatalf("mark anchor: %v", err)
+		}
+		gen.AddTx(tx0)
+	})
+
+	bc, err := core.NewBlockChain(db, gspec, engine, nil)
+	if err != nil {
+		t.Fatalf("new blockchain: %v", err)
+	}
+	if _, err := bc.InsertChain(blocks); err != nil {
+		t.Fatalf("insert chain: %v", err)
+	}
+	return bc, blocks, key
+}
+
+// TestBuildTxListWitnessIncludesUntouchedStorageRootNode is a regression guard
+// for the cross-client legacy witness format: the witness state must carry the
+// parent-state storage-trie root node of every loaded account even when the
+// replay never reads or writes any of its storage slots, and the empty storage
+// trie's root node is the RLP empty string (0x80).
+//
+// go-geth only collects storage nodes for tries the execution walks, so a
+// called contract whose code never touches storage contributes no storage
+// nodes, and accounts with empty storage never contribute the 0x80 node. Both
+// are inert for go-geth's own stateless re-execution (the account leaf already
+// carries the storage root hash), which is why the state-root self-consistency
+// check cannot catch the gap.
+func TestBuildTxListWitnessIncludesUntouchedStorageRootNode(t *testing.T) {
+	storContract := common.HexToAddress("0x000000000000000000000000000000005700a6e1")
+	bc, blocks, key := txListWitnessUntouchedStorageChain(t, storContract)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+	parent := bc.GetHeaderByHash(block.ParentHash())
+
+	// The storage-trie root node is the first node of any slot proof.
+	rootNode := storageProofNodes(t, bc, parent.Root, storContract, common.HexToHash("0x01"))[0]
+
+	signer := types.LatestSigner(bc.Config())
+	callTx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: bc.Config().ChainID, Nonce: 2, GasTipCap: big.NewInt(0),
+		GasFeeCap: block.BaseFee(), Gas: 100000, To: &storContract, Value: big.NewInt(0),
+	}), signer, key)
+	replay := types.Transactions{block.Transactions()[0], callTx}
+
+	witness, committed, err := buildTxListWitness(bc, block, replay, txListWitnessOptions{SkipZkGasDifficultyCheck: true})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+	if len(committed) != 2 {
+		t.Fatalf("expected anchor + storage-contract call committed, got %d", len(committed))
+	}
+
+	if _, ok := witness.State[string(rootNode)]; !ok {
+		t.Fatalf("storage-trie root node of untouched-storage account %s missing from witness state", storContract)
+	}
+	if _, ok := witness.State[string([]byte{0x80})]; !ok {
+		t.Fatalf("empty storage-trie root node (0x80) missing from witness state")
+	}
+
+	// The extra nodes are pure pre-state reads: the witness must still re-execute
+	// the canonical block body to the canonical post-state root.
+	hdr := block.Header()
+	hdr.Root = common.Hash{}
+	hdr.ReceiptHash = common.Hash{}
+	stateless := types.NewBlockWithHeader(hdr).WithBody(*block.Body())
+	got, _, err := core.ExecuteStateless(context.Background(), bc.Config(), vm.Config{}, stateless, witness)
+	if err != nil {
+		t.Fatalf("ExecuteStateless: %v", err)
+	}
+	if got != block.Root() {
+		t.Fatalf("state root mismatch: got %s want %s", got, block.Root())
+	}
+}
+
+// TestExecutionWitnessForTxListOmitsAbsentAccountKeys verifies the wire-level
+// keys field only carries preimages of accounts that exist when the replay
+// finishes: absent system contracts and the system caller are probed by the
+// pre/post-execution system calls but must not surface as keys, while existing
+// accounts (the sender) must keep theirs.
+func TestExecutionWitnessForTxListOmitsAbsentAccountKeys(t *testing.T) {
+	bc, blocks := txListWitnessAbsentSystemContractChain(t, 16)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+
+	rlpTxs, err := rlp.EncodeToBytes(block.Transactions())
+	if err != nil {
+		t.Fatalf("encode txs: %v", err)
+	}
+	bn := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(block.NumberU64()))
+	out, err := executionWitnessForTxList(bc, bn, rlpTxs, nil, nil)
+	if err != nil {
+		t.Fatalf("executionWitnessForTxList: %v", err)
+	}
+
+	absent := []common.Address{
+		params.BeaconRootsAddress,
+		params.HistoryStorageAddress,
+		params.WithdrawalQueueAddress,
+		params.ConsolidationQueueAddress,
+		params.SystemAddress,
+	}
+	for _, key := range out.Keys {
+		for _, addr := range absent {
+			if string(key) == string(addr.Bytes()) {
+				t.Fatalf("nonexistent account %s must not appear in witness keys", addr)
+			}
+		}
+	}
+
+	sender, err := types.LatestSigner(bc.Config()).Sender(block.Transactions()[0])
+	if err != nil {
+		t.Fatalf("recover sender: %v", err)
+	}
+	senderFound := false
+	for _, key := range out.Keys {
+		if string(key) == string(sender.Bytes()) {
+			senderFound = true
+			break
+		}
+	}
+	if !senderFound {
+		t.Fatalf("existing sender account %s missing from witness keys", sender)
+	}
+}
+
+// TestBuildTxListWitnessIncludesCreatedContractCode is a regression guard for
+// the cross-client legacy witness format: bytecode deployed during the replay
+// must appear in the witness codes even when the created contract is never
+// called afterwards. A read-driven collector records code only on code reads,
+// so a deploy-and-stop transaction leaves the runtime bytecode out.
+func TestBuildTxListWitnessIncludesCreatedContractCode(t *testing.T) {
+	storContract := common.HexToAddress("0x000000000000000000000000000000005700a6e2")
+	bc, blocks, senderKey := txListWitnessUntouchedStorageChain(t, storContract)
+	defer bc.Stop()
+	block := blocks[len(blocks)-1]
+
+	// Init code returns the 2-byte runtime {PUSH0, STOP}.
+	runtime := []byte{0x5f, 0x00}
+	initcode := []byte{0x60, 0x02, 0x80, 0x60, 0x0b, 0x60, 0x00, 0x39, 0x60, 0x00, 0xf3, 0x5f, 0x00}
+
+	signer := types.LatestSigner(bc.Config())
+	deploy, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: bc.Config().ChainID, Nonce: 2, GasTipCap: big.NewInt(0),
+		GasFeeCap: block.BaseFee(), Gas: 300000, To: nil, Value: big.NewInt(0), Data: initcode,
+	}), signer, senderKey)
+	replay := types.Transactions{block.Transactions()[0], deploy}
+
+	witness, committed, err := buildTxListWitness(bc, block, replay, txListWitnessOptions{SkipZkGasDifficultyCheck: true})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+	if len(committed) != 2 {
+		t.Fatalf("expected anchor + deploy committed, got %d", len(committed))
+	}
+
+	if _, ok := witness.Codes[string(runtime)]; !ok {
+		t.Fatalf("bytecode deployed during replay missing from witness codes")
 	}
 }

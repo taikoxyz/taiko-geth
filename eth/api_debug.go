@@ -512,20 +512,13 @@ func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*executionWitne
 
 // CHANGE(taiko): executionWitnessForBlock re-executes a canonical block with
 // witness collection enabled and returns the cross-client debug RPC
-// wire shape.
+// wire shape. It replays the block's own transaction list through the same
+// witness builder as debug_executionWitnessForTxList, so both endpoints emit
+// identical witness content for a canonical block.
 func executionWitnessForBlock(bc *core.BlockChain, block *types.Block) (*executionWitness, error) {
-	parent := bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
-	if parent == nil {
-		return &executionWitness{}, fmt.Errorf("block %v found, but parent missing", block.Number())
-	}
-	config := core.ExecuteConfig{
-		WriteState:   false,
-		EnableTracer: false,
-		MakeWitness:  true,
-	}
-	result, err := bc.ProcessBlock(context.Background(), parent.Root, block, config)
+	witness, _, err := buildTxListWitness(bc, block, block.Transactions(), txListWitnessOptions{})
 	if err != nil {
 		return nil, err
 	}
-	return newExecutionWitness(result.Witness())
+	return newExecutionWitness(witness)
 }
