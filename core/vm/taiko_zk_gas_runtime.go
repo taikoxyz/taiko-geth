@@ -256,13 +256,34 @@ func (t *ZkGasStepTracker) markSpawn(depth int, matches func(byte) bool) {
 	}
 }
 
+// CHANGE(taiko): zkGasStaticContextHaltsBeforeBody reports opcodes whose REVM
+// instruction body halts on its static-context check before any in-body
+// charge, while go-ethereum surfaces the same failure only after computing
+// memory sizes or dynamic gas. The same opcodes are the ones whose operand and
+// memory-cost overflows REVM surfaces around those in-body charges (initcode
+// cost, topic+data cost) instead of after a fronted constant, so this
+// predicate also gates the in-body overflow reconstructions. SSTORE, TSTORE,
+// SELFDESTRUCT, and CALL with value fail earlier here — in the dynamic-gas
+// functions with ErrWriteProtection or in opcode execution — and never reach
+// the paths this predicate guards.
+func zkGasStaticContextHaltsBeforeBody(op OpCode) bool {
+	switch {
+	case op == CREATE || op == CREATE2:
+		return true
+	case op >= LOG0 && op <= LOG4:
+		return true
+	}
+	return false
+}
+
 // CHANGE(taiko): zkGasDynamicOOGGasAfter mirrors REVM's callback-visible gas
 // for dynamic-cost shortfalls caught before go-ethereum executes the opcode.
 func zkGasDynamicOOGGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, memorySize, memoryLastGasCost, gasBefore, gasAfterStatic uint64) uint64 {
-	// REVM's CREATE-family static-context check halts before any charge, so a
-	// dynamic-gas shortfall go-ethereum catches first must preserve the gas.
-	if (op == CREATE || op == CREATE2) && evm.readOnly {
-		return gasBefore
+	// REVM's static-context check for these opcodes halts before any in-body
+	// charge, so a dynamic-gas shortfall go-ethereum catches first must meter
+	// only the table static gas.
+	if evm.readOnly && zkGasStaticContextHaltsBeforeBody(op) {
+		return zkGasPreExecutionGasAfter(op, gasBefore)
 	}
 	preMemoryCost, gasBeforePreMemory, ok := zkGasPreMemoryCost(evm, op, stack, gasBefore, gasAfterStatic)
 	if !ok {
@@ -483,14 +504,67 @@ func zkGasCreate2SaltUnderflowGasAfter(evm *EVM, stack *Stack, mem *Memory, gasB
 	return gasAfter
 }
 
+// CHANGE(taiko): zkGasLogShortfallGasAfter mirrors REVM's callback-visible gas
+// for LOG steps that fail before go-ethereum charges dynamic gas. go-ethereum
+// fronts no constant gas for LOG, while REVM deducts the 375 table static in
+// step() and then charges in instruction order: the static-context check and a
+// length operand beyond 64 bits halt before the topic+data charge, the
+// saturating topic+data cost spends all remaining gas when it cannot be paid,
+// and offset-operand or memory-expansion failures halt preserving the gas left
+// after that charge.
+func zkGasLogShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, gasBefore uint64) uint64 {
+	if evm.readOnly {
+		return zkGasPreExecutionGasAfter(op, gasBefore)
+	}
+	staticGas := zkGasRevmStaticGas[op]
+	if gasBefore < staticGas {
+		return 0
+	}
+	gasAfterStatic := gasBefore - staticGas
+	size, overflow := stack.Back(1).Uint64WithOverflow()
+	if overflow {
+		return gasAfterStatic
+	}
+	dataGas, overflow := math.SafeMul(size, params.LogDataGas)
+	if overflow {
+		return 0
+	}
+	bodyCost, overflow := math.SafeAdd(uint64(op-LOG0)*params.LogTopicGas, dataGas)
+	if overflow || gasAfterStatic < bodyCost {
+		return 0
+	}
+	gasAfterBody := gasAfterStatic - bodyCost
+	if size == 0 {
+		return gasAfterBody
+	}
+	memSize, overflow := calcMemSize64(stack.Back(0), stack.Back(1))
+	if overflow {
+		return gasAfterBody
+	}
+	alignedMemSize, overflow := math.SafeMul(toWordSize(memSize), 32)
+	if overflow {
+		return gasAfterBody
+	}
+	memoryCost, _, _, ok := zkGasMemoryExpansionCost(uint64(mem.Len()), mem.lastGasCost, alignedMemSize)
+	if !ok || gasAfterBody < memoryCost {
+		return gasAfterBody
+	}
+	return gasAfterBody - memoryCost
+}
+
 // CHANGE(taiko): zkGasMemorySizeOverflowGasAfter picks the REVM-mirroring
 // charge for memory-size operand overflows. Most opcodes surface these after
 // REVM already deducted its table static gas (matching go-ethereum's
 // constant-gas deduction), but CREATE-family operand overflows halt REVM
-// around its in-body initcode charge instead of the fronted 32000 base cost.
+// around its in-body initcode charge instead of the fronted 32000 base cost,
+// and LOG operand overflows halt REVM around its in-body topic+data charge
+// while go-ethereum fronts nothing.
 func zkGasMemorySizeOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, gasBefore, gasAfterStatic uint64) uint64 {
-	if op == CREATE || op == CREATE2 {
+	switch {
+	case op == CREATE || op == CREATE2:
 		return zkGasCreateShortfallGasAfter(evm, stack, mem, gasBefore)
+	case op >= LOG0 && op <= LOG4:
+		return zkGasLogShortfallGasAfter(evm, op, stack, mem, gasBefore)
 	}
 	return gasAfterStatic
 }

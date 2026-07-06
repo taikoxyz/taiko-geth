@@ -312,10 +312,12 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 				}
 				// CHANGE(taiko): a CREATE-family memory cost beyond the uint64
 				// cap halts REVM while preserving the gas left after its
-				// initcode charge, so it must be metered instead of skipped.
-				if evm.zkGasTracker != nil && evm.zkGasErr == nil && (op == CREATE || op == CREATE2) && errors.Is(err, ErrGasUintOverflow) {
+				// initcode charge, and a LOG operand or memory cost beyond the
+				// cap halts REVM around its in-body topic+data charge, so both
+				// must be metered instead of skipped.
+				if evm.zkGasTracker != nil && evm.zkGasErr == nil && errors.Is(err, ErrGasUintOverflow) && zkGasStaticContextHaltsBeforeBody(op) {
 					evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
-					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasCreateShortfallGasAfter(evm, stack, mem, gasBefore)); zkErr != nil {
+					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasMemorySizeOverflowGasAfter(evm, op, stack, mem, gasBefore, gasAfterStatic)); zkErr != nil {
 						evm.setZkGasErr()
 						return nil, ErrZkGasLimitExceeded
 					}

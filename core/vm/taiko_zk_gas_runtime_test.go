@@ -1291,12 +1291,20 @@ func TestUnzenZkGas_CreateSpawnLimitLeavesCreatedAccountUntouched(t *testing.T) 
 
 func newCreateShortfallEVM(t *testing.T, outerCode []byte, extraContracts map[common.Address][]byte) (*ZkGasMeter, *EVM) {
 	t.Helper()
+	return newOpcodeMirrorEVM(t, outerCode, extraContracts, CREATE, CREATE2)
+}
+
+// newOpcodeMirrorEVM builds a metered EVM whose schedule counts only the given
+// opcodes (multiplier 1), so a test's TxZkGasUsed isolates their charges.
+func newOpcodeMirrorEVM(t *testing.T, outerCode []byte, extraContracts map[common.Address][]byte, meteredOps ...OpCode) (*ZkGasMeter, *EVM) {
+	t.Helper()
 
 	schedule := &ZkGasSchedule{BlockLimit: 1 << 40}
 	schedule.SpawnEstimates.Create = 37_000
 	schedule.SpawnEstimates.Create2 = 44_500
-	schedule.OpcodeMultipliers[byte(CREATE)] = 1
-	schedule.OpcodeMultipliers[byte(CREATE2)] = 1
+	for _, op := range meteredOps {
+		schedule.OpcodeMultipliers[byte(op)] = 1
+	}
 
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
@@ -1604,5 +1612,189 @@ func TestUnzenZkGas_Create2SaltUnderflowInStaticContextChargesNothing(t *testing
 	}
 	if got := meter.TxZkGasUsed(); got != 0 {
 		t.Fatalf("TxZkGasUsed = %d, want 0 for a static-context CREATE2 salt underflow", got)
+	}
+}
+
+func TestUnzenZkGas_LogShortfallMirrorsReferenceChargeOrder(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		op      OpCode
+		code    []byte
+		callGas uint64
+		wantErr error
+		want    uint64
+	}{
+		{
+			// Length operand beyond 64 bits halts the reference before its
+			// topic+data charge, preserving gas: only the 375 static counts.
+			name:    "log0 length overflow charges static gas",
+			op:      LOG0,
+			code:    common.Hex2Bytes("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff6000a000"),
+			callGas: 100_000,
+			wantErr: ErrGasUintOverflow,
+			want:    375,
+		},
+		{
+			// Offset operand beyond 64 bits halts after the topic+data charge
+			// (8*0x20 = 256), preserving gas.
+			name:    "log0 offset overflow charges static and data gas",
+			op:      LOG0,
+			code:    common.Hex2Bytes("60207fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa000"),
+			callGas: 100_000,
+			wantErr: ErrGasUintOverflow,
+			want:    631,
+		},
+		{
+			// Same as above with one topic: 375 static + 375 topic + 256 data.
+			name:    "log1 offset overflow includes topic gas",
+			op:      LOG1,
+			code:    common.Hex2Bytes("600060207fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa100"),
+			callGas: 100_000,
+			wantErr: ErrGasUintOverflow,
+			want:    1006,
+		},
+		{
+			// Memory size beyond go-ethereum's cost cap errors in the dynamic
+			// gas function; the reference charges topic+data, then halts
+			// preserving on the memory expansion.
+			name:    "log0 memory cost cap charges static and data gas",
+			op:      LOG0,
+			code:    common.Hex2Bytes("602065020000000000a000"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    631,
+		},
+		{
+			// A data cost beyond 64 bits saturates in the reference and the
+			// failed charge spends all remaining gas.
+			name:    "log0 saturating data cost spends all",
+			op:      LOG0,
+			code:    common.Hex2Bytes("6740000000000000006000a000"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    99_994,
+		},
+		{
+			// Affordable topic+data but unaffordable memory expansion: the
+			// pre-existing reconstruction path, kept as a regression.
+			name:    "log0 unaffordable memory charges static and data gas",
+			op:      LOG0,
+			code:    common.Hex2Bytes("602063ffffffffa000"),
+			callGas: 20_000,
+			wantErr: ErrOutOfGas,
+			want:    631,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, tt.callGas, new(uint256.Int))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Call err = %v, want %v", err, tt.wantErr)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_LogInStaticContextChargesStaticGas(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	for _, tt := range []struct {
+		name      string
+		op        OpCode
+		innerCode []byte
+	}{
+		// The reference halts every static-context LOG on its write-protection
+		// check before any in-body charge, so only the 375 table static (paid
+		// before the instruction body) is visible, regardless of which
+		// go-ethereum guard catches the failure first.
+		{
+			name:      "unaffordable memory",
+			op:        LOG0,
+			innerCode: common.Hex2Bytes("61100063ffffffffa000"),
+		},
+		{
+			name:      "unaffordable memory with topics",
+			op:        LOG2,
+			innerCode: common.Hex2Bytes("6000600061100063ffffffffa200"),
+		},
+		{
+			name:      "length overflow",
+			op:        LOG0,
+			innerCode: common.Hex2Bytes("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff6000a000"),
+		},
+		{
+			name:      "memory cost cap",
+			op:        LOG0,
+			innerCode: common.Hex2Bytes("602065020000000000a000"),
+		},
+		{
+			name:      "affordable write protection",
+			op:        LOG0,
+			innerCode: common.Hex2Bytes("60206000a000"),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+				innerAddr: tt.innerCode,
+			}, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got, want := meter.TxZkGasUsed(), zkGasRevmStaticGas[tt.op]; got != want {
+				t.Fatalf("TxZkGasUsed = %d, want %d for a static-context %v", got, want, tt.op)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_TstoreInStaticContextChargesStaticGas(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	innerCode := common.Hex2Bytes("600060005d00")
+	meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+		innerAddr: innerCode,
+	}, TSTORE)
+
+	_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+	if err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+	if got, want := meter.TxZkGasUsed(), zkGasRevmStaticGas[TSTORE]; got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d for a static-context TSTORE", got, want)
+	}
+}
+
+func TestUnzenZkGas_SstoreSentryChargesNothing(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	innerCode := common.Hex2Bytes("600160005500")
+	for _, tt := range []struct {
+		name  string
+		outer []byte
+	}{
+		// Reentrancy sentry: the child frame holds exactly 2300 gas at the
+		// SSTORE, tripping the EIP-2200 sentry in the dynamic gas function.
+		// The reference halts gas-preserving after its zero table static.
+		{"sentry", spawnBoundaryCallCodeWithGas(CALL, innerAddr, 2306)},
+		// Static context: the dynamic gas function fails with write
+		// protection, which meters the zero table static.
+		{"static context", spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.outer, map[common.Address][]byte{
+				innerAddr: innerCode,
+			}, SSTORE)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got := meter.TxZkGasUsed(); got != 0 {
+				t.Fatalf("TxZkGasUsed = %d, want 0 for an SSTORE %s failure", got, tt.name)
+			}
+		})
 	}
 }
