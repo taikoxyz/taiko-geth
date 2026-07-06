@@ -212,6 +212,13 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 				if op == CREATE2 && sLen == 3 {
 					gasAfterUnderflow = zkGasCreate2SaltUnderflowGasAfter(evm, stack, mem, gasBefore)
 				}
+				// CHANGE(taiko): LOG pops its topics only after REVM charges
+				// the topic+data cost and memory expansion, so a stack holding
+				// the two memory operands but missing topics must meter those
+				// in-body charges the same way.
+				if op >= LOG1 && op <= LOG4 && sLen >= 2 {
+					gasAfterUnderflow = zkGasLogShortfallGasAfter(evm, op, stack, mem, gasBefore)
+				}
 				if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, gasAfterUnderflow); zkErr != nil {
 					evm.setZkGasErr()
 					return nil, ErrZkGasLimitExceeded
@@ -310,14 +317,17 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 						return nil, ErrZkGasLimitExceeded
 					}
 				}
-				// CHANGE(taiko): a CREATE-family memory cost beyond the uint64
-				// cap halts REVM while preserving the gas left after its
-				// initcode charge, so it must be metered instead of skipped.
-				if evm.zkGasTracker != nil && evm.zkGasErr == nil && (op == CREATE || op == CREATE2) && errors.Is(err, ErrGasUintOverflow) {
-					evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
-					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasCreateShortfallGasAfter(evm, stack, mem, gasBefore)); zkErr != nil {
-						evm.setZkGasErr()
-						return nil, ErrZkGasLimitExceeded
+				// CHANGE(taiko): memory costs beyond go-ethereum's uint64 cap
+				// halt REVM around the affected opcode's in-body charges
+				// (initcode, topic+data, per-word, or memory expansion), so
+				// they must be metered instead of skipped.
+				if evm.zkGasTracker != nil && evm.zkGasErr == nil && errors.Is(err, ErrGasUintOverflow) {
+					if gasAfterOverflow, handled := zkGasDynamicUintOverflowGasAfter(evm, op, stack, mem, gasBefore, gasAfterStatic); handled {
+						evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+						if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, gasAfterOverflow); zkErr != nil {
+							evm.setZkGasErr()
+							return nil, ErrZkGasLimitExceeded
+						}
 					}
 				}
 				return nil, fmt.Errorf("%w: %v", ErrOutOfGas, err)
