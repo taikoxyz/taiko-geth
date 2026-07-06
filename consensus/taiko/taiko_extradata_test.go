@@ -46,6 +46,7 @@ func TestVerifyHeaderShastaExtraDataShapes(t *testing.T) {
 		{"flag format (2 bytes)", []byte{75, 0}, ""},
 		{"empty", nil, ""},
 		{"proposal-id format (7 bytes)", []byte{75, 0, 0, 0, 0, 0x4c, 0x81}, ""},
+		{"unknown shape accepted with warning (3 bytes)", []byte{75, 0, 1}, ""},
 		{"over maximum", make([]byte, params.MaximumExtraDataSize+1), "extra-data too long"},
 	}
 	for _, tt := range tests {

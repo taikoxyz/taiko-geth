@@ -135,15 +135,18 @@ const (
 	InitialBaseFee                  = 1000000000 // Initial base fee for EIP-1559 blocks.
 	ShastaInitialBaseFee            = 25_000_000 // CHANGE(taiko): add ShastaInitialBaseFee for Shasta fork
 
-	// CHANGE(taiko): extraData layout for Shasta blocks. The basefee-sharing
+	// CHANGE(taiko): extraData layouts for Shasta blocks. The basefee-sharing
 	// pctg always sits at byte 0; the trailing proposalId exists only under the
-	// proposal-id-bearing layout ([pctg | proposalId(6)]). Flag-based extraData
-	// ([pctg, isLowBondProposal], 2 bytes) carries no proposalId, so consumers
-	// must treat it as optional and no header rule enforces ShastaExtraDataLen.
+	// proposal-id-bearing layout ([pctg | proposalId(6)]) found in existing
+	// chain history. Flag-based extraData ([pctg, isLowBondProposal], 2 bytes)
+	// is what current drivers emit and carries no proposalId, so consumers must
+	// treat it as optional; no header rule enforces either length (only the
+	// 32-byte cap), other lengths are accepted with a warning.
 	ShastaExtraDataBasefeeSharingPctgIndex = 0
 	ShastaExtraDataProposalIDIndex         = 1
 	ShastaExtraDataProposalIDLength        = 6
 	ShastaExtraDataLen                     = 1 + ShastaExtraDataProposalIDLength
+	ShastaExtraDataFlagFormatLen           = 2
 
 	MaxCodeSize              = 24576                    // Maximum bytecode to permit for a contract
 	MaxInitCodeSize          = 2 * MaxCodeSize          // Maximum initcode to permit in a creation transaction and create instructions
