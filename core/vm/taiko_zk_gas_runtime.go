@@ -203,6 +203,24 @@ func (t *ZkGasStepTracker) MarkCreateSpawn(depth int) {
 	})
 }
 
+// CHANGE(taiko): ChargePendingSpawn charges a marked CALL/CREATE-family step
+// before child execution can run. It clears the pending step on success so the
+// interpreter's post-op FinishAndCharge path does not charge the same spawn twice.
+func (t *ZkGasStepTracker) ChargePendingSpawn(depth int) error {
+	if depth < 0 || depth >= len(t.pending) || t.pending[depth] == nil {
+		return nil
+	}
+	step := t.pending[depth]
+	if !step.spawned || !IsSpawnOpcode(OpCode(step.opcode)) {
+		return nil
+	}
+	if err := t.meter.ChargeOpcode(step.opcode, t.meter.SpawnEstimate(step.opcode)); err != nil {
+		return err
+	}
+	t.pending[depth] = nil
+	return nil
+}
+
 // CHANGE(taiko): FinishAndCharge applies the canonical raw gas rule for the pending opcode.
 func (t *ZkGasStepTracker) FinishAndCharge(depth int, gasAfter uint64) error {
 	if depth >= len(t.pending) || t.pending[depth] == nil {
