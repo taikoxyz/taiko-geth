@@ -215,7 +215,11 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchIdWithLimit(batchID *big.Int, m
 		}
 		proposalID, err := core.DecodeShastaProposalID(currentBlock.Header().Extra)
 		if err != nil {
-			return nil, err
+			// CHANGE(taiko): flag-format extraData carries no embedded proposalId;
+			// those blocks are resolved through the driver-pushed batch mapping
+			// (SetBatchToLastBlock), so skip them instead of failing the walk.
+			currentBlock = a.eth.BlockChain().GetBlockByNumber(currentBlock.NumberU64() - 1)
+			continue
 		}
 		if proposalID.Cmp(batchID) < 0 {
 			return nil, ethereum.NotFound

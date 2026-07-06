@@ -135,7 +135,11 @@ const (
 	InitialBaseFee                  = 1000000000 // Initial base fee for EIP-1559 blocks.
 	ShastaInitialBaseFee            = 25_000_000 // CHANGE(taiko): add ShastaInitialBaseFee for Shasta fork
 
-	// CHANGE(taiko): extraData layout for Shasta blocks.
+	// CHANGE(taiko): extraData layout for Shasta blocks. The basefee-sharing
+	// pctg always sits at byte 0; the trailing proposalId exists only under the
+	// proposal-id-bearing layout ([pctg | proposalId(6)]). Flag-based extraData
+	// ([pctg, isLowBondProposal], 2 bytes) carries no proposalId, so consumers
+	// must treat it as optional and no header rule enforces ShastaExtraDataLen.
 	ShastaExtraDataBasefeeSharingPctgIndex = 0
 	ShastaExtraDataProposalIDIndex         = 1
 	ShastaExtraDataProposalIDLength        = 6

@@ -203,10 +203,11 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	}
 
 	// Verify the header's EIP-4396 attributes.
+	// CHANGE(taiko): Shasta extraData is driver-authored and its layout varies by
+	// inbox generation ([pctg | proposalId(6)] historically, [pctg, isLowBondProposal]
+	// currently), so no minimum length is enforced — only the 32-byte cap above.
+	// Consumers must treat the embedded proposalId as optional.
 	if t.chainConfig.IsShasta(header.Time) {
-		if len(header.Extra) < params.ShastaExtraDataLen {
-			return fmt.Errorf("Shasta extra-data too short: %d < %d", len(header.Extra), params.ShastaExtraDataLen)
-		}
 		if header.Number.Cmp(common.Big1) > 0 {
 			if ancestorBlock := chain.GetHeader(parent.ParentHash, parent.Number.Uint64()-1); ancestorBlock != nil {
 				if err := misc.VerifyEIP4396Header(t.chainConfig, parent, parent.Time-ancestorBlock.Time, header); err != nil {
