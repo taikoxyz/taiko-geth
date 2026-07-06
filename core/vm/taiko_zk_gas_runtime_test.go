@@ -2124,3 +2124,56 @@ func TestUnzenZkGas_MemoryShortfallAlignedWindowsRegression(t *testing.T) {
 		})
 	}
 }
+
+func TestUnzenZkGas_StaticCallValueHaltsBeforeMemoryCharges(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	pushMax := "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	target := append([]byte{byte(PUSH20)}, make([]byte, 20)...)
+	tail := []byte{0x61, 0xff, 0xff}
+	for _, tt := range []struct {
+		name      string
+		op        OpCode
+		innerCode []byte
+		want      uint64
+	}{
+		{
+			// A value-bearing CALL in a static frame halts the reference
+			// right after its three leading pops, before the memory ranges
+			// are resized, so the input expansion must not be metered.
+			name:      "call with value halts at static gas",
+			op:        CALL,
+			innerCode: append(append(append(common.Hex2Bytes("6020"+pushMax+"602060006001"), target...), tail...), 0xf1, 0x00),
+			want:      100,
+		},
+		{
+			// Without value the reference proceeds into the memory ranges
+			// and charges the input expansion before the output halt.
+			name:      "call without value charges input memory",
+			op:        CALL,
+			innerCode: append(append(append(common.Hex2Bytes("6020"+pushMax+"602060006000"), target...), tail...), 0xf1, 0x00),
+			want:      103,
+		},
+		{
+			// CALLCODE may carry value in a static frame, so the reference
+			// also proceeds into the memory ranges.
+			name:      "callcode with value charges input memory",
+			op:        CALLCODE,
+			innerCode: append(append(append(common.Hex2Bytes("6020"+pushMax+"602060006001"), target...), tail...), 0xf2, 0x00),
+			want:      103,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+				innerAddr: tt.innerCode,
+			}, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

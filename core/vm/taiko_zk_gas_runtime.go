@@ -289,7 +289,7 @@ func zkGasDynamicUintOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Me
 	case op == KECCAK256 || op == CALLDATACOPY || op == CODECOPY || op == RETURNDATACOPY || op == MCOPY || op == EXTCODECOPY:
 		return zkGasCopyShortfallGasAfter(evm, op, stack, mem, gasBefore), true
 	case op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL:
-		return zkGasCallShortfallGasAfter(op, stack, mem, gasBefore), true
+		return zkGasCallShortfallGasAfter(evm, op, stack, mem, gasBefore), true
 	case op == MLOAD || op == MSTORE || op == MSTORE8 || op == RETURN || op == REVERT:
 		// No in-body charge precedes REVM's gas-preserving memory halt for
 		// these opcodes, so only the table static gas is visible.
@@ -303,13 +303,17 @@ func zkGasDynamicUintOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Me
 // charges dynamic gas. REVM resizes and charges the input range before the
 // output range, and every operand or expansion failure in either range halts
 // preserving gas, so an output-side failure keeps the input expansion charge
-// visible on top of the table static.
-func zkGasCallShortfallGasAfter(op OpCode, stack *Stack, mem *Memory, gasBefore uint64) uint64 {
+// visible on top of the table static. A value-bearing CALL in a static frame
+// halts right after the three leading pops, before either memory range.
+func zkGasCallShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, gasBefore uint64) uint64 {
 	staticGas := zkGasRevmStaticGas[op]
 	if gasBefore < staticGas {
 		return 0
 	}
 	gas := gasBefore - staticGas
+	if op == CALL && evm.readOnly && !stack.Back(2).IsZero() {
+		return gas
+	}
 	inOffset, inSize, outOffset, outSize := 3, 4, 5, 6
 	if op == DELEGATECALL || op == STATICCALL {
 		inOffset, inSize, outOffset, outSize = 2, 3, 4, 5
@@ -703,7 +707,7 @@ func zkGasMemorySizeOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Mem
 	case op == KECCAK256 || op == CALLDATACOPY || op == CODECOPY || op == RETURNDATACOPY || op == MCOPY || op == EXTCODECOPY:
 		return zkGasCopyShortfallGasAfter(evm, op, stack, mem, gasBefore)
 	case op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL:
-		return zkGasCallShortfallGasAfter(op, stack, mem, gasBefore)
+		return zkGasCallShortfallGasAfter(evm, op, stack, mem, gasBefore)
 	}
 	return gasAfterStatic
 }
