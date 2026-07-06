@@ -259,13 +259,10 @@ func (t *ZkGasStepTracker) markSpawn(depth int, matches func(byte) bool) {
 // CHANGE(taiko): zkGasStaticContextHaltsBeforeBody reports opcodes whose REVM
 // instruction body halts on its static-context check before any in-body
 // charge, while go-ethereum surfaces the same failure only after computing
-// memory sizes or dynamic gas. The same opcodes are the ones whose operand and
-// memory-cost overflows REVM surfaces around those in-body charges (initcode
-// cost, topic+data cost) instead of after a fronted constant, so this
-// predicate also gates the in-body overflow reconstructions. SSTORE, TSTORE,
-// SELFDESTRUCT, and CALL with value fail earlier here — in the dynamic-gas
-// functions with ErrWriteProtection or in opcode execution — and never reach
-// the paths this predicate guards.
+// memory sizes or dynamic gas. SSTORE, TSTORE, SELFDESTRUCT, and CALL with
+// value fail earlier here — in the dynamic-gas functions with
+// ErrWriteProtection or in opcode execution — and never reach the paths this
+// predicate guards.
 func zkGasStaticContextHaltsBeforeBody(op OpCode) bool {
 	switch {
 	case op == CREATE || op == CREATE2:
@@ -276,6 +273,30 @@ func zkGasStaticContextHaltsBeforeBody(op OpCode) bool {
 	return false
 }
 
+// CHANGE(taiko): zkGasDynamicUintOverflowGasAfter resolves the REVM-mirroring
+// charge when a dynamic gas function fails with a uint64 overflow. go-ethereum
+// caps memory sizes inside memoryGasCost, while REVM prices any size with
+// saturating arithmetic and fails the resulting charge in its in-body order:
+// pre-memory word costs spend all remaining gas when unpayable, and the memory
+// expansion charge halts preserving gas. The boolean reports whether the
+// opcode has a mirrored reconstruction.
+func zkGasDynamicUintOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, gasBefore, gasAfterStatic uint64) (uint64, bool) {
+	switch {
+	case op == CREATE || op == CREATE2:
+		return zkGasCreateShortfallGasAfter(evm, stack, mem, gasBefore), true
+	case op >= LOG0 && op <= LOG4:
+		return zkGasLogShortfallGasAfter(evm, op, stack, mem, gasBefore), true
+	case op == KECCAK256 || op == CALLDATACOPY || op == CODECOPY || op == RETURNDATACOPY || op == MCOPY || op == EXTCODECOPY:
+		return zkGasCopyShortfallGasAfter(evm, op, stack, mem, gasBefore), true
+	case op == MLOAD || op == MSTORE || op == MSTORE8 || op == RETURN || op == REVERT ||
+		op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL:
+		// No in-body charge precedes REVM's gas-preserving memory halt for
+		// these opcodes, so only the table static gas is visible.
+		return zkGasPreExecutionGasAfter(op, gasBefore), true
+	}
+	return gasAfterStatic, false
+}
+
 // CHANGE(taiko): zkGasDynamicOOGGasAfter mirrors REVM's callback-visible gas
 // for dynamic-cost shortfalls caught before go-ethereum executes the opcode.
 func zkGasDynamicOOGGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, memorySize, memoryLastGasCost, gasBefore, gasAfterStatic uint64) uint64 {
@@ -284,6 +305,11 @@ func zkGasDynamicOOGGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, mem
 	// only the table static gas.
 	if evm.readOnly && zkGasStaticContextHaltsBeforeBody(op) {
 		return zkGasPreExecutionGasAfter(op, gasBefore)
+	}
+	// RETURNDATACOPY validates its source range before REVM's copy charge, so
+	// its shortfall reconstruction must apply that bounds check first.
+	if op == RETURNDATACOPY {
+		return zkGasCopyShortfallGasAfter(evm, op, stack, mem, gasBefore)
 	}
 	preMemoryCost, gasBeforePreMemory, ok := zkGasPreMemoryCost(evm, op, stack, gasBefore, gasAfterStatic)
 	if !ok {
@@ -552,19 +578,92 @@ func zkGasLogShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, g
 	return gasAfterBody - memoryCost
 }
 
+// CHANGE(taiko): zkGasCopyShortfallGasAfter mirrors REVM's callback-visible
+// gas for KECCAK256 and copy-family steps that fail before go-ethereum charges
+// dynamic gas. REVM charges in instruction order: the table static in step(),
+// a gas-preserving halt on a length operand beyond 64 bits (and, for
+// RETURNDATACOPY, on a source range outside the return buffer), the saturating
+// per-word cost (spending all remaining gas when it cannot be paid), then
+// gas-preserving halts on offset operands and memory expansion. EXTCODECOPY's
+// trailing cold-access surcharge spends all remaining gas when it cannot be
+// paid.
+func zkGasCopyShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, gasBefore uint64) uint64 {
+	staticGas := zkGasRevmStaticGas[op]
+	if gasBefore < staticGas {
+		return 0
+	}
+	gasAfterStatic := gasBefore - staticGas
+	lenIndex, perWordGas := 2, params.CopyGas
+	switch op {
+	case KECCAK256:
+		lenIndex, perWordGas = 1, params.Keccak256WordGas
+	case EXTCODECOPY:
+		lenIndex = 3
+	}
+	size, overflow := stack.Back(lenIndex).Uint64WithOverflow()
+	if overflow {
+		return gasAfterStatic
+	}
+	if op == RETURNDATACOPY {
+		dataOffset, overflow := stack.Back(1).Uint64WithOverflow()
+		if overflow {
+			dataOffset = ^uint64(0)
+		}
+		dataEnd, overflow := math.SafeAdd(dataOffset, size)
+		if overflow || dataEnd > uint64(len(evm.returnData)) {
+			return gasAfterStatic
+		}
+	}
+	copyCost, ok := zkGasWordCost(stack.Back(lenIndex), perWordGas)
+	if !ok || gasAfterStatic < copyCost {
+		return 0
+	}
+	gasAfterCopy := gasAfterStatic - copyCost
+	memOffsetIndex := 0
+	if op == EXTCODECOPY {
+		memOffsetIndex = 1
+	}
+	memSize, overflow := calcMemSize64(stack.Back(memOffsetIndex), stack.Back(lenIndex))
+	if overflow {
+		return gasAfterCopy
+	}
+	if op == MCOPY {
+		srcSize, srcOverflow := calcMemSize64(stack.Back(1), stack.Back(lenIndex))
+		if srcOverflow {
+			return gasAfterCopy
+		}
+		if srcSize > memSize {
+			memSize = srcSize
+		}
+	}
+	alignedMemSize, overflow := math.SafeMul(toWordSize(memSize), 32)
+	if overflow {
+		return gasAfterCopy
+	}
+	memoryCost, _, _, ok := zkGasMemoryExpansionCost(uint64(mem.Len()), mem.lastGasCost, alignedMemSize)
+	if !ok || gasAfterCopy < memoryCost {
+		return gasAfterCopy
+	}
+	if op == EXTCODECOPY {
+		return 0
+	}
+	return gasAfterCopy - memoryCost
+}
+
 // CHANGE(taiko): zkGasMemorySizeOverflowGasAfter picks the REVM-mirroring
 // charge for memory-size operand overflows. Most opcodes surface these after
 // REVM already deducted its table static gas (matching go-ethereum's
-// constant-gas deduction), but CREATE-family operand overflows halt REVM
-// around its in-body initcode charge instead of the fronted 32000 base cost,
-// and LOG operand overflows halt REVM around its in-body topic+data charge
-// while go-ethereum fronts nothing.
+// constant-gas deduction), but CREATE-family, LOG, KECCAK256, and copy-family
+// operand overflows halt REVM around their in-body charges (initcode cost,
+// topic+data cost, per-word cost) instead of after a fronted constant.
 func zkGasMemorySizeOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, gasBefore, gasAfterStatic uint64) uint64 {
 	switch {
 	case op == CREATE || op == CREATE2:
 		return zkGasCreateShortfallGasAfter(evm, stack, mem, gasBefore)
 	case op >= LOG0 && op <= LOG4:
 		return zkGasLogShortfallGasAfter(evm, op, stack, mem, gasBefore)
+	case op == KECCAK256 || op == CALLDATACOPY || op == CODECOPY || op == RETURNDATACOPY || op == MCOPY || op == EXTCODECOPY:
+		return zkGasCopyShortfallGasAfter(evm, op, stack, mem, gasBefore)
 	}
 	return gasAfterStatic
 }
@@ -579,6 +678,11 @@ func zkGasStepGasAfter(op OpCode, err error, gasBefore, gasAfter uint64) uint64 
 	}
 	if err == ErrWriteProtection && op >= LOG0 && op <= LOG4 && gasBefore >= params.LogGas {
 		return gasBefore - params.LogGas
+	}
+	// REVM validates the return-data source range before charging its copy and
+	// memory costs, so only the table static gas is visible.
+	if err == ErrReturnDataOutOfBounds && op == RETURNDATACOPY {
+		return zkGasPreExecutionGasAfter(op, gasBefore)
 	}
 	// Opcodes REVM ships behind a fork gate Unzen does not enable execute as
 	// undefined opcodes here (no gas movement), but REVM deducts their table
