@@ -924,6 +924,12 @@ func executeUnzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[c
 var spawnBoundaryOuterAddr = common.HexToAddress("0x1000000000000000000000000000000000000000")
 
 func spawnBoundaryCallCode(opcode OpCode, target common.Address) []byte {
+	return spawnBoundaryCallCodeWithGas(opcode, target, 0x2710)
+}
+
+// spawnBoundaryCallCodeWithGas forwards the given gas to the child frame so
+// tests can steer which shortfall guard a child opcode fails in.
+func spawnBoundaryCallCodeWithGas(opcode OpCode, target common.Address, gas uint16) []byte {
 	code := []byte{
 		byte(PUSH1), 0x00, // retSize
 		byte(PUSH1), 0x00, // retOffset
@@ -935,7 +941,7 @@ func spawnBoundaryCallCode(opcode OpCode, target common.Address) []byte {
 	}
 	code = append(code, byte(PUSH20))
 	code = append(code, target.Bytes()...)
-	code = append(code, byte(PUSH2), 0x27, 0x10, byte(opcode), byte(STOP))
+	code = append(code, byte(PUSH2), byte(gas>>8), byte(gas), byte(opcode), byte(STOP))
 	return code
 }
 
@@ -1417,6 +1423,35 @@ func TestUnzenZkGas_CreateShortfallInStaticContextChargesNothing(t *testing.T) {
 	}
 	if got := meter.TxZkGasUsed(); got != 0 {
 		t.Fatalf("TxZkGasUsed = %d, want 0 for a static-context CREATE shortfall", got)
+	}
+}
+
+func TestUnzenZkGas_CreateDynamicOOGInStaticContextChargesNothing(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	for _, tt := range []struct {
+		name      string
+		innerCode []byte
+	}{
+		// The fronted 32000 constant is affordable but the memory expansion
+		// is not, so the shortfall surfaces in the dynamic-gas guard instead
+		// of the constant-gas one. The reference halts on its static-context
+		// check before charging anything.
+		{"create", common.Hex2Bytes("602063ffffffff6000f000")},
+		{"create2", common.Hex2Bytes("6000602063ffffffff6000f500")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newCreateShortfallEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+				innerAddr: tt.innerCode,
+			})
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got := meter.TxZkGasUsed(); got != 0 {
+				t.Fatalf("TxZkGasUsed = %d, want 0 for a static-context dynamic-gas shortfall", got)
+			}
+		})
 	}
 }
 
