@@ -406,6 +406,90 @@ func zkGasCreatePreMemoryCost(evm *EVM, stack *Stack) (uint64, bool) {
 	return zkGasWordCost(stack.Back(2), params.InitCodeWordGas)
 }
 
+// CHANGE(taiko): zkGasCreateBodyGasAfter reconstructs REVM's in-body
+// CREATE/CREATE2 charge order up to, but not including, the instruction tail
+// that follows the initcode and memory charges. The static-context check and
+// operand/size validation halt before any charge, the EIP-3860 initcode word
+// cost spends all remaining gas when it cannot be paid, and memory expansion
+// halts preserving remaining gas when it cannot be paid. The boolean reports
+// whether REVM reaches that tail with the returned gas still remaining.
+func zkGasCreateBodyGasAfter(evm *EVM, stack *Stack, mem *Memory, gasBefore uint64) (uint64, bool) {
+	if evm.readOnly {
+		return gasBefore, false
+	}
+	size, overflow := stack.Back(2).Uint64WithOverflow()
+	if overflow {
+		return gasBefore, false
+	}
+	if size == 0 {
+		return gasBefore, true
+	}
+	var initcodeCost uint64
+	if evm.chainRules.IsShanghai {
+		if size > params.MaxInitCodeSize {
+			return gasBefore, false
+		}
+		initcodeCost = toWordSize(size) * params.InitCodeWordGas
+	}
+	if gasBefore < initcodeCost {
+		return 0, false
+	}
+	gasAfterInitcode := gasBefore - initcodeCost
+	memSize, overflow := calcMemSize64(stack.Back(1), stack.Back(2))
+	if overflow {
+		return gasAfterInitcode, false
+	}
+	alignedMemSize, overflow := math.SafeMul(toWordSize(memSize), 32)
+	if overflow {
+		return gasAfterInitcode, false
+	}
+	memoryCost, _, _, ok := zkGasMemoryExpansionCost(uint64(mem.Len()), mem.lastGasCost, alignedMemSize)
+	if !ok || gasAfterInitcode < memoryCost {
+		return gasAfterInitcode, false
+	}
+	return gasAfterInitcode - memoryCost, true
+}
+
+// CHANGE(taiko): zkGasCreateShortfallGasAfter mirrors REVM's callback-visible
+// gas for CREATE/CREATE2 steps that fail before go-ethereum reaches the
+// instruction body. go-ethereum fronts the 32000 base cost as constant gas and
+// validates memory sizes before dynamic gas, while REVM charges in instruction
+// order. On every path that funnels here the instruction tail is the trailing
+// base (+ CREATE2 hashing) charge, which cannot be paid and spends all
+// remaining gas.
+func zkGasCreateShortfallGasAfter(evm *EVM, stack *Stack, mem *Memory, gasBefore uint64) uint64 {
+	gasAfter, reachedTail := zkGasCreateBodyGasAfter(evm, stack, mem, gasBefore)
+	if reachedTail {
+		return 0
+	}
+	return gasAfter
+}
+
+// CHANGE(taiko): zkGasCreate2SaltUnderflowGasAfter mirrors REVM's
+// callback-visible gas for a CREATE2 that underflows on its fourth stack
+// operand. REVM pops value, offset, and length first, charges the EIP-3860
+// initcode cost and memory expansion, and only then pops the salt, so this
+// late underflow halts preserving the gas left by those in-body charges and
+// never reaches the trailing base (+ hashing) charge. go-ethereum's up-front
+// stack check fires before any of that and would otherwise meter the step as
+// zero.
+func zkGasCreate2SaltUnderflowGasAfter(evm *EVM, stack *Stack, mem *Memory, gasBefore uint64) uint64 {
+	gasAfter, _ := zkGasCreateBodyGasAfter(evm, stack, mem, gasBefore)
+	return gasAfter
+}
+
+// CHANGE(taiko): zkGasMemorySizeOverflowGasAfter picks the REVM-mirroring
+// charge for memory-size operand overflows. Most opcodes surface these after
+// REVM already deducted its table static gas (matching go-ethereum's
+// constant-gas deduction), but CREATE-family operand overflows halt REVM
+// around its in-body initcode charge instead of the fronted 32000 base cost.
+func zkGasMemorySizeOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, gasBefore, gasAfterStatic uint64) uint64 {
+	if op == CREATE || op == CREATE2 {
+		return zkGasCreateShortfallGasAfter(evm, stack, mem, gasBefore)
+	}
+	return gasAfterStatic
+}
+
 // CHANGE(taiko): zkGasStepGasAfter mirrors REVM's callback-visible gas delta
 // for cases where go-ethereum performs validation after charging dynamic gas.
 // Static LOG/CREATE write-protection values are derived from observed Rust
