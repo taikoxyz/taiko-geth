@@ -2177,3 +2177,79 @@ func TestUnzenZkGas_StaticCallValueHaltsBeforeMemoryCharges(t *testing.T) {
 		})
 	}
 }
+
+func TestUnzenZkGas_LogTopicUnderflowMirrorsReferenceChargeOrder(t *testing.T) {
+	// REVM's LOG pops offset and length, charges the topic+data cost, resizes
+	// memory, and only then pops the topics — so a stack with the two memory
+	// operands but missing topics underflows with those charges collected and
+	// gas preserved. go-ethereum's up-front stack check fires before any of
+	// that and metered only the 375 table static.
+	for _, tt := range []struct {
+		name string
+		op   OpCode
+		code []byte
+		want uint64
+	}{
+		{
+			name: "log1 missing topic charges static and topic gas",
+			op:   LOG1,
+			code: common.Hex2Bytes("60006000a100"),
+			want: 750,
+		},
+		{
+			name: "log2 one topic short charges static and topic gas",
+			op:   LOG2,
+			code: common.Hex2Bytes("600060006000a200"),
+			want: 1_125,
+		},
+		{
+			name: "log4 missing topics charge static and topic gas",
+			op:   LOG4,
+			code: common.Hex2Bytes("60006000a400"),
+			want: 1_875,
+		},
+		{
+			// Nonzero length also collects the data and memory charges
+			// before the topic pop underflows.
+			name: "log1 missing topic with data charges memory too",
+			op:   LOG1,
+			code: common.Hex2Bytes("60206000a100"),
+			want: 1_009,
+		},
+		{
+			// With fewer than the two memory operands REVM underflows on its
+			// first pop, before any in-body charge.
+			name: "log1 single operand charges static gas",
+			op:   LOG1,
+			code: common.Hex2Bytes("6000a100"),
+			want: 375,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 100_000, new(uint256.Int))
+			if v := (*ErrStackUnderflow)(nil); !errors.As(err, &v) {
+				t.Fatalf("Call err = %v, want stack underflow", err)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_LogTopicUnderflowInStaticContextChargesStaticGas(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+		innerAddr: common.Hex2Bytes("60006000a100"),
+	}, LOG1)
+
+	_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+	if err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+	if got := meter.TxZkGasUsed(); got != 375 {
+		t.Fatalf("TxZkGasUsed = %d, want 375 for a static-context LOG1 topic underflow", got)
+	}
+}
