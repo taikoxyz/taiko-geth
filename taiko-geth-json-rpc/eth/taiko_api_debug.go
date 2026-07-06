@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/stateless"
@@ -41,15 +42,28 @@ type txListWitnessOptions struct {
 	SkipZkGasDifficultyCheck bool `json:"skipZkGasDifficultyCheck"`
 }
 
-// decodeTxListWitnessTxs decodes an RLP list of transactions. It errors only on
-// a malformed top-level list; unrecoverable-signer transactions are filtered
-// later during replay, matching block-building behavior.
+// decodeTxListWitnessTxs decodes an RLP list of transactions and drops any
+// whose signature cannot be recovered, mirroring the reference ingestion: list
+// positions are assigned after the drop, so the first remaining transaction —
+// not the first decoded one — takes the first-position fatality role below.
+// It errors only on a malformed top-level list.
 func decodeTxListWitnessTxs(txListRLP []byte) (types.Transactions, error) {
 	var txs types.Transactions
 	if err := rlp.DecodeBytes(txListRLP, &txs); err != nil {
 		return nil, fmt.Errorf("failed to decode tx list: %w", err)
 	}
-	return txs, nil
+	recovered := make(types.Transactions, 0, len(txs))
+	for _, tx := range txs {
+		// Recover with the transaction's own chain id: chain-id and fork-type
+		// mismatches are execution-time skips (like the reference EVM's
+		// validation), while a cryptographically unrecoverable signature drops
+		// the transaction before positions are assigned.
+		if _, err := types.Sender(types.LatestSignerForChainID(tx.ChainId()), tx); err != nil {
+			continue
+		}
+		recovered = append(recovered, tx)
+	}
+	return recovered, nil
 }
 
 // checkTxListSize rejects a transaction list too large to be a valid block list.
@@ -118,6 +132,10 @@ var recoverableNonAnchorTxErrors = []error{
 	core.ErrEmptyAuthList,
 	core.ErrSetCodeTxCreate,
 	core.ErrGasLimitTooHigh,
+	// CHANGE(taiko): the reference EVM reports an over-limit initcode as an
+	// invalid-transaction validation error, which its replay skips like the
+	// rest of this set.
+	vm.ErrMaxInitCodeSizeExceeded,
 }
 
 func isRecoverableNonAnchorTxError(err error) bool {
@@ -131,9 +149,12 @@ func isRecoverableNonAnchorTxError(err error) bool {
 
 // CHANGE(taiko): buildTxListWitness replays txs on top of the parent state of
 // `block` and returns the collected execution witness plus the committed
-// (post-filter) transactions. It mirrors the block-builder's filtering: the
-// anchor (index 0) must succeed; non-anchor failures are skipped; a non-anchor
-// zk-gas-limit error truncates the block.
+// (post-filter) transactions. It mirrors the reference replay: the first
+// transaction must succeed (any failure there is fatal), later failures in the
+// recoverable class are skipped, and a zk-gas-limit error truncates the block.
+// Anchor execution exemptions follow the reference identity — the golden-touch
+// sender, its block-start nonce, and the treasury target — at any position,
+// independent of transaction type.
 func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Transactions, opts txListWitnessOptions) (*stateless.Witness, types.Transactions, error) {
 	config := bc.Config()
 	header := block.Header() // copy; safe to mutate during finalize
@@ -193,25 +214,39 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	gasPool := core.NewGasPool(header.GasLimit)
 	rules := config.Rules(header.Number, true, header.Time)
 	signer := types.LatestSignerForChainID(config.ChainID)
+	msgSigner := types.MakeSigner(config, header.Number, header.Time)
+
+	// CHANGE(taiko): the reference block executor identifies the anchor by the
+	// (sender, nonce, target) triple — the golden touch, its account nonce
+	// before any replayed transaction, and the chain's treasury — never by list
+	// position or transaction type. Its pre-execution marker call also loads
+	// the golden-touch and treasury accounts, so the equivalent reads here keep
+	// the witness carrying the same pre-execution dependencies.
+	var (
+		goldenTouchNonce uint64
+		treasury         common.Address
+	)
+	if config.Taiko {
+		goldenTouchNonce = statedb.GetNonce(taiko.GoldenTouchAccount)
+		treasury = core.TaikoTreasuryAddress(config.ChainID)
+		statedb.GetBalance(treasury)
+	}
 
 	committed := make(types.Transactions, 0, len(txs))
 	for i, tx := range txs {
-		isAnchor := i == 0 && config.Taiko
-		if isAnchor {
-			if err := tx.MarkAsAnchor(); err != nil {
-				return nil, nil, fmt.Errorf("anchor transaction invalid: %w", err)
-			}
-		}
+		// The first list position only decides fatality: any failure there
+		// aborts the request instead of skipping the transaction.
+		isFirst := i == 0 && config.Taiko
 		if tx.Type() == types.BlobTxType {
-			if isAnchor {
-				return nil, nil, errors.New("anchor transaction must not be a blob transaction")
+			if isFirst {
+				return nil, nil, errors.New("first transaction must not be a blob transaction")
 			}
 			continue
 		}
 		sender, err := signer.Sender(tx)
 		if err != nil {
-			if isAnchor {
-				return nil, nil, fmt.Errorf("anchor transaction sender unrecoverable: %w", err)
+			if isFirst {
+				return nil, nil, fmt.Errorf("first transaction sender invalid: %w", err)
 			}
 			continue
 		}
@@ -223,20 +258,44 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 			evm.ResetZkGasErr()
 		}
 
+		msg, err := core.TransactionToMessage(tx, msgSigner, header.BaseFee)
+		if err != nil {
+			// Fork-gated transaction types surface here; the reference EVM
+			// rejects them at validation, which its replay treats like any
+			// other recoverable failure.
+			if isFirst {
+				return nil, nil, fmt.Errorf("transaction at index 0 failed: %w", err)
+			}
+			if !isRecoverableNonAnchorTxError(err) {
+				return nil, nil, fmt.Errorf("non-anchor transaction at index %d failed: %w", i, err)
+			}
+			continue
+		}
+		if config.IsShasta(header.Time) {
+			msg.BasefeeSharingPctg = core.DecodeShastaBasefeeSharingPctg(header.Extra)
+		} else if config.IsOntake(header.Number) {
+			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(header.Extra)
+		}
+		// CHANGE(taiko): anchor exemptions follow the reference triple at any
+		// list position; the assignment also clears any in-memory flag the
+		// transaction object may carry.
+		msg.IsAnchor = config.Taiko && sender == taiko.GoldenTouchAccount &&
+			tx.Nonce() == goldenTouchNonce && tx.To() != nil && *tx.To() == treasury
+
 		snap := statedb.Snapshot()
 		gpSnap := gasPool.Snapshot()
-		if _, err := core.ApplyTransaction(evm, gasPool, statedb, header, tx); err != nil {
+		if _, err := core.ApplyTransactionWithEVM(msg, gasPool, statedb, header.Number, header.Hash(), header.Time, tx, evm); err != nil {
 			statedb.RevertToSnapshot(snap)
 			gasPool.Set(gpSnap)
-			if isAnchor {
-				return nil, nil, fmt.Errorf("anchor transaction failed: %w", err)
+			if isFirst {
+				return nil, nil, fmt.Errorf("transaction at index 0 failed: %w", err)
 			}
 			// CHANGE(taiko): tolerate only the recoverable error set the block
 			// builder skips for non-anchor txs; any other error is fatal.
 			if !isRecoverableNonAnchorTxError(err) {
 				return nil, nil, fmt.Errorf("non-anchor transaction at index %d failed: %w", i, err)
 			}
-			// A non-anchor zk-gas-limit error truncates the block.
+			// A non-first zk-gas-limit error truncates the block.
 			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
 				zkGasMeter.ResetTransaction()
 				evm.ResetZkGasErr()
