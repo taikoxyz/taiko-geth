@@ -725,8 +725,14 @@ func (st *stateTransition) blobGasUsed() uint64 {
 
 // CHANGE(taiko): returns the treasury address based on chain ID.
 func (st *stateTransition) getTreasuryAddress() common.Address {
+	return TaikoTreasuryAddress(st.evm.ChainConfig().ChainID)
+}
+
+// CHANGE(taiko): TaikoTreasuryAddress derives the network treasury address
+// from the chain ID: the decimal chain id, zero padding, and a 10001 suffix.
+func TaikoTreasuryAddress(chainID *big.Int) common.Address {
 	var (
-		prefix = st.evm.ChainConfig().ChainID.String()
+		prefix = chainID.String()
 		suffix = "10001"
 	)
 	return common.HexToAddress(
