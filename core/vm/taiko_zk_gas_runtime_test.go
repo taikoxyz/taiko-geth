@@ -1455,6 +1455,50 @@ func TestUnzenZkGas_CreateDynamicOOGInStaticContextChargesNothing(t *testing.T) 
 	}
 }
 
+func TestUnzenZkGas_DynamicWriteProtectionChargesRevmStaticGas(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	targetAddr := common.HexToAddress("0x3000000000000000000000000000000000000000")
+
+	callWithValue := []byte{
+		byte(PUSH1), 0x00, // retSize
+		byte(PUSH1), 0x00, // retOffset
+		byte(PUSH1), 0x00, // inSize
+		byte(PUSH1), 0x00, // inOffset
+		byte(PUSH1), 0x01, // value
+		byte(PUSH20),
+	}
+	callWithValue = append(callWithValue, targetAddr.Bytes()...)
+	callWithValue = append(callWithValue, byte(PUSH2), 0xff, 0xff, byte(CALL), byte(STOP))
+
+	selfDestruct := []byte{byte(PUSH20)}
+	selfDestruct = append(selfDestruct, targetAddr.Bytes()...)
+	selfDestruct = append(selfDestruct, byte(SELFDESTRUCT), byte(STOP))
+
+	for _, tt := range []struct {
+		name      string
+		opcode    OpCode
+		innerCode []byte
+		want      uint64
+	}{
+		{"call value transfer", CALL, callWithValue, zkGasRevmStaticGas[CALL]},
+		{"selfdestruct", SELFDESTRUCT, selfDestruct, zkGasRevmStaticGas[SELFDESTRUCT]},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newSpawnBoundaryEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+				innerAddr: tt.innerCode,
+			}, tt.opcode, 200_000)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUnzenZkGas_Create2SaltUnderflowMirrorsReferenceChargeOrder(t *testing.T) {
 	for _, tt := range []struct {
 		name    string

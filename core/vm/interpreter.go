@@ -299,6 +299,17 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 						return nil, ErrZkGasLimitExceeded
 					}
 				}
+				// CHANGE(taiko): dynamic-gas write-protection failures occur
+				// before go-ethereum reaches opcode execution. REVM has already
+				// deducted the instruction-table static gas at that point, so
+				// mirror the same pre-execution charge here.
+				if evm.zkGasTracker != nil && evm.zkGasErr == nil && errors.Is(err, ErrWriteProtection) {
+					evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
+					if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasPreExecutionGasAfter(op, gasBefore)); zkErr != nil {
+						evm.setZkGasErr()
+						return nil, ErrZkGasLimitExceeded
+					}
+				}
 				// CHANGE(taiko): a CREATE-family memory cost beyond the uint64
 				// cap halts REVM while preserving the gas left after its
 				// initcode charge, so it must be metered instead of skipped.
