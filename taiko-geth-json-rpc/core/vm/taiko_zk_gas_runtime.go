@@ -259,6 +259,11 @@ func (t *ZkGasStepTracker) markSpawn(depth int, matches func(byte) bool) {
 // CHANGE(taiko): zkGasDynamicOOGGasAfter mirrors REVM's callback-visible gas
 // for dynamic-cost shortfalls caught before go-ethereum executes the opcode.
 func zkGasDynamicOOGGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, memorySize, memoryLastGasCost, gasBefore, gasAfterStatic uint64) uint64 {
+	// REVM's CREATE-family static-context check halts before any charge, so a
+	// dynamic-gas shortfall go-ethereum catches first must preserve the gas.
+	if (op == CREATE || op == CREATE2) && evm.readOnly {
+		return gasBefore
+	}
 	preMemoryCost, gasBeforePreMemory, ok := zkGasPreMemoryCost(evm, op, stack, gasBefore, gasAfterStatic)
 	if !ok {
 		return 0
