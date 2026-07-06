@@ -669,6 +669,18 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	if nonce+1 < nonce {
 		return nil, common.Address{}, gas, ErrNonceUintOverflow
 	}
+	// CHANGE(taiko): resolve the pending CREATE-family spawn charge before the
+	// created address is inspected or mutated. The Rust reference EVM charges
+	// the fixed spawn estimate as soon as dispatch commits to opening the
+	// child frame — before its nonce, collision, and account-setup phase — so
+	// failing here must not add any state dependency on the would-be created
+	// account.
+	if zkErr := evm.chargePendingSpawn(); zkErr != nil {
+		if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
+			evm.Config.Tracer.OnGasChange(gas, 0, tracing.GasChangeCallFailedExecution)
+		}
+		return nil, common.Address{}, 0, zkErr
+	}
 	evm.StateDB.SetNonce(caller, nonce+1, tracing.NonceChangeContractCreator)
 
 	// Charge the contract creation init gas in verkle mode
@@ -740,12 +752,6 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	// for the initialization code.
 	contract.SetCallCode(common.Hash{}, code)
 	contract.IsDeployment = true
-
-	if err = evm.chargePendingSpawn(); err != nil {
-		evm.StateDB.RevertToSnapshot(snapshot)
-		contract.UseGas(contract.Gas, evm.Config.Tracer, tracing.GasChangeCallFailedExecution)
-		return nil, address, contract.Gas, err
-	}
 
 	ret, err = evm.initNewContract(contract, address)
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {

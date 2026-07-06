@@ -406,6 +406,64 @@ func zkGasCreatePreMemoryCost(evm *EVM, stack *Stack) (uint64, bool) {
 	return zkGasWordCost(stack.Back(2), params.InitCodeWordGas)
 }
 
+// CHANGE(taiko): zkGasCreateShortfallGasAfter mirrors REVM's callback-visible
+// gas for CREATE/CREATE2 steps that fail before go-ethereum reaches the
+// instruction body. go-ethereum fronts the 32000 base cost as constant gas and
+// validates memory sizes before dynamic gas, while REVM charges in instruction
+// order: the static-context check and operand/size validation halt before any
+// charge, the EIP-3860 initcode word cost spends all remaining gas when it
+// cannot be paid, memory expansion halts preserving remaining gas when it
+// cannot be paid, and the trailing base (+ CREATE2 hashing) charge spends all
+// remaining gas.
+func zkGasCreateShortfallGasAfter(evm *EVM, stack *Stack, mem *Memory, gasBefore uint64) uint64 {
+	if evm.readOnly {
+		return gasBefore
+	}
+	size, overflow := stack.Back(2).Uint64WithOverflow()
+	if overflow {
+		return gasBefore
+	}
+	if size == 0 {
+		return 0
+	}
+	var initcodeCost uint64
+	if evm.chainRules.IsShanghai {
+		if size > params.MaxInitCodeSize {
+			return gasBefore
+		}
+		initcodeCost = toWordSize(size) * params.InitCodeWordGas
+	}
+	if gasBefore < initcodeCost {
+		return 0
+	}
+	gasAfterInitcode := gasBefore - initcodeCost
+	memSize, overflow := calcMemSize64(stack.Back(1), stack.Back(2))
+	if overflow {
+		return gasAfterInitcode
+	}
+	alignedMemSize, overflow := math.SafeMul(toWordSize(memSize), 32)
+	if overflow {
+		return gasAfterInitcode
+	}
+	memoryCost, _, _, ok := zkGasMemoryExpansionCost(uint64(mem.Len()), mem.lastGasCost, alignedMemSize)
+	if !ok || gasAfterInitcode < memoryCost {
+		return gasAfterInitcode
+	}
+	return 0
+}
+
+// CHANGE(taiko): zkGasMemorySizeOverflowGasAfter picks the REVM-mirroring
+// charge for memory-size operand overflows. Most opcodes surface these after
+// REVM already deducted its table static gas (matching go-ethereum's
+// constant-gas deduction), but CREATE-family operand overflows halt REVM
+// around its in-body initcode charge instead of the fronted 32000 base cost.
+func zkGasMemorySizeOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, gasBefore, gasAfterStatic uint64) uint64 {
+	if op == CREATE || op == CREATE2 {
+		return zkGasCreateShortfallGasAfter(evm, stack, mem, gasBefore)
+	}
+	return gasAfterStatic
+}
+
 // CHANGE(taiko): zkGasStepGasAfter mirrors REVM's callback-visible gas delta
 // for cases where go-ethereum performs validation after charging dynamic gas.
 // Static LOG/CREATE write-protection values are derived from observed Rust

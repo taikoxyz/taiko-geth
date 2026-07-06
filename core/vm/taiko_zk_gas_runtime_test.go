@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -1177,5 +1178,244 @@ func TestUnzenZkGas_PreExecutionFailuresMirrorRevmStaticGas(t *testing.T) {
 				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.wantZkGas)
 			}
 		})
+	}
+}
+
+// createAccountReadRecorder counts account-level reads per address so tests can
+// prove which accounts an execution path inspected.
+type createAccountReadRecorder struct {
+	*state.StateDB
+	reads map[common.Address]int
+}
+
+func newCreateAccountReadRecorder(inner *state.StateDB) *createAccountReadRecorder {
+	return &createAccountReadRecorder{StateDB: inner, reads: make(map[common.Address]int)}
+}
+
+func (r *createAccountReadRecorder) GetCodeHash(addr common.Address) common.Hash {
+	r.reads[addr]++
+	return r.StateDB.GetCodeHash(addr)
+}
+
+func (r *createAccountReadRecorder) GetStorageRoot(addr common.Address) common.Hash {
+	r.reads[addr]++
+	return r.StateDB.GetStorageRoot(addr)
+}
+
+func (r *createAccountReadRecorder) GetNonce(addr common.Address) uint64 {
+	r.reads[addr]++
+	return r.StateDB.GetNonce(addr)
+}
+
+func (r *createAccountReadRecorder) Exist(addr common.Address) bool {
+	r.reads[addr]++
+	return r.StateDB.Exist(addr)
+}
+
+func (r *createAccountReadRecorder) GetBalance(addr common.Address) *uint256.Int {
+	r.reads[addr]++
+	return r.StateDB.GetBalance(addr)
+}
+
+func (r *createAccountReadRecorder) GetCode(addr common.Address) []byte {
+	r.reads[addr]++
+	return r.StateDB.GetCode(addr)
+}
+
+func TestUnzenZkGas_CreateSpawnLimitLeavesCreatedAccountUntouched(t *testing.T) {
+	initcode := common.Hex2Bytes("60005400")
+	for _, tt := range []struct {
+		name          string
+		opcode        OpCode
+		spawnEstimate uint64
+		outerCode     []byte
+		createdAddr   common.Address
+	}{
+		{
+			name:          "create",
+			opcode:        CREATE,
+			spawnEstimate: 37_000,
+			outerCode:     common.Hex2Bytes("63600054006000526004601c6000f000"),
+			createdAddr:   crypto.CreateAddress(spawnBoundaryOuterAddr, 0),
+		},
+		{
+			name:          "create2",
+			opcode:        CREATE2,
+			spawnEstimate: 44_500,
+			outerCode:     common.Hex2Bytes("636000540060005260006004601c6000f500"),
+			createdAddr:   crypto.CreateAddress2(spawnBoundaryOuterAddr, common.Hash{}, crypto.Keccak256(initcode)),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			schedule := &ZkGasSchedule{BlockLimit: tt.spawnEstimate - 1}
+			schedule.SpawnEstimates.Create = 37_000
+			schedule.SpawnEstimates.Create2 = 44_500
+			schedule.OpcodeMultipliers[byte(tt.opcode)] = 1
+
+			rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+			inner, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+			inner.CreateAccount(spawnBoundaryOuterAddr)
+			inner.SetCode(spawnBoundaryOuterAddr, tt.outerCode, tracing.CodeChangeUnspecified)
+			inner.Finalise(true)
+			statedb := newCreateAccountReadRecorder(inner)
+
+			meter := NewZkGasMeter(schedule)
+			evm := NewEVM(BlockContext{
+				CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+				Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+				BlockNumber: big.NewInt(1),
+				Time:        1,
+				Random:      &common.Hash{},
+			}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+			statedb.Prepare(rules, common.Address{}, common.Address{}, &spawnBoundaryOuterAddr, ActivePrecompiles(rules), nil)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != ErrZkGasLimitExceeded {
+				t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+			}
+			if got := meter.TxZkGasUsed(); got != 0 {
+				t.Fatalf("TxZkGasUsed = %d, want 0", got)
+			}
+			if got := statedb.reads[tt.createdAddr]; got != 0 {
+				t.Fatalf("created account %s read %d times before the spawn charge failed, want 0", tt.createdAddr, got)
+			}
+		})
+	}
+}
+
+func newCreateShortfallEVM(t *testing.T, outerCode []byte, extraContracts map[common.Address][]byte) (*ZkGasMeter, *EVM) {
+	t.Helper()
+
+	schedule := &ZkGasSchedule{BlockLimit: 1 << 40}
+	schedule.SpawnEstimates.Create = 37_000
+	schedule.SpawnEstimates.Create2 = 44_500
+	schedule.OpcodeMultipliers[byte(CREATE)] = 1
+	schedule.OpcodeMultipliers[byte(CREATE2)] = 1
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(spawnBoundaryOuterAddr)
+	statedb.SetCode(spawnBoundaryOuterAddr, outerCode, tracing.CodeChangeUnspecified)
+	for addr, code := range extraContracts {
+		statedb.CreateAccount(addr)
+		statedb.SetCode(addr, code, tracing.CodeChangeUnspecified)
+	}
+	statedb.Finalise(true)
+
+	meter := NewZkGasMeter(schedule)
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &spawnBoundaryOuterAddr, ActivePrecompiles(rules), nil)
+	return meter, evm
+}
+
+func TestUnzenZkGas_CreateShortfallMirrorsReferenceChargeOrder(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		code    []byte
+		callGas uint64
+		wantErr error
+		want    uint64
+	}{
+		{
+			// Initcode word cost is affordable, memory expansion is not: the
+			// reference halts preserving gas, so only the initcode cost counts.
+			name:    "create memory unaffordable below base cost",
+			code:    common.Hex2Bytes("602063ffffffff6000f000"),
+			callGas: 20_000,
+			wantErr: ErrOutOfGas,
+			want:    2,
+		},
+		{
+			name:    "create2 memory unaffordable below base cost",
+			code:    common.Hex2Bytes("6000602063ffffffff6000f500"),
+			callGas: 20_000,
+			wantErr: ErrOutOfGas,
+			want:    2,
+		},
+		{
+			// Initcode word cost itself cannot be paid: the reference spends
+			// all remaining gas.
+			name:    "create initcode cost unaffordable spends all",
+			code:    common.Hex2Bytes("61c00060006000f000"),
+			callGas: 2_000,
+			wantErr: ErrOutOfGas,
+			want:    1_991,
+		},
+		{
+			// Oversized initcode halts before any charge in the reference.
+			name:    "create oversized initcode below base cost charges nothing",
+			code:    common.Hex2Bytes("61c00160006000f000"),
+			callGas: 20_000,
+			wantErr: ErrOutOfGas,
+			want:    0,
+		},
+		{
+			// Initcode and memory fit but the 32000 base cost does not: the
+			// reference spends all remaining gas.
+			name:    "create memory affordable base cost unaffordable spends all",
+			code:    common.Hex2Bytes("602060006000f000"),
+			callGas: 20_000,
+			wantErr: ErrOutOfGas,
+			want:    19_991,
+		},
+		{
+			// Offset operand beyond 64 bits halts after the initcode charge.
+			name:    "create offset overflow charges initcode cost",
+			code:    common.Hex2Bytes("60207fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff6000f000"),
+			callGas: 100_000,
+			wantErr: ErrGasUintOverflow,
+			want:    2,
+		},
+		{
+			// Size operand beyond 64 bits halts before any charge.
+			name:    "create size overflow charges nothing",
+			code:    common.Hex2Bytes("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff60006000f000"),
+			callGas: 100_000,
+			wantErr: ErrGasUintOverflow,
+			want:    0,
+		},
+		{
+			// Memory expansion cost overflows go-ethereum's cap: the reference
+			// still halts preserving gas after the initcode charge.
+			name:    "create memory cost overflow charges initcode cost",
+			code:    common.Hex2Bytes("6020650100000000006000f000"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    2,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newCreateShortfallEVM(t, tt.code, nil)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, tt.callGas, new(uint256.Int))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Call err = %v, want %v", err, tt.wantErr)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_CreateShortfallInStaticContextChargesNothing(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	innerCode := common.Hex2Bytes("602063ffffffff6000f000")
+	meter, evm := newCreateShortfallEVM(t, spawnBoundaryCallCode(STATICCALL, innerAddr), map[common.Address][]byte{
+		innerAddr: innerCode,
+	})
+
+	_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+	if err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want 0 for a static-context CREATE shortfall", got)
 	}
 }
