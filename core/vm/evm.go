@@ -235,6 +235,19 @@ func (evm *EVM) markPendingCreateSpawn() {
 	}
 }
 
+// CHANGE(taiko): chargePendingSpawn resolves a marked CALL/CREATE-family step
+// before precompile or child-frame execution can add later zk-gas dependencies.
+func (evm *EVM) chargePendingSpawn() error {
+	if evm.zkGasTracker == nil || evm.zkGasErr != nil {
+		return evm.zkGasErr
+	}
+	if err := evm.zkGasTracker.ChargePendingSpawn(evm.depth); err != nil {
+		evm.setZkGasErr()
+		return err
+	}
+	return nil
+}
+
 // SetPrecompiles sets the precompiled contracts for the EVM.
 // This method is only used through RPC calls.
 // It is not thread-safe.
@@ -342,31 +355,36 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			stateDB = evm.StateDB
 		}
 
-		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
-		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
-		// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
-		// sticky error and assign through the standard err-cleanup path
-		// below so the inner-frame snapshot is reverted alongside the
-		// usual tracer/gas accounting that every other precompile error
-		// in this function flows through.
-		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr, precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
-				evm.setZkGasErr()
-				err = zkErr
+		if err = evm.chargePendingSpawn(); err == nil {
+			gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
+			ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
+			// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
+			// sticky error and assign through the standard err-cleanup path
+			// below so the inner-frame snapshot is reverted alongside the
+			// usual tracer/gas accounting that every other precompile error
+			// in this function flows through.
+			if evm.Config.ZkGasMeter != nil {
+				if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr, precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+					evm.setZkGasErr()
+					err = zkErr
+				}
 			}
 		}
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		code := evm.resolveCode(addr)
+		codeHash := evm.resolveCodeHash(addr)
 		if len(code) == 0 {
 			ret, err = nil, nil // gas is unchanged
 		} else {
-			// The contract is a scoped environment for this execution context only.
-			contract := NewContract(caller, addr, value, gas, evm.jumpDests)
-			contract.IsSystemCall = isSystemCall(caller)
-			contract.SetCallCode(evm.resolveCodeHash(addr), code)
-			ret, err = evm.Run(contract, input, false)
-			gas = contract.Gas
+			if err = evm.chargePendingSpawn(); err == nil {
+				// The contract is a scoped environment for this execution context only.
+				contract := NewContract(caller, addr, value, gas, evm.jumpDests)
+				contract.IsSystemCall = isSystemCall(caller)
+				contract.SetCallCode(codeHash, code)
+				ret, err = evm.Run(contract, input, false)
+				gas = contract.Gas
+			}
 		}
 	}
 	// When an error was returned by the EVM or when setting the creation code
@@ -425,27 +443,36 @@ func (evm *EVM) CallCode(caller common.Address, addr common.Address, input []byt
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
-		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
-		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
-		// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
-		// sticky error and assign through the standard err-cleanup path
-		// below so the inner-frame snapshot is reverted alongside the
-		// usual tracer/gas accounting that every other precompile error
-		// in this function flows through.
-		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr, precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
-				evm.setZkGasErr()
-				err = zkErr
+		if err = evm.chargePendingSpawn(); err == nil {
+			gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
+			ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
+			// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
+			// sticky error and assign through the standard err-cleanup path
+			// below so the inner-frame snapshot is reverted alongside the
+			// usual tracer/gas accounting that every other precompile error
+			// in this function flows through.
+			if evm.Config.ZkGasMeter != nil {
+				if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr, precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+					evm.setZkGasErr()
+					err = zkErr
+				}
 			}
 		}
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		code := evm.resolveCode(addr)
-		// The contract is a scoped environment for this execution context only.
-		contract := NewContract(caller, caller, value, gas, evm.jumpDests)
-		contract.SetCallCode(evm.resolveCodeHash(addr), code)
-		ret, err = evm.Run(contract, input, false)
-		gas = contract.Gas
+		codeHash := evm.resolveCodeHash(addr)
+		if len(code) == 0 {
+			ret, err = nil, nil
+		} else {
+			if err = evm.chargePendingSpawn(); err == nil {
+				// The contract is a scoped environment for this execution context only.
+				contract := NewContract(caller, caller, value, gas, evm.jumpDests)
+				contract.SetCallCode(codeHash, code)
+				ret, err = evm.Run(contract, input, false)
+				gas = contract.Gas
+			}
+		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -489,28 +516,36 @@ func (evm *EVM) DelegateCall(originCaller common.Address, caller common.Address,
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
-		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
-		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
-		// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
-		// sticky error and assign through the standard err-cleanup path
-		// below so the inner-frame snapshot is reverted alongside the
-		// usual tracer/gas accounting that every other precompile error
-		// in this function flows through.
-		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr, precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
-				evm.setZkGasErr()
-				err = zkErr
+		if err = evm.chargePendingSpawn(); err == nil {
+			gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
+			ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
+			// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
+			// sticky error and assign through the standard err-cleanup path
+			// below so the inner-frame snapshot is reverted alongside the
+			// usual tracer/gas accounting that every other precompile error
+			// in this function flows through.
+			if evm.Config.ZkGasMeter != nil {
+				if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr, precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+					evm.setZkGasErr()
+					err = zkErr
+				}
 			}
 		}
 	} else {
 		// Initialise a new contract and make initialise the delegate values
 		code := evm.resolveCode(addr)
-		//
-		// Note: The value refers to the original value from the parent call.
-		contract := NewContract(originCaller, caller, value, gas, evm.jumpDests)
-		contract.SetCallCode(evm.resolveCodeHash(addr), code)
-		ret, err = evm.Run(contract, input, false)
-		gas = contract.Gas
+		codeHash := evm.resolveCodeHash(addr)
+		if len(code) == 0 {
+			ret, err = nil, nil
+		} else {
+			if err = evm.chargePendingSpawn(); err == nil {
+				// Note: The value refers to the original value from the parent call.
+				contract := NewContract(originCaller, caller, value, gas, evm.jumpDests)
+				contract.SetCallCode(codeHash, code)
+				ret, err = evm.Run(contract, input, false)
+				gas = contract.Gas
+			}
+		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -562,31 +597,40 @@ func (evm *EVM) StaticCall(caller common.Address, addr common.Address, input []b
 		if evm.chainRules.IsAmsterdam {
 			stateDB = evm.StateDB
 		}
-		gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
-		ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
-		// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
-		// sticky error and assign through the standard err-cleanup path
-		// below so the inner-frame snapshot is reverted alongside the
-		// usual tracer/gas accounting that every other precompile error
-		// in this function flows through.
-		if evm.Config.ZkGasMeter != nil {
-			if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr, precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
-				evm.setZkGasErr()
-				err = zkErr
+		if err = evm.chargePendingSpawn(); err == nil {
+			gasBeforePrecompile := gas // CHANGE(taiko): capture for zk gas accounting
+			ret, gas, err = RunPrecompiledContract(stateDB, p, addr, input, gas, evm.Config.Tracer)
+			// CHANGE(taiko): charge precompile zk gas. On over-limit, set the
+			// sticky error and assign through the standard err-cleanup path
+			// below so the inner-frame snapshot is reverted alongside the
+			// usual tracer/gas accounting that every other precompile error
+			// in this function flows through.
+			if evm.Config.ZkGasMeter != nil {
+				if zkErr := evm.Config.ZkGasMeter.ChargePrecompile(addr, precompileZkGasUsed(gasBeforePrecompile, gas, err)); zkErr != nil {
+					evm.setZkGasErr()
+					err = zkErr
+				}
 			}
 		}
 	} else {
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		code := evm.resolveCode(addr)
-		// The contract is a scoped environment for this execution context only.
-		contract := NewContract(caller, addr, new(uint256.Int), gas, evm.jumpDests)
-		contract.SetCallCode(evm.resolveCodeHash(addr), code)
+		codeHash := evm.resolveCodeHash(addr)
+		if len(code) == 0 {
+			ret, err = nil, nil
+		} else {
+			if err = evm.chargePendingSpawn(); err == nil {
+				// The contract is a scoped environment for this execution context only.
+				contract := NewContract(caller, addr, new(uint256.Int), gas, evm.jumpDests)
+				contract.SetCallCode(codeHash, code)
 
-		// When an error was returned by the EVM or when setting the creation code
-		// above we revert to the snapshot and consume any gas remaining. Additionally
-		// when we're in Homestead this also counts for code storage gas errors.
-		ret, err = evm.Run(contract, input, true)
-		gas = contract.Gas
+				// When an error was returned by the EVM or when setting the creation code
+				// above we revert to the snapshot and consume any gas remaining. Additionally
+				// when we're in Homestead this also counts for code storage gas errors.
+				ret, err = evm.Run(contract, input, true)
+				gas = contract.Gas
+			}
+		}
 	}
 	if err != nil {
 		evm.StateDB.RevertToSnapshot(snapshot)
@@ -696,6 +740,12 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	// for the initialization code.
 	contract.SetCallCode(common.Hash{}, code)
 	contract.IsDeployment = true
+
+	if err = evm.chargePendingSpawn(); err != nil {
+		evm.StateDB.RevertToSnapshot(snapshot)
+		contract.UseGas(contract.Gas, evm.Config.Tracer, tracing.GasChangeCallFailedExecution)
+		return nil, address, contract.Gas, err
+	}
 
 	ret, err = evm.initNewContract(contract, address)
 	if err != nil && (evm.chainRules.IsHomestead || err != ErrCodeStoreOutOfGas) {

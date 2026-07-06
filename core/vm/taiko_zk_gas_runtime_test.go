@@ -93,6 +93,28 @@ func TestZkGasStepTracker_CreateSpawnUsesFixedEstimate(t *testing.T) {
 	}
 }
 
+func TestZkGasStepTracker_ChargePendingSpawnClearsStep(t *testing.T) {
+	meter := NewZkGasMeter(testSchedule())
+	tracker := NewZkGasStepTracker(meter)
+
+	tracker.Begin(0, byte(CALL), 1_000)
+	tracker.MarkCallSpawn(0)
+	if err := tracker.ChargePendingSpawn(0); err != nil {
+		t.Fatalf("ChargePendingSpawn returned error: %v", err)
+	}
+	if err := tracker.ChargePendingSpawn(0); err != nil {
+		t.Fatalf("second ChargePendingSpawn returned error: %v", err)
+	}
+	if err := tracker.FinishAndCharge(0, 900); err != nil {
+		t.Fatalf("FinishAndCharge returned error: %v", err)
+	}
+
+	want := uint64(312_500)
+	if got := meter.TxZkGasUsed(); got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d", got, want)
+	}
+}
+
 func TestEVMSetZkGasMeterInitializesLateBoundTracker(t *testing.T) {
 	meter := NewZkGasMeter(testSchedule())
 	contractAddr := common.HexToAddress("0x1000000000000000000000000000000000000000")
@@ -732,11 +754,11 @@ func TestUnzenZkGas_InnerFrameOpcodeExceedingBlockLimit_StickyError(t *testing.T
 	if evm.zkGasErr != ErrZkGasLimitExceeded {
 		t.Fatalf("zkGasErr = %v, want ErrZkGasLimitExceeded", evm.zkGasErr)
 	}
-	if got := meter.TxZkGasUsed(); got != 0 {
-		t.Fatalf("TxZkGasUsed = %d, want 0 after inner-frame zk-gas failure", got)
+	if got, want := meter.TxZkGasUsed(), schedule.SpawnEstimates.Call; got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d for parent spawn before inner-frame zk-gas failure", got, want)
 	}
 	// Defense-in-depth: prove the test exercises the right path.
-	// (1) The inner ADD must have dispatched — otherwise the over-limit charge
+	// (1) The inner ADD must have dispatched after the parent spawn charge — otherwise the over-limit charge
 	// never came from FinishAndCharge in the inner frame.
 	// (2) The outer STOP must NOT have dispatched — otherwise the outer
 	// frame ran past CALL, which would mean the sticky check failed to fire.
@@ -751,6 +773,104 @@ func TestUnzenZkGas_InnerFrameOpcodeExceedingBlockLimit_StickyError(t *testing.T
 	}
 	if !sawInnerAdd {
 		t.Fatalf("inner ADD was not dispatched; over-limit charge did not originate in inner frame. ops=%v", observed)
+	}
+}
+
+func TestUnzenZkGas_SpawnLimitStopsBeforeCallFamilyChildOpcodes(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	innerCode := common.Hex2Bytes("60005400") // PUSH1 0; SLOAD; STOP
+
+	for _, tt := range []struct {
+		name          string
+		opcode        OpCode
+		spawnEstimate uint64
+		outerCode     []byte
+	}{
+		{
+			name:          "call",
+			opcode:        CALL,
+			spawnEstimate: 12_500,
+			outerCode:     spawnBoundaryCallCode(CALL, innerAddr),
+		},
+		{
+			name:          "callcode",
+			opcode:        CALLCODE,
+			spawnEstimate: 12_500,
+			outerCode:     spawnBoundaryCallCode(CALLCODE, innerAddr),
+		},
+		{
+			name:          "delegatecall",
+			opcode:        DELEGATECALL,
+			spawnEstimate: 3_500,
+			outerCode:     spawnBoundaryCallCode(DELEGATECALL, innerAddr),
+		},
+		{
+			name:          "staticcall",
+			opcode:        STATICCALL,
+			spawnEstimate: 3_500,
+			outerCode:     spawnBoundaryCallCode(STATICCALL, innerAddr),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newSpawnBoundaryEVM(t, tt.outerCode, map[common.Address][]byte{
+				innerAddr: innerCode,
+			}, tt.opcode, tt.spawnEstimate)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != ErrZkGasLimitExceeded {
+				t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+			}
+			if got := meter.TxZkGasUsed(); got != 0 {
+				t.Fatalf("TxZkGasUsed = %d, want 0; child opcode ran before parent spawn charge", got)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_SpawnLimitStopsBeforeCreateFamilyInitcode(t *testing.T) {
+	for _, tt := range []struct {
+		name          string
+		opcode        OpCode
+		spawnEstimate uint64
+		outerCode     []byte
+	}{
+		{
+			name:          "create",
+			opcode:        CREATE,
+			spawnEstimate: 37_000,
+			outerCode:     common.Hex2Bytes("63600054006000526004601c6000f000"),
+		},
+		{
+			name:          "create2",
+			opcode:        CREATE2,
+			spawnEstimate: 44_500,
+			outerCode:     common.Hex2Bytes("636000540060005260006004601c6000f500"),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newSpawnBoundaryEVM(t, tt.outerCode, nil, tt.opcode, tt.spawnEstimate)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != ErrZkGasLimitExceeded {
+				t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+			}
+			if got := meter.TxZkGasUsed(); got != 0 {
+				t.Fatalf("TxZkGasUsed = %d, want 0; initcode ran before parent spawn charge", got)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_SpawnLimitStopsBeforePrecompileCharge(t *testing.T) {
+	outerCode := common.Hex2Bytes("60006000600060006004612710fa00") // STATICCALL identity precompile
+	meter, evm := newSpawnBoundaryEVM(t, outerCode, nil, STATICCALL, 3_500)
+
+	_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+	if err != ErrZkGasLimitExceeded {
+		t.Fatalf("Call err = %v, want ErrZkGasLimitExceeded", err)
+	}
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want 0; precompile charge ran before parent spawn charge", got)
 	}
 }
 
@@ -798,6 +918,62 @@ func executeUnzenZkGasParityCase(t *testing.T, code []byte, extraContracts map[c
 		t.Fatalf("CanonicalTxZkGas returned error: %v", err)
 	}
 	return meter.TxZkGasUsed(), want
+}
+
+var spawnBoundaryOuterAddr = common.HexToAddress("0x1000000000000000000000000000000000000000")
+
+func spawnBoundaryCallCode(opcode OpCode, target common.Address) []byte {
+	code := []byte{
+		byte(PUSH1), 0x00, // retSize
+		byte(PUSH1), 0x00, // retOffset
+		byte(PUSH1), 0x00, // inSize
+		byte(PUSH1), 0x00, // inOffset
+	}
+	if opcode == CALL || opcode == CALLCODE {
+		code = append(code, byte(PUSH1), 0x00) // value
+	}
+	code = append(code, byte(PUSH20))
+	code = append(code, target.Bytes()...)
+	code = append(code, byte(PUSH2), 0x27, 0x10, byte(opcode), byte(STOP))
+	return code
+}
+
+func newSpawnBoundaryEVM(t *testing.T, outerCode []byte, extraContracts map[common.Address][]byte, opcode OpCode, spawnEstimate uint64) (*ZkGasMeter, *EVM) {
+	t.Helper()
+
+	schedule := &ZkGasSchedule{BlockLimit: spawnEstimate - 1}
+	schedule.SpawnEstimates.Call = 12_500
+	schedule.SpawnEstimates.CallCode = 12_500
+	schedule.SpawnEstimates.DelegateCall = 3_500
+	schedule.SpawnEstimates.StaticCall = 3_500
+	schedule.SpawnEstimates.Create = 37_000
+	schedule.SpawnEstimates.Create2 = 44_500
+	schedule.OpcodeMultipliers[byte(opcode)] = 1
+	schedule.OpcodeMultipliers[byte(SLOAD)] = 1
+	schedule.PrecompileMultipliers = map[common.Address]uint16{
+		common.BytesToAddress([]byte{0x04}): 1,
+	}
+
+	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(spawnBoundaryOuterAddr)
+	statedb.SetCode(spawnBoundaryOuterAddr, outerCode, tracing.CodeChangeUnspecified)
+	for addr, code := range extraContracts {
+		statedb.CreateAccount(addr)
+		statedb.SetCode(addr, code, tracing.CodeChangeUnspecified)
+	}
+	statedb.Finalise(true)
+
+	meter := NewZkGasMeter(schedule)
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, params.MergedTestChainConfig, Config{ZkGasMeter: meter})
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &spawnBoundaryOuterAddr, ActivePrecompiles(rules), nil)
+	return meter, evm
 }
 
 type zkGasTraceFrame struct {
