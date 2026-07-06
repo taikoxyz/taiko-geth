@@ -139,9 +139,10 @@ const (
 	// pctg always sits at byte 0; the trailing proposalId exists only under the
 	// proposal-id-bearing layout ([pctg | proposalId(6)]) found in existing
 	// chain history. Flag-based extraData ([pctg, isLowBondProposal], 2 bytes)
-	// is what current drivers emit and carries no proposalId, so consumers must
-	// treat it as optional; no header rule enforces either length (only the
-	// 32-byte cap), other lengths are accepted with a warning.
+	// is what the current drivers (taiko-mono main, Go and Rust) emit and
+	// carries no proposalId, so consumers must treat it as optional; no header
+	// rule enforces either length (only the 32-byte cap), other lengths are
+	// accepted with a warning.
 	ShastaExtraDataBasefeeSharingPctgIndex = 0
 	ShastaExtraDataProposalIDIndex         = 1
 	ShastaExtraDataProposalIDLength        = 6
