@@ -1291,12 +1291,20 @@ func TestUnzenZkGas_CreateSpawnLimitLeavesCreatedAccountUntouched(t *testing.T) 
 
 func newCreateShortfallEVM(t *testing.T, outerCode []byte, extraContracts map[common.Address][]byte) (*ZkGasMeter, *EVM) {
 	t.Helper()
+	return newOpcodeMirrorEVM(t, outerCode, extraContracts, CREATE, CREATE2)
+}
+
+// newOpcodeMirrorEVM builds a metered EVM whose schedule counts only the given
+// opcodes (multiplier 1), so a test's TxZkGasUsed isolates their charges.
+func newOpcodeMirrorEVM(t *testing.T, outerCode []byte, extraContracts map[common.Address][]byte, meteredOps ...OpCode) (*ZkGasMeter, *EVM) {
+	t.Helper()
 
 	schedule := &ZkGasSchedule{BlockLimit: 1 << 40}
 	schedule.SpawnEstimates.Create = 37_000
 	schedule.SpawnEstimates.Create2 = 44_500
-	schedule.OpcodeMultipliers[byte(CREATE)] = 1
-	schedule.OpcodeMultipliers[byte(CREATE2)] = 1
+	for _, op := range meteredOps {
+		schedule.OpcodeMultipliers[byte(op)] = 1
+	}
 
 	rules := params.MergedTestChainConfig.Rules(big.NewInt(1), true, 1)
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
@@ -1604,5 +1612,644 @@ func TestUnzenZkGas_Create2SaltUnderflowInStaticContextChargesNothing(t *testing
 	}
 	if got := meter.TxZkGasUsed(); got != 0 {
 		t.Fatalf("TxZkGasUsed = %d, want 0 for a static-context CREATE2 salt underflow", got)
+	}
+}
+
+func TestUnzenZkGas_LogShortfallMirrorsReferenceChargeOrder(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		op      OpCode
+		code    []byte
+		callGas uint64
+		wantErr error
+		want    uint64
+	}{
+		{
+			// Length operand beyond 64 bits halts the reference before its
+			// topic+data charge, preserving gas: only the 375 static counts.
+			name:    "log0 length overflow charges static gas",
+			op:      LOG0,
+			code:    common.Hex2Bytes("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff6000a000"),
+			callGas: 100_000,
+			wantErr: ErrGasUintOverflow,
+			want:    375,
+		},
+		{
+			// Offset operand beyond 64 bits halts after the topic+data charge
+			// (8*0x20 = 256), preserving gas.
+			name:    "log0 offset overflow charges static and data gas",
+			op:      LOG0,
+			code:    common.Hex2Bytes("60207fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa000"),
+			callGas: 100_000,
+			wantErr: ErrGasUintOverflow,
+			want:    631,
+		},
+		{
+			// Same as above with one topic: 375 static + 375 topic + 256 data.
+			name:    "log1 offset overflow includes topic gas",
+			op:      LOG1,
+			code:    common.Hex2Bytes("600060207fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffa100"),
+			callGas: 100_000,
+			wantErr: ErrGasUintOverflow,
+			want:    1006,
+		},
+		{
+			// Memory size beyond go-ethereum's cost cap errors in the dynamic
+			// gas function; the reference charges topic+data, then halts
+			// preserving on the memory expansion.
+			name:    "log0 memory cost cap charges static and data gas",
+			op:      LOG0,
+			code:    common.Hex2Bytes("602065020000000000a000"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    631,
+		},
+		{
+			// A data cost beyond 64 bits saturates in the reference and the
+			// failed charge spends all remaining gas.
+			name:    "log0 saturating data cost spends all",
+			op:      LOG0,
+			code:    common.Hex2Bytes("6740000000000000006000a000"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    99_994,
+		},
+		{
+			// Affordable topic+data but unaffordable memory expansion: the
+			// pre-existing reconstruction path, kept as a regression.
+			name:    "log0 unaffordable memory charges static and data gas",
+			op:      LOG0,
+			code:    common.Hex2Bytes("602063ffffffffa000"),
+			callGas: 20_000,
+			wantErr: ErrOutOfGas,
+			want:    631,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, tt.callGas, new(uint256.Int))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Call err = %v, want %v", err, tt.wantErr)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_LogInStaticContextChargesStaticGas(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	for _, tt := range []struct {
+		name      string
+		op        OpCode
+		innerCode []byte
+	}{
+		// The reference halts every static-context LOG on its write-protection
+		// check before any in-body charge, so only the 375 table static (paid
+		// before the instruction body) is visible, regardless of which
+		// go-ethereum guard catches the failure first.
+		{
+			name:      "unaffordable memory",
+			op:        LOG0,
+			innerCode: common.Hex2Bytes("61100063ffffffffa000"),
+		},
+		{
+			name:      "unaffordable memory with topics",
+			op:        LOG2,
+			innerCode: common.Hex2Bytes("6000600061100063ffffffffa200"),
+		},
+		{
+			name:      "length overflow",
+			op:        LOG0,
+			innerCode: common.Hex2Bytes("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff6000a000"),
+		},
+		{
+			name:      "memory cost cap",
+			op:        LOG0,
+			innerCode: common.Hex2Bytes("602065020000000000a000"),
+		},
+		{
+			name:      "affordable write protection",
+			op:        LOG0,
+			innerCode: common.Hex2Bytes("60206000a000"),
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+				innerAddr: tt.innerCode,
+			}, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got, want := meter.TxZkGasUsed(), zkGasRevmStaticGas[tt.op]; got != want {
+				t.Fatalf("TxZkGasUsed = %d, want %d for a static-context %v", got, want, tt.op)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_TstoreInStaticContextChargesStaticGas(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	innerCode := common.Hex2Bytes("600060005d00")
+	meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+		innerAddr: innerCode,
+	}, TSTORE)
+
+	_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+	if err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+	if got, want := meter.TxZkGasUsed(), zkGasRevmStaticGas[TSTORE]; got != want {
+		t.Fatalf("TxZkGasUsed = %d, want %d for a static-context TSTORE", got, want)
+	}
+}
+
+func TestUnzenZkGas_SstoreSentryChargesNothing(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	innerCode := common.Hex2Bytes("600160005500")
+	for _, tt := range []struct {
+		name  string
+		outer []byte
+	}{
+		// Reentrancy sentry: the child frame holds exactly 2300 gas at the
+		// SSTORE, tripping the EIP-2200 sentry in the dynamic gas function.
+		// The reference halts gas-preserving after its zero table static.
+		{"sentry", spawnBoundaryCallCodeWithGas(CALL, innerAddr, 2306)},
+		// Static context: the dynamic gas function fails with write
+		// protection, which meters the zero table static.
+		{"static context", spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.outer, map[common.Address][]byte{
+				innerAddr: innerCode,
+			}, SSTORE)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got := meter.TxZkGasUsed(); got != 0 {
+				t.Fatalf("TxZkGasUsed = %d, want 0 for an SSTORE %s failure", got, tt.name)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_MemoryCapOverflowMirrorsReferenceChargeOrder(t *testing.T) {
+	// Memory sizes beyond go-ethereum's memoryGasCost cap (0x1FFFFFFFE0) error
+	// in the dynamic gas functions, where the reference has no cap: it charges
+	// the table static in step(), any in-body word cost next (spending all
+	// remaining gas when unpayable), and halts gas-preserving on the memory
+	// expansion it can never afford.
+	for _, tt := range []struct {
+		name    string
+		op      OpCode
+		code    []byte
+		callGas uint64
+		wantErr error
+		want    uint64
+	}{
+		{
+			// Copy word cost for 2^41 bytes is unpayable: spends all.
+			name:    "keccak256 unpayable word cost spends all",
+			op:      KECCAK256,
+			code:    common.Hex2Bytes("6502000000000060002000"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    99_994,
+		},
+		{
+			// Word cost for 0x20 bytes is paid, memory expansion is not.
+			name:    "keccak256 capped memory charges static and word gas",
+			op:      KECCAK256,
+			code:    common.Hex2Bytes("6020650200000000002000"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    36,
+		},
+		{
+			name:    "calldatacopy capped memory charges static and copy gas",
+			op:      CALLDATACOPY,
+			code:    common.Hex2Bytes("60206000650200000000003700"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    6,
+		},
+		{
+			name:    "codecopy capped memory charges static and copy gas",
+			op:      CODECOPY,
+			code:    common.Hex2Bytes("60206000650200000000003900"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    6,
+		},
+		{
+			name:    "extcodecopy capped memory charges static and copy gas",
+			op:      EXTCODECOPY,
+			code:    append(append(common.Hex2Bytes("6020600065020000000000"), append([]byte{byte(PUSH20)}, make([]byte, 20)...)...), 0x3c, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    103,
+		},
+		{
+			name:    "mcopy capped memory charges static and copy gas",
+			op:      MCOPY,
+			code:    common.Hex2Bytes("60206000650200000000005e00"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    6,
+		},
+		{
+			name:    "mload capped memory charges static gas",
+			op:      MLOAD,
+			code:    common.Hex2Bytes("650200000000005100"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    3,
+		},
+		{
+			name:    "mstore capped memory charges static gas",
+			op:      MSTORE,
+			code:    common.Hex2Bytes("6000650200000000005200"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    3,
+		},
+		{
+			name:    "mstore8 capped memory charges static gas",
+			op:      MSTORE8,
+			code:    common.Hex2Bytes("6000650200000000005300"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    3,
+		},
+		{
+			// RETURN's table static is zero, so the aligned charge is zero.
+			name:    "return capped memory charges nothing",
+			op:      RETURN,
+			code:    common.Hex2Bytes("602065020000000000f3"),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    0,
+		},
+		{
+			name:    "call capped output memory charges static gas",
+			op:      CALL,
+			code:    append(append(common.Hex2Bytes("60206502000000000060006000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    100,
+		},
+		{
+			name:    "delegatecall capped output memory charges static gas",
+			op:      DELEGATECALL,
+			code:    append(append(common.Hex2Bytes("6020650200000000006000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf4, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    100,
+		},
+		{
+			// The reference resizes and charges the input range before the
+			// output range, so a capped output preserves the input expansion.
+			name:    "call capped output after input expansion charges input memory",
+			op:      CALL,
+			code:    append(append(common.Hex2Bytes("60206502000000000060206000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    103,
+		},
+		{
+			name:    "call capped output after two-word input expansion",
+			op:      CALL,
+			code:    append(append(common.Hex2Bytes("60206502000000000060406000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    106,
+		},
+		{
+			name:    "delegatecall capped output after input expansion charges input memory",
+			op:      DELEGATECALL,
+			code:    append(append(common.Hex2Bytes("6020650200000000006020600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf4, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    103,
+		},
+		{
+			// A capped input range fails before anything beyond the static
+			// was charged.
+			name:    "call capped input memory charges static gas",
+			op:      CALL,
+			code:    append(append(common.Hex2Bytes("60006000602065020000000000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    100,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, tt.callGas, new(uint256.Int))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Call err = %v, want %v", err, tt.wantErr)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_CopyFamilyOperandOverflowChargesInBodyGas(t *testing.T) {
+	// A memory offset operand beyond 64 bits halts the reference only after
+	// its in-body word cost was charged, while the length operand halts before
+	// it. go-ethereum catches both in the same up-front memory-size check.
+	pushMax := "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	for _, tt := range []struct {
+		name string
+		op   OpCode
+		code []byte
+		want uint64
+	}{
+		{
+			name: "keccak256 offset overflow charges static and word gas",
+			op:   KECCAK256,
+			code: common.Hex2Bytes("6020" + pushMax[0:66] + "2000"),
+			want: 36,
+		},
+		{
+			name: "keccak256 length overflow charges static gas",
+			op:   KECCAK256,
+			code: common.Hex2Bytes(pushMax[0:66] + "60002000"),
+			want: 30,
+		},
+		{
+			name: "calldatacopy offset overflow charges static and copy gas",
+			op:   CALLDATACOPY,
+			code: common.Hex2Bytes("60206000" + pushMax[0:66] + "3700"),
+			want: 6,
+		},
+		{
+			name: "extcodecopy offset overflow charges static and copy gas",
+			op:   EXTCODECOPY,
+			code: append(append(common.Hex2Bytes("60206000"+pushMax[0:66]), append([]byte{byte(PUSH20)}, make([]byte, 20)...)...), 0x3c, 0x00),
+			want: 103,
+		},
+		{
+			name: "extcodecopy length overflow charges static gas",
+			op:   EXTCODECOPY,
+			code: append(append(common.Hex2Bytes(pushMax[0:66]+"60006000"), append([]byte{byte(PUSH20)}, make([]byte, 20)...)...), 0x3c, 0x00),
+			want: 100,
+		},
+		{
+			name: "mcopy source overflow charges static and copy gas",
+			op:   MCOPY,
+			code: common.Hex2Bytes("6020" + pushMax[0:66] + "60005e00"),
+			want: 6,
+		},
+		{
+			name: "mload offset overflow charges static gas",
+			op:   MLOAD,
+			code: common.Hex2Bytes(pushMax[0:66] + "5100"),
+			want: 3,
+		},
+		{
+			// Output-offset operand beyond 64 bits halts the reference after
+			// the input range was resized and charged.
+			name: "call output offset overflow after input expansion",
+			op:   CALL,
+			code: append(append(common.Hex2Bytes("6020"+pushMax[0:66]+"60206000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			want: 103,
+		},
+		{
+			name: "call input offset overflow charges static gas",
+			op:   CALL,
+			code: append(append(common.Hex2Bytes("600060006020"+pushMax[0:66]+"600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			want: 100,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 100_000, new(uint256.Int))
+			if !errors.Is(err, ErrGasUintOverflow) {
+				t.Fatalf("Call err = %v, want %v", err, ErrGasUintOverflow)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_ReturnDataCopyBoundsMirrorReferenceChargeOrder(t *testing.T) {
+	// The reference validates the return-data source range before charging its
+	// copy cost, so an out-of-bounds copy shows only the 3 table static —
+	// go-ethereum validates in execution, after charging copy and memory gas.
+	for _, tt := range []struct {
+		name    string
+		code    []byte
+		callGas uint64
+		wantErr error
+	}{
+		{
+			// All charges affordable; the bounds check fails in execution.
+			name:    "affordable out-of-bounds copy",
+			code:    common.Hex2Bytes("6020600060003e00"),
+			callGas: 100_000,
+			wantErr: ErrReturnDataOutOfBounds,
+		},
+		{
+			// Dynamic gas unaffordable, and the source range is also
+			// out of bounds: the reference bounds check fires first.
+			name:    "unaffordable out-of-bounds copy",
+			code:    common.Hex2Bytes("611000600063ffffffff3e00"),
+			callGas: 20_000,
+			wantErr: ErrOutOfGas,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, RETURNDATACOPY)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, tt.callGas, new(uint256.Int))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Call err = %v, want %v", err, tt.wantErr)
+			}
+			if got := meter.TxZkGasUsed(); got != 3 {
+				t.Fatalf("TxZkGasUsed = %d, want 3", got)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_MemoryShortfallAlignedWindowsRegression(t *testing.T) {
+	// Already-aligned windows pinned against accidental drift.
+	for _, tt := range []struct {
+		name    string
+		op      OpCode
+		code    []byte
+		callGas uint64
+		want    uint64
+	}{
+		{
+			// Unaffordable-memory reconstruction: static + word cost.
+			name:    "keccak256 unaffordable memory",
+			op:      KECCAK256,
+			code:    common.Hex2Bytes("602063ffffffff2000"),
+			callGas: 20_000,
+			want:    36,
+		},
+		{
+			// EXTCODECOPY fronted warm cost matches the reference static.
+			name:    "extcodecopy unaffordable memory",
+			op:      EXTCODECOPY,
+			code:    append(append(common.Hex2Bytes("6020600063ffffffff"), append([]byte{byte(PUSH20)}, make([]byte, 20)...)...), 0x3c, 0x00),
+			callGas: 20_000,
+			want:    103,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, tt.callGas, new(uint256.Int))
+			if !errors.Is(err, ErrOutOfGas) {
+				t.Fatalf("Call err = %v, want %v", err, ErrOutOfGas)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_StaticCallValueHaltsBeforeMemoryCharges(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	pushMax := "7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	target := append([]byte{byte(PUSH20)}, make([]byte, 20)...)
+	tail := []byte{0x61, 0xff, 0xff}
+	for _, tt := range []struct {
+		name      string
+		op        OpCode
+		innerCode []byte
+		want      uint64
+	}{
+		{
+			// A value-bearing CALL in a static frame halts the reference
+			// right after its three leading pops, before the memory ranges
+			// are resized, so the input expansion must not be metered.
+			name:      "call with value halts at static gas",
+			op:        CALL,
+			innerCode: append(append(append(common.Hex2Bytes("6020"+pushMax+"602060006001"), target...), tail...), 0xf1, 0x00),
+			want:      100,
+		},
+		{
+			// Without value the reference proceeds into the memory ranges
+			// and charges the input expansion before the output halt.
+			name:      "call without value charges input memory",
+			op:        CALL,
+			innerCode: append(append(append(common.Hex2Bytes("6020"+pushMax+"602060006000"), target...), tail...), 0xf1, 0x00),
+			want:      103,
+		},
+		{
+			// CALLCODE may carry value in a static frame, so the reference
+			// also proceeds into the memory ranges.
+			name:      "callcode with value charges input memory",
+			op:        CALLCODE,
+			innerCode: append(append(append(common.Hex2Bytes("6020"+pushMax+"602060006001"), target...), tail...), 0xf2, 0x00),
+			want:      103,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+				innerAddr: tt.innerCode,
+			}, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_LogTopicUnderflowMirrorsReferenceChargeOrder(t *testing.T) {
+	// REVM's LOG pops offset and length, charges the topic+data cost, resizes
+	// memory, and only then pops the topics — so a stack with the two memory
+	// operands but missing topics underflows with those charges collected and
+	// gas preserved. go-ethereum's up-front stack check fires before any of
+	// that and metered only the 375 table static.
+	for _, tt := range []struct {
+		name string
+		op   OpCode
+		code []byte
+		want uint64
+	}{
+		{
+			name: "log1 missing topic charges static and topic gas",
+			op:   LOG1,
+			code: common.Hex2Bytes("60006000a100"),
+			want: 750,
+		},
+		{
+			name: "log2 one topic short charges static and topic gas",
+			op:   LOG2,
+			code: common.Hex2Bytes("600060006000a200"),
+			want: 1_125,
+		},
+		{
+			name: "log4 missing topics charge static and topic gas",
+			op:   LOG4,
+			code: common.Hex2Bytes("60006000a400"),
+			want: 1_875,
+		},
+		{
+			// Nonzero length also collects the data and memory charges
+			// before the topic pop underflows.
+			name: "log1 missing topic with data charges memory too",
+			op:   LOG1,
+			code: common.Hex2Bytes("60206000a100"),
+			want: 1_009,
+		},
+		{
+			// With fewer than the two memory operands REVM underflows on its
+			// first pop, before any in-body charge.
+			name: "log1 single operand charges static gas",
+			op:   LOG1,
+			code: common.Hex2Bytes("6000a100"),
+			want: 375,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 100_000, new(uint256.Int))
+			if v := (*ErrStackUnderflow)(nil); !errors.As(err, &v) {
+				t.Fatalf("Call err = %v, want stack underflow", err)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_LogTopicUnderflowInStaticContextChargesStaticGas(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{
+		innerAddr: common.Hex2Bytes("60006000a100"),
+	}, LOG1)
+
+	_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+	if err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+	if got := meter.TxZkGasUsed(); got != 375 {
+		t.Fatalf("TxZkGasUsed = %d, want 375 for a static-context LOG1 topic underflow", got)
 	}
 }
