@@ -205,7 +205,14 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 			// remaining frame gas when even the static charge cannot be paid).
 			if evm.zkGasTracker != nil && evm.zkGasErr == nil {
 				evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
-				if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasPreExecutionGasAfter(op, gasBefore)); zkErr != nil {
+				gasAfterUnderflow := zkGasPreExecutionGasAfter(op, gasBefore)
+				// CHANGE(taiko): CREATE2 pops its salt only after REVM charges
+				// the initcode and memory costs, so a three-operand stack must
+				// meter those in-body charges instead of the table static gas.
+				if op == CREATE2 && sLen == 3 {
+					gasAfterUnderflow = zkGasCreate2SaltUnderflowGasAfter(evm, stack, mem, gasBefore)
+				}
+				if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, gasAfterUnderflow); zkErr != nil {
 					evm.setZkGasErr()
 					return nil, ErrZkGasLimitExceeded
 				}

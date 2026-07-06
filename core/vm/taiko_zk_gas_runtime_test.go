@@ -1419,3 +1419,111 @@ func TestUnzenZkGas_CreateShortfallInStaticContextChargesNothing(t *testing.T) {
 		t.Fatalf("TxZkGasUsed = %d, want 0 for a static-context CREATE shortfall", got)
 	}
 }
+
+func TestUnzenZkGas_Create2SaltUnderflowMirrorsReferenceChargeOrder(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		code    []byte
+		callGas uint64
+		want    uint64
+	}{
+		{
+			// REVM pops value/offset/length, charges the initcode word cost
+			// (2) and memory expansion (3), and only then underflows popping
+			// the salt with gas preserved.
+			name:    "three operands nonzero length charges initcode and memory",
+			code:    common.Hex2Bytes("602060006000f500"),
+			callGas: 20_000,
+			want:    5,
+		},
+		{
+			// Zero length skips the initcode and memory charges entirely, so
+			// the salt-pop underflow surfaces with nothing charged.
+			name:    "three operands zero length charges nothing",
+			code:    common.Hex2Bytes("600060006000f500"),
+			callGas: 20_000,
+			want:    0,
+		},
+		{
+			// With fewer than three operands REVM underflows on its first
+			// pop, before any charge, matching the static-gas rule.
+			name:    "two operands charge nothing",
+			code:    common.Hex2Bytes("60006000f500"),
+			callGas: 20_000,
+			want:    0,
+		},
+		{
+			// The initcode word cost itself cannot be paid: REVM spends all
+			// remaining gas before reaching the salt pop.
+			name:    "unaffordable initcode cost spends all",
+			code:    common.Hex2Bytes("61c00060006000f500"),
+			callGas: 2_000,
+			want:    1_991,
+		},
+		{
+			// Oversized initcode halts before any charge.
+			name:    "oversized initcode charges nothing",
+			code:    common.Hex2Bytes("61c00160006000f500"),
+			callGas: 20_000,
+			want:    0,
+		},
+		{
+			// Length operand beyond 64 bits halts before any charge.
+			name:    "length overflow charges nothing",
+			code:    common.Hex2Bytes("7fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff60006000f500"),
+			callGas: 100_000,
+			want:    0,
+		},
+		{
+			// Offset operand beyond 64 bits halts after the initcode charge.
+			name:    "offset overflow charges initcode cost",
+			code:    common.Hex2Bytes("60207fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff6000f500"),
+			callGas: 100_000,
+			want:    2,
+		},
+		{
+			// Memory expansion is unaffordable: REVM halts preserving the
+			// post-initcode gas before reaching the salt pop.
+			name:    "unaffordable memory expansion charges initcode cost",
+			code:    common.Hex2Bytes("602063ffffffff6000f500"),
+			callGas: 20_000,
+			want:    2,
+		},
+		{
+			// Memory expansion cost overflows go-ethereum's cap: same
+			// preserved halt after the initcode charge.
+			name:    "memory cost overflow charges initcode cost",
+			code:    common.Hex2Bytes("6020650100000000006000f500"),
+			callGas: 100_000,
+			want:    2,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newCreateShortfallEVM(t, tt.code, nil)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, tt.callGas, new(uint256.Int))
+			if v := (*ErrStackUnderflow)(nil); !errors.As(err, &v) {
+				t.Fatalf("Call err = %v, want stack underflow", err)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUnzenZkGas_Create2SaltUnderflowInStaticContextChargesNothing(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	innerCode := common.Hex2Bytes("602060006000f500")
+	meter, evm := newCreateShortfallEVM(t, spawnBoundaryCallCode(STATICCALL, innerAddr), map[common.Address][]byte{
+		innerAddr: innerCode,
+	})
+
+	_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+	if err != nil {
+		t.Fatalf("Call returned error: %v", err)
+	}
+	if got := meter.TxZkGasUsed(); got != 0 {
+		t.Fatalf("TxZkGasUsed = %d, want 0 for a static-context CREATE2 salt underflow", got)
+	}
+}
