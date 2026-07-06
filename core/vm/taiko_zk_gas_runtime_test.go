@@ -1912,6 +1912,42 @@ func TestUnzenZkGas_MemoryCapOverflowMirrorsReferenceChargeOrder(t *testing.T) {
 			wantErr: ErrOutOfGas,
 			want:    100,
 		},
+		{
+			// The reference resizes and charges the input range before the
+			// output range, so a capped output preserves the input expansion.
+			name:    "call capped output after input expansion charges input memory",
+			op:      CALL,
+			code:    append(append(common.Hex2Bytes("60206502000000000060206000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    103,
+		},
+		{
+			name:    "call capped output after two-word input expansion",
+			op:      CALL,
+			code:    append(append(common.Hex2Bytes("60206502000000000060406000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    106,
+		},
+		{
+			name:    "delegatecall capped output after input expansion charges input memory",
+			op:      DELEGATECALL,
+			code:    append(append(common.Hex2Bytes("6020650200000000006020600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf4, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    103,
+		},
+		{
+			// A capped input range fails before anything beyond the static
+			// was charged.
+			name:    "call capped input memory charges static gas",
+			op:      CALL,
+			code:    append(append(common.Hex2Bytes("60006000602065020000000000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			callGas: 100_000,
+			wantErr: ErrOutOfGas,
+			want:    100,
+		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			meter, evm := newOpcodeMirrorEVM(t, tt.code, nil, tt.op)
@@ -1979,6 +2015,20 @@ func TestUnzenZkGas_CopyFamilyOperandOverflowChargesInBodyGas(t *testing.T) {
 			op:   MLOAD,
 			code: common.Hex2Bytes(pushMax[0:66] + "5100"),
 			want: 3,
+		},
+		{
+			// Output-offset operand beyond 64 bits halts the reference after
+			// the input range was resized and charged.
+			name: "call output offset overflow after input expansion",
+			op:   CALL,
+			code: append(append(common.Hex2Bytes("6020"+pushMax[0:66]+"60206000600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			want: 103,
+		},
+		{
+			name: "call input offset overflow charges static gas",
+			op:   CALL,
+			code: append(append(common.Hex2Bytes("600060006020"+pushMax[0:66]+"600073"), make([]byte, 20)...), 0x61, 0xff, 0xff, 0xf1, 0x00),
+			want: 100,
 		},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

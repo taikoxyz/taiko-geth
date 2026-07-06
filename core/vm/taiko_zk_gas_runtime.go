@@ -288,13 +288,51 @@ func zkGasDynamicUintOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Me
 		return zkGasLogShortfallGasAfter(evm, op, stack, mem, gasBefore), true
 	case op == KECCAK256 || op == CALLDATACOPY || op == CODECOPY || op == RETURNDATACOPY || op == MCOPY || op == EXTCODECOPY:
 		return zkGasCopyShortfallGasAfter(evm, op, stack, mem, gasBefore), true
-	case op == MLOAD || op == MSTORE || op == MSTORE8 || op == RETURN || op == REVERT ||
-		op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL:
+	case op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL:
+		return zkGasCallShortfallGasAfter(op, stack, mem, gasBefore), true
+	case op == MLOAD || op == MSTORE || op == MSTORE8 || op == RETURN || op == REVERT:
 		// No in-body charge precedes REVM's gas-preserving memory halt for
 		// these opcodes, so only the table static gas is visible.
 		return zkGasPreExecutionGasAfter(op, gasBefore), true
 	}
 	return gasAfterStatic, false
+}
+
+// CHANGE(taiko): zkGasCallShortfallGasAfter mirrors REVM's callback-visible
+// gas for CALL-family steps whose memory ranges fail before go-ethereum
+// charges dynamic gas. REVM resizes and charges the input range before the
+// output range, and every operand or expansion failure in either range halts
+// preserving gas, so an output-side failure keeps the input expansion charge
+// visible on top of the table static.
+func zkGasCallShortfallGasAfter(op OpCode, stack *Stack, mem *Memory, gasBefore uint64) uint64 {
+	staticGas := zkGasRevmStaticGas[op]
+	if gasBefore < staticGas {
+		return 0
+	}
+	gas := gasBefore - staticGas
+	inOffset, inSize, outOffset, outSize := 3, 4, 5, 6
+	if op == DELEGATECALL || op == STATICCALL {
+		inOffset, inSize, outOffset, outSize = 2, 3, 4, 5
+	}
+	currentMemorySize := uint64(mem.Len())
+	memoryLastGasCost := mem.lastGasCost
+	for _, memRange := range [2][2]int{{inOffset, inSize}, {outOffset, outSize}} {
+		memSize, overflow := calcMemSize64(stack.Back(memRange[0]), stack.Back(memRange[1]))
+		if overflow {
+			return gas
+		}
+		alignedMemSize, overflow := math.SafeMul(toWordSize(memSize), 32)
+		if overflow {
+			return gas
+		}
+		memoryCost, nextMemorySize, nextMemoryLastGasCost, ok := zkGasMemoryExpansionCost(currentMemorySize, memoryLastGasCost, alignedMemSize)
+		if !ok || gas < memoryCost {
+			return gas
+		}
+		gas -= memoryCost
+		currentMemorySize, memoryLastGasCost = nextMemorySize, nextMemoryLastGasCost
+	}
+	return gas
 }
 
 // CHANGE(taiko): zkGasDynamicOOGGasAfter mirrors REVM's callback-visible gas
@@ -664,6 +702,8 @@ func zkGasMemorySizeOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Mem
 		return zkGasLogShortfallGasAfter(evm, op, stack, mem, gasBefore)
 	case op == KECCAK256 || op == CALLDATACOPY || op == CODECOPY || op == RETURNDATACOPY || op == MCOPY || op == EXTCODECOPY:
 		return zkGasCopyShortfallGasAfter(evm, op, stack, mem, gasBefore)
+	case op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL:
+		return zkGasCallShortfallGasAfter(op, stack, mem, gasBefore)
 	}
 	return gasAfterStatic
 }
