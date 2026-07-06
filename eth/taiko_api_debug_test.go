@@ -7,8 +7,12 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/rlp"
 )
 
 func TestDecodeTxListWitnessTxsEmpty(t *testing.T) {
@@ -81,5 +85,41 @@ func TestIsRecoverableNonAnchorTxError(t *testing.T) {
 	}
 	if isRecoverableNonAnchorTxError(fmt.Errorf("wrapped: %w", errors.New("boom"))) {
 		t.Fatalf("wrapped unrelated error must not be recoverable")
+	}
+}
+
+func TestIsRecoverableNonAnchorTxErrorIncludesInitcodeLimit(t *testing.T) {
+	// The reference replay skips over-limit initcode creations like any other
+	// invalid-transaction precheck failure.
+	if !isRecoverableNonAnchorTxError(fmt.Errorf("apply tx: %w", vm.ErrMaxInitCodeSizeExceeded)) {
+		t.Fatalf("expected max-initcode-size errors to be recoverable")
+	}
+}
+
+func TestDecodeTxListWitnessTxsDropsUnrecoverableSigners(t *testing.T) {
+	key, _ := crypto.GenerateKey()
+	signer := types.LatestSignerForChainID(big.NewInt(167000))
+	valid, err := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: big.NewInt(167000), Nonce: 0, GasTipCap: big.NewInt(0),
+		GasFeeCap: big.NewInt(1), Gas: 21000, To: &common.Address{}, Value: big.NewInt(0),
+	}), signer, key)
+	if err != nil {
+		t.Fatalf("sign tx: %v", err)
+	}
+	junk, err := valid.WithSignature(signer, make([]byte, 65))
+	if err != nil {
+		t.Fatalf("junk signature: %v", err)
+	}
+
+	encoded, err := rlp.EncodeToBytes(types.Transactions{junk, valid})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	txs, err := decodeTxListWitnessTxs(encoded)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(txs) != 1 || txs[0].Hash() != valid.Hash() {
+		t.Fatalf("expected only the recoverable tx to survive decode, got %d", len(txs))
 	}
 }

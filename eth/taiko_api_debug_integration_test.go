@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
+	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/stateless"
@@ -813,5 +814,174 @@ func TestBuildTxListWitnessRevealsCollapseSiblingOnDelete(t *testing.T) {
 		common.HexToHash("0x03"), common.Hash{})
 	if _, ok := witness.State[string(proof497[2])]; !ok {
 		t.Fatalf("surviving sibling leaf missing from witness state after branch-collapsing delete")
+	}
+}
+
+// goldenTouchTestKey is the well-known golden-touch signing key (also used by
+// the consensus package tests).
+func goldenTouchTestKey(t *testing.T) *ecdsa.PrivateKey {
+	t.Helper()
+	key, err := crypto.HexToECDSA("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
+	if err != nil {
+		t.Fatalf("golden touch key: %v", err)
+	}
+	if got := crypto.PubkeyToAddress(key.PublicKey); got != taiko.GoldenTouchAccount {
+		t.Fatalf("golden touch key derives %s, want %s", got, taiko.GoldenTouchAccount)
+	}
+	return key
+}
+
+// goldenTouchTripleTx signs a transaction from the golden touch to the chain's
+// treasury with the golden touch's block-start nonce — the reference anchor
+// identity.
+func goldenTouchTripleTx(t *testing.T, bc *core.BlockChain, baseFee *big.Int) *types.Transaction {
+	t.Helper()
+	treasury := core.TaikoTreasuryAddress(bc.Config().ChainID)
+	tx, err := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: bc.Config().ChainID, Nonce: 0, GasTipCap: big.NewInt(0),
+		GasFeeCap: baseFee, Gas: 1_000_000, To: &treasury, Value: common.Big0,
+	}), types.LatestSigner(bc.Config()), goldenTouchTestKey(t))
+	if err != nil {
+		t.Fatalf("sign golden touch tx: %v", err)
+	}
+	return tx
+}
+
+// TestBuildTxListWitnessGoldenTouchTripleGetsAnchorExemptions: the reference
+// grants anchor execution exemptions to the (golden touch, block-start nonce,
+// treasury) triple at any list position — the unfunded golden touch must
+// execute without buying gas even when it is not the first transaction.
+func TestBuildTxListWitnessGoldenTouchTripleGetsAnchorExemptions(t *testing.T) {
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{blocks: 1, transferTxs: 1})
+	block := blocks[0]
+
+	t.Run("first position", func(t *testing.T) {
+		// A fresh tx per subtest: the transaction object must carry no
+		// in-memory anchor flag from a previous replay.
+		gtTx := goldenTouchTripleTx(t, bc, block.BaseFee())
+		_, committed, err := buildTxListWitness(bc, block, types.Transactions{gtTx}, txListWitnessOptions{})
+		if err != nil {
+			t.Fatalf("buildTxListWitness: %v", err)
+		}
+		if len(committed) != 1 {
+			t.Fatalf("expected the golden touch tx committed, got %d", len(committed))
+		}
+	})
+
+	t.Run("later position", func(t *testing.T) {
+		gtTx := goldenTouchTripleTx(t, bc, block.BaseFee())
+		first := block.Transactions()[0] // funded sender, executes as a normal tx
+		_, committed, err := buildTxListWitness(bc, block, types.Transactions{first, gtTx}, txListWitnessOptions{})
+		if err != nil {
+			t.Fatalf("buildTxListWitness: %v", err)
+		}
+		if len(committed) != 2 {
+			t.Fatalf("expected both txs committed, got %d", len(committed))
+		}
+		if committed[1].Hash() != gtTx.Hash() {
+			t.Fatalf("expected the golden touch tx committed at position 1")
+		}
+	})
+}
+
+// TestBuildTxListWitnessFirstTxWithoutTripleGetsNoExemptions: a first-position
+// transaction from an ordinary zero-balance sender is a normal fee-paying
+// transaction in the reference, so it must fail the replay fatally instead of
+// silently executing with anchor exemptions.
+func TestBuildTxListWitnessFirstTxWithoutTripleGetsNoExemptions(t *testing.T) {
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{blocks: 1})
+	block := blocks[0]
+
+	key, _ := crypto.GenerateKey() // zero balance
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+	tx, _ := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: bc.Config().ChainID, Nonce: 0, GasTipCap: big.NewInt(0),
+		GasFeeCap: block.BaseFee(), Gas: 100000, To: &dst, Value: common.Big0,
+	}), types.LatestSigner(bc.Config()), key)
+
+	if _, _, err := buildTxListWitness(bc, block, types.Transactions{tx}, txListWitnessOptions{}); err == nil {
+		t.Fatalf("expected fatal error: zero-balance first tx must pay for gas")
+	}
+}
+
+// TestBuildTxListWitnessLegacyFirstTxExecutes: the reference has no
+// transaction-type requirement on the first list position; a funded legacy
+// transaction must replay as a normal transaction instead of failing the
+// request.
+func TestBuildTxListWitnessLegacyFirstTxExecutes(t *testing.T) {
+	bc, blocks, key := newTxListWitnessChain(t, witnessChainConfig{blocks: 1, transferTxs: 1})
+	block := blocks[0]
+
+	dst := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+	// The replay runs on the parent (genesis) state, where the funded key's
+	// next nonce is 0.
+	legacy, err := types.SignTx(types.NewTx(&types.LegacyTx{
+		Nonce: 0, To: &dst, Value: common.Big0, Gas: 100000, GasPrice: block.BaseFee(),
+	}), types.LatestSigner(bc.Config()), key)
+	if err != nil {
+		t.Fatalf("sign legacy tx: %v", err)
+	}
+
+	_, committed, err := buildTxListWitness(bc, block, types.Transactions{legacy}, txListWitnessOptions{})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+	if len(committed) != 1 {
+		t.Fatalf("expected the legacy tx committed, got %d", len(committed))
+	}
+}
+
+// TestBuildTxListWitnessSkipsOversizedInitcodeTx: an over-limit initcode
+// creation is a recoverable skip in the reference replay, not a fatal error.
+func TestBuildTxListWitnessSkipsOversizedInitcodeTx(t *testing.T) {
+	bc, blocks, key := newTxListWitnessChain(t, witnessChainConfig{blocks: 1, transferTxs: 1})
+	block := blocks[0]
+
+	signer := types.LatestSigner(bc.Config())
+	oversized, err := types.SignTx(types.NewTx(&types.DynamicFeeTx{
+		ChainID: bc.Config().ChainID, Nonce: 2, GasTipCap: big.NewInt(0),
+		GasFeeCap: block.BaseFee(), Gas: 2_000_000, To: nil, Value: common.Big0,
+		Data: make([]byte, params.MaxInitCodeSize+1),
+	}), signer, key)
+	if err != nil {
+		t.Fatalf("sign oversized initcode tx: %v", err)
+	}
+
+	first := block.Transactions()[0]
+	second := block.Transactions()[1]
+	_, committed, err := buildTxListWitness(bc, block, types.Transactions{first, second, oversized}, txListWitnessOptions{})
+	if err != nil {
+		t.Fatalf("buildTxListWitness: %v", err)
+	}
+	if len(committed) != 2 {
+		t.Fatalf("expected oversized-initcode tx skipped, got %d committed", len(committed))
+	}
+}
+
+// TestExecutionWitnessForTxListDropsUnrecoverableSigner: a transaction whose
+// signature cannot be recovered is dropped at decode time, before list
+// positions are assigned — the request must succeed with the remaining
+// transactions taking their shifted positions.
+func TestExecutionWitnessForTxListDropsUnrecoverableSigner(t *testing.T) {
+	bc, blocks, _ := newTxListWitnessChain(t, witnessChainConfig{blocks: 1, transferTxs: 1})
+	block := blocks[0]
+
+	junk, err := block.Transactions()[0].WithSignature(types.LatestSigner(bc.Config()), make([]byte, 65))
+	if err != nil {
+		t.Fatalf("make junk-signature tx: %v", err)
+	}
+	txs := append(types.Transactions{junk}, block.Transactions()...)
+	rlpTxs, err := rlp.EncodeToBytes(txs)
+	if err != nil {
+		t.Fatalf("encode txs: %v", err)
+	}
+
+	bn := rpc.BlockNumberOrHashWithNumber(rpc.BlockNumber(block.NumberU64()))
+	out, err := executionWitnessForTxList(bc, bn, rlpTxs, nil, nil)
+	if err != nil {
+		t.Fatalf("executionWitnessForTxList: %v", err)
+	}
+	if len(out.State) == 0 {
+		t.Fatalf("expected a witness for the recoverable remainder of the list")
 	}
 }
