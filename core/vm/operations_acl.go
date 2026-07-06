@@ -17,8 +17,6 @@
 package vm
 
 import (
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/tracing"
@@ -33,7 +31,8 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
 		}
 		// If we fail the minimum gas availability invariant, fail (0)
 		if contract.Gas <= params.SstoreSentryGasEIP2200 {
-			return 0, errors.New("not enough gas for reentrancy sentry")
+			// CHANGE(taiko): sentinel error so zk-gas metering recognizes the class.
+			return 0, errSStoreSentry
 		}
 		// Gas sentry honoured, do the actual gas calculation based on the stored value
 		var (

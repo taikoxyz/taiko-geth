@@ -315,3 +315,99 @@ func TestApplyTransactionWithEVM_Unzen_IncludesTxIntrinsicInBlockZkGas(t *testin
 		t.Fatalf("BlockZkGasUsed after value transfer = %d, want %d (intrinsic only)", got, vm.TxIntrinsicZkGas)
 	}
 }
+
+// CHANGE(taiko): taikoSystemCallTestBlockContext returns a minimal block
+// context for exercising the system-call helpers directly.
+func taikoSystemCallTestBlockContext() vm.BlockContext {
+	return vm.BlockContext{
+		CanTransfer: CanTransfer,
+		Transfer:    Transfer,
+		GetHash:     func(uint64) common.Hash { return common.Hash{} },
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Difficulty:  big.NewInt(0),
+		BaseFee:     big.NewInt(0),
+		GasLimit:    30_000_000,
+		Random:      &common.Hash{},
+		BlobBaseFee: big.NewInt(1),
+	}
+}
+
+// CHANGE(taiko): the reference execution client never runs the EIP-7002/7251
+// request-queue system calls for Taiko blocks — the requests hash is pinned
+// empty — so the queue processors must skip execution even when code exists at
+// the queue addresses.
+func TestTaikoSkipsRequestQueueSystemCalls(t *testing.T) {
+	// Returns a single byte, so a call that does execute appends one request.
+	queueCode := common.Hex2Bytes("60016000526001601ff3")
+	for _, tt := range []struct {
+		name         string
+		taiko        bool
+		wantRequests int
+	}{
+		{"taiko skips queue calls", true, 0},
+		{"upstream still processes queue calls", false, 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			config := unzenTestChainConfig(t)
+			if !tt.taiko {
+				cfg := *params.MergedTestChainConfig
+				config = &cfg
+			}
+			statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+			statedb.SetCode(params.WithdrawalQueueAddress, queueCode, tracing.CodeChangeGenesis)
+			statedb.SetCode(params.ConsolidationQueueAddress, queueCode, tracing.CodeChangeGenesis)
+			statedb.Finalise(true)
+
+			evm := vm.NewEVM(taikoSystemCallTestBlockContext(), statedb, config, vm.Config{})
+			requests := [][]byte{}
+			if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
+				t.Fatalf("ProcessWithdrawalQueue: %v", err)
+			}
+			if err := ProcessConsolidationQueue(&requests, evm); err != nil {
+				t.Fatalf("ProcessConsolidationQueue: %v", err)
+			}
+			if len(requests) != tt.wantRequests {
+				t.Fatalf("requests = %d, want %d", len(requests), tt.wantRequests)
+			}
+		})
+	}
+}
+
+// CHANGE(taiko): the reference execution client caps every system call at the
+// EIP-7825 transaction gas cap; pin go-ethereum's Taiko system calls to the
+// same cap. (Only the cap is aligned — see systemCallGasLimit.)
+func TestTaikoSystemCallGasLimitMatchesReference(t *testing.T) {
+	// GAS PUSH0 SSTORE STOP: stores the observed gas into slot 0.
+	gasProbe := common.Hex2Bytes("5a5f5500")
+	for _, tt := range []struct {
+		name  string
+		taiko bool
+		want  uint64
+	}{
+		{"taiko caps at the eip-7825 limit", true, params.MaxTxGas - 2},
+		{"upstream keeps 30m", false, 30_000_000 - 2},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			config := unzenTestChainConfig(t)
+			if !tt.taiko {
+				cfg := *params.MergedTestChainConfig
+				config = &cfg
+			}
+			statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+			statedb.SetCode(params.BeaconRootsAddress, gasProbe, tracing.CodeChangeGenesis)
+			statedb.SetCode(params.HistoryStorageAddress, gasProbe, tracing.CodeChangeGenesis)
+			statedb.Finalise(true)
+
+			evm := vm.NewEVM(taikoSystemCallTestBlockContext(), statedb, config, vm.Config{})
+			ProcessBeaconBlockRoot(common.Hash{}, evm)
+			if got := statedb.GetState(params.BeaconRootsAddress, common.Hash{}).Big().Uint64(); got != tt.want {
+				t.Fatalf("beacon-root system call observed gas = %d, want %d", got, tt.want)
+			}
+			ProcessParentBlockHash(common.Hash{}, evm)
+			if got := statedb.GetState(params.HistoryStorageAddress, common.Hash{}).Big().Uint64(); got != tt.want {
+				t.Fatalf("parent-hash system call observed gas = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

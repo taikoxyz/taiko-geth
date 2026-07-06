@@ -42,6 +42,12 @@ var (
 	// errStopToken is an internal token indicating interpreter loop termination,
 	// never returned to outside callers.
 	errStopToken = errors.New("stop token")
+
+	// CHANGE(taiko): errSStoreSentry is the EIP-2200 minimum-gas failure
+	// surfaced by the SSTORE dynamic gas functions. It is a sentinel so the
+	// interpreter's zk-gas metering can recognize the failure class instead
+	// of silently skipping the step (see interpreter.go).
+	errSStoreSentry = errors.New("not enough gas for reentrancy sentry")
 )
 
 // ErrStackUnderflow wraps an evm error when the items on the stack less

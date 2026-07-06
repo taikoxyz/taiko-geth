@@ -2253,3 +2253,99 @@ func TestUnzenZkGas_LogTopicUnderflowInStaticContextChargesStaticGas(t *testing.
 		t.Fatalf("TxZkGasUsed = %d, want 375 for a static-context LOG1 topic underflow", got)
 	}
 }
+
+// TestUnzenZkGas_DynamicShortfallSpendsAllMirrorsReference pins the spend-all
+// reconstruction for dynamic-gas shortfalls outside the specially mirrored
+// families. The reference charges these trailing in-body costs (exponent
+// bytes, cold-access surcharges) with spend-all semantics after its table
+// static gas, which equals go-ethereum's full remaining frame gas at the step.
+func TestUnzenZkGas_DynamicShortfallSpendsAllMirrorsReference(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	coldAddr := common.HexToAddress("0x00000000000000000000000000000000deadbeef")
+
+	// PUSH32 all-ones exponent, PUSH1 2 base: the 32-byte exponent cost (1600)
+	// exceeds the child's remaining gas after the pushes.
+	expInner := []byte{byte(PUSH32)}
+	for range 32 {
+		expInner = append(expInner, 0xff)
+	}
+	expInner = append(expInner, byte(PUSH1), 0x02, byte(EXP), byte(STOP))
+
+	for _, tt := range []struct {
+		name     string
+		op       OpCode
+		inner    []byte
+		childGas uint16
+		want     uint64
+	}{
+		{
+			name:     "exp exponent bytes unaffordable",
+			op:       EXP,
+			inner:    expInner,
+			childGas: 100,
+			want:     94, // remaining gas at the EXP step, spent in full
+		},
+		{
+			name:     "cold sload unaffordable",
+			op:       SLOAD,
+			inner:    []byte{byte(PUSH1), 0x00, byte(SLOAD), byte(STOP)},
+			childGas: 150,
+			want:     147, // remaining gas at the SLOAD step, spent in full
+		},
+		{
+			name:     "cold balance unaffordable",
+			op:       BALANCE,
+			inner:    append(append([]byte{byte(PUSH20)}, coldAddr.Bytes()...), byte(BALANCE), byte(STOP)),
+			childGas: 150,
+			want:     147, // remaining gas at the BALANCE step, spent in full
+		},
+		{
+			name:     "cold extcodesize unaffordable",
+			op:       EXTCODESIZE,
+			inner:    append(append([]byte{byte(PUSH20)}, coldAddr.Bytes()...), byte(EXTCODESIZE), byte(STOP)),
+			childGas: 150,
+			want:     147, // remaining gas at the EXTCODESIZE step, spent in full
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newOpcodeMirrorEVM(t, spawnBoundaryCallCodeWithGas(CALL, innerAddr, tt.childGas), map[common.Address][]byte{
+				innerAddr: tt.inner,
+			}, tt.op)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+			if err != nil {
+				t.Fatalf("Call returned error: %v", err)
+			}
+			if got := meter.TxZkGasUsed(); got != tt.want {
+				t.Fatalf("TxZkGasUsed = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestUnzenZkGas_CreateOversizedInitcodeChargesNothingOnDynamicRoute pins the
+// EIP-3860 size-limit failure on the dynamic-gas route (the 32000 base cost is
+// affordable, so the shortfall surfaces from the dynamic gas function): the
+// reference halts gas-preserving before any in-body charge and CREATE-family
+// table static gas is zero, so nothing may be metered.
+func TestUnzenZkGas_CreateOversizedInitcodeChargesNothingOnDynamicRoute(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		code []byte
+	}{
+		{"create", common.Hex2Bytes("61c00160006000f000")},
+		{"create2", common.Hex2Bytes("600061c00160006000f500")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			meter, evm := newCreateShortfallEVM(t, tt.code, nil)
+
+			_, _, err := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 100_000, new(uint256.Int))
+			if !errors.Is(err, ErrOutOfGas) {
+				t.Fatalf("Call err = %v, want %v", err, ErrOutOfGas)
+			}
+			if got := meter.TxZkGasUsed(); got != 0 {
+				t.Fatalf("TxZkGasUsed = %d, want 0 for an oversized-initcode dynamic failure", got)
+			}
+		})
+	}
+}
