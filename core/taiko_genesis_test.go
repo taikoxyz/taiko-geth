@@ -1,7 +1,6 @@
 package core
 
 import (
-	"math"
 	"math/big"
 	"testing"
 
@@ -85,17 +84,65 @@ func TestTaikoGenesisBlock_HoodiActivatesUnzenAtScheduledTime(t *testing.T) {
 	t.Logf("Taiko Hoodi genesis hash: %s", genesis.ToBlock().Hash())
 }
 
+func TestTaikoGenesisBlock_MainnetActivatesUnzenAtScheduledTime(t *testing.T) {
+	genesis := TaikoGenesisBlock(params.TaikoMainnetNetworkID.Uint64())
+	cfg := genesis.Config
+	if cfg.ChainID.Cmp(params.TaikoMainnetNetworkID) != 0 {
+		t.Fatalf("ChainID = %v, want %v", cfg.ChainID, params.TaikoMainnetNetworkID)
+	}
+
+	const mainnetUnzenTime uint64 = 1_786_021_200 // 2026-08-06 13:00:00 UTC
+	if cfg.UnzenTime == nil {
+		t.Fatalf("UnzenTime is nil, want %d", mainnetUnzenTime)
+	}
+	if got := *cfg.UnzenTime; got != mainnetUnzenTime {
+		t.Fatalf("UnzenTime = %d, want %d", got, mainnetUnzenTime)
+	}
+
+	zeroBlock := big.NewInt(0)
+	before := mainnetUnzenTime - 1
+	if cfg.IsUnzen(before) {
+		t.Fatalf("Mainnet Unzen fork is active at timestamp %d", before)
+	}
+	if !cfg.IsUnzen(mainnetUnzenTime) {
+		t.Fatalf("Mainnet Unzen fork is not active at timestamp %d", mainnetUnzenTime)
+	}
+	if cfg.IsCancun(zeroBlock, before) {
+		t.Fatalf("Mainnet Cancun fork is active at timestamp %d", before)
+	}
+	if !cfg.IsCancun(zeroBlock, mainnetUnzenTime) {
+		t.Fatalf("Mainnet Cancun fork is not active at timestamp %d", mainnetUnzenTime)
+	}
+	if cfg.IsPrague(zeroBlock, before) {
+		t.Fatalf("Mainnet Prague fork is active at timestamp %d", before)
+	}
+	if !cfg.IsPrague(zeroBlock, mainnetUnzenTime) {
+		t.Fatalf("Mainnet Prague fork is not active at timestamp %d", mainnetUnzenTime)
+	}
+	if cfg.IsOsaka(zeroBlock, before) {
+		t.Fatalf("Mainnet Osaka fork is active at timestamp %d", before)
+	}
+	if !cfg.IsOsaka(zeroBlock, mainnetUnzenTime) {
+		t.Fatalf("Mainnet Osaka fork is not active at timestamp %d", mainnetUnzenTime)
+	}
+}
+
 func TestTaikoGenesisBlock_MasayaDoesNotContaminateMainnetForkTimes(t *testing.T) {
 	TaikoGenesisBlock(params.MasayaDevnetNetworkID.Uint64())
 
 	genesis := TaikoGenesisBlock(params.TaikoMainnetNetworkID.Uint64())
 	cfg := genesis.Config
+
+	const mainnetUnzenTime uint64 = 1_786_021_200 // 2026-08-06 13:00:00 UTC
 	if cfg.UnzenTime == nil {
-		t.Fatal("UnzenTime is nil, want MaxUint64")
+		t.Fatalf("UnzenTime is nil, want %d", mainnetUnzenTime)
 	}
-	if got := *cfg.UnzenTime; got != math.MaxUint64 {
-		t.Fatalf("UnzenTime = %d, want %d", got, uint64(math.MaxUint64))
+	if got := *cfg.UnzenTime; got != mainnetUnzenTime {
+		t.Fatalf("UnzenTime = %d, want %d", got, mainnetUnzenTime)
 	}
+	// Masaya activates Cancun/Prague/Osaka at genesis; constructing it must not
+	// leak those timestamps into the Mainnet config, which stays inactive until
+	// the scheduled Unzen time.
 	zeroBlock := big.NewInt(0)
 	if cfg.IsCancun(zeroBlock, 0) {
 		t.Fatal("Mainnet Cancun fork is active at genesis after constructing Masaya")
