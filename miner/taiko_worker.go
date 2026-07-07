@@ -317,7 +317,14 @@ func (w *Miner) sealBlockWith(
 
 		// CHANGE(taiko): commit transaction zk gas on success.
 		if zkGasMeter != nil {
-			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
+			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil {
+				// The anchor can never be truncated: fail sealing instead of
+				// building a block the reference implementation rejects.
+				// Unreachable in practice, since charging already bounds
+				// committed+in-flight zk gas to the block limit.
+				if i == 0 {
+					return nil, fmt.Errorf("anchor transaction failed: %w", commitErr)
+				}
 				zkGasMeter.ResetTransaction()
 				break
 			}
