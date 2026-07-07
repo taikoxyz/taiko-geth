@@ -520,7 +520,9 @@ func zkGasCreateBodyGasAfter(evm *EVM, stack *Stack, mem *Memory, gasBefore uint
 	}
 	var initcodeCost uint64
 	if evm.chainRules.IsShanghai {
-		if size > params.MaxInitCodeSize {
+		// Track the fork-aware EIP-3860 limit the dynamic gas functions
+		// enforce, so this reconstruction can never drift from them.
+		if CheckMaxInitCodeSize(&evm.chainRules, size) != nil {
 			return gasBefore, false
 		}
 		initcodeCost = toWordSize(size) * params.InitCodeWordGas

@@ -159,7 +159,15 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 
 		// CHANGE(taiko): commit transaction zk gas on success.
 		if cfg.ZkGasMeter != nil {
-			if commitErr := cfg.ZkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
+			if commitErr := cfg.ZkGasMeter.CommitTransaction(); commitErr != nil {
+				// The anchor can never be truncated: fail the block like the
+				// reference executor does instead of committing a body the
+				// reference rejects. Unreachable in practice, since charging
+				// already bounds committed+in-flight zk gas to the block limit.
+				if i == 0 {
+					spanEnd(&commitErr)
+					return nil, fmt.Errorf("could not apply anchor tx [%v]: %w", tx.Hash().Hex(), commitErr)
+				}
 				cfg.ZkGasMeter.ResetTransaction()
 				spanEnd(nil)
 				break
@@ -354,6 +362,20 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	return ApplyTransactionWithEVM(msg, gp, statedb, header.Number, header.Hash(), header.Time, tx, evm)
 }
 
+// CHANGE(taiko): systemCallGasLimit returns the gas limit for EVM system
+// calls. The reference execution client caps every system call at the
+// EIP-7825 transaction gas cap, so Taiko chains observe the same cap should
+// code ever exist at a system address. Only the cap is aligned: the
+// reference runs system calls as full inner transactions (intrinsic gas
+// deducted inside the cap, block-env gas limit and basefee swapped for the
+// call) — residual differences no canonical system contract observes.
+func systemCallGasLimit(config *params.ChainConfig) uint64 {
+	if config.Taiko {
+		return params.MaxTxGas
+	}
+	return 30_000_000
+}
+
 // ProcessBeaconBlockRoot applies the EIP-4788 system call to the beacon block root
 // contract. This method is exported to be used in tests.
 func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) {
@@ -363,9 +385,11 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) {
 			defer tracer.OnSystemCallEnd()
 		}
 	}
+	// CHANGE(taiko): observe the reference client's system-call gas limit.
+	gasLimit := systemCallGasLimit(evm.ChainConfig())
 	msg := &Message{
 		From:      params.SystemAddress,
-		GasLimit:  30_000_000,
+		GasLimit:  gasLimit,
 		GasPrice:  common.Big0,
 		GasFeeCap: common.Big0,
 		GasTipCap: common.Big0,
@@ -374,7 +398,7 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) {
 	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(params.BeaconRootsAddress)
-	_, _, _ = evm.Call(msg.From, *msg.To, msg.Data, 30_000_000, common.U2560)
+	_, _, _ = evm.Call(msg.From, *msg.To, msg.Data, gasLimit, common.U2560)
 	evm.StateDB.Finalise(true)
 }
 
@@ -387,9 +411,11 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
 			defer tracer.OnSystemCallEnd()
 		}
 	}
+	// CHANGE(taiko): observe the reference client's system-call gas limit.
+	gasLimit := systemCallGasLimit(evm.ChainConfig())
 	msg := &Message{
 		From:      params.SystemAddress,
-		GasLimit:  30_000_000,
+		GasLimit:  gasLimit,
 		GasPrice:  common.Big0,
 		GasFeeCap: common.Big0,
 		GasTipCap: common.Big0,
@@ -398,7 +424,7 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
 	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(params.HistoryStorageAddress)
-	_, _, err := evm.Call(msg.From, *msg.To, msg.Data, 30_000_000, common.U2560)
+	_, _, err := evm.Call(msg.From, *msg.To, msg.Data, gasLimit, common.U2560)
 	if err != nil {
 		panic(err)
 	}
@@ -421,6 +447,14 @@ func ProcessConsolidationQueue(requests *[][]byte, evm *vm.EVM) error {
 }
 
 func processRequestsSystemCall(requests *[][]byte, evm *vm.EVM, requestType byte, addr common.Address) error {
+	// CHANGE(taiko): the reference execution client never runs the
+	// EIP-7002/7251 request-queue system calls — Taiko blocks pin the empty
+	// requests hash — so skip them on every path (import, sealing, and test
+	// chain generation) to keep the state transition identical should code
+	// ever exist at the queue addresses.
+	if evm.ChainConfig().Taiko {
+		return nil
+	}
 	if tracer := evm.Config.Tracer; tracer != nil {
 		onSystemCallStart(tracer, evm.GetVMContext())
 		if tracer.OnSystemCallEnd != nil {
@@ -433,9 +467,11 @@ func processRequestsSystemCall(requests *[][]byte, evm *vm.EVM, requestType byte
 		defer evm.Config.ZkGasMeter.ResetTransaction()
 		defer evm.ResetZkGasErr()
 	}
+	// CHANGE(taiko): observe the reference client's system-call gas limit.
+	gasLimit := systemCallGasLimit(evm.ChainConfig())
 	msg := &Message{
 		From:      params.SystemAddress,
-		GasLimit:  30_000_000,
+		GasLimit:  gasLimit,
 		GasPrice:  common.Big0,
 		GasFeeCap: common.Big0,
 		GasTipCap: common.Big0,
@@ -443,7 +479,7 @@ func processRequestsSystemCall(requests *[][]byte, evm *vm.EVM, requestType byte
 	}
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(addr)
-	ret, _, err := evm.Call(msg.From, *msg.To, msg.Data, 30_000_000, common.U2560)
+	ret, _, err := evm.Call(msg.From, *msg.To, msg.Data, gasLimit, common.U2560)
 	evm.StateDB.Finalise(true)
 	if err != nil {
 		return fmt.Errorf("system call failed to execute: %v", err)
