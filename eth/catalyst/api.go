@@ -92,6 +92,10 @@ type ConsensusAPI struct {
 	remoteBlocks *headerQueue  // Cache of remote payloads received
 	localBlocks  *payloadQueue // Cache of local payloads generated
 
+	// CHANGE(taiko): L1 origins of locally built payloads, buffered until their
+	// block is promoted to canonical head.
+	pendingL1Origins pendingL1Origins
+
 	// The forkchoice update and new payload method require us to return the
 	// latest valid hash in an invalid chain. To support that return, we need
 	// to track historical bad blocks as well as bad tipsets in case a chain
@@ -342,6 +346,12 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 	}
 	api.eth.SetSynced()
 
+	// CHANGE(taiko): persist the buffered L1 origin for the block this update just
+	// promoted to canonical head, if that block was built locally.
+	if isTaiko {
+		api.flushPendingL1Origin(update.HeadBlockHash)
+	}
+
 	// If the beacon client also advertised a finalized block, mark the local
 	// chain final and completely in PoS mode.
 	if update.FinalizedBlockHash != (common.Hash{}) {
@@ -435,15 +445,12 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 			// If we already are busy generating this work, then we do not need
 			// to start a second process.
 			if api.localBlocks.has(id) {
-				// Write L1Origin and HeadL1Origin even if the payload is already in the cache.
-				rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
-				if !l1Origin.IsPreconfBlock() {
-					rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
-					// Write the batch to block mapping if the batch ID is given.
-					if payloadAttributes.BlockMetadata.BatchID != nil {
-						rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
-					}
-				}
+				// Buffer the L1Origin again even if the payload is already in the cache, so
+				// the forkchoice update that promotes this block can persist it.
+				api.pendingL1Origins.stash(l1Origin.L2BlockHash, pendingL1Origin{
+					l1Origin: l1Origin,
+					batchID:  payloadAttributes.BlockMetadata.BatchID,
+				})
 				return valid(&id), nil
 			}
 			payload, err := api.eth.Miner().BuildPayload(ctx, args, false)
@@ -456,17 +463,13 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 
 			api.localBlocks.put(id, payload)
 
-			// Write L1Origin.
-			rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
-
-			// Write the head L1Origin, only when it's not a preconfirmation block.
-			if !l1Origin.IsPreconfBlock() {
-				rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
-				// Write the batch to block mapping if the batch ID is given.
-				if payloadAttributes.BlockMetadata.BatchID != nil {
-					rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
-				}
-			}
+			// Buffer the L1Origin keyed by the sealed block hash; it is persisted only when
+			// a later forkchoice update makes this block the canonical head, so blocks that
+			// are built but never imported (e.g. build-only previews) leave no rows behind.
+			api.pendingL1Origins.stash(l1Origin.L2BlockHash, pendingL1Origin{
+				l1Origin: l1Origin,
+				batchID:  payloadAttributes.BlockMetadata.BatchID,
+			})
 
 			return valid(&id), nil
 		}
