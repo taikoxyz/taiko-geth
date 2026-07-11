@@ -10,10 +10,12 @@ import (
 )
 
 // pendingL1OriginsCapacity bounds the number of buffered L1 origins awaiting canonical
-// promotion. Locally built blocks are normally promoted within the same insert sequence, so
-// the buffer only accumulates when payloads are built without being imported; the cap bounds
-// that growth while leaving plenty of slack for in-flight blocks.
-const pendingL1OriginsCapacity = 64
+// promotion. Locally built blocks are promoted within the same insert sequence, so a
+// promotable entry is pending for milliseconds; entries that linger belong to builds that
+// were never imported (previews), whose rows must not be persisted anyway. Eviction is
+// oldest-first, so losing a promotable entry requires this many newer unimported builds to
+// arrive inside one build-to-promote window on the JWT-authenticated engine endpoint.
+const pendingL1OriginsCapacity = 1024
 
 // pendingL1Origin is a locally built payload's L1 origin awaiting canonical promotion of its
 // block.
