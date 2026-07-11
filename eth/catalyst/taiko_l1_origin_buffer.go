@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 // pendingL1OriginsCapacity bounds the number of buffered L1 origins awaiting canonical
@@ -51,8 +52,14 @@ func (p *pendingL1Origins) stash(blockHash common.Hash, pending pendingL1Origin)
 		}
 	}
 	p.entries = append(kept, pendingL1OriginEntry{blockHash: blockHash, pending: pending})
-	if len(p.entries) > pendingL1OriginsCapacity {
-		p.entries = append(p.entries[:0], p.entries[len(p.entries)-pendingL1OriginsCapacity:]...)
+	for len(p.entries) > pendingL1OriginsCapacity {
+		evicted := p.entries[0]
+		log.Warn(
+			"Evicting pending L1 origin that was never canonically promoted; if its block is promoted later its origin rows will be missing",
+			"blockID", evicted.pending.l1Origin.BlockID,
+			"blockHash", evicted.blockHash,
+		)
+		p.entries = append(p.entries[:0], p.entries[1:]...)
 	}
 }
 
