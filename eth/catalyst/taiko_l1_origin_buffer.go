@@ -14,12 +14,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-// pendingL1OriginsCapacity bounds the number of buffered L1 origins awaiting canonical
-// promotion. Locally built blocks are promoted within the same insert sequence, so a
-// promotable entry is pending for milliseconds; entries that linger belong to builds that
-// were never imported (previews), whose rows must not be persisted anyway. Eviction is
-// oldest-first, so losing a promotable entry requires this many newer unimported builds to
-// arrive inside one build-to-promote window on the JWT-authenticated engine endpoint.
+// pendingL1OriginsCapacity bounds hash-keyed L1 origins awaiting promotion or retained for
+// recent reorg-back. Locally built blocks are normally promoted within one insert sequence;
+// build-only previews and recent canonical history share the bounded cache.
 const pendingL1OriginsCapacity = 1024
 
 // headL1OriginReconcileLookback bounds pointer repair after a rewind.
@@ -45,12 +42,10 @@ type canonicalL1OriginBlock struct {
 	hash   common.Hash
 }
 
-// pendingL1Origins buffers L1 origins of locally built payloads until their block becomes
-// the canonical head.
+// pendingL1Origins caches L1 origins of locally built payloads by sealed block hash.
 //
-// Entries are persisted to the database only once a forkchoice update promotes the built
-// block to canonical head; entries whose block is never promoted (e.g. build-only previews)
-// are evicted once the buffer exceeds capacity and never reach the database.
+// Dirty entries are persisted only once a forkchoice update promotes their exact block.
+// Clean entries remain available to restore number-keyed views after a recent reorg-back.
 type pendingL1Origins struct {
 	mu      sync.Mutex
 	entries []pendingL1OriginEntry // insertion order, bounded by pendingL1OriginsCapacity
@@ -71,11 +66,15 @@ func (p *pendingL1Origins) stash(blockHash common.Hash, pending pendingL1Origin)
 	p.entries = append(kept, pendingL1OriginEntry{blockHash: blockHash, pending: pending, dirty: true})
 	for len(p.entries) > pendingL1OriginsCapacity {
 		evicted := p.entries[0]
-		log.Warn(
-			"Evicting pending L1 origin that was never canonically promoted; if its block is promoted later its origin rows will be missing",
-			"blockID", evicted.pending.l1Origin.BlockID,
-			"blockHash", evicted.blockHash,
-		)
+		if evicted.dirty {
+			log.Warn(
+				"Evicting pending L1 origin that was never canonically promoted; if its block is promoted later its origin rows will be missing",
+				"blockID", evicted.pending.l1Origin.BlockID,
+				"blockHash", evicted.blockHash,
+			)
+		} else {
+			log.Debug("Evicting retained canonical L1 origin metadata", "blockID", evicted.pending.l1Origin.BlockID, "blockHash", evicted.blockHash)
+		}
 		p.entries = append(p.entries[:0], p.entries[1:]...)
 	}
 }
