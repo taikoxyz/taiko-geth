@@ -135,19 +135,17 @@ const (
 	InitialBaseFee                  = 1000000000 // Initial base fee for EIP-1559 blocks.
 	ShastaInitialBaseFee            = 25_000_000 // CHANGE(taiko): add ShastaInitialBaseFee for Shasta fork
 
-	// CHANGE(taiko): extraData layouts for Shasta blocks. The basefee-sharing
-	// pctg always sits at byte 0. The current taiko-mono main driver (Go and
-	// Rust) emits the 7-byte proposal-id-bearing layout ([pctg | proposalId(6)]),
-	// as carried by the live chains; an earlier driver line emitted a 2-byte flag
-	// layout ([pctg, isLowBondProposal]) with no proposalId. geth enforces no
-	// minimum length (only the 32-byte cap), mirroring the reference client, so
-	// consumers must treat the embedded proposalId as optional; lengths outside
-	// these two layouts are accepted with a warning.
+	// CHANGE(taiko): extraData layout for Shasta blocks. The basefee-sharing
+	// pctg sits at byte 0, followed by a 6-byte big-endian proposalId — the
+	// 7-byte layout emitted by the taiko-mono main driver (Go and Rust) and
+	// carried by the live chains. geth enforces no minimum length (only the
+	// 32-byte cap), mirroring the reference client, so consumers must treat
+	// the embedded proposalId as optional; any other length is accepted with
+	// a warning.
 	ShastaExtraDataBasefeeSharingPctgIndex = 0
 	ShastaExtraDataProposalIDIndex         = 1
 	ShastaExtraDataProposalIDLength        = 6
 	ShastaExtraDataLen                     = 1 + ShastaExtraDataProposalIDLength
-	ShastaExtraDataFlagFormatLen           = 2
 
 	MaxCodeSize              = 24576                    // Maximum bytecode to permit for a contract
 	MaxInitCodeSize          = 2 * MaxCodeSize          // Maximum initcode to permit in a creation transaction and create instructions

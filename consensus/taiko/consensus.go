@@ -209,12 +209,11 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	// as carried by the live chains. No minimum length is enforced here, so geth
 	// is never stricter than the reference client, which also caps at 32 and
 	// models the embedded proposalId as optional (absent for short extra).
-	// Consumers must treat the proposalId as optional. Lengths outside the 7-byte
-	// proposalId layout and the 2-byte [pctg, isLowBondProposal] layout (used by
-	// an earlier driver line) stay valid but are logged, so a misbehaving block
-	// producer is visible without splitting acceptance between clients.
+	// Consumers must treat the proposalId as optional. Any other length stays
+	// valid but is logged, so a misbehaving block producer is visible without
+	// splitting acceptance between clients.
 	if t.chainConfig.IsShasta(header.Time) {
-		if l := len(header.Extra); l != params.ShastaExtraDataFlagFormatLen && l != params.ShastaExtraDataLen {
+		if l := len(header.Extra); l != params.ShastaExtraDataLen {
 			log.Warn("Unexpected Shasta extra-data length", "len", l, "number", header.Number, "hash", header.Hash())
 		}
 		if header.Number.Cmp(common.Big1) > 0 {
