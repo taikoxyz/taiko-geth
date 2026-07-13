@@ -248,7 +248,10 @@ func (a *TaikoAuthAPIBackend) getLastBlockByBatchIdWithLimit(batchID *big.Int, m
 
 // SetHeadL1Origin sets the latest L2 block's corresponding L1 origin.
 func (a *TaikoAuthAPIBackend) SetHeadL1Origin(blockID *math.HexOrDecimal256) *hexutil.Big {
-	rawdb.WriteHeadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
+	_ = a.eth.WithTaikoL1OriginLock(func() error {
+		rawdb.WriteHeadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
+		return nil
+	})
 	return (*hexutil.Big)(blockID)
 }
 
@@ -257,13 +260,19 @@ func (a *TaikoAuthAPIBackend) SetBatchToLastBlock(
 	batchID *math.HexOrDecimal256,
 	blockID *math.HexOrDecimal256,
 ) *hexutil.Big {
-	rawdb.WriteBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID), (*big.Int)(blockID))
+	_ = a.eth.WithTaikoL1OriginLock(func() error {
+		rawdb.WriteBatchToLastBlockID(a.eth.ChainDb(), (*big.Int)(batchID), (*big.Int)(blockID))
+		return nil
+	})
 	return (*hexutil.Big)(batchID)
 }
 
 // UpdateL1Origin updates the L2 block's corresponding L1 origin.
 func (a *TaikoAuthAPIBackend) UpdateL1Origin(l1Origin *rawdb.L1Origin) *rawdb.L1Origin {
-	rawdb.WriteL1Origin(a.eth.ChainDb(), l1Origin.BlockID, l1Origin)
+	_ = a.eth.WithTaikoL1OriginLock(func() error {
+		rawdb.WriteL1Origin(a.eth.ChainDb(), l1Origin.BlockID, l1Origin)
+		return nil
+	})
 	return l1Origin
 }
 
@@ -273,17 +282,20 @@ func (a *TaikoAuthAPIBackend) SetL1OriginSignature(blockID *math.HexOrDecimal256
 		return nil, fmt.Errorf("invalid signature length: expected 65, got %d", len(signature))
 	}
 
-	l1Origin, err := rawdb.ReadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
-	if err != nil {
-		return nil, err
-	}
-
-	var sig [65]byte
-	copy(sig[:], signature)
-	l1Origin.Signature = sig
-	rawdb.WriteL1Origin(a.eth.ChainDb(), (*big.Int)(blockID), l1Origin)
-
-	return l1Origin, nil
+	var l1Origin *rawdb.L1Origin
+	err := a.eth.WithTaikoL1OriginLock(func() error {
+		var err error
+		l1Origin, err = rawdb.ReadL1Origin(a.eth.ChainDb(), (*big.Int)(blockID))
+		if err != nil {
+			return err
+		}
+		var sig [65]byte
+		copy(sig[:], signature)
+		l1Origin.Signature = sig
+		rawdb.WriteL1Origin(a.eth.ChainDb(), (*big.Int)(blockID), l1Origin)
+		return nil
+	})
+	return l1Origin, err
 }
 
 // TxPoolContent retrieves the transaction pool content with the given upper limits.

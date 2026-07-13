@@ -42,6 +42,40 @@ type canonicalL1OriginBlock struct {
 	hash   common.Hash
 }
 
+// l1OriginReconciliation describes one canonical interval replacement.
+type l1OriginReconciliation struct {
+	first     uint64
+	last      uint64
+	canonical []canonicalL1OriginBlock
+}
+
+// l1OriginReconciler retains a failed plan so an idempotent FCU retries the original range.
+// Access is serialized by ConsensusAPI.forkchoiceLock.
+type l1OriginReconciler struct {
+	pending *l1OriginReconciliation
+}
+
+func (r *l1OriginReconciler) reconcile(
+	plan l1OriginReconciliation,
+	apply func(l1OriginReconciliation) error,
+) error {
+	plan.canonical = append([]canonicalL1OriginBlock(nil), plan.canonical...)
+	r.pending = &plan
+	return r.retry(apply)
+}
+
+func (r *l1OriginReconciler) retry(apply func(l1OriginReconciliation) error) error {
+	if r.pending == nil {
+		return nil
+	}
+	plan := *r.pending
+	if err := apply(plan); err != nil {
+		return err
+	}
+	r.pending = nil
+	return nil
+}
+
 // pendingL1Origins caches L1 origins of locally built payloads by sealed block hash.
 //
 // Dirty entries are persisted only once a forkchoice update promotes their exact block.
@@ -216,7 +250,11 @@ func reconcileL1OriginTables(
 		if pending.l1Origin == nil || pending.l1Origin.BlockID == nil {
 			return fmt.Errorf("pending L1 origin for block %s is incomplete", block.hash)
 		}
-		if pending.l1Origin.BlockID.Uint64() != block.number || pending.l1Origin.L2BlockHash != block.hash {
+		expectedBlockID := new(big.Int).SetUint64(block.number)
+		if !pending.l1Origin.BlockID.IsUint64() || pending.l1Origin.BlockID.Cmp(expectedBlockID) != 0 {
+			return fmt.Errorf("pending L1 origin block ID %s does not match canonical block %d", pending.l1Origin.BlockID, block.number)
+		}
+		if pending.l1Origin.L2BlockHash != block.hash {
 			return fmt.Errorf("pending L1 origin does not match canonical block %d %s", block.number, block.hash)
 		}
 		rawdb.WriteL1Origin(batch, pending.l1Origin.BlockID, pending.l1Origin)
@@ -229,7 +267,7 @@ func reconcileL1OriginTables(
 		}
 	}
 
-	if confirmedHead == nil && storedHead != nil && storedHead.Uint64() < first && canonicalL1Origin(db, storedHead) {
+	if confirmedHead == nil && storedHead != nil && storedHead.IsUint64() && storedHead.Uint64() < first && canonicalL1Origin(db, storedHead) {
 		confirmedHead = new(big.Int).Set(storedHead)
 	}
 	if confirmedHead == nil && first > 0 {
@@ -260,6 +298,9 @@ func reconcileL1OriginTables(
 
 // canonicalL1Origin reports whether blockID has a confirmed origin matching the canonical hash.
 func canonicalL1Origin(db ethdb.Database, blockID *big.Int) bool {
+	if blockID == nil || !blockID.IsUint64() {
+		return false
+	}
 	origin, err := rawdb.ReadL1Origin(db, blockID)
 	if err != nil || origin == nil || origin.IsPreconfBlock() {
 		return false
@@ -346,5 +387,19 @@ func (api *ConsensusAPI) reconcilePendingL1Origins(oldHead, newHead *types.Heade
 	if err != nil {
 		return err
 	}
-	return reconcileL1OriginTables(api.eth.ChainDb(), &api.pendingL1Origins, first, last, canonical)
+	return api.l1OriginReconciler.reconcile(l1OriginReconciliation{
+		first:     first,
+		last:      last,
+		canonical: canonical,
+	}, api.applyL1OriginReconciliation)
+}
+
+func (api *ConsensusAPI) applyL1OriginReconciliation(plan l1OriginReconciliation) error {
+	return api.eth.WithTaikoL1OriginLock(func() error {
+		return reconcileL1OriginTables(api.eth.ChainDb(), &api.pendingL1Origins, plan.first, plan.last, plan.canonical)
+	})
+}
+
+func (api *ConsensusAPI) retryPendingL1OriginReconciliation() error {
+	return api.l1OriginReconciler.retry(api.applyL1OriginReconciliation)
 }

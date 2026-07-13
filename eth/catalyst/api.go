@@ -94,7 +94,8 @@ type ConsensusAPI struct {
 
 	// CHANGE(taiko): L1 origins of locally built payloads, buffered until their
 	// block is promoted to canonical head.
-	pendingL1Origins pendingL1Origins
+	pendingL1Origins   pendingL1Origins
+	l1OriginReconciler l1OriginReconciler
 
 	// The forkchoice update and new payload method require us to return the
 	// latest valid hash in an invalid chain. To support that return, we need
@@ -324,6 +325,11 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 
 	// CHANGE(taiko): check whether `--taiko` flag is set.
 	isTaiko := api.eth.BlockChain().Config().Taiko
+	if isTaiko {
+		if err := api.retryPendingL1OriginReconciliation(); err != nil {
+			return valid(nil), err
+		}
+	}
 	oldHead := api.eth.BlockChain().CurrentBlock()
 
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {

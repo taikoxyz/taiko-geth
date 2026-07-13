@@ -5,6 +5,7 @@ import (
 	"math/big"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -71,6 +72,39 @@ func TestTaikoAPIBackendHidesBatchLookupMethods(t *testing.T) {
 		if _, ok := backendType.MethodByName(name); ok {
 			t.Fatalf("expected TaikoAPIBackend to hide %s", name)
 		}
+	}
+}
+
+func TestTaikoAuthL1OriginWritesUseSharedLock(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	service := &Ethereum{chainDb: db}
+	backend := &TaikoAuthAPIBackend{eth: service}
+	locked := make(chan struct{})
+	release := make(chan struct{})
+	go func() {
+		_ = service.WithTaikoL1OriginLock(func() error {
+			close(locked)
+			<-release
+			return nil
+		})
+	}()
+	<-locked
+
+	done := make(chan struct{})
+	go func() {
+		backend.UpdateL1Origin(&rawdb.L1Origin{BlockID: big.NewInt(7), L2BlockHash: common.HexToHash("0x07")})
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Fatal("taikoAuth write bypassed the shared L1 origin lock")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("taikoAuth write did not resume after releasing the shared L1 origin lock")
 	}
 }
 

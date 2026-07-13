@@ -105,6 +105,9 @@ type Ethereum struct {
 	// DB interfaces
 	chainDb ethdb.Database // Block chain database
 
+	// CHANGE(taiko): serializes custom L1-origin table transactions and setter RPCs.
+	taikoL1OriginLock sync.Mutex
+
 	eventMux       *event.TypeMux
 	engine         consensus.Engine
 	accountManager *accounts.Manager
@@ -424,12 +427,19 @@ func (s *Ethereum) ResetWithGenesisBlock(gb *types.Block) {
 
 func (s *Ethereum) Miner() *miner.Miner { return s.miner }
 
-func (s *Ethereum) AccountManager() *accounts.Manager  { return s.accountManager }
-func (s *Ethereum) BlockChain() *core.BlockChain       { return s.blockchain }
-func (s *Ethereum) TxPool() *txpool.TxPool             { return s.txPool }
-func (s *Ethereum) BlobTxPool() *blobpool.BlobPool     { return s.blobTxPool }
-func (s *Ethereum) Engine() consensus.Engine           { return s.engine }
-func (s *Ethereum) ChainDb() ethdb.Database            { return s.chainDb }
+func (s *Ethereum) AccountManager() *accounts.Manager { return s.accountManager }
+func (s *Ethereum) BlockChain() *core.BlockChain      { return s.blockchain }
+func (s *Ethereum) TxPool() *txpool.TxPool            { return s.txPool }
+func (s *Ethereum) BlobTxPool() *blobpool.BlobPool    { return s.blobTxPool }
+func (s *Ethereum) Engine() consensus.Engine          { return s.engine }
+func (s *Ethereum) ChainDb() ethdb.Database           { return s.chainDb }
+
+// WithTaikoL1OriginLock runs fn while holding the shared custom-table writer lock.
+func (s *Ethereum) WithTaikoL1OriginLock(fn func() error) error {
+	s.taikoL1OriginLock.Lock()
+	defer s.taikoL1OriginLock.Unlock()
+	return fn()
+}
 func (s *Ethereum) IsListening() bool                  { return true } // Always listening
 func (s *Ethereum) Downloader() *downloader.Downloader { return s.handler.downloader }
 func (s *Ethereum) Synced() bool                       { return s.handler.synced.Load() }

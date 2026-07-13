@@ -1,6 +1,7 @@
 package catalyst
 
 import (
+	"errors"
 	"math/big"
 	"testing"
 
@@ -243,6 +244,48 @@ func TestReconcileL1OriginTablesDeletesExplicitBatchMappings(t *testing.T) {
 	mapped, err := rawdb.ReadBatchToLastBlockID(db, big.NewInt(999))
 	require.NoError(t, err)
 	assert.Nil(t, mapped)
+}
+
+func TestReconcileL1OriginTablesRejectsOversizedBlockID(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	var pending pendingL1Origins
+	hash := common.HexToHash("0xa7")
+	oversized := new(big.Int).Lsh(common.Big1, 64)
+	oversized.Add(oversized, big.NewInt(7))
+	entry := samplePendingL1Origin(7, big.NewInt(100))
+	entry.l1Origin.BlockID = oversized
+	entry.l1Origin.L2BlockHash = hash
+	pending.stash(hash, entry)
+	rawdb.WriteCanonicalHash(db, hash, 7)
+
+	err := reconcileL1OriginTables(db, &pending, 7, 7, []canonicalL1OriginBlock{{number: 7, hash: hash}})
+	assert.ErrorContains(t, err, "block ID")
+	origin, readErr := rawdb.ReadL1Origin(db, big.NewInt(7))
+	require.NoError(t, readErr)
+	assert.Nil(t, origin)
+}
+
+func TestL1OriginReconcilerRetriesOriginalRange(t *testing.T) {
+	plan := l1OriginReconciliation{
+		first:     1,
+		last:      3,
+		canonical: []canonicalL1OriginBlock{{number: 1, hash: common.HexToHash("0xb1")}, {number: 3, hash: common.HexToHash("0xb3")}},
+	}
+	var reconciler l1OriginReconciler
+	err := reconciler.reconcile(plan, func(got l1OriginReconciliation) error {
+		assert.Equal(t, plan, got)
+		return errors.New("transient write failure")
+	})
+	assert.ErrorContains(t, err, "transient write failure")
+	require.NotNil(t, reconciler.pending)
+
+	var retried l1OriginReconciliation
+	require.NoError(t, reconciler.retry(func(got l1OriginReconciliation) error {
+		retried = got
+		return nil
+	}))
+	assert.Equal(t, plan, retried)
+	assert.Nil(t, reconciler.pending)
 }
 
 func TestCanonicalL1OriginSegment(t *testing.T) {
