@@ -203,9 +203,13 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	}
 
 	// Verify the header's EIP-4396 attributes.
+	// Shasta extraData must be the 7-byte [pctg | proposalId(6)] layout — the
+	// only shape the drivers produce and the live chains carry. Reject anything
+	// else at import so a misbehaving block producer fails loudly here instead
+	// of minting headers whose embedded proposalId consumers cannot decode.
 	if t.chainConfig.IsShasta(header.Time) {
-		if len(header.Extra) < params.ShastaExtraDataLen {
-			return fmt.Errorf("Shasta extra-data too short: %d < %d", len(header.Extra), params.ShastaExtraDataLen)
+		if l := len(header.Extra); l != params.ShastaExtraDataLen {
+			return fmt.Errorf("invalid Shasta extra-data length: have %d, want %d", l, params.ShastaExtraDataLen)
 		}
 		if header.Number.Cmp(common.Big1) > 0 {
 			if ancestorBlock := chain.GetHeader(parent.ParentHash, parent.Number.Uint64()-1); ancestorBlock != nil {
