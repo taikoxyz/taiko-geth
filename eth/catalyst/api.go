@@ -324,6 +324,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 
 	// CHANGE(taiko): check whether `--taiko` flag is set.
 	isTaiko := api.eth.BlockChain().Config().Taiko
+	oldHead := api.eth.BlockChain().CurrentBlock()
 
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {
 		// Block is not canonical, set head.
@@ -346,10 +347,12 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 	}
 	api.eth.SetSynced()
 
-	// CHANGE(taiko): persist the buffered L1 origin for the block this update just
-	// promoted to canonical head, if that block was built locally.
+	// CHANGE(taiko): reconcile every custom L1-origin view after canonicalization
+	// and before any payload requested by this FCU is cached.
 	if isTaiko {
-		api.flushPendingL1Origin(update.HeadBlockHash)
+		if err := api.reconcilePendingL1Origins(oldHead, block.Header()); err != nil {
+			return valid(nil), err
+		}
 	}
 
 	// If the beacon client also advertised a finalized block, mark the local
