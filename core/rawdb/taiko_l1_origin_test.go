@@ -117,6 +117,28 @@ func TestBatchIDsByLastBlockRange(t *testing.T) {
 	assert.Equal(t, int64(9), (*big.Int)(blockID).Int64())
 }
 
+func TestL1OriginReconciliationJournal(t *testing.T) {
+	db := NewMemoryDatabase()
+	journal := &L1OriginReconciliationJournal{
+		First:         7,
+		Last:          9,
+		OldHeadHash:   common.HexToHash("0xaa"),
+		NewHeadHash:   common.HexToHash("0xbb"),
+		NewHeadNumber: 9,
+	}
+	WriteL1OriginReconciliationJournal(db, journal)
+	stored, err := ReadL1OriginReconciliationJournal(db)
+	require.NoError(t, err)
+	assert.Equal(t, journal, stored)
+
+	batch := db.NewBatch()
+	DeleteL1OriginReconciliationJournal(batch)
+	require.NoError(t, batch.Write())
+	stored, err = ReadL1OriginReconciliationJournal(db)
+	require.NoError(t, err)
+	assert.Nil(t, stored)
+}
+
 func TestL1Origin_OptionalFields(t *testing.T) {
 	db := NewMemoryDatabase()
 

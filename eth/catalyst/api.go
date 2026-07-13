@@ -154,6 +154,9 @@ func newConsensusAPIWithoutHeartbeat(eth *eth.Ethereum) *ConsensusAPI {
 		invalidBlocksHits: make(map[common.Hash]int),
 		invalidTipsets:    make(map[common.Hash]*types.Header),
 	}
+	if eth.BlockChain().Config().Taiko {
+		api.recoverPendingL1OriginReconciliation()
+	}
 	eth.Downloader().SetBadBlockCallback(api.setInvalidAncestor)
 	return api
 }
@@ -331,10 +334,21 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 		}
 	}
 	oldHead := api.eth.BlockChain().CurrentBlock()
+	var l1OriginPlan *l1OriginReconciliation
+	if isTaiko {
+		l1OriginPlan, err = api.preparePendingL1OriginReconciliation(oldHead, block.Header())
+		if err != nil {
+			return valid(nil), err
+		}
+		if l1OriginPlan != nil {
+			api.writeL1OriginReconciliationJournal(*l1OriginPlan, oldHead, block.Header())
+		}
+	}
 
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {
 		// Block is not canonical, set head.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
+			api.discardL1OriginReconciliationJournal(l1OriginPlan)
 			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
 		}
 	} else if api.eth.BlockChain().CurrentBlock().Hash() == update.HeadBlockHash {
@@ -343,6 +357,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 		// missing and we are requested to generate the payload in slot.
 	} else if isTaiko { // CHANGE(taiko): reorg is allowed in L2.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
+			api.discardL1OriginReconciliationJournal(l1OriginPlan)
 			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
 		}
 	} else {
@@ -356,7 +371,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 	// CHANGE(taiko): reconcile every custom L1-origin view after canonicalization
 	// and before any payload requested by this FCU is cached.
 	if isTaiko {
-		if err := api.reconcilePendingL1Origins(oldHead, block.Header()); err != nil {
+		if err := api.reconcilePendingL1Origins(l1OriginPlan); err != nil {
 			return valid(nil), err
 		}
 	}
@@ -419,6 +434,9 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 
 			// L1Origin **MUST NOT** be nil, it's a required field in PayloadAttributesV1.
 			l1Origin := payloadAttributes.L1Origin
+			if err := validateL1OriginBlockID(l1Origin, block.Number()); err != nil {
+				return valid(nil), engine.InvalidPayloadAttributes.With(err)
+			}
 
 			// Set the block hash before inserting the L1Origin into database.
 			l1Origin.L2BlockHash = block.Hash()

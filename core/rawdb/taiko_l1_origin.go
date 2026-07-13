@@ -18,6 +18,7 @@ var (
 	l1OriginPrefix         = []byte("TKO:L1O")
 	batchToLastBlockPrefix = []byte("TKO:B2B")
 	headL1OriginKey        = []byte("TKO:LastL1O")
+	l1OriginReconcileKey   = []byte("TKO:L1OR")
 )
 
 // l1OriginKey calculates the L1Origin key.
@@ -53,6 +54,16 @@ type L1OriginLegacy struct {
 	L2BlockHash   common.Hash `json:"l2BlockHash"`
 	L1BlockHeight *big.Int    `json:"l1BlockHeight" rlp:"optional"`
 	L1BlockHash   common.Hash `json:"l1BlockHash" rlp:"optional"`
+}
+
+// L1OriginReconciliationJournal records a canonical transition whose custom-table
+// reconciliation must survive a process restart.
+type L1OriginReconciliationJournal struct {
+	First         uint64
+	Last          uint64
+	OldHeadHash   common.Hash
+	NewHeadHash   common.Hash
+	NewHeadNumber uint64
 }
 
 type l1OriginMarshaling struct {
@@ -194,6 +205,37 @@ func BatchIDsByLastBlockRange(db ethdb.Iteratee, first, last *big.Int) ([]*big.I
 		return nil, fmt.Errorf("iterate batch mappings: %w", err)
 	}
 	return batches, nil
+}
+
+// WriteL1OriginReconciliationJournal stores an outstanding canonical reconciliation.
+func WriteL1OriginReconciliationJournal(db ethdb.KeyValueWriter, journal *L1OriginReconciliationJournal) {
+	data, err := rlp.EncodeToBytes(journal)
+	if err != nil {
+		log.Crit("Failed to encode L1 origin reconciliation journal", "err", err)
+	}
+	if err := db.Put(l1OriginReconcileKey, data); err != nil {
+		log.Crit("Failed to store L1 origin reconciliation journal", "err", err)
+	}
+}
+
+// ReadL1OriginReconciliationJournal retrieves an outstanding canonical reconciliation.
+func ReadL1OriginReconciliationJournal(db ethdb.KeyValueReader) (*L1OriginReconciliationJournal, error) {
+	data, _ := db.Get(l1OriginReconcileKey)
+	if len(data) == 0 {
+		return nil, nil
+	}
+	journal := new(L1OriginReconciliationJournal)
+	if err := rlp.DecodeBytes(data, journal); err != nil {
+		return nil, fmt.Errorf("invalid L1 origin reconciliation journal: %w", err)
+	}
+	return journal, nil
+}
+
+// DeleteL1OriginReconciliationJournal clears the outstanding reconciliation marker.
+func DeleteL1OriginReconciliationJournal(db ethdb.KeyValueWriter) {
+	if err := db.Delete(l1OriginReconcileKey); err != nil {
+		log.Crit("Failed to delete L1 origin reconciliation journal", "err", err)
+	}
 }
 
 // ReadBatchToLastBlockID retrieves the block ID corresponding to the last block ID in this batch.

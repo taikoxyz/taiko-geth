@@ -76,6 +76,41 @@ func (r *l1OriginReconciler) retry(apply func(l1OriginReconciliation) error) err
 	return nil
 }
 
+// recoverL1OriginReconciliationJournal decides whether a journaled transition reached the
+// canonical chain and reconstructs the safest reconciliation possible without the lost cache.
+func recoverL1OriginReconciliationJournal(
+	journal *rawdb.L1OriginReconciliationJournal,
+	currentHead *types.Header,
+	canonicalHash func(uint64) common.Hash,
+) (*l1OriginReconciliation, bool, error) {
+	if journal == nil {
+		return nil, false, nil
+	}
+	if journal.First > journal.Last {
+		return nil, false, fmt.Errorf("invalid journaled L1 origin range: %d > %d", journal.First, journal.Last)
+	}
+	if journal.OldHeadHash == journal.NewHeadHash {
+		return nil, true, nil
+	}
+	if currentHead != nil && currentHead.Hash() == journal.OldHeadHash {
+		return nil, true, nil
+	}
+	if currentHead == nil || (currentHead.Hash() != journal.NewHeadHash &&
+		canonicalHash(journal.NewHeadNumber) != journal.NewHeadHash) {
+		return nil, true, nil
+	}
+	plan := &l1OriginReconciliation{first: journal.First, last: journal.Last}
+	for number := journal.First; ; number++ {
+		if hash := canonicalHash(number); hash != (common.Hash{}) {
+			plan.canonical = append(plan.canonical, canonicalL1OriginBlock{number: number, hash: hash})
+		}
+		if number == journal.Last {
+			break
+		}
+	}
+	return plan, false, nil
+}
+
 // pendingL1Origins caches L1 origins of locally built payloads by sealed block hash.
 //
 // Dirty entries are persisted only once a forkchoice update promotes their exact block.
@@ -168,6 +203,20 @@ func (p *pendingL1Origins) validateTimestamp(blockHash common.Hash, timestamp, n
 	pending, ok := p.get(blockHash)
 	if ok && !pending.l1Origin.IsPreconfBlock() && timestamp > now {
 		return consensus.ErrFutureBlock
+	}
+	return nil
+}
+
+// validateL1OriginBlockID rejects metadata that cannot address the exact uint64 block height.
+func validateL1OriginBlockID(origin *rawdb.L1Origin, blockNumber *big.Int) error {
+	if origin == nil || origin.BlockID == nil {
+		return errors.New("missing L1 origin block ID")
+	}
+	if blockNumber == nil || !blockNumber.IsUint64() {
+		return fmt.Errorf("invalid canonical block number %v", blockNumber)
+	}
+	if !origin.BlockID.IsUint64() || origin.BlockID.Cmp(blockNumber) != 0 {
+		return fmt.Errorf("L1 origin block ID %s does not match payload block %s", origin.BlockID, blockNumber)
 	}
 	return nil
 }
@@ -287,6 +336,7 @@ func reconcileL1OriginTables(
 	} else {
 		rawdb.WriteHeadL1Origin(batch, confirmedHead)
 	}
+	rawdb.DeleteL1OriginReconciliationJournal(batch)
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("commit L1 origin reconciliation: %w", err)
 	}
@@ -371,12 +421,11 @@ func canonicalL1OriginSegment(
 	return first, last, canonical, nil
 }
 
-// reconcilePendingL1Origins derives the affected canonical segment and replaces its
-// number-keyed origin views using retained hash-keyed metadata.
-func (api *ConsensusAPI) reconcilePendingL1Origins(oldHead, newHead *types.Header) error {
+// preparePendingL1OriginReconciliation derives the affected segment before canonicalization.
+func (api *ConsensusAPI) preparePendingL1OriginReconciliation(oldHead, newHead *types.Header) (*l1OriginReconciliation, error) {
 	if oldHead.Hash() == newHead.Hash() {
 		if !api.pendingL1Origins.isDirty(newHead.Hash()) {
-			return nil
+			return nil, nil
 		}
 	}
 	first, last, canonical, err := canonicalL1OriginSegment(
@@ -385,13 +434,21 @@ func (api *ConsensusAPI) reconcilePendingL1Origins(oldHead, newHead *types.Heade
 		api.eth.BlockChain().GetHeaderByHash,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return api.l1OriginReconciler.reconcile(l1OriginReconciliation{
+	return &l1OriginReconciliation{
 		first:     first,
 		last:      last,
 		canonical: canonical,
-	}, api.applyL1OriginReconciliation)
+	}, nil
+}
+
+// reconcilePendingL1Origins applies a plan prepared before canonicalization.
+func (api *ConsensusAPI) reconcilePendingL1Origins(plan *l1OriginReconciliation) error {
+	if plan == nil {
+		return nil
+	}
+	return api.l1OriginReconciler.reconcile(*plan, api.applyL1OriginReconciliation)
 }
 
 func (api *ConsensusAPI) applyL1OriginReconciliation(plan l1OriginReconciliation) error {
@@ -402,4 +459,60 @@ func (api *ConsensusAPI) applyL1OriginReconciliation(plan l1OriginReconciliation
 
 func (api *ConsensusAPI) retryPendingL1OriginReconciliation() error {
 	return api.l1OriginReconciler.retry(api.applyL1OriginReconciliation)
+}
+
+func (api *ConsensusAPI) writeL1OriginReconciliationJournal(
+	plan l1OriginReconciliation,
+	oldHead *types.Header,
+	newHead *types.Header,
+) {
+	_ = api.eth.WithTaikoL1OriginLock(func() error {
+		rawdb.WriteL1OriginReconciliationJournal(api.eth.ChainDb(), &rawdb.L1OriginReconciliationJournal{
+			First:         plan.first,
+			Last:          plan.last,
+			OldHeadHash:   oldHead.Hash(),
+			NewHeadHash:   newHead.Hash(),
+			NewHeadNumber: newHead.Number.Uint64(),
+		})
+		return nil
+	})
+}
+
+func (api *ConsensusAPI) discardL1OriginReconciliationJournal(plan *l1OriginReconciliation) {
+	if plan == nil {
+		return
+	}
+	_ = api.eth.WithTaikoL1OriginLock(func() error {
+		rawdb.DeleteL1OriginReconciliationJournal(api.eth.ChainDb())
+		return nil
+	})
+}
+
+// recoverPendingL1OriginReconciliation repairs or discards a journal before serving FCUs.
+func (api *ConsensusAPI) recoverPendingL1OriginReconciliation() {
+	journal, err := rawdb.ReadL1OriginReconciliationJournal(api.eth.ChainDb())
+	if err != nil {
+		log.Error("Failed to read L1 origin reconciliation journal", "err", err)
+		return
+	}
+	plan, clear, err := recoverL1OriginReconciliationJournal(
+		journal,
+		api.eth.BlockChain().CurrentBlock(),
+		func(number uint64) common.Hash { return rawdb.ReadCanonicalHash(api.eth.ChainDb(), number) },
+	)
+	if err != nil {
+		log.Error("Failed to recover L1 origin reconciliation journal", "err", err)
+		return
+	}
+	if clear {
+		rawdb.DeleteL1OriginReconciliationJournal(api.eth.ChainDb())
+		return
+	}
+	if plan == nil {
+		return
+	}
+	api.l1OriginReconciler.pending = plan
+	if err := api.retryPendingL1OriginReconciliation(); err != nil {
+		log.Error("Failed to reconcile L1 origin tables during startup", "err", err)
+	}
 }

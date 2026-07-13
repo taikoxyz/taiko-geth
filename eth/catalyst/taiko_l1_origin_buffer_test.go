@@ -83,6 +83,33 @@ func TestPendingL1OriginsDirtyLifecycle(t *testing.T) {
 	assert.True(t, pending.isDirty(hash), "restashing must request another persistence pass")
 }
 
+func TestValidateL1OriginBlockID(t *testing.T) {
+	oversized := new(big.Int).Lsh(common.Big1, 64)
+	oversized.Add(oversized, big.NewInt(7))
+	tests := []struct {
+		name    string
+		origin  *rawdb.L1Origin
+		wantErr bool
+	}{
+		{"valid", &rawdb.L1Origin{BlockID: big.NewInt(7)}, false},
+		{"nil origin", nil, true},
+		{"nil block ID", &rawdb.L1Origin{}, true},
+		{"negative", &rawdb.L1Origin{BlockID: big.NewInt(-1)}, true},
+		{"oversized", &rawdb.L1Origin{BlockID: oversized}, true},
+		{"mismatch", &rawdb.L1Origin{BlockID: big.NewInt(8)}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateL1OriginBlockID(tt.origin, big.NewInt(7))
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
 func TestPendingL1OriginsStashReplacesEntryForSameHash(t *testing.T) {
 	var pending pendingL1Origins
 	hash := common.HexToHash("0x01")
@@ -286,6 +313,47 @@ func TestL1OriginReconcilerRetriesOriginalRange(t *testing.T) {
 	}))
 	assert.Equal(t, plan, retried)
 	assert.Nil(t, reconciler.pending)
+}
+
+func TestRecoverL1OriginReconciliationJournal(t *testing.T) {
+	oldHead := &types.Header{Number: big.NewInt(2), Extra: []byte("old")}
+	newHead := &types.Header{Number: big.NewInt(2), Extra: []byte("new")}
+	hashB1 := common.HexToHash("0xb1")
+	journal := &rawdb.L1OriginReconciliationJournal{
+		First:         1,
+		Last:          2,
+		OldHeadHash:   oldHead.Hash(),
+		NewHeadHash:   newHead.Hash(),
+		NewHeadNumber: 2,
+	}
+	canonicalHash := func(number uint64) common.Hash {
+		if number == 1 {
+			return hashB1
+		}
+		if number == 2 {
+			return newHead.Hash()
+		}
+		return common.Hash{}
+	}
+
+	plan, clear, err := recoverL1OriginReconciliationJournal(journal, newHead, canonicalHash)
+	require.NoError(t, err)
+	assert.False(t, clear)
+	require.NotNil(t, plan)
+	assert.Equal(t, uint64(1), plan.first)
+	assert.Equal(t, uint64(2), plan.last)
+	assert.Equal(t, []canonicalL1OriginBlock{{number: 1, hash: hashB1}, {number: 2, hash: newHead.Hash()}}, plan.canonical)
+
+	plan, clear, err = recoverL1OriginReconciliationJournal(journal, oldHead, func(uint64) common.Hash { return common.Hash{} })
+	require.NoError(t, err)
+	assert.True(t, clear, "a journal written before an unapplied canonicalization must be discarded")
+	assert.Nil(t, plan)
+
+	journal.NewHeadHash = journal.OldHeadHash
+	plan, clear, err = recoverL1OriginReconciliationJournal(journal, oldHead, canonicalHash)
+	require.NoError(t, err)
+	assert.True(t, clear, "same-head updates require the lost in-memory payload metadata")
+	assert.Nil(t, plan)
 }
 
 func TestCanonicalL1OriginSegment(t *testing.T) {
