@@ -136,13 +136,13 @@ const (
 	ShastaInitialBaseFee            = 25_000_000 // CHANGE(taiko): add ShastaInitialBaseFee for Shasta fork
 
 	// CHANGE(taiko): extraData layouts for Shasta blocks. The basefee-sharing
-	// pctg always sits at byte 0; the trailing proposalId exists only under the
-	// proposal-id-bearing layout ([pctg | proposalId(6)]) found in existing
-	// chain history. Flag-based extraData ([pctg, isLowBondProposal], 2 bytes)
-	// is what the current drivers (taiko-mono main, Go and Rust) emit and
-	// carries no proposalId, so consumers must treat it as optional; no header
-	// rule enforces either length (only the 32-byte cap), other lengths are
-	// accepted with a warning.
+	// pctg always sits at byte 0. The current taiko-mono main driver (Go and
+	// Rust) emits the 7-byte proposal-id-bearing layout ([pctg | proposalId(6)]),
+	// as carried by the live chains; an earlier driver line emitted a 2-byte flag
+	// layout ([pctg, isLowBondProposal]) with no proposalId. geth enforces no
+	// minimum length (only the 32-byte cap), mirroring the reference client, so
+	// consumers must treat the embedded proposalId as optional; lengths outside
+	// these two layouts are accepted with a warning.
 	ShastaExtraDataBasefeeSharingPctgIndex = 0
 	ShastaExtraDataProposalIDIndex         = 1
 	ShastaExtraDataProposalIDLength        = 6
