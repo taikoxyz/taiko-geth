@@ -232,8 +232,10 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return err
 	}
 
-	// If the current block is not a preconfirmation block, then check the timestamp.
-	if l1Origin != nil && !l1Origin.IsPreconfBlock() && header.Time > uint64(unixNow) {
+	// CHANGE(taiko): Number-keyed metadata may describe a displaced sibling, so only
+	// use it to classify the exact header being verified.
+	if l1Origin != nil && l1Origin.L2BlockHash == header.Hash() &&
+		!l1Origin.IsPreconfBlock() && header.Time > uint64(unixNow) {
 		return consensus.ErrFutureBlock
 	}
 

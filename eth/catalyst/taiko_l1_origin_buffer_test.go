@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -23,24 +24,40 @@ func samplePendingL1Origin(blockID int64, batchID *big.Int) pendingL1Origin {
 	}
 }
 
-func TestPendingL1OriginsTakeReturnsStashedEntryOnce(t *testing.T) {
+func TestPendingL1OriginsGetRetainsEntry(t *testing.T) {
 	var pending pendingL1Origins
 	hash := common.HexToHash("0x01")
 	pending.stash(hash, samplePendingL1Origin(7, big.NewInt(3)))
 
-	taken, ok := pending.take(hash)
+	first, ok := pending.get(hash)
 	require.True(t, ok, "entry must be present")
-	assert.Equal(t, big.NewInt(7), taken.l1Origin.BlockID)
-	assert.Equal(t, big.NewInt(3), taken.batchID)
+	assert.Equal(t, big.NewInt(7), first.l1Origin.BlockID)
+	assert.Equal(t, big.NewInt(3), first.batchID)
 
-	_, ok = pending.take(hash)
-	assert.False(t, ok, "entry must be removed after take")
+	second, ok := pending.get(hash)
+	require.True(t, ok, "lookup must retain the entry")
+	assert.Same(t, first.l1Origin, second.l1Origin)
 }
 
-func TestPendingL1OriginsTakeUnknownHashIsMiss(t *testing.T) {
+func TestPendingL1OriginsGetUnknownHashIsMiss(t *testing.T) {
 	var pending pendingL1Origins
-	_, ok := pending.take(common.HexToHash("0x01"))
+	_, ok := pending.get(common.HexToHash("0x01"))
 	assert.False(t, ok)
+}
+
+func TestPendingL1OriginsValidateTimestamp(t *testing.T) {
+	var pending pendingL1Origins
+	confirmedHash := common.HexToHash("0x01")
+	pending.stash(confirmedHash, samplePendingL1Origin(7, nil))
+	assert.ErrorIs(t, pending.validateTimestamp(confirmedHash, 101, 100), consensus.ErrFutureBlock)
+
+	preconfHash := common.HexToHash("0x02")
+	preconf := samplePendingL1Origin(8, nil)
+	preconf.l1Origin.L1BlockHeight = common.Big0
+	pending.stash(preconfHash, preconf)
+	assert.NoError(t, pending.validateTimestamp(preconfHash, 101, 100))
+
+	assert.NoError(t, pending.validateTimestamp(common.HexToHash("0x03"), 101, 100))
 }
 
 func TestPendingL1OriginsStashReplacesEntryForSameHash(t *testing.T) {
@@ -49,12 +66,9 @@ func TestPendingL1OriginsStashReplacesEntryForSameHash(t *testing.T) {
 	pending.stash(hash, samplePendingL1Origin(7, big.NewInt(1)))
 	pending.stash(hash, samplePendingL1Origin(7, big.NewInt(2)))
 
-	taken, ok := pending.take(hash)
+	taken, ok := pending.get(hash)
 	require.True(t, ok, "entry must be present")
 	assert.Equal(t, big.NewInt(2), taken.batchID)
-
-	_, ok = pending.take(hash)
-	assert.False(t, ok, "replacement must not leave a duplicate")
 }
 
 func TestPendingL1OriginsStashEvictsOldestBeyondCapacity(t *testing.T) {
@@ -64,9 +78,9 @@ func TestPendingL1OriginsStashEvictsOldestBeyondCapacity(t *testing.T) {
 		pending.stash(hash, samplePendingL1Origin(int64(i), nil))
 	}
 
-	_, ok := pending.take(common.BigToHash(big.NewInt(1)))
+	_, ok := pending.get(common.BigToHash(big.NewInt(1)))
 	assert.False(t, ok, "oldest entry must be evicted")
 
-	_, ok = pending.take(common.BigToHash(big.NewInt(2)))
+	_, ok = pending.get(common.BigToHash(big.NewInt(2)))
 	assert.True(t, ok, "newer entries must survive")
 }

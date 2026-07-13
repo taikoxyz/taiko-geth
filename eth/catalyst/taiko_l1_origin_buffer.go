@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -63,6 +64,28 @@ func (p *pendingL1Origins) stash(blockHash common.Hash, pending pendingL1Origin)
 		)
 		p.entries = append(p.entries[:0], p.entries[1:]...)
 	}
+}
+
+// get returns the buffered entry for the given block hash without removing it.
+func (p *pendingL1Origins) get(blockHash common.Hash) (pendingL1Origin, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, entry := range p.entries {
+		if entry.blockHash == blockHash {
+			return entry.pending, true
+		}
+	}
+	return pendingL1Origin{}, false
+}
+
+// validateTimestamp enforces the future-block rule using the exact locally built origin.
+func (p *pendingL1Origins) validateTimestamp(blockHash common.Hash, timestamp, now uint64) error {
+	pending, ok := p.get(blockHash)
+	if ok && !pending.l1Origin.IsPreconfBlock() && timestamp > now {
+		return consensus.ErrFutureBlock
+	}
+	return nil
 }
 
 // take removes and returns the buffered entry for the given block hash, if any.

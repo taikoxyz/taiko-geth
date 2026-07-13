@@ -231,6 +231,43 @@ func TestVerifyHeader(t *testing.T) {
 	assert.ErrorContains(t, err, "uncles not empty", "VerifyHeader should throw ErrUnclesNotEmpty if uncles is not the empty hash")
 }
 
+func TestVerifyHeaderL1OriginHashMatch(t *testing.T) {
+	ethService, blocks := newTestBackend(t)
+	parent := blocks[len(blocks)-1].Header()
+
+	cfg := *params.TestChainConfig
+	cfg.Taiko = true
+	cfg.ShastaTime = nil
+	cfg.UnzenTime = nil
+	db := rawdb.NewMemoryDatabase()
+	engine := taiko.New(&cfg, db)
+	header := &types.Header{
+		ParentHash:      parent.Hash(),
+		Number:          new(big.Int).Add(parent.Number, common.Big1),
+		Time:            uint64(time.Now().Unix()) + 60,
+		Difficulty:      common.Big0,
+		GasLimit:        parent.GasLimit,
+		BaseFee:         big.NewInt(params.InitialBaseFee),
+		WithdrawalsHash: &types.EmptyWithdrawalsHash,
+		UncleHash:       types.EmptyUncleHash,
+	}
+
+	rawdb.WriteL1Origin(db, header.Number, &rawdb.L1Origin{
+		BlockID:       new(big.Int).Set(header.Number),
+		L2BlockHash:   common.HexToHash("0xdead"),
+		L1BlockHeight: common.Big1,
+	})
+	assert.NoError(t, engine.VerifyHeader(ethService.BlockChain(), header),
+		"a sibling origin must not classify this header")
+
+	rawdb.WriteL1Origin(db, header.Number, &rawdb.L1Origin{
+		BlockID:       new(big.Int).Set(header.Number),
+		L2BlockHash:   header.Hash(),
+		L1BlockHeight: common.Big1,
+	})
+	assert.ErrorIs(t, engine.VerifyHeader(ethService.BlockChain(), header), consensus.ErrFutureBlock)
+}
+
 func TestVerifyHeaderUnzenCanonicalFields(t *testing.T) {
 	ethService, blocks := newTestBackend(t)
 

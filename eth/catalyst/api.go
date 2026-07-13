@@ -1050,6 +1050,14 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 			return api.invalid(errors.New("invalid timestamp"), parent.Header()), nil
 		}
 	}
+	// CHANGE(taiko): Pending origin metadata is intentionally not persisted before
+	// canonical promotion, so enforce its timestamp classification from the exact
+	// hash-keyed entry before importing the block.
+	if api.eth.BlockChain().Config().Taiko {
+		if err := api.pendingL1Origins.validateTimestamp(block.Hash(), block.Time(), uint64(time.Now().Unix())); err != nil {
+			return api.invalid(err, parent.Header()), nil
+		}
+	}
 	// Another corner case: if the node is in snap sync mode, but the CL client
 	// tries to make it import a block. That should be denied as pushing something
 	// into the database directly will conflict with the assumptions of snap sync
