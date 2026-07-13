@@ -36,6 +36,7 @@ type pendingL1Origin struct {
 type pendingL1OriginEntry struct {
 	blockHash common.Hash
 	pending   pendingL1Origin
+	dirty     bool
 }
 
 // canonicalL1OriginBlock identifies a block in the newly canonical segment.
@@ -67,7 +68,7 @@ func (p *pendingL1Origins) stash(blockHash common.Hash, pending pendingL1Origin)
 			kept = append(kept, entry)
 		}
 	}
-	p.entries = append(kept, pendingL1OriginEntry{blockHash: blockHash, pending: pending})
+	p.entries = append(kept, pendingL1OriginEntry{blockHash: blockHash, pending: pending, dirty: true})
 	for len(p.entries) > pendingL1OriginsCapacity {
 		evicted := p.entries[0]
 		log.Warn(
@@ -90,6 +91,43 @@ func (p *pendingL1Origins) get(blockHash common.Hash) (pendingL1Origin, bool) {
 		}
 	}
 	return pendingL1Origin{}, false
+}
+
+// isDirty reports whether a stash has not yet been persisted on canonical promotion.
+func (p *pendingL1Origins) isDirty(blockHash common.Hash) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, entry := range p.entries {
+		if entry.blockHash == blockHash {
+			return entry.dirty
+		}
+	}
+	return false
+}
+
+// markPersisted marks a cached entry clean while retaining it for reorg-back.
+func (p *pendingL1Origins) markPersisted(blockHash common.Hash) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := range p.entries {
+		if p.entries[i].blockHash == blockHash {
+			p.entries[i].dirty = false
+			return
+		}
+	}
+}
+
+// updateStoredOrigin refreshes a clean cached origin with explicit database updates. Dirty
+// entries represent a newer build-time value and must win the next persistence pass.
+func (p *pendingL1Origins) updateStoredOrigin(blockHash common.Hash, origin *rawdb.L1Origin) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := range p.entries {
+		if p.entries[i].blockHash == blockHash && !p.entries[i].dirty {
+			p.entries[i].pending.l1Origin = origin
+			return
+		}
+	}
 }
 
 // validateTimestamp enforces the future-block rule using the exact locally built origin.
@@ -123,12 +161,10 @@ func reconcileL1OriginTables(
 		if err != nil {
 			return err
 		}
-		if origin != nil && !origin.IsPreconfBlock() {
-			pending, ok := origins.get(origin.L2BlockHash)
-			if !ok {
+		if origin != nil {
+			origins.updateStoredOrigin(origin.L2BlockHash, origin)
+			if !origin.IsPreconfBlock() {
 				needsBatchScan = true
-			} else if pending.batchID != nil {
-				batchIDs[pending.batchID.String()] = pending.batchID
 			}
 		}
 		if number == last {
@@ -162,7 +198,10 @@ func reconcileL1OriginTables(
 		rawdb.DeleteBatchToLastBlockID(batch, batchID)
 	}
 
-	var confirmedHead *big.Int
+	var (
+		confirmedHead *big.Int
+		persisted     []common.Hash
+	)
 	for _, block := range canonical {
 		if block.number < first || block.number > last {
 			return fmt.Errorf("canonical L1 origin block %d outside reconciliation range [%d,%d]", block.number, first, last)
@@ -182,6 +221,7 @@ func reconcileL1OriginTables(
 			return fmt.Errorf("pending L1 origin does not match canonical block %d %s", block.number, block.hash)
 		}
 		rawdb.WriteL1Origin(batch, pending.l1Origin.BlockID, pending.l1Origin)
+		persisted = append(persisted, block.hash)
 		if !pending.l1Origin.IsPreconfBlock() {
 			confirmedHead = new(big.Int).Set(pending.l1Origin.BlockID)
 			if pending.batchID != nil {
@@ -212,6 +252,9 @@ func reconcileL1OriginTables(
 	}
 	if err := batch.Write(); err != nil {
 		return fmt.Errorf("commit L1 origin reconciliation: %w", err)
+	}
+	for _, hash := range persisted {
+		origins.markPersisted(hash)
 	}
 	return nil
 }
@@ -292,7 +335,7 @@ func canonicalL1OriginSegment(
 // number-keyed origin views using retained hash-keyed metadata.
 func (api *ConsensusAPI) reconcilePendingL1Origins(oldHead, newHead *types.Header) error {
 	if oldHead.Hash() == newHead.Hash() {
-		if _, ok := api.pendingL1Origins.get(newHead.Hash()); !ok {
+		if !api.pendingL1Origins.isDirty(newHead.Hash()) {
 			return nil
 		}
 	}

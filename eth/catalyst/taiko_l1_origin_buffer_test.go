@@ -61,6 +61,27 @@ func TestPendingL1OriginsValidateTimestamp(t *testing.T) {
 	assert.NoError(t, pending.validateTimestamp(common.HexToHash("0x03"), 101, 100))
 }
 
+func TestPendingL1OriginsDirtyLifecycle(t *testing.T) {
+	var pending pendingL1Origins
+	hash := common.HexToHash("0x01")
+	pending.stash(hash, samplePendingL1Origin(7, nil))
+	assert.True(t, pending.isDirty(hash))
+
+	pending.markPersisted(hash)
+	assert.False(t, pending.isDirty(hash))
+
+	updated := samplePendingL1Origin(7, nil).l1Origin
+	updated.Signature[0] = 0xff
+	pending.updateStoredOrigin(hash, updated)
+	assert.False(t, pending.isDirty(hash), "stored updates must not look like a new build")
+	cached, ok := pending.get(hash)
+	require.True(t, ok)
+	assert.Equal(t, byte(0xff), cached.l1Origin.Signature[0])
+
+	pending.stash(hash, samplePendingL1Origin(7, nil))
+	assert.True(t, pending.isDirty(hash), "restashing must request another persistence pass")
+}
+
 func TestPendingL1OriginsStashReplacesEntryForSameHash(t *testing.T) {
 	var pending pendingL1Origins
 	hash := common.HexToHash("0x01")
@@ -182,6 +203,46 @@ func TestReconcileL1OriginTablesMissingMetadataClearsStaleRows(t *testing.T) {
 	head, err := rawdb.ReadHeadL1Origin(db)
 	require.NoError(t, err)
 	assert.Nil(t, head)
+}
+
+func TestReconcileL1OriginTablesPreservesStoredOriginUpdates(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	var pending pendingL1Origins
+	hash := common.HexToHash("0xa7")
+	stashPendingOrigin(&pending, 7, hash, 100)
+	rawdb.WriteCanonicalHash(db, hash, 7)
+	require.NoError(t, reconcileL1OriginTables(db, &pending, 7, 7, []canonicalL1OriginBlock{{number: 7, hash: hash}}))
+
+	updated, err := rawdb.ReadL1Origin(db, big.NewInt(7))
+	require.NoError(t, err)
+	updated.Signature[0] = 0xff
+	rawdb.WriteL1Origin(db, big.NewInt(7), updated)
+
+	require.NoError(t, reconcileL1OriginTables(db, &pending, 7, 7, []canonicalL1OriginBlock{{number: 7, hash: hash}}))
+	stored, err := rawdb.ReadL1Origin(db, big.NewInt(7))
+	require.NoError(t, err)
+	assert.Equal(t, byte(0xff), stored.Signature[0])
+	cached, ok := pending.get(hash)
+	require.True(t, ok)
+	assert.Equal(t, byte(0xff), cached.l1Origin.Signature[0])
+}
+
+func TestReconcileL1OriginTablesDeletesExplicitBatchMappings(t *testing.T) {
+	db := rawdb.NewMemoryDatabase()
+	var pending pendingL1Origins
+	hashA := common.HexToHash("0xa7")
+	hashB := common.HexToHash("0xb7")
+	stashPendingOrigin(&pending, 7, hashA, 100)
+	stashPendingOrigin(&pending, 7, hashB, 101)
+	rawdb.WriteCanonicalHash(db, hashA, 7)
+	require.NoError(t, reconcileL1OriginTables(db, &pending, 7, 7, []canonicalL1OriginBlock{{number: 7, hash: hashA}}))
+	rawdb.WriteBatchToLastBlockID(db, big.NewInt(999), big.NewInt(7))
+
+	rawdb.WriteCanonicalHash(db, hashB, 7)
+	require.NoError(t, reconcileL1OriginTables(db, &pending, 7, 7, []canonicalL1OriginBlock{{number: 7, hash: hashB}}))
+	mapped, err := rawdb.ReadBatchToLastBlockID(db, big.NewInt(999))
+	require.NoError(t, err)
+	assert.Nil(t, mapped)
 }
 
 func TestCanonicalL1OriginSegment(t *testing.T) {
