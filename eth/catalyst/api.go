@@ -348,7 +348,11 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {
 		// Block is not canonical, set head.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
-			api.discardL1OriginReconciliationJournal(l1OriginPlan)
+			// CHANGE(taiko): SetCanonical may persist an intermediate head before
+			// failing. Recover the journal against the resulting canonical chain.
+			if isTaiko {
+				api.recoverPendingL1OriginReconciliation()
+			}
 			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
 		}
 	} else if api.eth.BlockChain().CurrentBlock().Hash() == update.HeadBlockHash {
@@ -357,7 +361,9 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 		// missing and we are requested to generate the payload in slot.
 	} else if isTaiko { // CHANGE(taiko): reorg is allowed in L2.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
-			api.discardL1OriginReconciliationJournal(l1OriginPlan)
+			// CHANGE(taiko): SetCanonical may persist an intermediate head before
+			// failing. Recover the journal against the resulting canonical chain.
+			api.recoverPendingL1OriginReconciliation()
 			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
 		}
 	} else {

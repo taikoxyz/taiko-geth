@@ -95,10 +95,14 @@ func recoverL1OriginReconciliationJournal(
 	if currentHead != nil && currentHead.Hash() == journal.OldHeadHash {
 		return nil, true, nil
 	}
-	if currentHead == nil || (currentHead.Hash() != journal.NewHeadHash &&
-		canonicalHash(journal.NewHeadNumber) != journal.NewHeadHash) {
+	if currentHead == nil {
 		return nil, true, nil
 	}
+	// SetCanonical persists intermediate heads while replacing a multi-block segment.
+	// Any head other than the old one can therefore represent a partially applied
+	// transition, even when the requested new head is not canonical yet. Rebuild the
+	// plan from whichever hashes are canonical now and clear every displaced row in
+	// the full journaled range.
 	plan := &l1OriginReconciliation{first: journal.First, last: journal.Last}
 	for number := journal.First; ; number++ {
 		if hash := canonicalHash(number); hash != (common.Hash{}) {
@@ -474,16 +478,6 @@ func (api *ConsensusAPI) writeL1OriginReconciliationJournal(
 			NewHeadHash:   newHead.Hash(),
 			NewHeadNumber: newHead.Number.Uint64(),
 		})
-		return nil
-	})
-}
-
-func (api *ConsensusAPI) discardL1OriginReconciliationJournal(plan *l1OriginReconciliation) {
-	if plan == nil {
-		return
-	}
-	_ = api.eth.WithTaikoL1OriginLock(func() error {
-		rawdb.DeleteL1OriginReconciliationJournal(api.eth.ChainDb())
 		return nil
 	})
 }

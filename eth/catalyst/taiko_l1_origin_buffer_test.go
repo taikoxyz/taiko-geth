@@ -349,6 +349,20 @@ func TestRecoverL1OriginReconciliationJournal(t *testing.T) {
 	assert.True(t, clear, "a journal written before an unapplied canonicalization must be discarded")
 	assert.Nil(t, plan)
 
+	partialHead := &types.Header{Number: big.NewInt(1), Extra: []byte("partial")}
+	plan, clear, err = recoverL1OriginReconciliationJournal(journal, partialHead, func(number uint64) common.Hash {
+		if number == 1 {
+			return partialHead.Hash()
+		}
+		return common.Hash{}
+	})
+	require.NoError(t, err)
+	assert.False(t, clear, "an intermediate head may be a partially applied canonicalization")
+	require.NotNil(t, plan)
+	assert.Equal(t, uint64(1), plan.first)
+	assert.Equal(t, uint64(2), plan.last)
+	assert.Equal(t, []canonicalL1OriginBlock{{number: 1, hash: partialHead.Hash()}}, plan.canonical)
+
 	journal.NewHeadHash = journal.OldHeadHash
 	plan, clear, err = recoverL1OriginReconciliationJournal(journal, oldHead, canonicalHash)
 	require.NoError(t, err)
