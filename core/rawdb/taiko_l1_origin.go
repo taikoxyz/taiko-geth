@@ -79,6 +79,13 @@ func WriteL1Origin(db ethdb.KeyValueWriter, blockID *big.Int, l1Origin *L1Origin
 	}
 }
 
+// DeleteL1Origin removes the L1 origin for the given block ID.
+func DeleteL1Origin(db ethdb.KeyValueWriter, blockID *big.Int) {
+	if err := db.Delete(l1OriginKey(blockID)); err != nil {
+		log.Crit("Failed to delete L1Origin", "err", err)
+	}
+}
+
 func ReadL1Origin(db ethdb.KeyValueReader, blockID *big.Int) (*L1Origin, error) {
 	data, _ := db.Get(l1OriginKey(blockID))
 	if len(data) == 0 {
@@ -117,6 +124,13 @@ func WriteHeadL1Origin(db ethdb.KeyValueWriter, blockID *big.Int) {
 	}
 }
 
+// DeleteHeadL1Origin removes the latest confirmed L1 origin pointer.
+func DeleteHeadL1Origin(db ethdb.KeyValueWriter) {
+	if err := db.Delete(headL1OriginKey); err != nil {
+		log.Crit("Failed to delete head L1Origin", "err", err)
+	}
+}
+
 // ReadHeadL1Origin retrieves the last L1Origin from database.
 func ReadHeadL1Origin(db ethdb.KeyValueReader) (*big.Int, error) {
 	data, _ := db.Get(headL1OriginKey)
@@ -139,6 +153,47 @@ func WriteBatchToLastBlockID(db ethdb.KeyValueWriter, batch *big.Int, blockID *b
 	if err := db.Put(batchToLastBlockKey(batch), data); err != nil {
 		log.Crit("Failed to store batch to block mapping", "error", err)
 	}
+}
+
+// DeleteBatchToLastBlockID removes the last-block mapping for the given batch ID.
+func DeleteBatchToLastBlockID(db ethdb.KeyValueWriter, batch *big.Int) {
+	if err := db.Delete(batchToLastBlockKey(batch)); err != nil {
+		log.Crit("Failed to delete batch to block mapping", "err", err)
+	}
+}
+
+// BatchIDsByLastBlockRange returns batch IDs whose mapped block ID is in the inclusive range.
+func BatchIDsByLastBlockRange(db ethdb.Iteratee, first, last *big.Int) ([]*big.Int, error) {
+	if first.Cmp(last) > 0 {
+		return nil, fmt.Errorf("invalid block range: first %s exceeds last %s", first, last)
+	}
+	iter := db.NewIterator(batchToLastBlockPrefix, nil)
+	defer iter.Release()
+
+	var batches []*big.Int
+	for iter.Next() {
+		blockID := new(math.HexOrDecimal256)
+		if err := blockID.UnmarshalText(iter.Value()); err != nil {
+			return nil, fmt.Errorf("invalid batch block ID: %w", err)
+		}
+		block := (*big.Int)(blockID)
+		if block.Cmp(first) < 0 || block.Cmp(last) > 0 {
+			continue
+		}
+		key := iter.Key()
+		if len(key) <= len(batchToLastBlockPrefix) {
+			return nil, fmt.Errorf("invalid batch mapping key length: %d", len(key))
+		}
+		batchID := new(math.HexOrDecimal256)
+		if err := batchID.UnmarshalText(key[len(batchToLastBlockPrefix):]); err != nil {
+			return nil, fmt.Errorf("invalid batch ID: %w", err)
+		}
+		batches = append(batches, (*big.Int)(batchID))
+	}
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterate batch mappings: %w", err)
+	}
+	return batches, nil
 }
 
 // ReadBatchToLastBlockID retrieves the block ID corresponding to the last block ID in this batch.

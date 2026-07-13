@@ -61,6 +61,62 @@ func TestHeadL1Origin(t *testing.T) {
 	assert.Equal(t, testBlockID, blockID)
 }
 
+func TestL1OriginDeletion(t *testing.T) {
+	db := NewMemoryDatabase()
+	blockID := big.NewInt(8)
+	origin := &L1Origin{
+		BlockID:       blockID,
+		L2BlockHash:   common.HexToHash("0x08"),
+		L1BlockHeight: common.Big1,
+	}
+	WriteL1Origin(db, blockID, origin)
+	WriteHeadL1Origin(db, blockID)
+	WriteBatchToLastBlockID(db, big.NewInt(101), blockID)
+
+	batch := db.NewBatch()
+	DeleteL1Origin(batch, blockID)
+	DeleteHeadL1Origin(batch)
+	DeleteBatchToLastBlockID(batch, big.NewInt(101))
+	require.NoError(t, batch.Write())
+
+	gotOrigin, err := ReadL1Origin(db, blockID)
+	require.NoError(t, err)
+	assert.Nil(t, gotOrigin)
+	gotHead, err := ReadHeadL1Origin(db)
+	require.NoError(t, err)
+	assert.Nil(t, gotHead)
+	gotBlockID, err := ReadBatchToLastBlockID(db, big.NewInt(101))
+	require.NoError(t, err)
+	assert.Nil(t, gotBlockID)
+}
+
+func TestBatchIDsByLastBlockRange(t *testing.T) {
+	db := NewMemoryDatabase()
+	WriteBatchToLastBlockID(db, big.NewInt(100), big.NewInt(7))
+	WriteBatchToLastBlockID(db, big.NewInt(101), big.NewInt(8))
+	WriteBatchToLastBlockID(db, big.NewInt(102), big.NewInt(9))
+
+	batches, err := BatchIDsByLastBlockRange(db, big.NewInt(7), big.NewInt(8))
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []*big.Int{big.NewInt(100), big.NewInt(101)}, batches)
+
+	batch := db.NewBatch()
+	for _, batchID := range batches {
+		DeleteBatchToLastBlockID(batch, batchID)
+	}
+	require.NoError(t, batch.Write())
+
+	for _, batchID := range []*big.Int{big.NewInt(100), big.NewInt(101)} {
+		blockID, err := ReadBatchToLastBlockID(db, batchID)
+		require.NoError(t, err)
+		assert.Nil(t, blockID)
+	}
+	blockID, err := ReadBatchToLastBlockID(db, big.NewInt(102))
+	require.NoError(t, err)
+	require.NotNil(t, blockID)
+	assert.Equal(t, int64(9), (*big.Int)(blockID).Int64())
+}
+
 func TestL1Origin_OptionalFields(t *testing.T) {
 	db := NewMemoryDatabase()
 
