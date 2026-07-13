@@ -24,10 +24,9 @@ func (r *stubHeaderReader) GetHeaderByNumber(uint64) *types.Header      { return
 func (r *stubHeaderReader) GetHeaderByHash(common.Hash) *types.Header   { return nil }
 func (r *stubHeaderReader) GetTd(common.Hash, uint64) *big.Int          { return nil }
 
-// TestVerifyHeaderShastaExtraDataShapes pins the accepted Shasta extraData
-// shapes: the field is driver-authored and only bounded above (32 bytes). The
-// 7-byte proposal-id-bearing layout ([pctg | proposalId(6)]) is the only
-// expected shape; any other length must still import (logged with a warning).
+// TestVerifyHeaderShastaExtraDataShapes pins the Shasta extraData rule: only
+// the exact 7-byte [pctg | proposalId(6)] layout imports; every other length
+// is rejected.
 func TestVerifyHeaderShastaExtraDataShapes(t *testing.T) {
 	shastaTime := uint64(0)
 	config := &params.ChainConfig{
@@ -43,10 +42,11 @@ func TestVerifyHeaderShastaExtraDataShapes(t *testing.T) {
 		extra   []byte
 		wantErr string
 	}{
-		{"2 bytes accepted with warning", []byte{75, 0}, ""},
-		{"empty accepted with warning", nil, ""},
 		{"proposal-id format (7 bytes)", []byte{75, 0, 0, 0, 0, 0x4c, 0x81}, ""},
-		{"3 bytes accepted with warning", []byte{75, 0, 1}, ""},
+		{"empty rejected", nil, "invalid Shasta extra-data length"},
+		{"2 bytes rejected", []byte{75, 0}, "invalid Shasta extra-data length"},
+		{"3 bytes rejected", []byte{75, 0, 1}, "invalid Shasta extra-data length"},
+		{"12 bytes rejected (legal under the old >=7 floor)", make([]byte, 12), "invalid Shasta extra-data length"},
 		{"over maximum", make([]byte, params.MaximumExtraDataSize+1), "extra-data too long"},
 	}
 	for _, tt := range tests {

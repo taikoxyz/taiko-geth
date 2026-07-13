@@ -746,10 +746,7 @@ func DecodeShastaBasefeeSharingPctg(extra []byte) uint8 {
 	return extra[params.ShastaExtraDataBasefeeSharingPctgIndex]
 }
 
-// CHANGE(taiko): DecodeShastaProposalID decodes the proposalId from bytes 1..6
-// of the 7-byte proposal-id-bearing extraData (current taiko-mono main and the
-// live chains). extraData without that 6-byte tail carries no proposalId, so
-// the returned error means "absent", not "invalid block".
+// CHANGE(taiko): DecodeShastaProposalID decodes the proposalId from bytes 1..6.
 func DecodeShastaProposalID(extra []byte) (*big.Int, error) {
 	if len(extra) < params.ShastaExtraDataLen {
 		return nil, fmt.Errorf("extraData too short for proposalId: %d", len(extra))

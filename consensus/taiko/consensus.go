@@ -203,18 +203,13 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	}
 
 	// Verify the header's EIP-4396 attributes.
-	// Shasta extraData is driver-authored and only bounded above
-	// (the 32-byte cap already checked for all headers). The current taiko-mono
-	// main driver — Go and Rust — emits the 7-byte [pctg | proposalId(6)] layout,
-	// as carried by the live chains. No minimum length is enforced here, so geth
-	// is never stricter than the reference client, which also caps at 32 and
-	// models the embedded proposalId as optional (absent for short extra).
-	// Consumers must treat the proposalId as optional. Any other length stays
-	// valid but is logged, so a misbehaving block producer is visible without
-	// splitting acceptance between clients.
+	// Shasta extraData must be the 7-byte [pctg | proposalId(6)] layout — the
+	// only shape the drivers produce and the live chains carry. Reject anything
+	// else at import so a misbehaving block producer fails loudly here instead
+	// of minting headers whose embedded proposalId consumers cannot decode.
 	if t.chainConfig.IsShasta(header.Time) {
 		if l := len(header.Extra); l != params.ShastaExtraDataLen {
-			log.Warn("Unexpected Shasta extra-data length", "len", l, "number", header.Number, "hash", header.Hash())
+			return fmt.Errorf("invalid Shasta extra-data length: have %d, want %d", l, params.ShastaExtraDataLen)
 		}
 		if header.Number.Cmp(common.Big1) > 0 {
 			if ancestorBlock := chain.GetHeader(parent.ParentHash, parent.Number.Uint64()-1); ancestorBlock != nil {

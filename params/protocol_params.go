@@ -135,13 +135,7 @@ const (
 	InitialBaseFee                  = 1000000000 // Initial base fee for EIP-1559 blocks.
 	ShastaInitialBaseFee            = 25_000_000 // CHANGE(taiko): add ShastaInitialBaseFee for Shasta fork
 
-	// CHANGE(taiko): extraData layout for Shasta blocks. The basefee-sharing
-	// pctg sits at byte 0, followed by a 6-byte big-endian proposalId — the
-	// 7-byte layout emitted by the taiko-mono main driver (Go and Rust) and
-	// carried by the live chains. geth enforces no minimum length (only the
-	// 32-byte cap), mirroring the reference client, so consumers must treat
-	// the embedded proposalId as optional; any other length is accepted with
-	// a warning.
+	// CHANGE(taiko): extraData layout for Shasta blocks.
 	ShastaExtraDataBasefeeSharingPctgIndex = 0
 	ShastaExtraDataProposalIDIndex         = 1
 	ShastaExtraDataProposalIDLength        = 6
