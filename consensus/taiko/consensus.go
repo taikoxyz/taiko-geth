@@ -203,7 +203,7 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	}
 
 	// Verify the header's EIP-4396 attributes.
-	// CHANGE(taiko): Shasta extraData is driver-authored and only bounded above
+	// Shasta extraData is driver-authored and only bounded above
 	// (the 32-byte cap already checked for all headers). The current taiko-mono
 	// main driver — Go and Rust — emits the 7-byte [pctg | proposalId(6)] layout,
 	// as carried by the live chains. No minimum length is enforced here, so geth
