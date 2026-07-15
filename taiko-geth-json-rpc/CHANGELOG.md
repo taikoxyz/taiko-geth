@@ -1,5 +1,48 @@
 # Changelog
 
+## [2.6.0](https://github.com/taikoxyz/taiko-geth/compare/v2.5.0...v2.6.0) (2026-07-13)
+
+
+### Features
+
+* **eth:** add `debug_executionWitnessForTxList` RPC ([#576](https://github.com/taikoxyz/taiko-geth/issues/576)) ([dfc5679](https://github.com/taikoxyz/taiko-geth/commit/dfc56797520873271aa42362bb4e66eb68da9a37))
+* **eth:** witness EIP-2935 BLOCKHASH storage in debug_executionWitnessForTxList ([#579](https://github.com/taikoxyz/taiko-geth/issues/579)) ([40b39bc](https://github.com/taikoxyz/taiko-geth/commit/40b39bca9443e01015cbe70918b3710e12c98349))
+* **state:** witness account-trie exclusion proofs for absent accounts ([#580](https://github.com/taikoxyz/taiko-geth/issues/580)) ([5fa704e](https://github.com/taikoxyz/taiko-geth/commit/5fa704ec364a73a37296f0ea49c1fa8e57feaca9))
+* **taiko_genesis:** schedule Mainnet Unzen fork ([#596](https://github.com/taikoxyz/taiko-geth/issues/596)) ([8f5abc6](https://github.com/taikoxyz/taiko-geth/commit/8f5abc6d06365ca8d4ef3c5c081d05cd88d46dbd))
+
+
+### Bug Fixes
+
+* **eth:** align execution-witness RPC content with cross-client legacy format ([#581](https://github.com/taikoxyz/taiko-geth/issues/581)) ([64de0bd](https://github.com/taikoxyz/taiko-geth/commit/64de0bd444b93b2992bf8537c21d81dc29d5aea2))
+* **eth:** restore system-call caller exclusion proof in execution witness ([#584](https://github.com/taikoxyz/taiko-geth/issues/584)) ([c5e2ae9](https://github.com/taikoxyz/taiko-geth/commit/c5e2ae9ed1ebe3380df62f50f3e1f62ca3eec2f1))
+* **eth:** stop witnessing system-call state the reference never touches ([#583](https://github.com/taikoxyz/taiko-geth/issues/583)) ([f6cdc8a](https://github.com/taikoxyz/taiko-geth/commit/f6cdc8a8b3ce5ab5c6451aa761c2be052a9b1e55))
+* **eth:** witness extension-split children in execution-witness replay ([#582](https://github.com/taikoxyz/taiko-geth/issues/582)) ([667c28c](https://github.com/taikoxyz/taiko-geth/commit/667c28cba6d4f9f1ec6a4c04878907966193d63a))
+* **eth:** witness system-call caller in debug_executionWitnessForTxList ([#578](https://github.com/taikoxyz/taiko-geth/issues/578)) ([7288ad6](https://github.com/taikoxyz/taiko-geth/commit/7288ad65d471cac0858e0406c0e8dd8d06ba3337))
+* **vm:** charge zk gas for stack-validation and not-activated failures to mirror REVM ([#570](https://github.com/taikoxyz/taiko-geth/issues/570)) ([e5eaae7](https://github.com/taikoxyz/taiko-geth/commit/e5eaae7a40539a134ed43f085ea0914951757321))
+
+
+### Chores
+
+* **consensus:** require the exact 7-byte Shasta extraData layout ([#591](https://github.com/taikoxyz/taiko-geth/issues/591)) ([bf52e8e](https://github.com/taikoxyz/taiko-geth/commit/bf52e8e7e84197efe3da37039ae5ba803e18f75a))
+* **core,vm:** align system-call semantics and harden zk-gas couplings ([#594](https://github.com/taikoxyz/taiko-geth/issues/594)) ([dc81d72](https://github.com/taikoxyz/taiko-geth/commit/dc81d72b8f3c326c04fbe4580dd145fda3eb78ae))
+* **eth:** align tx-list witness acceptance with the reference replay ([#590](https://github.com/taikoxyz/taiko-geth/issues/590)) ([84eacba](https://github.com/taikoxyz/taiko-geth/commit/84eacbabaebba7e1dd1db1f67adf5317e099a3d9))
+* **taiko:** release 2.5.0 ([#573](https://github.com/taikoxyz/taiko-geth/issues/573)) ([f003739](https://github.com/taikoxyz/taiko-geth/commit/f003739ec4e7babc3e2606021165cec814d2c000))
+* **vm:** align CREATE-family zk-gas spawn and shortfall boundaries ([#587](https://github.com/taikoxyz/taiko-geth/issues/587)) ([75c3293](https://github.com/taikoxyz/taiko-geth/commit/75c329377d675681945c28b73672f8a13d96178a))
+* **vm:** align LOG zk-gas shortfall and static-context boundaries ([#592](https://github.com/taikoxyz/taiko-geth/issues/592)) ([77793e2](https://github.com/taikoxyz/taiko-geth/commit/77793e247be7d1b51dc0f9726f3cd7acf6f75bde))
+* **vm:** charge zk-gas spawn before child execution ([#586](https://github.com/taikoxyz/taiko-geth/issues/586)) ([af4a686](https://github.com/taikoxyz/taiko-geth/commit/af4a6862d8330d7286b93c1cd9631d155c272e17))
+* **vm:** meter dynamic write-protection zk-gas ([#589](https://github.com/taikoxyz/taiko-geth/issues/589)) ([2dd83a2](https://github.com/taikoxyz/taiko-geth/commit/2dd83a2d271baccc922087d3471a57e31cf178cd))
+* **vm:** preserve zk-gas for static-context CREATE dynamic shortfalls ([#588](https://github.com/taikoxyz/taiko-geth/issues/588)) ([35dd076](https://github.com/taikoxyz/taiko-geth/commit/35dd076d98a3c048e87427b6c36428f593b7b8de))
+
+
+### Code Refactoring
+
+* **eth:** simplify execution-witness plumbing while preserving cross-client alignment ([#585](https://github.com/taikoxyz/taiko-geth/issues/585)) ([b0d48e1](https://github.com/taikoxyz/taiko-geth/commit/b0d48e1249ca0c5fcd33bf7da9db80e57f77a5e5))
+
+
+### Workflow
+
+* **repo:** remove Claude Code Review workflow ([#595](https://github.com/taikoxyz/taiko-geth/issues/595)) ([6041dc1](https://github.com/taikoxyz/taiko-geth/commit/6041dc17aeabbe1ab07b5cefea426e9827b72c4c))
+
 ## [2.5.0](https://github.com/taikoxyz/taiko-geth/compare/v2.4.0...v2.5.0) (2026-06-12)
 
 
