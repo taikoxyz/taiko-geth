@@ -7,36 +7,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// CHANGE(taiko): Masaya is reset to activate Unzen from genesis. Unzen also
-// carries the Cancun/Prague/Osaka timestamp fields because genesis becomes an
-// Osaka-era block.
-func TestTaikoGenesisBlock_MasayaActivatesUnzenAtGenesis(t *testing.T) {
-	genesis := TaikoGenesisBlock(params.MasayaDevnetNetworkID.Uint64())
-	cfg := genesis.Config
-	if cfg.ChainID.Cmp(params.MasayaDevnetNetworkID) != 0 {
-		t.Fatalf("ChainID = %v, want %v", cfg.ChainID, params.MasayaDevnetNetworkID)
+// CHANGE(taiko): Retired network IDs use the internal-devnet fallback.
+func TestTaikoGenesisBlock_RemovedNetworkDefaultsToInternal(t *testing.T) {
+	const removedNetworkID uint64 = 167_011
+
+	cfg := TaikoGenesisBlock(removedNetworkID).Config
+	if cfg.ChainID.Cmp(big.NewInt(167_001)) != 0 {
+		t.Fatalf("ChainID = %v, want 167001", cfg.ChainID)
 	}
-	if cfg.UnzenTime == nil {
-		t.Fatal("UnzenTime is nil, want 0")
-	}
-	if got := *cfg.UnzenTime; got != 0 {
-		t.Fatalf("UnzenTime = %d, want 0", got)
-	}
-	zeroBlock := big.NewInt(0)
-	if !cfg.IsUnzen(0) {
-		t.Fatal("Masaya Unzen fork is not active at timestamp 0")
-	}
-	if !cfg.IsCancun(zeroBlock, 0) {
-		t.Fatal("Masaya Cancun fork is not active at genesis")
-	}
-	if !cfg.IsPrague(zeroBlock, 0) {
-		t.Fatal("Masaya Prague fork is not active at genesis")
-	}
-	if !cfg.IsOsaka(zeroBlock, 0) {
-		t.Fatal("Masaya Osaka fork is not active at genesis")
-	}
-	t.Logf("Masaya chain ID: %d", params.MasayaDevnetNetworkID.Uint64())
-	t.Logf("Masaya genesis hash: %s", genesis.ToBlock().Hash())
 }
 
 func TestTaikoGenesisBlock_HoodiActivatesUnzenAtScheduledTime(t *testing.T) {
@@ -127,30 +105,18 @@ func TestTaikoGenesisBlock_MainnetActivatesUnzenAtScheduledTime(t *testing.T) {
 	}
 }
 
-func TestTaikoGenesisBlock_MasayaDoesNotContaminateMainnetForkTimes(t *testing.T) {
-	TaikoGenesisBlock(params.MasayaDevnetNetworkID.Uint64())
+// CHANGE(taiko): Network-specific configs must remain isolated between calls.
+func TestTaikoGenesisBlock_ConfigIsIsolatedPerCall(t *testing.T) {
+	hoodi := TaikoGenesisBlock(params.TaikoHoodiNetworkID.Uint64())
+	TaikoGenesisBlock(params.TaikoMainnetNetworkID.Uint64())
 
-	genesis := TaikoGenesisBlock(params.TaikoMainnetNetworkID.Uint64())
-	cfg := genesis.Config
-
-	const mainnetUnzenTime uint64 = 1_786_021_200 // 2026-08-06 13:00:00 UTC
-	if cfg.UnzenTime == nil {
-		t.Fatalf("UnzenTime is nil, want %d", mainnetUnzenTime)
+	if hoodi.Config.ChainID.Cmp(params.TaikoHoodiNetworkID) != 0 {
+		t.Fatalf("Hoodi ChainID = %v, want %v", hoodi.Config.ChainID, params.TaikoHoodiNetworkID)
 	}
-	if got := *cfg.UnzenTime; got != mainnetUnzenTime {
-		t.Fatalf("UnzenTime = %d, want %d", got, mainnetUnzenTime)
+	if hoodi.Config.UnzenTime == nil {
+		t.Fatalf("Hoodi UnzenTime is nil, want %d", HoodiUnzenTime)
 	}
-	// Masaya activates Cancun/Prague/Osaka at genesis; constructing it must not
-	// leak those timestamps into the Mainnet config, which stays inactive until
-	// the scheduled Unzen time.
-	zeroBlock := big.NewInt(0)
-	if cfg.IsCancun(zeroBlock, 0) {
-		t.Fatal("Mainnet Cancun fork is active at genesis after constructing Masaya")
-	}
-	if cfg.IsPrague(zeroBlock, 0) {
-		t.Fatal("Mainnet Prague fork is active at genesis after constructing Masaya")
-	}
-	if cfg.IsOsaka(zeroBlock, 0) {
-		t.Fatal("Mainnet Osaka fork is active at genesis after constructing Masaya")
+	if got := *hoodi.Config.UnzenTime; got != HoodiUnzenTime {
+		t.Fatalf("Hoodi UnzenTime = %d, want %d", got, HoodiUnzenTime)
 	}
 }

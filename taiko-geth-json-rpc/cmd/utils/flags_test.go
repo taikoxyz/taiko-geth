@@ -89,7 +89,7 @@ func TestSetEthConfigUsesNetworkIDForTaikoGenesis(t *testing.T) {
 			t.Fatalf("failed to apply flag %q: %v", f.Names()[0], err)
 		}
 	}
-	if err := set.Set(NetworkIdFlag.Name, params.MasayaDevnetNetworkID.String()); err != nil {
+	if err := set.Set(NetworkIdFlag.Name, params.TaikoHoodiNetworkID.String()); err != nil {
 		t.Fatalf("failed to set %q: %v", NetworkIdFlag.Name, err)
 	}
 	if err := set.Set(TaikoFlag.Name, "true"); err != nil {
@@ -106,11 +106,11 @@ func TestSetEthConfigUsesNetworkIDForTaikoGenesis(t *testing.T) {
 	cfg := ethconfig.Defaults
 	SetEthConfig(ctx, stack, &cfg)
 
-	if cfg.NetworkId != params.MasayaDevnetNetworkID.Uint64() {
-		t.Fatalf("network ID mismatch: have %d want %d", cfg.NetworkId, params.MasayaDevnetNetworkID.Uint64())
+	if cfg.NetworkId != params.TaikoHoodiNetworkID.Uint64() {
+		t.Fatalf("network ID mismatch: have %d want %d", cfg.NetworkId, params.TaikoHoodiNetworkID.Uint64())
 	}
 
-	want := core.TaikoGenesisBlock(params.MasayaDevnetNetworkID.Uint64()).ToBlock().Hash()
+	want := core.TaikoGenesisBlock(params.TaikoHoodiNetworkID.Uint64()).ToBlock().Hash()
 	if got := cfg.Genesis.ToBlock().Hash(); got != want {
 		t.Fatalf("genesis hash mismatch: have %s want %s", got, want)
 	}

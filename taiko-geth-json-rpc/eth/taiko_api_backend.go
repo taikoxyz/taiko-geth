@@ -91,7 +91,6 @@ const maxBatchLookupBlocks = 768 * 21_600
 var batchLookupBlockThresholds = map[uint64]uint64{
 	params.TaikoMainnetNetworkID.Uint64():  4_990_434,
 	params.TaikoInternalNetworkID.Uint64(): 0,
-	params.MasayaDevnetNetworkID.Uint64():  0,
 	params.TaikoHoodiNetworkID.Uint64():    3_951_005,
 }
 
