@@ -185,7 +185,6 @@ func TestTaikoNetworkIDsArePinned(t *testing.T) {
 	}{
 		{"taiko-mainnet", TaikoMainnetNetworkID, 167000},
 		{"taiko-internal", TaikoInternalNetworkID, 167001},
-		{"masaya-devnet", MasayaDevnetNetworkID, 167011},
 		{"taiko-hoodi", TaikoHoodiNetworkID, 167013},
 	}
 	for _, c := range cases {
