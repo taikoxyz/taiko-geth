@@ -39,7 +39,6 @@ func u64(val uint64) *uint64 { return &val }
 var (
 	TaikoMainnetNetworkID  = big.NewInt(167000)
 	TaikoInternalNetworkID = big.NewInt(167001)
-	MasayaDevnetNetworkID  = big.NewInt(167011)
 	TaikoHoodiNetworkID    = big.NewInt(167013)
 )
 
@@ -47,7 +46,6 @@ var networkIDToChainConfig = map[*big.Int]*ChainConfig{
 	TaikoMainnetNetworkID:      TaikoChainConfig,
 	TaikoInternalNetworkID:     TaikoChainConfig,
 	TaikoHoodiNetworkID:        TaikoChainConfig,
-	MasayaDevnetNetworkID:      TaikoChainConfig,
 	MainnetChainConfig.ChainID: MainnetChainConfig,
 	SepoliaChainConfig.ChainID: SepoliaChainConfig,
 	TestChainConfig.ChainID:    TestChainConfig,
