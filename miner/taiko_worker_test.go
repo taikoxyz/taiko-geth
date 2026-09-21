@@ -2,10 +2,10 @@ package miner
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"errors"
 	"math"
 	"math/big"
-	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
@@ -17,13 +17,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/txpool"
-	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
 	"github.com/stretchr/testify/assert"
 )
@@ -168,48 +166,45 @@ func TestApplyTransaction_SealerZkGasExhaustionSurface(t *testing.T) {
 	}
 }
 
-// CHANGE(taiko): beaconRootsStubCode stands in for the EIP-4788 contract in the
-// Unzen sealing tests. It records TIMESTAMP in slot 0 and the calldata word (the
-// parent beacon root) in slot 1; with the zero root only slot 0 changes, which is
-// enough to make the system call observable in the state root.
-//
-//	TIMESTAMP PUSH1 0 SSTORE PUSH1 0 CALLDATALOAD PUSH1 1 SSTORE STOP
-var beaconRootsStubCode = []byte{0x42, 0x60, 0x00, 0x55, 0x60, 0x00, 0x35, 0x60, 0x01, 0x55, 0x00}
-
-// goldenTouchTestKey is the publicly known golden-touch key that signs anchor
-// transactions; consensus/taiko uses the same key in its tests.
-var goldenTouchTestKey, _ = crypto.HexToECDSA("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
-
-// taikoL2AddressFor mirrors the TaikoL2 address derivation in consensus/taiko.New.
-func taikoL2AddressFor(chainID *big.Int) common.Address {
-	prefix := strings.TrimPrefix(chainID.String(), "0")
-	return common.HexToAddress(
-		"0x" + prefix +
-			strings.Repeat("0", common.AddressLength*2-len(prefix)-len(taiko.TaikoL2AddressSuffix)) +
-			taiko.TaikoL2AddressSuffix,
-	)
+// goldenTouchTestKey returns the publicly known golden-touch key that signs
+// anchor transactions, checking that it still derives taiko.GoldenTouchAccount.
+func goldenTouchTestKey(t *testing.T) *ecdsa.PrivateKey {
+	t.Helper()
+	key, err := crypto.HexToECDSA("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
+	if err != nil {
+		t.Fatalf("golden touch key: %v", err)
+	}
+	if addr := crypto.PubkeyToAddress(key.PublicKey); addr != taiko.GoldenTouchAccount {
+		t.Fatalf("golden touch key derives %v, want %v", addr, taiko.GoldenTouchAccount)
+	}
+	return key
 }
 
-// newUnzenTestChainConfig returns a Taiko chain config with every Ethereum fork up
-// to Osaka and the Unzen fork active from genesis.
+// newUnzenTestChainConfig returns a Taiko chain config with Shanghai, Cancun,
+// Prague, Osaka and Unzen active from genesis. The fork times are pinned
+// explicitly so that upstream additions to the shared test configs cannot
+// change what these tests exercise.
 func newUnzenTestChainConfig() *params.ChainConfig {
-	config := *params.MergedTestChainConfig
-	config.ChainID = big.NewInt(167000)
-	config.Taiko = true
 	zero := uint64(0)
+	config := *params.TaikoChainConfig
+	config.ChainID = big.NewInt(167000)
+	config.ShanghaiTime = &zero
+	config.CancunTime = &zero
+	config.PragueTime = &zero
+	config.OsakaTime = &zero
 	config.UnzenTime = &zero
 	return &config
 }
 
-// newUnzenTestGenesis funds the test bank, installs the observable beacon-roots
-// stub at the EIP-4788 address and a no-op anchor contract at the TaikoL2 address.
+// newUnzenTestGenesis funds the test bank, installs the canonical EIP-4788
+// contract and a no-op anchor contract at the TaikoL2 (treasury) address.
 func newUnzenTestGenesis(config *params.ChainConfig) *core.Genesis {
 	return &core.Genesis{
 		Config: config,
 		Alloc: types.GenesisAlloc{
-			testBankAddress:                   {Balance: testBankFunds},
-			params.BeaconRootsAddress:         {Code: beaconRootsStubCode, Balance: common.Big0},
-			taikoL2AddressFor(config.ChainID): {Code: []byte{0x00}, Balance: common.Big0}, // STOP
+			testBankAddress:                           {Balance: testBankFunds},
+			params.BeaconRootsAddress:                 {Code: params.BeaconRootsCode, Balance: common.Big0},
+			core.TaikoTreasuryAddress(config.ChainID): {Code: []byte{0x00}, Balance: common.Big0}, // STOP
 		},
 		Timestamp:  1000,
 		Difficulty: common.Big0,
@@ -217,40 +212,50 @@ func newUnzenTestGenesis(config *params.ChainConfig) *core.Genesis {
 	}
 }
 
-// newUnzenTestWorker builds a miner on top of the Taiko consensus engine, which is
-// the engine sealBlockWith runs against in production.
-func newUnzenTestWorker(t *testing.T, config *params.ChainConfig, gspec *core.Genesis) (*Miner, *testWorkerBackend) {
+// newUnzenTestWorker builds a miner on the Taiko consensus engine, the engine
+// sealBlockWith runs against in production. No transaction pool is attached:
+// none of the paths under test read it, and an idle pool races the chain
+// shutdown under repeated runs.
+func newUnzenTestWorker(t *testing.T, gspec *core.Genesis) (*Miner, *testWorkerBackend) {
 	t.Helper()
 	db := rawdb.NewMemoryDatabase()
-	engine := taiko.New(config, db)
-	chain, err := core.NewBlockChain(db, gspec, engine, &core.BlockChainConfig{ArchiveMode: true})
+	eng := taiko.New(gspec.Config, db)
+	chain, err := core.NewBlockChain(db, gspec, eng, &core.BlockChainConfig{ArchiveMode: true})
 	if err != nil {
 		t.Fatalf("core.NewBlockChain failed: %v", err)
 	}
-	pool := legacypool.New(testTxPoolConfig, chain)
-	txPool, _ := txpool.New(testTxPoolConfig.PriceLimit, chain, []txpool.SubPool{pool})
-	backend := &testWorkerBackend{db: db, chain: chain, txPool: txPool, genesis: gspec}
-	return New(backend, testConfig, engine), backend
+	t.Cleanup(chain.Stop)
+	backend := &testWorkerBackend{db: db, chain: chain, genesis: gspec}
+	return New(backend, testConfig, eng), backend
 }
 
-// TestPrepareWork_UnzenAppliesBeaconRootSystemCall pins the build-side half of the
-// EIP-4788 parity invariant: a Taiko Unzen block must be prepared with the canonical
-// zero parent beacon root already in the header, so the beacon-roots system call runs
-// while sealing exactly as core.StateProcessor runs it when the block is imported.
-func TestPrepareWork_UnzenAppliesBeaconRootSystemCall(t *testing.T) {
-	config := newUnzenTestChainConfig()
-	w, b := newUnzenTestWorker(t, config, newUnzenTestGenesis(config))
-	defer b.chain.Stop()
+// beaconRootsSlot returns the storage slot in which the EIP-4788 contract
+// records the timestamp of the block it was called in.
+func beaconRootsSlot(timestamp uint64) common.Hash {
+	return common.BigToHash(new(big.Int).SetUint64(timestamp % 8191))
+}
 
-	parent := b.chain.CurrentBlock()
-	timestamp := parent.Time + 1
-	env, err := w.prepareWork(context.Background(), &generateParams{
-		timestamp:     timestamp,
+// unzenGenerateParams returns the sealing parameters for the block after parent.
+func unzenGenerateParams(parent *types.Header) *generateParams {
+	return &generateParams{
+		timestamp:     parent.Time + 1,
 		forceTime:     true,
 		parentHash:    parent.Hash(),
 		coinbase:      testUserAddress,
 		baseFeePerGas: big.NewInt(params.InitialBaseFee),
-	}, false)
+	}
+}
+
+// TestPrepareWork_UnzenAppliesBeaconRootSystemCall pins the build-side half of
+// the EIP-4788 parity invariant: a Taiko Unzen block must be prepared with the
+// canonical zero parent beacon root already in the header, so the beacon-roots
+// system call runs while sealing as core.StateProcessor runs it on import.
+func TestPrepareWork_UnzenAppliesBeaconRootSystemCall(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	w, b := newUnzenTestWorker(t, newUnzenTestGenesis(config))
+
+	parent := b.chain.CurrentBlock()
+	env, err := w.prepareWork(context.Background(), unzenGenerateParams(parent), false)
 	if err != nil {
 		t.Fatalf("prepareWork: %v", err)
 	}
@@ -259,27 +264,81 @@ func TestPrepareWork_UnzenAppliesBeaconRootSystemCall(t *testing.T) {
 	if env.header.ParentBeaconRoot == nil || *env.header.ParentBeaconRoot != (common.Hash{}) {
 		t.Fatalf("Unzen header must carry the zero parent beacon root before execution, got %v", env.header.ParentBeaconRoot)
 	}
+	timestamp := env.header.Time
 	want := common.BigToHash(new(big.Int).SetUint64(timestamp))
-	if got := env.state.GetState(params.BeaconRootsAddress, common.Hash{}); got != want {
-		t.Fatalf("beacon-roots system call did not run while preparing the block: slot 0 = %v, want timestamp %v", got, want)
+	if got := env.state.GetState(params.BeaconRootsAddress, beaconRootsSlot(timestamp)); got != want {
+		t.Fatalf("EIP-4788 contract not invoked while preparing the block: slot = %v, want timestamp %v", got, want)
 	}
 }
 
-// TestSealBlockWith_UnzenSealedRootMatchesImport re-executes a locally sealed Unzen
-// block through core.StateProcessor, the path every importing node and prover uses,
-// and requires the same state root. It fails whenever sealing skips a pre-execution
-// system call that import performs.
+// TestPrepareWork_UnzenRejectsNonZeroBeaconRoot mirrors the reference client: a
+// caller-supplied non-zero parent beacon root cannot survive the engine round
+// trip on Taiko, so building fails closed instead of committing it.
+func TestPrepareWork_UnzenRejectsNonZeroBeaconRoot(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	w, b := newUnzenTestWorker(t, newUnzenTestGenesis(config))
+
+	genParams := unzenGenerateParams(b.chain.CurrentBlock())
+	beaconRoot := common.HexToHash("0xdead")
+	genParams.beaconRoot = &beaconRoot
+	env, err := w.prepareWork(context.Background(), genParams, false)
+	if err == nil {
+		env.discard()
+		t.Fatalf("expected a non-zero parent beacon root to be rejected, got header root %v", env.header.ParentBeaconRoot)
+	}
+}
+
+// TestPrepareWork_CancunWithoutUnzenSkipsBeaconRootSystemCall pins the gate to
+// the Unzen fork rather than to Cancun: with Cancun, Prague and Osaka active but
+// Unzen not, the header keeps a nil root and the contract is not called.
+func TestPrepareWork_CancunWithoutUnzenSkipsBeaconRootSystemCall(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	config.UnzenTime = nil
+	assertPrepareWorkSkipsBeaconRootSystemCall(t, config)
+}
+
+// TestPrepareWork_PreUnzenSkipsBeaconRootSystemCall is the pre-fork smoke case:
+// with no post-Shanghai fork active the header keeps a nil root and the contract
+// is not called, so pre-fork blocks stay identical to what shipped.
+func TestPrepareWork_PreUnzenSkipsBeaconRootSystemCall(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	config.UnzenTime, config.CancunTime, config.PragueTime, config.OsakaTime = nil, nil, nil, nil
+	assertPrepareWorkSkipsBeaconRootSystemCall(t, config)
+}
+
+func assertPrepareWorkSkipsBeaconRootSystemCall(t *testing.T, config *params.ChainConfig) {
+	t.Helper()
+	w, b := newUnzenTestWorker(t, newUnzenTestGenesis(config))
+
+	env, err := w.prepareWork(context.Background(), unzenGenerateParams(b.chain.CurrentBlock()), false)
+	if err != nil {
+		t.Fatalf("prepareWork: %v", err)
+	}
+	defer env.discard()
+
+	if env.header.ParentBeaconRoot != nil {
+		t.Fatalf("header must not carry a parent beacon root, got %v", env.header.ParentBeaconRoot)
+	}
+	if got := env.state.GetState(params.BeaconRootsAddress, beaconRootsSlot(env.header.Time)); got != (common.Hash{}) {
+		t.Fatalf("block ran the beacon-roots system call: slot = %v", got)
+	}
+}
+
+// TestSealBlockWith_UnzenSealedRootMatchesImport imports a locally sealed Unzen
+// block through the regular chain insertion path, which re-executes it with
+// core.StateProcessor and validates the state root, gas used, receipt root and
+// header fields against what was sealed. It fails whenever sealing skips a
+// pre-execution system call that import performs.
 func TestSealBlockWith_UnzenSealedRootMatchesImport(t *testing.T) {
 	config := newUnzenTestChainConfig()
-	w, b := newUnzenTestWorker(t, config, newUnzenTestGenesis(config))
-	defer b.chain.Stop()
+	w, b := newUnzenTestWorker(t, newUnzenTestGenesis(config))
 
 	parent := b.chain.CurrentBlock()
 	timestamp := parent.Time + 1
 	baseFee := big.NewInt(params.InitialBaseFee)
-	taikoL2Address := taikoL2AddressFor(config.ChainID)
+	taikoL2Address := core.TaikoTreasuryAddress(config.ChainID)
 
-	anchorTx := types.MustSignNewTx(goldenTouchTestKey, types.LatestSigner(config), &types.DynamicFeeTx{
+	anchorTx := types.MustSignNewTx(goldenTouchTestKey(t), types.LatestSigner(config), &types.DynamicFeeTx{
 		ChainID:   config.ChainID,
 		Nonce:     0,
 		GasTipCap: common.Big0,
@@ -303,9 +362,11 @@ func TestSealBlockWith_UnzenSealedRootMatchesImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sealBlockWith: %v", err)
 	}
+	if txs := block.Transactions(); len(txs) != 1 || txs[0].Hash() != anchorTx.Hash() {
+		t.Fatalf("sealed block must contain exactly the anchor transaction, got %d transactions", len(txs))
+	}
 
-	// The canonical Unzen header fields must come out of sealing exactly as
-	// eth/catalyst reconstructs them from a payload.
+	// Contract pins for the canonical Unzen header values every importer reconstructs.
 	if block.BeaconRoot() == nil || *block.BeaconRoot() != (common.Hash{}) {
 		t.Fatalf("sealed BeaconRoot = %v, want zero", block.BeaconRoot())
 	}
@@ -319,52 +380,15 @@ func TestSealBlockWith_UnzenSealedRootMatchesImport(t *testing.T) {
 		t.Fatalf("sealed RequestsHash = %v, want %v", block.RequestsHash(), types.EmptyRequestsHash)
 	}
 
-	statedb, err := b.chain.StateAt(parent.Root)
+	if n, err := b.chain.InsertChain(types.Blocks{block}); err != nil {
+		t.Fatalf("importing the sealed block failed (inserted %d): %v", n, err)
+	}
+	statedb, err := b.chain.StateAt(block.Root())
 	if err != nil {
-		t.Fatalf("StateAt(parent): %v", err)
+		t.Fatalf("StateAt(sealed root): %v", err)
 	}
-	res, err := core.NewStateProcessor(b.chain).Process(context.Background(), block, statedb, vm.Config{})
-	if err != nil {
-		t.Fatalf("import-side execution failed: %v", err)
-	}
-	if got := statedb.IntermediateRoot(true); got != block.Root() {
-		t.Fatalf("sealed state root %v != imported state root %v: sealing and import disagree on pre-execution system calls", block.Root(), got)
-	}
-	if res.GasUsed != block.GasUsed() {
-		t.Fatalf("sealed gas used %d != imported gas used %d", block.GasUsed(), res.GasUsed)
-	}
-	if got := types.DeriveSha(res.Receipts, trie.NewStackTrie(nil)); got != block.ReceiptHash() {
-		t.Fatalf("sealed receipt root %v != imported receipt root %v", block.ReceiptHash(), got)
-	}
-}
-
-// TestPrepareWork_PreUnzenSkipsBeaconRootSystemCall pins the other side of the
-// gate: a Taiko block before the Unzen fork keeps a nil parent beacon root and must
-// not run the beacon-roots system call, so pre-fork blocks stay identical to what
-// shipped.
-func TestPrepareWork_PreUnzenSkipsBeaconRootSystemCall(t *testing.T) {
-	config := newUnzenTestChainConfig()
-	config.UnzenTime, config.CancunTime, config.PragueTime, config.OsakaTime = nil, nil, nil, nil
-	w, b := newUnzenTestWorker(t, config, newUnzenTestGenesis(config))
-	defer b.chain.Stop()
-
-	parent := b.chain.CurrentBlock()
-	env, err := w.prepareWork(context.Background(), &generateParams{
-		timestamp:     parent.Time + 1,
-		forceTime:     true,
-		parentHash:    parent.Hash(),
-		coinbase:      testUserAddress,
-		baseFeePerGas: big.NewInt(params.InitialBaseFee),
-	}, false)
-	if err != nil {
-		t.Fatalf("prepareWork: %v", err)
-	}
-	defer env.discard()
-
-	if env.header.ParentBeaconRoot != nil {
-		t.Fatalf("pre-Unzen header must not carry a parent beacon root, got %v", env.header.ParentBeaconRoot)
-	}
-	if got := env.state.GetState(params.BeaconRootsAddress, common.Hash{}); got != (common.Hash{}) {
-		t.Fatalf("pre-Unzen block ran the beacon-roots system call: slot 0 = %v", got)
+	want := common.BigToHash(new(big.Int).SetUint64(timestamp))
+	if got := statedb.GetState(params.BeaconRootsAddress, beaconRootsSlot(timestamp)); got != want {
+		t.Fatalf("imported state lacks the EIP-4788 write: slot = %v, want timestamp %v", got, want)
 	}
 }

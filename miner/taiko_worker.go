@@ -336,15 +336,6 @@ func (w *Miner) sealBlockWith(
 	// CHANGE(taiko): set header difficulty to finalized block zk gas for Unzen.
 	if zkGasMeter != nil {
 		env.header.Difficulty = new(big.Int).SetUint64(zkGasMeter.BlockZkGasUsed())
-
-		// CHANGE(taiko): the canonical zero parent beacon root is set by
-		// prepareWork before the EIP-4788 system call runs; it must never be
-		// stamped after execution, or the sealed state root omits that call.
-
-		// CHANGE(taiko): Unzen locally sealed blocks carry the canonical empty
-		// requests hash, matching replayed/imported payload handling.
-		emptyRequests := types.EmptyRequestsHash
-		env.header.RequestsHash = &emptyRequests
 	}
 
 	block, err := w.engine.FinalizeAndAssemble(
