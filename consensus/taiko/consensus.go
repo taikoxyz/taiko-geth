@@ -256,6 +256,13 @@ func verifyUnzenHeaderFields(header *types.Header) error {
 	if header.ParentBeaconRoot == nil {
 		return fmt.Errorf("parent beacon root missing")
 	}
+	// CHANGE(taiko): the reference client rejects every non-zero parent beacon
+	// root, so accepting one here is a client split vector: geth would run the
+	// EIP-4788 system call with that root, agree with itself on the resulting
+	// state root and make the block canonical while the reference discards it.
+	if *header.ParentBeaconRoot != (common.Hash{}) {
+		return fmt.Errorf("invalid parent beacon root: have %v, want %v", *header.ParentBeaconRoot, common.Hash{})
+	}
 	if header.BlobGasUsed == nil {
 		return fmt.Errorf("blob gas used missing")
 	}
@@ -309,14 +316,14 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 		header.Difficulty = common.Big0
 	}
 
-	// CHANGE(taiko): Unzen blocks require requestsHash, parentBeaconRoot, and blob gas fields.
+	// CHANGE(taiko): Unzen blocks require requestsHash and the blob gas fields.
+	// parentBeaconRoot is deliberately not stamped here: it has to be on the
+	// header before the block executes, so the EIP-4788 system call runs and its
+	// writes land in the state root. core.Process supplies it on import, and
+	// FinalizeAndAssemble rejects a missing root on the build paths.
 	if t.chainConfig.IsUnzen(header.Time) {
 		emptyRequests := types.EmptyRequestsHash
 		header.RequestsHash = &emptyRequests
-		if header.ParentBeaconRoot == nil {
-			zero := common.Hash{}
-			header.ParentBeaconRoot = &zero
-		}
 		zeroBlobGas := uint64(0)
 		header.BlobGasUsed = &zeroBlobGas
 		excessBlobGas := uint64(0)
@@ -354,8 +361,22 @@ func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHe
 		}
 	}
 
-	// CHANGE(taiko): Unzen blocks must not contain blob transactions.
 	if t.chainConfig.IsUnzen(header.Time) {
+		// CHANGE(taiko): the canonical zero parent beacon root must already be on
+		// the header, set before execution so the EIP-4788 system call ran and its
+		// writes are inside the state root committed below. Backfilling a missing
+		// root at this point would instead dress a build path that skipped that
+		// system call up as a canonical-looking header over a wrong state root,
+		// which every importer — geth's own newPayload included — rejects. A
+		// non-zero root is rejected for the same reason import rejects it.
+		if header.ParentBeaconRoot == nil {
+			return nil, fmt.Errorf("parent beacon root missing: have nil, want %v", common.Hash{})
+		}
+		if *header.ParentBeaconRoot != (common.Hash{}) {
+			return nil, fmt.Errorf("invalid parent beacon root: have %v, want %v", *header.ParentBeaconRoot, common.Hash{})
+		}
+
+		// CHANGE(taiko): Unzen blocks must not contain blob transactions.
 		for i, tx := range body.Transactions {
 			if tx.Type() == types.BlobTxType {
 				return nil, fmt.Errorf("blob transaction at index %d not allowed in Unzen block", i)
