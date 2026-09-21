@@ -310,6 +310,14 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 		header.ExcessBlobGas = &excessBlobGas
 		header.ParentBeaconRoot = genParams.beaconRoot
 	}
+	// CHANGE(taiko): Unzen blocks carry the canonical zero parent beacon root.
+	// Set it before the sealing environment exists so the EIP-4788 system call
+	// below runs while building, exactly as core.StateProcessor runs it when the
+	// block is imported. Stamping the root only after execution would seal a
+	// state root that omits the beacon-roots contract writes.
+	if miner.chainConfig.Taiko && header.ParentBeaconRoot == nil && miner.chainConfig.IsUnzen(header.Time) {
+		header.ParentBeaconRoot = new(common.Hash)
+	}
 	// Apply EIP-7843.
 	if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {
 		if genParams.slotNum == nil {
