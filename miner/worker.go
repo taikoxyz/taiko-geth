@@ -310,6 +310,17 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 		header.ExcessBlobGas = &excessBlobGas
 		header.ParentBeaconRoot = genParams.beaconRoot
 	}
+	// CHANGE(taiko): Unzen blocks carry the canonical zero parent beacon root.
+	// It must be in the header before makeEnv so the EIP-4788 system call below
+	// runs while building, as it does when the block is imported. A caller-supplied
+	// non-zero root cannot survive the engine round trip on Taiko, so it is
+	// rejected rather than committed, as the reference client does.
+	if miner.chainConfig.Taiko && miner.chainConfig.IsUnzen(header.Time) {
+		if genParams.beaconRoot != nil && *genParams.beaconRoot != (common.Hash{}) {
+			return nil, fmt.Errorf("non-zero parent beacon root %v is unsupported on Taiko", *genParams.beaconRoot)
+		}
+		header.ParentBeaconRoot = new(common.Hash)
+	}
 	// Apply EIP-7843.
 	if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {
 		if genParams.slotNum == nil {
