@@ -65,10 +65,11 @@ func newTestStateDB(t *testing.T) *state.StateDB {
 
 // TestVerifyUnzenHeaderFieldsParentBeaconRoot pins the canonical Unzen parent
 // beacon root: only the zero hash is a valid value. The reference client
-// (alethia-reth) rejects every non-zero root, so accepting one here is a client
-// split vector — geth would run the EIP-4788 system call with a root the
-// reference never executes, agree with itself on the resulting state root and
-// make the block canonical while the reference discards it.
+// rebuilds every Unzen payload header with the zero root, so it can never
+// import a block carrying any other root; accepting one here is a client split
+// vector — geth would run the EIP-4788 system call with a root the reference
+// never executes, agree with itself on the resulting state root and make the
+// block canonical while the reference rejects it.
 func TestVerifyUnzenHeaderFieldsParentBeaconRoot(t *testing.T) {
 	zero := common.Hash{}
 	nonZero := common.HexToHash("0xdead")
@@ -151,7 +152,11 @@ func TestFinalizeAndAssembleUnzenParentBeaconRoot(t *testing.T) {
 		}
 	})
 
-	t.Run("non-zero parent beacon root rejected", func(t *testing.T) {
+	t.Run("non-zero parent beacon root kept", func(t *testing.T) {
+		// Assembly does not police the root's value: prepareWork rejects a
+		// non-zero root before building and header verification rejects one on
+		// import, while eth_simulateV1 has to keep a caller's beaconRoot block
+		// override, as the reference client does.
 		config := unzenChainConfig(0)
 		engine := New(config, rawdb.NewMemoryDatabase())
 		header := unzenHeader()
@@ -166,11 +171,11 @@ func TestFinalizeAndAssembleUnzenParentBeaconRoot(t *testing.T) {
 			&types.Body{},
 			nil,
 		)
-		if err == nil || !strings.Contains(err.Error(), "invalid parent beacon root") {
-			t.Fatalf("expected error containing %q, got %v", "invalid parent beacon root", err)
+		if err != nil {
+			t.Fatalf("expected the block to be assembled, got %v", err)
 		}
-		if block != nil {
-			t.Fatalf("expected no block, got %v", block.Hash())
+		if root := block.BeaconRoot(); root == nil || *root != nonZero {
+			t.Fatalf("expected the parent beacon root %v to be kept, got %v", nonZero, root)
 		}
 	})
 
