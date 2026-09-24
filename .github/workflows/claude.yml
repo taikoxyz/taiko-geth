@@ -7,19 +7,34 @@ on:
 
 jobs:
   claude:
-    if: (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude'))
-    runs-on: [arc-runner-set]
+    # Only org owners/members/collaborators can trigger this: issue_comment runs with repo secrets
+    # and is not covered by the fork-PR approval gate, so any GitHub user could otherwise start it.
+    if: >-
+      github.event_name == 'issue_comment'
+      && contains(github.event.comment.body, '@claude')
+      && contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+    # GitHub-hosted: fresh VM per job; never run PR code on shared self-hosted runners.
+    runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       issues: write
-      id-token: write
+      id-token: write # required by claude-code-action to obtain its GitHub App token
     steps:
       - name: Fetch owner/repo of pull request
-        uses: alessbell/pull-request-comment-branch@v2.1.0
+        uses: alessbell/pull-request-comment-branch@ef3408c9757d05f89cb525036383033a313758a0 # v2.1.0
         id: comment-branch
+      - name: Refuse pull requests from forks
+        env:
+          HEAD_REPO: ${{ steps.comment-branch.outputs.head_owner }}/${{ steps.comment-branch.outputs.head_repo }}
+          BASE_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "Refusing to run: PR head is $HEAD_REPO, not $BASE_REPO (fork PRs are not supported)." >&2
+            exit 1
+          fi
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           # SECURITY: Pin to exact commit at comment time to prevent TOCTOU attacks
           ref: ${{ steps.comment-branch.outputs.head_sha }}
@@ -29,7 +44,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "20"
 
@@ -40,7 +55,7 @@ jobs:
 
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@beta
+        uses: anthropics/claude-code-action@28f83620103c48a57093dcc2837eec89e036bb9f # beta
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
 
