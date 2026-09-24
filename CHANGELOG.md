@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.7.0](https://github.com/taikoxyz/taiko-geth/compare/v2.6.0...v2.7.0) (2026-09-22)
+
+
+### Features
+
+* **taiko:** remove Masaya network support ([#598](https://github.com/taikoxyz/taiko-geth/issues/598)) ([fe4f45c](https://github.com/taikoxyz/taiko-geth/commit/fe4f45c83f7a49b213db353f85453c64fb156c9d))
+
+
+### Chores
+
+* **miner:** run the EIP-4788 system call when sealing Unzen blocks ([#601](https://github.com/taikoxyz/taiko-geth/issues/601)) ([4e00128](https://github.com/taikoxyz/taiko-geth/commit/4e001283f48841068c28fd5335dd784d4ed96bca))
+
 ## [2.6.0](https://github.com/taikoxyz/taiko-geth/compare/v2.5.0...v2.6.0) (2026-07-13)
 
 
