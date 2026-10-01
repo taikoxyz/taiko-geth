@@ -32,9 +32,11 @@ var (
 	HoodiEtnaTime   uint64 = math.MaxUint64
 )
 
-// TaikoGenesisBlock returns the Taiko network genesis block configs.
-func TaikoGenesisBlock(networkID uint64) *Genesis {
-	// CHANGE(taiko): Each generated genesis needs an isolated chain config because
+// CHANGE(taiko): taikoNetworkConfig returns a per-call copy of the given Taiko
+// network's chain config, together with the network's genesis alloc JSON, which
+// it leaves undecoded. Unknown network IDs fall back to the internal devnet.
+func taikoNetworkConfig(networkID uint64) (*params.ChainConfig, []byte) {
+	// CHANGE(taiko): Each call needs an isolated chain config because
 	// fork timestamps are overwritten per network below.
 	chainConfig := *params.TaikoChainConfig
 
@@ -89,13 +91,20 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.OsakaTime = &DevnetUnzenTime
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	}
+	return &chainConfig, allocJSON
+}
+
+// TaikoGenesisBlock returns the Taiko network genesis block configs.
+func TaikoGenesisBlock(networkID uint64) *Genesis {
+	chainConfig, allocJSON := taikoNetworkConfig(networkID)
+
 	var alloc GenesisAlloc
 	if err := alloc.UnmarshalJSON(allocJSON); err != nil {
 		log.Crit("unmarshal alloc json error", "error", err)
 	}
 
 	return &Genesis{
-		Config:     &chainConfig,
+		Config:     chainConfig,
 		ExtraData:  []byte{},
 		GasLimit:   uint64(15_000_000),
 		Difficulty: common.Big0,
@@ -103,4 +112,17 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		GasUsed:    0,
 		BaseFee:    new(big.Int).SetUint64(10_000_000),
 	}
+}
+
+// CHANGE(taiko): TaikoChainConfig returns the given Taiko network's chain
+// config, equal to TaikoGenesisBlock(networkID).Config, but it does not decode
+// the network's genesis alloc, so it is cheap enough for per-block fork checks
+// such as IsUnzen and IsEtna. Unknown network IDs fall back to the internal
+// devnet. Each call returns its own copy, but its fork-time fields point at this
+// package's fork-time variables (such as DevnetEtnaTime) instead of holding
+// copies, so overriding those variables later also applies to configs returned
+// earlier.
+func TaikoChainConfig(networkID uint64) *params.ChainConfig {
+	chainConfig, _ := taikoNetworkConfig(networkID)
+	return chainConfig
 }
