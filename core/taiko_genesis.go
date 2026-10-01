@@ -26,6 +26,10 @@ var (
 	DevnetUnzenTime  uint64 = 0
 	MainnetUnzenTime uint64 = 1_786_021_200 // 2026-08-06 13:00:00 UTC
 	HoodiUnzenTime   uint64 = 1_781_787_600
+
+	DevnetEtnaTime  uint64 = 0
+	MainnetEtnaTime uint64 = math.MaxUint64
+	HoodiEtnaTime   uint64 = math.MaxUint64
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
@@ -42,6 +46,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = MainnetPacayaBlock
 		chainConfig.ShastaTime = &MainnetShastaTime
 		chainConfig.UnzenTime = &MainnetUnzenTime
+		chainConfig.EtnaTime = &MainnetEtnaTime
 		if MainnetUnzenTime != math.MaxUint64 {
 			chainConfig.CancunTime = &MainnetUnzenTime
 			chainConfig.PragueTime = &MainnetUnzenTime
@@ -54,6 +59,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
 		chainConfig.UnzenTime = &DevnetUnzenTime
+		chainConfig.EtnaTime = &DevnetEtnaTime
 		chainConfig.CancunTime = &DevnetUnzenTime
 		chainConfig.PragueTime = &DevnetUnzenTime
 		chainConfig.OsakaTime = &DevnetUnzenTime
@@ -64,6 +70,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = TaikoHoodiPacayaBlock
 		chainConfig.ShastaTime = &HoodiShastaTime
 		chainConfig.UnzenTime = &HoodiUnzenTime
+		chainConfig.EtnaTime = &HoodiEtnaTime
 		if HoodiUnzenTime != math.MaxUint64 {
 			chainConfig.CancunTime = &HoodiUnzenTime
 			chainConfig.PragueTime = &HoodiUnzenTime
@@ -76,6 +83,7 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
 		chainConfig.UnzenTime = &DevnetUnzenTime
+		chainConfig.EtnaTime = &DevnetEtnaTime
 		chainConfig.CancunTime = &DevnetUnzenTime
 		chainConfig.PragueTime = &DevnetUnzenTime
 		chainConfig.OsakaTime = &DevnetUnzenTime

@@ -1,6 +1,7 @@
 package core
 
 import (
+	"math"
 	"math/big"
 	"testing"
 
@@ -118,5 +119,31 @@ func TestTaikoGenesisBlock_ConfigIsIsolatedPerCall(t *testing.T) {
 	}
 	if got := *hoodi.Config.UnzenTime; got != HoodiUnzenTime {
 		t.Fatalf("Hoodi UnzenTime = %d, want %d", got, HoodiUnzenTime)
+	}
+}
+
+// CHANGE(taiko): Etna is unscheduled on public networks, active from genesis on
+// the internal devnet, and never activates before Unzen.
+func TestTaikoGenesisBlock_EtnaSchedule(t *testing.T) {
+	cases := []struct {
+		name      string
+		networkID uint64
+		want      uint64
+	}{
+		{"mainnet", params.TaikoMainnetNetworkID.Uint64(), math.MaxUint64},
+		{"hoodi", params.TaikoHoodiNetworkID.Uint64(), math.MaxUint64},
+		{"internal", params.TaikoInternalNetworkID.Uint64(), 0},
+	}
+	for _, c := range cases {
+		cfg := TaikoGenesisBlock(c.networkID).Config
+		if cfg.EtnaTime == nil {
+			t.Fatalf("%s EtnaTime is nil, want %d", c.name, c.want)
+		}
+		if got := *cfg.EtnaTime; got != c.want {
+			t.Fatalf("%s EtnaTime = %d, want %d", c.name, got, c.want)
+		}
+		if cfg.UnzenTime == nil || *cfg.EtnaTime < *cfg.UnzenTime {
+			t.Fatalf("%s EtnaTime %d precedes UnzenTime %v", c.name, *cfg.EtnaTime, cfg.UnzenTime)
+		}
 	}
 }
