@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.7.1](https://github.com/taikoxyz/taiko-geth/compare/v2.7.0...v2.7.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **ci:** restrict [@claude](https://github.com/claude) workflow to members and same-repo PRs ([#602](https://github.com/taikoxyz/taiko-geth/issues/602)) ([5896445](https://github.com/taikoxyz/taiko-geth/commit/5896445e7cac271d969f1fb9393f34ee3274e499))
+
+
+### Chores
+
+* **ci:** check [@claude](https://github.com/claude) PRs for forks in a read-only job before the secret-bearing job ([#606](https://github.com/taikoxyz/taiko-geth/issues/606)) ([45fae2a](https://github.com/taikoxyz/taiko-geth/commit/45fae2ac8fab4367084e8614a811cf6ef9ae1402))
+* **ci:** fail the [@claude](https://github.com/claude) gate closed on a missing head SHA ([#607](https://github.com/taikoxyz/taiko-geth/issues/607)) ([941001c](https://github.com/taikoxyz/taiko-geth/commit/941001cec59966fa6c3ab69d6a839bdc07d845d3))
+* **ci:** move CI to GitHub-hosted runners ([#609](https://github.com/taikoxyz/taiko-geth/issues/609)) ([e8c26b7](https://github.com/taikoxyz/taiko-geth/commit/e8c26b7d9345205edf3d6fdc88951ec69d1b3c79))
+* **ci:** run PR hygiene jobs on GitHub-hosted runners ([#603](https://github.com/taikoxyz/taiko-geth/issues/603)) ([5da2e56](https://github.com/taikoxyz/taiko-geth/commit/5da2e5620436d629b46e9464c1e9de6124605338))
+
 ## [2.7.0](https://github.com/taikoxyz/taiko-geth/compare/v2.6.0...v2.7.0) (2026-09-22)
 
 
