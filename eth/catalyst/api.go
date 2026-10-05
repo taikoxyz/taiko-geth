@@ -35,7 +35,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/telemetry"
@@ -195,8 +194,7 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV2(ctx context.Context, update engine.
 			return engine.STATUS_INVALID, attributesErr("withdrawals before shanghai")
 		case api.checkFork(params.Timestamp, forks.Shanghai) && params.Withdrawals == nil:
 			return engine.STATUS_INVALID, attributesErr("missing withdrawals")
-		// CHANGE(taiko): allow Taiko Unzen payload building to continue on the V2 wire path.
-		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai) && !api.allowTaikoUnzenForkchoiceV2(params.Timestamp):
+		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai):
 			return engine.STATUS_INVALID, unsupportedForkErr("fcuV2 must only be called with paris or shanghai payloads")
 		}
 	}
@@ -308,10 +306,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 		if ph == nil {
 			return engine.STATUS_INVALID, errors.New("parent unavailable for difficulty check")
 		}
-		// CHANGE(taiko): Unzen repurposes block difficulty for zk-gas, so a positive
-		// difficulty no longer indicates an invalid post-merge terminal block.
-		if ph.Difficulty.Sign() == 0 && block.Difficulty().Sign() > 0 &&
-			!(api.eth.BlockChain().Config().Taiko && api.eth.BlockChain().Config().IsUnzen(block.Time())) {
+		if ph.Difficulty.Sign() == 0 && block.Difficulty().Sign() > 0 {
 			log.Error("Parent block is already post-ttd", "number", block.NumberU64(), "hash", update.HeadBlockHash, "diff", block.Difficulty(), "age", common.PrettyAge(time.Unix(int64(block.Time()), 0)))
 			return engine.ForkChoiceResponse{PayloadStatus: engine.INVALID_TERMINAL_BLOCK, PayloadID: nil}, nil
 		}
@@ -325,10 +320,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 			PayloadID: id,
 		}
 	}
-
-	// CHANGE(taiko): check whether `--taiko` flag is set.
-	isTaiko := api.eth.BlockChain().Config().Taiko
-
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {
 		// Block is not canonical, set head.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
@@ -338,10 +329,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 		// If the specified head matches with our local head, do nothing and keep
 		// generating the payload. It's a special corner case that a few slots are
 		// missing and we are requested to generate the payload in slot.
-	} else if isTaiko { // CHANGE(taiko): reorg is allowed in L2.
-		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
-			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
-		}
 	} else {
 		// If the head block is already in our canonical chain, the beacon client is
 		// probably resyncing. Ignore the update.
@@ -383,95 +370,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 	// sealed by the beacon client. The payload will be requested later, and we
 	// will replace it arbitrarily many times in between.
 	if payloadAttributes != nil {
-		// CHANGE(taiko): create a L2 block by Taiko protocol.
-		if isTaiko {
-			// No need to check payloadAttribute here, because all its fields are
-			// marked as required.
-			var parentBlockTime uint64
-			if block.Number().Cmp(common.Big0) != 0 {
-				if ancestor := api.eth.BlockChain().GetHeaderByHash(block.ParentHash()); ancestor != nil {
-					parentBlockTime = block.Time() - ancestor.Time
-				}
-			}
-			block, err := api.eth.Miner().SealBlockWith(block.Header(), parentBlockTime, payloadAttributes)
-			if err != nil {
-				log.Error("Failed to create sealing block", "err", err)
-				return valid(nil), engine.InvalidPayloadAttributes.With(err)
-			}
-
-			// L1Origin **MUST NOT** be nil, it's a required field in PayloadAttributesV1.
-			l1Origin := payloadAttributes.L1Origin
-
-			// Set the block hash before inserting the L1Origin into database.
-			l1Origin.L2BlockHash = block.Hash()
-
-			// Use the tx list hash as the beacon root.
-			txListHash := crypto.Keccak256Hash(payloadAttributes.BlockMetadata.TxList[:])
-			// Cache the mined block for later use.
-			args := &miner.BuildPayloadArgs{
-				Parent:       block.ParentHash(),
-				Timestamp:    block.Time(),
-				FeeRecipient: block.Coinbase(),
-				Random:       block.MixDigest(),
-				Withdrawals:  block.Withdrawals(),
-				Version:      payloadVersion,
-				TxListHash:   &txListHash,
-				Extra:        block.Header().Extra,
-			}
-			id := args.Id()
-
-			log.Debug(
-				"Payload arguments",
-				"parent", args.Parent.Hex(),
-				"timestamp", args.Timestamp,
-				"feeRecipient", args.FeeRecipient.Hex(),
-				"random", args.Random.Hex(),
-				"withdrawals", args.Withdrawals,
-				"version", args.Version,
-				"id", id.String(),
-				"txListHash", txListHash.Hex(),
-				"extra", args.Extra,
-			)
-
-			// If we already are busy generating this work, then we do not need
-			// to start a second process.
-			if api.localBlocks.has(id) {
-				// Write L1Origin and HeadL1Origin even if the payload is already in the cache.
-				rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
-				if !l1Origin.IsPreconfBlock() {
-					rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
-					// Write the batch to block mapping if the batch ID is given.
-					if payloadAttributes.BlockMetadata.BatchID != nil {
-						rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
-					}
-				}
-				return valid(&id), nil
-			}
-			payload, err := api.eth.Miner().BuildPayload(ctx, args, false)
-			if err != nil {
-				log.Error("Failed to build payload", "err", err)
-				return valid(nil), engine.InvalidPayloadAttributes.With(err)
-			}
-
-			payload.SetFullBlock(block, common.Big0)
-
-			api.localBlocks.put(id, payload)
-
-			// Write L1Origin.
-			rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
-
-			// Write the head L1Origin, only when it's not a preconfirmation block.
-			if !l1Origin.IsPreconfBlock() {
-				rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
-				// Write the batch to block mapping if the batch ID is given.
-				if payloadAttributes.BlockMetadata.BatchID != nil {
-					rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
-				}
-			}
-
-			return valid(&id), nil
-		}
-
 		args := &miner.BuildPayloadArgs{
 			Parent:       update.HeadBlockHash,
 			Timestamp:    payloadAttributes.Timestamp,
@@ -812,12 +710,6 @@ func (api *ConsensusAPI) NewPayloadV2(ctx context.Context, params engine.Executa
 		return invalidStatus, paramsErr("non-nil blobGasUsed pre-cancun")
 	}
 	return api.newPayload(ctx, params, nil, nil, nil, false)
-}
-
-// CHANGE(taiko): keep Taiko Unzen forkchoice on the V2 Engine API path for
-// compatibility with legacy clients that still speak V2 on the wire.
-func (api *ConsensusAPI) allowTaikoUnzenForkchoiceV2(timestamp uint64) bool {
-	return api.config().Taiko && api.config().IsUnzen(timestamp)
 }
 
 // CHANGE(taiko): keep Taiko Unzen newPayload on the V2 Engine API path when the
