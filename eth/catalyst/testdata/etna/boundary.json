@@ -63,8 +63,8 @@
       "mode": "sortedStrings",
       "result": [
         "engine_newPayloadV4",
-        "engine_forkchoiceUpdatedV3",
-        "engine_getPayloadV5"
+        "engine_getPayloadV5",
+        "engine_forkchoiceUpdatedV3"
       ]
     },
     {
@@ -1228,6 +1228,494 @@
       "mode": "lowerKeys",
       "error": {
         "code": -32000
+      }
+    },
+    {
+      "name": "Unzen job: foreign-chain anchorTransaction is accepted",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "anchorTransaction": "0x02f86b0180808401231952830f42409416700100000000000000000000000000000100018084523e6854c080a05b6b87c49bd433da2873a8ae542a9bad8c65e0a30b1ab2f6950999c68664039da00ce87d83fc2945e9585e48454f08ab122edf53714c10d1c6b841142826a40e42",
+          "baseFeePerGas": "0x1231952",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAAAg==",
+            "gasLimit": 30000000,
+            "mixHash": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+            "timestamp": "0x14",
+            "txList": "0xf873b87102f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c001a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a028e44777b046b591b33cd1c584c6a54c645520989a202e25b5ea93d6b5ea88f5"
+          },
+          "l1Origin": {
+            "blockID": "0x5d",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+            "l1BlockHeight": "0x445",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x14",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "result": {
+        "payloadId": "0x021c640985d816e8",
+        "payloadStatus": {
+          "latestValidHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "status": "VALID",
+          "validationError": null
+        }
+      }
+    },
+    {
+      "name": "Unzen job: getPayloadV5 of the foreign-anchor job",
+      "method": "engine_getPayloadV5",
+      "params": [
+        "0x021c640985d816e8"
+      ],
+      "mode": "exact",
+      "result": {
+        "executionPayload": {
+          "parentHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "feeRecipient": "0x0000000000000000000000000000000000000042",
+          "stateRoot": "0xc6678549a57c285ebc81ff40a6dc835460d8e9522d2a7b47244486b435ae19d5",
+          "receiptsRoot": "0x8fb67c7b239f00b07968928a1561b69f34b8201fb2b9c20f332c86f7c1a8fa16",
+          "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+          "blockNumber": "0x2",
+          "gasLimit": "0x1c9c380",
+          "gasUsed": "0x7463",
+          "timestamp": "0x14",
+          "extraData": "0x19000000000002",
+          "baseFeePerGas": "0x1231952",
+          "blockHash": "0xf248f87122c04ccd2ba818e82041fd3fad7bdac86df08b685011fe7cab3f5258",
+          "transactions": [
+            "0x02f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c001a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a028e44777b046b591b33cd1c584c6a54c645520989a202e25b5ea93d6b5ea88f5"
+          ],
+          "withdrawals": [],
+          "blobGasUsed": "0x0",
+          "excessBlobGas": "0x0"
+        },
+        "blockValue": "0x5e346",
+        "blobsBundle": {
+          "commitments": [],
+          "proofs": [],
+          "blobs": []
+        },
+        "shouldOverrideBuilder": false,
+        "executionRequests": []
+      }
+    },
+    {
+      "name": "Unzen job: L1 origin of the foreign-anchor job",
+      "method": "taiko_l1OriginByID",
+      "params": [
+        "0x5d"
+      ],
+      "mode": "lowerKeys",
+      "result": {
+        "blockId": "0x5d",
+        "l2BlockHash": "0xf248f87122c04ccd2ba818e82041fd3fad7bdac86df08b685011fe7cab3f5258",
+        "l1BlockHeight": "0x445",
+        "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+        "buildPayloadArgsId": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "isForcedInclusion": false,
+        "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "Unzen job, other ID: nonce of 0x0000777735367b36bC9B61C50022d9D0700dB4Ec",
+      "method": "eth_getTransactionCount",
+      "params": [
+        "0x0000777735367b36bc9b61c50022d9d0700db4ec",
+        "latest"
+      ],
+      "mode": "exact",
+      "result": "0x1"
+    },
+    {
+      "name": "Unzen job, other ID: baseFeePerGas above u64",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "baseFeePerGas": "0x10000000000000000",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAAAg==",
+            "gasLimit": 30000000,
+            "mixHash": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+            "timestamp": "0x14",
+            "txList": "0xf8e1b87102f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c001a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a028e44777b046b591b33cd1c584c6a54c645520989a202e25b5ea93d6b5ea88f5b86c02f86983028c598007847735940082520894000000000000000000000000000000000000beef0180c080a0f74d744651aa805ffa1830025b5ee7cd586dd20a29dd862030301239d63e0ab2a0094996c14de8eda382e1720fba43ca711478713040809236e971616590ff5927"
+          },
+          "l1Origin": {
+            "blockID": "0x5d",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+            "l1BlockHeight": "0x82d",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x14",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "error": {
+        "code": -32603
+      }
+    },
+    {
+      "name": "Unzen job, other ID: undecodable anchorTransaction",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "anchorTransaction": "0x0102",
+          "baseFeePerGas": "0x1231952",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAAAg==",
+            "gasLimit": 30000000,
+            "mixHash": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+            "timestamp": "0x14",
+            "txList": "0xf8e1b87102f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c001a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a028e44777b046b591b33cd1c584c6a54c645520989a202e25b5ea93d6b5ea88f5b86c02f86983028c598007847735940082520894000000000000000000000000000000000000beef0180c080a0f74d744651aa805ffa1830025b5ee7cd586dd20a29dd862030301239d63e0ab2a0094996c14de8eda382e1720fba43ca711478713040809236e971616590ff5927"
+          },
+          "l1Origin": {
+            "blockID": "0x5d",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+            "l1BlockHeight": "0x82d",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x14",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "error": {
+        "code": -32603
+      }
+    },
+    {
+      "name": "Unzen job: getPayloadV5 of the last built job after other-ID rejections",
+      "method": "engine_getPayloadV5",
+      "params": [
+        "0x021c640985d816e8"
+      ],
+      "mode": "exact",
+      "result": {
+        "executionPayload": {
+          "parentHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "feeRecipient": "0x0000000000000000000000000000000000000042",
+          "stateRoot": "0xc6678549a57c285ebc81ff40a6dc835460d8e9522d2a7b47244486b435ae19d5",
+          "receiptsRoot": "0x8fb67c7b239f00b07968928a1561b69f34b8201fb2b9c20f332c86f7c1a8fa16",
+          "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+          "blockNumber": "0x2",
+          "gasLimit": "0x1c9c380",
+          "gasUsed": "0x7463",
+          "timestamp": "0x14",
+          "extraData": "0x19000000000002",
+          "baseFeePerGas": "0x1231952",
+          "blockHash": "0xf248f87122c04ccd2ba818e82041fd3fad7bdac86df08b685011fe7cab3f5258",
+          "transactions": [
+            "0x02f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c001a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a028e44777b046b591b33cd1c584c6a54c645520989a202e25b5ea93d6b5ea88f5"
+          ],
+          "withdrawals": [],
+          "blobGasUsed": "0x0",
+          "excessBlobGas": "0x0"
+        },
+        "blockValue": "0x5e346",
+        "blobsBundle": {
+          "commitments": [],
+          "proofs": [],
+          "blobs": []
+        },
+        "shouldOverrideBuilder": false,
+        "executionRequests": []
+      }
+    },
+    {
+      "name": "Unzen job: nonce of 0x0000777735367b36bC9B61C50022d9D0700dB4Ec",
+      "method": "eth_getTransactionCount",
+      "params": [
+        "0x0000777735367b36bc9b61c50022d9d0700db4ec",
+        "latest"
+      ],
+      "mode": "exact",
+      "result": "0x1"
+    },
+    {
+      "name": "Unzen job: baseFeePerGas above u64",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "baseFeePerGas": "0x10000000000000000",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAAAg==",
+            "gasLimit": 30000000,
+            "mixHash": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+            "timestamp": "0x14",
+            "txList": "0xf873b87102f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c001a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a028e44777b046b591b33cd1c584c6a54c645520989a202e25b5ea93d6b5ea88f5"
+          },
+          "l1Origin": {
+            "blockID": "0x5d",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+            "l1BlockHeight": "0x82d",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x14",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "error": {
+        "code": -32603
+      }
+    },
+    {
+      "name": "Unzen job: undecodable anchorTransaction",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "anchorTransaction": "0x0102",
+          "baseFeePerGas": "0x1231952",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAAAg==",
+            "gasLimit": 30000000,
+            "mixHash": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+            "timestamp": "0x14",
+            "txList": "0xf873b87102f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c001a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a028e44777b046b591b33cd1c584c6a54c645520989a202e25b5ea93d6b5ea88f5"
+          },
+          "l1Origin": {
+            "blockID": "0x5d",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+            "l1BlockHeight": "0x82d",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x14",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "error": {
+        "code": -32603
+      }
+    },
+    {
+      "name": "Unzen job: high-s anchorTransaction",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "anchorTransaction": "0x02f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c080a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a0d71bb8884fb94a6e4cc32e3a7b395ab25659bc4e1528721609e7cab61a4bb84c",
+          "baseFeePerGas": "0x1231952",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAAAg==",
+            "gasLimit": 30000000,
+            "mixHash": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+            "timestamp": "0x14",
+            "txList": "0xf873b87102f86e83028c5901808401231952830f42409416700100000000000000000000000000000100018084523e6854c001a0f1a65b1ad7928374c8c120c0c6755aa28fdd453bc5799858f64676073345cbd2a028e44777b046b591b33cd1c584c6a54c645520989a202e25b5ea93d6b5ea88f5"
+          },
+          "l1Origin": {
+            "blockID": "0x5d",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+            "l1BlockHeight": "0x82d",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0xd7e1264e7d43e4b359f24b7a2e94cd42282a2f1fc805a32152cea3db3512b2c1",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x14",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "error": {
+        "code": -32603
+      }
+    },
+    {
+      "name": "Unzen job: getPayloadV5 of the last built job after the rejected inputs",
+      "method": "engine_getPayloadV5",
+      "params": [
+        "0x021c640985d816e8"
+      ],
+      "mode": "exact",
+      "error": {
+        "code": -38001
+      }
+    },
+    {
+      "name": "Unzen job: L1 origin unchanged by the rejected inputs",
+      "method": "taiko_l1OriginByID",
+      "params": [
+        "0x5d"
+      ],
+      "mode": "lowerKeys",
+      "result": {
+        "blockId": "0x5d",
+        "l2BlockHash": "0xf248f87122c04ccd2ba818e82041fd3fad7bdac86df08b685011fe7cab3f5258",
+        "l1BlockHeight": "0x445",
+        "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+        "buildPayloadArgsId": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "isForcedInclusion": false,
+        "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "Unzen job: head L1 origin unchanged by the rejected inputs",
+      "method": "taiko_headL1Origin",
+      "params": [],
+      "mode": "lowerKeys",
+      "result": {
+        "blockId": "0x5d",
+        "l2BlockHash": "0xf248f87122c04ccd2ba818e82041fd3fad7bdac86df08b685011fe7cab3f5258",
+        "l1BlockHeight": "0x445",
+        "l1BlockHash": "0xb300b68b5cfe9ea51bdfe3e76199bb6e30a14c71269b247ba43d59dee147053e",
+        "buildPayloadArgsId": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "isForcedInclusion": false,
+        "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
       }
     },
     {
