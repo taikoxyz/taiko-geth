@@ -303,7 +303,10 @@ func taikoBuildPayloadArgs(head common.Hash, attrs *engine.PayloadAttributes) *m
 }
 
 // taikoPayloadID returns the payload ID of the block that attrs build on top
-// of head. Pre-Etna IDs equal the IDs of the earlier V2 wire path.
+// of head. A pre-Etna ID equals the ID of the earlier V2 wire path only when
+// the driver sends suggestedFeeRecipient equal to blockMetadata.beneficiary
+// and prevRandao equal to blockMetadata.mixHash: the V2 path hashed the
+// sealed block's coinbase and mixDigest.
 func taikoPayloadID(head common.Hash, attrs *engine.PayloadAttributes) engine.PayloadID {
 	return taikoBuildPayloadArgs(head, attrs).Id()
 }

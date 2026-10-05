@@ -16,8 +16,16 @@ import (
 )
 
 // InternalError is the JSON-RPC -32603 Engine API error. The Taiko Engine API
-// returns it when a payload build fails and when Unzen execution exhausts or
-// mismatches zk gas.
+// returns it for:
+//   - engine_forkchoiceUpdatedV3: a failed payload build; a pre-Etna target
+//     failing the job-input checks (an anchorTransaction that does not decode
+//     or has no recoverable signer, a base fee above 64 bits); a failed L1
+//     origin write; and a head whose parent header is unavailable for the
+//     difficulty check;
+//   - engine_newPayloadV4: a pre-Etna (Unzen) block whose import exhausts zk
+//     gas or mismatches its zk gas and header difficulty;
+//   - engine_getPayloadV5: a stored payload without a block, which a failed
+//     build never stores.
 var InternalError = &EngineAPIError{code: -32603, msg: "Internal error"}
 
 // TaikoPayloadAttributesV3 is the engine_forkchoiceUpdatedV3 attributes object.
@@ -288,6 +296,9 @@ func (p *TaikoExecutionPayloadV3) builtPayload() *TaikoBuiltPayloadV3 {
 
 // TaikoBuiltPayloadV3 is executionPayload in the engine_getPayloadV5 response:
 // exactly the 17 standard ExecutionPayloadV3 properties.
+//
+// The type is encode-only: it has no decoder for its wire form. Go clients
+// decode the engine_getPayloadV5 response into ExecutionPayloadEnvelope.
 type TaikoBuiltPayloadV3 struct {
 	ParentHash    common.Hash
 	FeeRecipient  common.Address
@@ -373,6 +384,9 @@ func (p TaikoBuiltPayloadV3) MarshalJSON() ([]byte, error) {
 
 // TaikoExecutionPayloadEnvelopeV5 is the engine_getPayloadV5 response. The
 // field order follows the standard ExecutionPayloadEnvelopeV5 key order.
+//
+// Like TaikoBuiltPayloadV3, the type is encode-only. Go clients decode the
+// response into ExecutionPayloadEnvelope.
 type TaikoExecutionPayloadEnvelopeV5 struct {
 	ExecutionPayload      *TaikoBuiltPayloadV3 `json:"executionPayload"`
 	BlockValue            *hexutil.Big         `json:"blockValue"`

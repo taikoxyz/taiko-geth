@@ -393,6 +393,17 @@ func TestTaikoExecutionPayloadEnvelopeV5JSON(t *testing.T) {
 	if data.HeaderDifficulty.Int64() != 7 || common.Big0.Sign() != 0 {
 		t.Fatal("building the envelope must not alias the header difficulty")
 	}
+
+	// The envelope is encode-only: Go clients decode it as an
+	// ExecutionPayloadEnvelope.
+	var decoded ExecutionPayloadEnvelope
+	if err := json.Unmarshal(enc, &decoded); err != nil {
+		t.Fatalf("decode envelope: %v", err)
+	}
+	if got := decoded.ExecutionPayload; got.BlockHash != data.BlockHash || got.Number != data.Number ||
+		len(got.Transactions) != 1 || len(got.Withdrawals) != 1 || decoded.BlockValue.Int64() != 7 {
+		t.Fatalf("decoded envelope = %+v, want the encoded payload with block value 7", decoded)
+	}
 }
 
 func TestInternalErrorCode(t *testing.T) {
