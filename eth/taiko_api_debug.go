@@ -149,12 +149,13 @@ func isRecoverableNonAnchorTxError(err error) bool {
 
 // CHANGE(taiko): buildTxListWitness replays txs on top of the parent state of
 // `block` and returns the collected execution witness plus the committed
-// (post-filter) transactions. It mirrors the reference replay: the first
-// transaction must succeed (any failure there is fatal), later failures in the
-// recoverable class are skipped, and a zk-gas-limit error truncates the block.
-// Anchor execution exemptions follow the reference identity — the golden-touch
-// sender, its block-start nonce, and the treasury target — at any position,
-// independent of transaction type.
+// (post-filter) transactions. It mirrors the reference replay: before Etna the
+// first transaction must succeed (any failure there is fatal), later failures
+// in the recoverable class are skipped, and a zk-gas-limit error truncates the
+// block. Before Etna, anchor execution exemptions follow the reference
+// identity — the golden-touch sender, its block-start nonce, and the treasury
+// target — at any position, independent of transaction type. Etna blocks have
+// no anchor: no position is special and no transaction gets an exemption.
 func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Transactions, opts txListWitnessOptions) (*stateless.Witness, types.Transactions, error) {
 	config := bc.Config()
 	header := block.Header() // copy; safe to mutate during finalize
@@ -221,12 +222,14 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// before any replayed transaction, and the chain's treasury — never by list
 	// position or transaction type. Its pre-execution marker call also loads
 	// the golden-touch and treasury accounts, so the equivalent reads here keep
-	// the witness carrying the same pre-execution dependencies.
+	// the witness carrying the same pre-execution dependencies. Etna blocks
+	// have no anchor and no marker call, so neither account is read.
 	var (
+		hasAnchor        = config.HasTaikoAnchor(header.Time)
 		goldenTouchNonce uint64
 		treasury         common.Address
 	)
-	if config.Taiko {
+	if hasAnchor {
 		goldenTouchNonce = statedb.GetNonce(taiko.GoldenTouchAccount)
 		treasury = core.TaikoTreasuryAddress(config.ChainID)
 		statedb.GetBalance(treasury)
@@ -234,9 +237,10 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 
 	committed := make(types.Transactions, 0, len(txs))
 	for i, tx := range txs {
-		// The first list position only decides fatality: any failure there
-		// aborts the request instead of skipping the transaction.
-		isFirst := i == 0 && config.Taiko
+		// Before Etna the first list position only decides fatality: any
+		// failure there aborts the request instead of skipping the
+		// transaction. From Etna on it is an ordinary position.
+		isFirst := i == 0 && hasAnchor
 		if tx.Type() == types.BlobTxType {
 			if isFirst {
 				return nil, nil, errors.New("first transaction must not be a blob transaction")
@@ -277,9 +281,9 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(header.Extra)
 		}
 		// CHANGE(taiko): anchor exemptions follow the reference triple at any
-		// list position; the assignment also clears any in-memory flag the
-		// transaction object may carry.
-		msg.IsAnchor = config.Taiko && sender == taiko.GoldenTouchAccount &&
+		// list position, and only before Etna; the assignment also clears any
+		// in-memory flag the transaction object may carry.
+		msg.IsAnchor = hasAnchor && sender == taiko.GoldenTouchAccount &&
 			tx.Nonce() == goldenTouchNonce && tx.To() != nil && *tx.To() == treasury
 
 		snap := statedb.Snapshot()
@@ -295,7 +299,8 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 			if !isRecoverableNonAnchorTxError(err) {
 				return nil, nil, fmt.Errorf("non-anchor transaction at index %d failed: %w", i, err)
 			}
-			// A non-first zk-gas-limit error truncates the block.
+			// A zk-gas-limit error truncates the block (before Etna, only
+			// past the first position).
 			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
 				zkGasMeter.ResetTransaction()
 				evm.ResetZkGasErr()
@@ -304,7 +309,7 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 			continue
 		}
 		if zkGasMeter != nil {
-			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
+			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil && !isFirst {
 				zkGasMeter.ResetTransaction()
 				break
 			}
@@ -322,7 +327,7 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	if zkGasMeter != nil && !opts.SkipZkGasDifficultyCheck {
 		recomputed := zkGasMeter.BlockZkGasUsed()
 		if zkGasDifficultyMismatch(header.Difficulty, recomputed) {
-			return nil, nil, fmt.Errorf("zk gas difficulty mismatch: header has %v, recomputed %d", header.Difficulty, recomputed)
+			return nil, nil, fmt.Errorf("%w: header has %v, recomputed %d", core.ErrZkGasDifficultyMismatch, header.Difficulty, recomputed)
 		}
 	}
 

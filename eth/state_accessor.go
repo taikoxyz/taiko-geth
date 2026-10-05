@@ -257,7 +257,8 @@ func (eth *Ethereum) stateAtTransaction(ctx context.Context, block *types.Block,
 	// Recompute transactions up to the target index.
 	signer := types.MakeSigner(eth.blockchain.Config(), block.Number(), block.Time())
 	for idx, tx := range block.Transactions() {
-		if idx == 0 && eth.config.Genesis.Config.Taiko {
+		// CHANGE(taiko): before Etna the first transaction is the anchor.
+		if idx == 0 && eth.blockchain.Config().HasTaikoAnchor(block.Time()) {
 			if err := tx.MarkAsAnchor(); err != nil {
 				return nil, vm.BlockContext{}, nil, nil, err
 			}
