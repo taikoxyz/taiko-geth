@@ -62,9 +62,9 @@
       ],
       "mode": "sortedStrings",
       "result": [
-        "engine_newPayloadV4",
+        "engine_forkchoiceUpdatedV3",
         "engine_getPayloadV5",
-        "engine_forkchoiceUpdatedV3"
+        "engine_newPayloadV4"
       ]
     },
     {
@@ -8232,6 +8232,228 @@
       ],
       "mode": "header",
       "result": null
+    },
+    {
+      "name": "J: nonce of 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "method": "eth_getTransactionCount",
+      "params": [
+        "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "latest"
+      ],
+      "mode": "exact",
+      "result": "0x9"
+    },
+    {
+      "name": "J Etna job: forkchoiceUpdatedV3 with attributes",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0xd033d1ec03661d5f0adbe1017f45c8ad8c7bcba4263b8b7b7832abf7d1d63d95",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "baseFeePerGas": "0x563151",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAADQAAAAAD9Q==",
+            "gasLimit": 30000000,
+            "mixHash": "0x6b368d9c3f61c8ad1db67ecfd558be8268c352fe2b1a445ce6b11fa5e1d91627",
+            "timestamp": "0x6f",
+            "txList": "0xf86eb86c02f86983028c590907847735940082520894000000000000000000000000000000000000beef0180c080a0911d9086ffd908912fb2c5f603afa87f1fc78678c3329b722fb7690e40671930a060c4da1da26c3592dbbc8c1217f342bca2555f2eadd7c4b4cff645437bd404e3"
+          },
+          "l1Origin": {
+            "blockID": "0xe",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0x718fcc275622fa20bf8ec27bad0d120851e1c184649392ee222a5626d436fd1a",
+            "l1BlockHeight": "0x3f6",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x25e8d8efbb3fcdaaf7dffed0787d253297eb9e0f7b061fbdb4c90a831d5b60ef",
+          "prevRandao": "0x6b368d9c3f61c8ad1db67ecfd558be8268c352fe2b1a445ce6b11fa5e1d91627",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x6f",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "result": {
+        "payloadId": "0x02a3713e14e022b2",
+        "payloadStatus": {
+          "latestValidHash": "0xd033d1ec03661d5f0adbe1017f45c8ad8c7bcba4263b8b7b7832abf7d1d63d95",
+          "status": "VALID",
+          "validationError": null
+        }
+      }
+    },
+    {
+      "name": "J Etna job: getPayloadV5",
+      "method": "engine_getPayloadV5",
+      "params": [
+        "0x02a3713e14e022b2"
+      ],
+      "mode": "exact",
+      "result": {
+        "executionPayload": {
+          "parentHash": "0xd033d1ec03661d5f0adbe1017f45c8ad8c7bcba4263b8b7b7832abf7d1d63d95",
+          "feeRecipient": "0x0000000000000000000000000000000000000042",
+          "stateRoot": "0x73f9ff7365d3efe042fe5738f9e6769b5effdd05024639782f150b6d17566144",
+          "receiptsRoot": "0xf78dfb743fbd92ade140711c8bbc542b5e307f0ab7984eff35d751969fe57efa",
+          "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0x6b368d9c3f61c8ad1db67ecfd558be8268c352fe2b1a445ce6b11fa5e1d91627",
+          "blockNumber": "0xe",
+          "gasLimit": "0x1c9c380",
+          "gasUsed": "0x5208",
+          "timestamp": "0x6f",
+          "extraData": "0x1900000000000d0000000003f5",
+          "baseFeePerGas": "0x563151",
+          "blockHash": "0x017b5b57aae5543149af93e070c0f055221b9bd9cc9b0a686b2a86ad4aeb35da",
+          "transactions": [
+            "0x02f86983028c590907847735940082520894000000000000000000000000000000000000beef0180c080a0911d9086ffd908912fb2c5f603afa87f1fc78678c3329b722fb7690e40671930a060c4da1da26c3592dbbc8c1217f342bca2555f2eadd7c4b4cff645437bd404e3"
+          ],
+          "withdrawals": [],
+          "blobGasUsed": "0x0",
+          "excessBlobGas": "0x0"
+        },
+        "blockValue": "0x3b538",
+        "blobsBundle": {
+          "commitments": [],
+          "proofs": [],
+          "blobs": []
+        },
+        "shouldOverrideBuilder": false,
+        "executionRequests": []
+      }
+    },
+    {
+      "name": "J: same-ID FCU with another blockMetadata.gasLimit",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0xd033d1ec03661d5f0adbe1017f45c8ad8c7bcba4263b8b7b7832abf7d1d63d95",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "baseFeePerGas": "0x563151",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAADQAAAAAD9Q==",
+            "gasLimit": 29000000,
+            "mixHash": "0x6b368d9c3f61c8ad1db67ecfd558be8268c352fe2b1a445ce6b11fa5e1d91627",
+            "timestamp": "0x6f",
+            "txList": "0xf86eb86c02f86983028c590907847735940082520894000000000000000000000000000000000000beef0180c080a0911d9086ffd908912fb2c5f603afa87f1fc78678c3329b722fb7690e40671930a060c4da1da26c3592dbbc8c1217f342bca2555f2eadd7c4b4cff645437bd404e3"
+          },
+          "l1Origin": {
+            "blockID": "0xe",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0x718fcc275622fa20bf8ec27bad0d120851e1c184649392ee222a5626d436fd1a",
+            "l1BlockHeight": "0x3f6",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x25e8d8efbb3fcdaaf7dffed0787d253297eb9e0f7b061fbdb4c90a831d5b60ef",
+          "prevRandao": "0x6b368d9c3f61c8ad1db67ecfd558be8268c352fe2b1a445ce6b11fa5e1d91627",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x6f",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "result": {
+        "payloadId": "0x02a3713e14e022b2",
+        "payloadStatus": {
+          "latestValidHash": "0xd033d1ec03661d5f0adbe1017f45c8ad8c7bcba4263b8b7b7832abf7d1d63d95",
+          "status": "VALID",
+          "validationError": null
+        }
+      }
+    },
+    {
+      "name": "J: getPayloadV5 after the same-ID FCU",
+      "method": "engine_getPayloadV5",
+      "params": [
+        "0x02a3713e14e022b2"
+      ],
+      "mode": "exact",
+      "result": {
+        "executionPayload": {
+          "parentHash": "0xd033d1ec03661d5f0adbe1017f45c8ad8c7bcba4263b8b7b7832abf7d1d63d95",
+          "feeRecipient": "0x0000000000000000000000000000000000000042",
+          "stateRoot": "0x73f9ff7365d3efe042fe5738f9e6769b5effdd05024639782f150b6d17566144",
+          "receiptsRoot": "0xf78dfb743fbd92ade140711c8bbc542b5e307f0ab7984eff35d751969fe57efa",
+          "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0x6b368d9c3f61c8ad1db67ecfd558be8268c352fe2b1a445ce6b11fa5e1d91627",
+          "blockNumber": "0xe",
+          "gasLimit": "0x1ba8140",
+          "gasUsed": "0x5208",
+          "timestamp": "0x6f",
+          "extraData": "0x1900000000000d0000000003f5",
+          "baseFeePerGas": "0x563151",
+          "blockHash": "0xb07ee70edb11fed3eef78077eca1eeebd1b94f7a3ac38b1e95a813fd2650f7f4",
+          "transactions": [
+            "0x02f86983028c590907847735940082520894000000000000000000000000000000000000beef0180c080a0911d9086ffd908912fb2c5f603afa87f1fc78678c3329b722fb7690e40671930a060c4da1da26c3592dbbc8c1217f342bca2555f2eadd7c4b4cff645437bd404e3"
+          ],
+          "withdrawals": [],
+          "blobGasUsed": "0x0",
+          "excessBlobGas": "0x0"
+        },
+        "blockValue": "0x3b538",
+        "blobsBundle": {
+          "commitments": [],
+          "proofs": [],
+          "blobs": []
+        },
+        "shouldOverrideBuilder": false,
+        "executionRequests": []
+      }
+    },
+    {
+      "name": "J: L1 origin follows the rebuilt block",
+      "method": "taiko_l1OriginByID",
+      "params": [
+        "0xe"
+      ],
+      "mode": "lowerKeys",
+      "result": {
+        "blockId": "0xe",
+        "l2BlockHash": "0xb07ee70edb11fed3eef78077eca1eeebd1b94f7a3ac38b1e95a813fd2650f7f4",
+        "l1BlockHeight": "0x3f6",
+        "l1BlockHash": "0x718fcc275622fa20bf8ec27bad0d120851e1c184649392ee222a5626d436fd1a",
+        "buildPayloadArgsId": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "isForcedInclusion": false,
+        "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
     }
   ]
 }
