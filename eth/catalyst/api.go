@@ -51,11 +51,19 @@ import (
 
 // Register adds the engine API and related APIs to the full node.
 func Register(stack *node.Node, backend *eth.Ethereum) error {
+	// CHANGE(taiko): Taiko chains mount only the Taiko Engine API service, so no
+	// upstream engine_* method is served there.
+	var service any
+	if backend.BlockChain().Config().Taiko {
+		service = NewTaikoEngineAPI(backend)
+	} else {
+		service = NewConsensusAPI(backend)
+	}
 	stack.RegisterAPIs([]rpc.API{
 		newTestingAPI(backend),
 		{
 			Namespace:     "engine",
-			Service:       NewConsensusAPI(backend),
+			Service:       service,
 			Authenticated: true,
 		},
 	})
@@ -535,21 +543,12 @@ func (api *ConsensusAPI) GetPayloadV1(payloadID engine.PayloadID) (*engine.Execu
 
 // GetPayloadV2 returns a cached payload by id.
 func (api *ConsensusAPI) GetPayloadV2(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
-	// CHANGE(taiko): allow Taiko Unzen payload retrieval on the V2 wire path.
-	data, err := api.getPayload(
+	return api.getPayload(
 		payloadID,
 		false,
 		[]engine.PayloadVersion{engine.PayloadV1, engine.PayloadV2},
-		nil,
+		[]forks.Fork{forks.Paris, forks.Shanghai},
 	)
-	if err != nil {
-		return nil, err
-	}
-	if api.checkFork(data.ExecutionPayload.Timestamp, forks.Paris, forks.Shanghai) ||
-		api.allowTaikoUnzenGetPayloadV2(data.ExecutionPayload.Timestamp) {
-		return data, nil
-	}
-	return nil, engine.UnsupportedFork
 }
 
 // GetPayloadV3 returns a cached payload by id. This endpoint should only
@@ -818,12 +817,6 @@ func (api *ConsensusAPI) NewPayloadV2(ctx context.Context, params engine.Executa
 // CHANGE(taiko): keep Taiko Unzen forkchoice on the V2 Engine API path for
 // compatibility with legacy clients that still speak V2 on the wire.
 func (api *ConsensusAPI) allowTaikoUnzenForkchoiceV2(timestamp uint64) bool {
-	return api.config().Taiko && api.config().IsUnzen(timestamp)
-}
-
-// CHANGE(taiko): keep Taiko Unzen getPayload on the V2 Engine API path for
-// compatibility with legacy clients that still speak V2 on the wire.
-func (api *ConsensusAPI) allowTaikoUnzenGetPayloadV2(timestamp uint64) bool {
 	return api.config().Taiko && api.config().IsUnzen(timestamp)
 }
 
