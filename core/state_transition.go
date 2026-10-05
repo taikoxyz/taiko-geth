@@ -177,6 +177,10 @@ type Message struct {
 	// CHANGE(taiko): basefeeSharingPctg of the basefee will be sent to the block.coinbase,
 	// the remaining will be sent to the treasury address.
 	BasefeeSharingPctg uint8
+	// CHANGE(taiko): SkipBasefeeRedistribution burns the base fee instead of
+	// crediting it to the treasury and block.coinbase. From Etna on, a block
+	// context whose extraData lacks the 13-byte layout has no base-fee share.
+	SkipBasefeeRedistribution bool
 }
 
 // TransactionToMessage converts a transaction into a Message.
@@ -592,8 +596,9 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		fee.Mul(fee, effectiveTipU256)
 		st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
 
-		// CHANGE(taiko): basefee is not burnt, but sent to a treasury and block.coinbase instead.
-		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.msg.IsAnchor {
+		// CHANGE(taiko): basefee is not burnt, but sent to a treasury and block.coinbase instead,
+		// unless the message carries no base-fee share.
+		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.msg.IsAnchor && !st.msg.SkipBasefeeRedistribution {
 			totalFee := new(uint256.Int).Mul(
 				new(uint256.Int).SetUint64(st.gasUsed()),
 				new(uint256.Int).SetUint64(st.evm.Context.BaseFee.Uint64()),

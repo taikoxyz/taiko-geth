@@ -728,9 +728,9 @@ func TestTaikoParentBeaconRoot(t *testing.T) {
 		{"pre-etna non-zero", 99, &root, false, nil},
 		{"pre-etna non-zero preselection", 99, &root, true, &root},
 		{"etna nil", 100, nil, false, nil},
-		{"etna nil preselection", 100, nil, true, nil},
+		{"etna nil preselection", 100, nil, true, &zero},
 		{"etna zero", 100, &zero, false, nil},
-		{"etna zero preselection", 100, &zero, true, nil},
+		{"etna zero preselection", 100, &zero, true, &zero},
 		{"etna non-zero", 100, &root, false, &root},
 		{"etna non-zero preselection", 100, &root, true, &root},
 	} {

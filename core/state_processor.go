@@ -362,6 +362,15 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	} else if evm.ChainConfig().IsOntake(header.Number) {
 		msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 	}
+	// CHANGE(taiko): from Etna on only the 13-byte extraData layout carries a
+	// base-fee share, and any other length burns the base fee. Sealed and
+	// imported Etna blocks always carry 13 bytes; only a simulated child of an
+	// Etna parent (transaction-pool preselection) can carry another length.
+	if evm.ChainConfig().IsEtna(header.Time) {
+		var redistribute bool
+		msg.BasefeeSharingPctg, redistribute = etnaBasefeeSharing(header.Extra)
+		msg.SkipBasefeeRedistribution = !redistribute
+	}
 	// Create a new context to be used in the EVM environment
 	return ApplyTransactionWithEVM(msg, gp, statedb, header.Number, header.Hash(), header.Time, tx, evm)
 }

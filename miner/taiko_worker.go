@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
+	"math/bits"
 	"time"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
@@ -30,11 +31,67 @@ const (
 	TxListCompressionPruneStep     = 10
 )
 
+// ErrInvalidPreselectionParams reports transaction-pool preselection
+// parameters that an Etna parent cannot simulate with. The taikoAuth API
+// returns it as a JSON-RPC invalid-params error.
+var ErrInvalidPreselectionParams = errors.New("invalid transaction lists parameters")
+
+// etnaPreselectionGasLimit validates the parameters of a preselection on top
+// of an Etna parent and returns the gas limit of the simulated child: the
+// combined budget of every requested list.
+func etnaPreselectionGasLimit(baseFee *big.Int, blockMaxGasLimit, maxTransactionsLists uint64) (uint64, error) {
+	if baseFee == nil || !baseFee.IsUint64() {
+		return 0, fmt.Errorf("%w: baseFee must be a 64-bit unsigned integer", ErrInvalidPreselectionParams)
+	}
+	if maxTransactionsLists == 0 {
+		return 0, fmt.Errorf("%w: maxTransactionsLists must not be 0", ErrInvalidPreselectionParams)
+	}
+	hi, gasLimit := bits.Mul64(blockMaxGasLimit, maxTransactionsLists)
+	if hi != 0 {
+		return 0, fmt.Errorf("%w: blockMaxGasLimit * maxTransactionsLists overflows uint64", ErrInvalidPreselectionParams)
+	}
+	return gasLimit, nil
+}
+
+// prepareEtnaPreselectionWork returns the environment that transaction-pool
+// preselection simulates the child of an Etna parent in. The child keeps the
+// parent's timestamp and randomness, uses the given beneficiary, base fee and
+// gas limit, and takes its extraData from core.EtnaSimulationExtraData. It has
+// no parent beacon root and runs no system calls: the root of an Etna block is
+// an L1 state root that only its proposer knows. One zk gas meter covers the
+// whole simulation, with nothing reserved.
+func (w *Miner) prepareEtnaPreselectionWork(parent *types.Header, beneficiary common.Address, baseFee *big.Int, gasLimit uint64) (*environment, error) {
+	header := &types.Header{
+		ParentHash:    parent.Hash(),
+		Number:        new(big.Int).Add(parent.Number, common.Big1),
+		GasLimit:      gasLimit,
+		Time:          parent.Time,
+		Coinbase:      beneficiary,
+		MixDigest:     parent.MixDigest,
+		BaseFee:       new(big.Int).Set(baseFee),
+		Extra:         core.EtnaSimulationExtraData(parent),
+		Difficulty:    new(big.Int),
+		BlobGasUsed:   new(uint64),
+		ExcessBlobGas: new(uint64),
+	}
+	env, err := w.makeEnv(parent, header, beneficiary, false)
+	if err != nil {
+		return nil, err
+	}
+	env.evm.SetZkGasMeter(vm.NewZkGasMeter(&vm.UnzenZkGasSchedule))
+	return env, nil
+}
+
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given conditions
 // 1. All transactions should all be able to pay the given base fee.
 // 2. The total gas used should not exceed the given blockMaxGasLimit
 // 3. The total bytes used should not exceed the given maxBytesPerTxList
 // 4. The total number of transactions lists should not exceed the given maxTransactionsLists
+//
+// The lists are simulated under the fork rules of the current head. On top of
+// an Etna head the simulated child has no anchor transaction: golden-touch
+// transactions are selected like any other, and zk gas exhaustion stops the
+// whole selection.
 func (w *Miner) buildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
@@ -70,6 +127,15 @@ func (w *Miner) buildTransactionsLists(
 		return nil, fmt.Errorf("failed to find current head")
 	}
 
+	isEtnaParent := w.chainConfig.IsEtna(currentHead.Time)
+	var etnaGasLimit uint64
+	if isEtnaParent {
+		var err error
+		if etnaGasLimit, err = etnaPreselectionGasLimit(baseFee, blockMaxGasLimit, maxTransactionsLists); err != nil {
+			return nil, err
+		}
+	}
+
 	// Check if tx pool is empty at first.
 	pending, _ := w.txpool.Pending(
 		txpool.PendingFilter{
@@ -77,8 +143,10 @@ func (w *Miner) buildTransactionsLists(
 			BaseFee: uint256.MustFromBig(baseFee),
 		},
 	)
-	pendingTxs := removeGoldenTouchPendingTxs(pending)
-	if len(pendingTxs) == 0 {
+	if !isEtnaParent {
+		pending = removeGoldenTouchPendingTxs(pending)
+	}
+	if len(pending) == 0 {
 		log.Warn(
 			"Transaction pool for building transactions lists is empty",
 			"minTip", minTip,
@@ -89,13 +157,17 @@ func (w *Miner) buildTransactionsLists(
 	}
 
 	params := &generateParams{
-		timestamp:     uint64(time.Now().Unix()),
-		forceTime:     true,
-		parentHash:    currentHead.Hash(),
-		coinbase:      beneficiary,
-		random:        currentHead.MixDigest,
-		noTxs:         false,
-		baseFeePerGas: baseFee,
+		timestamp:         uint64(time.Now().Unix()),
+		forceTime:         true,
+		parentHash:        currentHead.Hash(),
+		coinbase:          beneficiary,
+		random:            currentHead.MixDigest,
+		noTxs:             false,
+		baseFeePerGas:     baseFee,
+		taikoPreselection: true,
+	}
+	if isEtnaParent {
+		params.timestamp = currentHead.Time
 	}
 
 	log.Info(
@@ -108,10 +180,18 @@ func (w *Miner) buildTransactionsLists(
 		"minTip", minTip,
 		"baseFee", baseFee,
 		"noTxs", params.noTxs,
+		"etnaParent", isEtnaParent,
 	)
 
-	ctx := context.Background()
-	env, err := w.prepareWork(ctx, params, false)
+	var (
+		env *environment
+		err error
+	)
+	if isEtnaParent {
+		env, err = w.prepareEtnaPreselectionWork(currentHead, beneficiary, baseFee, etnaGasLimit)
+	} else {
+		env, err = w.prepareWork(context.Background(), params, false)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -120,16 +200,16 @@ func (w *Miner) buildTransactionsLists(
 		signer = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
 		// Split the pending transactions into locals and remotes, then
 		// fill the block with all available pending transactions.
-		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee)
+		localTxs, remoteTxs = w.getPendingTxs(localAccounts, baseFee, !isEtnaParent)
 	)
 
-	commitTxs := func(pruningResult *txsPruningResult) (*txsPruningResult, *PreBuiltTxList, error) {
+	commitTxs := func(pruningResult *txsPruningResult) (*txsPruningResult, *PreBuiltTxList, bool, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = core.NewGasPool(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
 		env.header.GasLimit = blockMaxGasLimit
 
-		result, err := w.commitL2Transactions(
+		result, zkGasExhausted, err := w.commitL2Transactions(
 			env,
 			pruningResult.TxsPruned,
 			pruningResult.ReceiptsPruned,
@@ -152,7 +232,7 @@ func (w *Miner) buildTransactionsLists(
 				"error", err,
 			)
 
-			return nil, nil, err
+			return nil, nil, false, err
 		}
 
 		log.Info(
@@ -166,21 +246,23 @@ func (w *Miner) buildTransactionsLists(
 			"size", result.Size,
 			"gasUsed", accumulateGasUsed(result.ReceiptsRemaining),
 			"bytesLength", uint64(result.Size),
+			"zkGasExhausted", zkGasExhausted,
 		)
 
 		return result, &PreBuiltTxList{
 			TxList:           result.TxsRemaining,
 			EstimatedGasUsed: accumulateGasUsed(result.ReceiptsRemaining),
 			BytesLength:      uint64(result.Size),
-		}, nil
+		}, zkGasExhausted, nil
 	}
 
 	var (
 		pruningResult  = new(txsPruningResult)
 		preBuiltTxList *PreBuiltTxList
+		zkGasExhausted bool
 	)
 	for range int(maxTransactionsLists) {
-		if pruningResult, preBuiltTxList, err = commitTxs(pruningResult); err != nil {
+		if pruningResult, preBuiltTxList, zkGasExhausted, err = commitTxs(pruningResult); err != nil {
 			return nil, err
 		}
 
@@ -189,6 +271,11 @@ func (w *Miner) buildTransactionsLists(
 		}
 
 		txsLists = append(txsLists, preBuiltTxList)
+
+		// zk gas exhaustion ends the selection: no later list is built.
+		if zkGasExhausted {
+			break
+		}
 	}
 
 	log.Info(
@@ -208,15 +295,19 @@ func (w *Miner) buildTransactionsLists(
 }
 
 // taikoParentBeaconRoot returns the parent beacon root of a Taiko Unzen block
-// built from genParams. From Etna on it is the state root of the L1 block at
-// the final anchorBlockNumber, which the caller must supply as a non-zero
-// root. Before Etna it is the canonical zero hash: a non-zero root cannot
-// survive the engine round trip and is rejected, except in transaction-pool
-// preselection, which only simulates its target.
+// built from genParams. From Etna on it is the L1 state root the payload
+// attributes carry, which must be non-zero. Before Etna it is the canonical
+// zero hash: a non-zero root cannot survive the engine round trip and is
+// rejected. Transaction-pool preselection on top of a pre-Etna parent only
+// simulates its child at the wall-clock time, so it keeps the caller's root
+// (the zero root when none is given) on both sides of the Etna activation.
 func taikoParentBeaconRoot(config *params.ChainConfig, time uint64, genParams *generateParams) (*common.Hash, error) {
 	root := new(common.Hash)
 	if genParams.beaconRoot != nil {
 		*root = *genParams.beaconRoot
+	}
+	if genParams.taikoPreselection {
+		return root, nil
 	}
 	if config.IsEtna(time) {
 		if *root == (common.Hash{}) {
@@ -224,7 +315,7 @@ func taikoParentBeaconRoot(config *params.ChainConfig, time uint64, genParams *g
 		}
 		return root, nil
 	}
-	if *root != (common.Hash{}) && !genParams.taikoPreselection {
+	if *root != (common.Hash{}) {
 		return nil, fmt.Errorf("non-zero parent beacon root %v is unsupported on Taiko", *root)
 	}
 	return root, nil
@@ -480,13 +571,16 @@ func (w *Miner) sealBlockWith(
 	return block, nil
 }
 
-// getPendingTxs fetches the pending transactions from tx pool.
-func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int) (
+// getPendingTxs fetches the pending transactions from tx pool. The golden
+// touch account's transactions are dropped when filterGoldenTouch is set.
+func (w *Miner) getPendingTxs(localAccounts []string, baseFee *big.Int, filterGoldenTouch bool) (
 	map[common.Address][]*txpool.LazyTransaction,
 	map[common.Address][]*txpool.LazyTransaction,
 ) {
-	rawPending, _ := w.txpool.Pending(txpool.PendingFilter{BaseFee: uint256.MustFromBig(baseFee)})
-	pending := removeGoldenTouchPendingTxs(rawPending)
+	pending, _ := w.txpool.Pending(txpool.PendingFilter{BaseFee: uint256.MustFromBig(baseFee)})
+	if filterGoldenTouch {
+		pending = removeGoldenTouchPendingTxs(pending)
+	}
 	localTxs, remoteTxs := make(map[common.Address][]*txpool.LazyTransaction), pending
 
 	for _, local := range localAccounts {
@@ -513,6 +607,9 @@ func removeGoldenTouchPendingTxs(
 }
 
 // commitL2Transactions tries to commit the transactions into the given state.
+// When the environment's EVM meters zk gas, the returned flag reports that a
+// transaction exhausted the zk gas budget: it is excluded, and no later
+// transaction is tried.
 func (w *Miner) commitL2Transactions(
 	env *environment,
 	presetTxs []*types.Transaction,
@@ -521,12 +618,14 @@ func (w *Miner) commitL2Transactions(
 	txsRemote *transactionsByPriceAndNonce,
 	maxBytesPerTxList uint64,
 	minTip uint64,
-) (*txsPruningResult, error) {
+) (*txsPruningResult, bool, error) {
 	var (
-		txs           = txsLocal
-		isLocal       = true
-		pruningResult *txsPruningResult
-		err           error
+		txs            = txsLocal
+		isLocal        = true
+		pruningResult  *txsPruningResult
+		zkGasMeter     = env.evm.Config.ZkGasMeter
+		zkGasExhausted bool
+		err            error
 	)
 
 	if presetTxs != nil {
@@ -581,9 +680,29 @@ loop:
 		}
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
+		if zkGasMeter != nil {
+			zkGasMeter.ResetTransaction()
+			env.evm.ResetZkGasErr()
+		}
 
 		err := w.commitTransaction(context.Background(), env, tx)
+		if err == nil && zkGasMeter != nil {
+			// Charging already bounds the block total by the schedule's limit,
+			// so committing the transaction's zk gas cannot fail.
+			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil {
+				return nil, false, commitErr
+			}
+		}
 		switch {
+		case zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded):
+			// The transaction was reverted. zk gas exhaustion stops the whole
+			// selection instead of skipping the transaction.
+			log.Trace("Stopping selection after zk gas exhaustion", "hash", ltx.Hash, "blockZkGasUsed", zkGasMeter.BlockZkGasUsed())
+			zkGasMeter.ResetTransaction()
+			env.evm.ResetZkGasErr()
+			zkGasExhausted = true
+			break loop
+
 		case errors.Is(err, core.ErrNonceTooLow):
 			// New head notification data race between the transaction pool and miner, shift
 			log.Trace("Skipping transaction with low nonce", "hash", ltx.Hash, "sender", from, "nonce", tx.Nonce())
@@ -596,7 +715,7 @@ loop:
 			// Check the size of the compressed txList, if it exceeds the maxBytesPerTxList, break the loop.
 			if env.tcount%TxListCompressionCheckInterval == 0 {
 				if pruningResult, err = pruneTransactions(env.txs, env.receipts, maxBytesPerTxList); err != nil {
-					return nil, err
+					return nil, false, err
 				}
 				// If there are pruned transactions, break the loop.
 				if len(pruningResult.TxsPruned) > 0 {
@@ -613,10 +732,10 @@ loop:
 	}
 
 	if pruningResult, err = pruneTransactions(env.txs, env.receipts, maxBytesPerTxList); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	return pruningResult, nil
+	return pruningResult, zkGasExhausted, nil
 }
 
 // encodeAndCompressTxList encodes and compresses the given transactions list.

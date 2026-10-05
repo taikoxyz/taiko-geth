@@ -303,7 +303,7 @@ func (a *TaikoAuthAPIBackend) TxPoolContent(
 		"locals", locals,
 	)
 
-	return a.eth.Miner().BuildTransactionsLists(
+	lists, err := a.eth.Miner().BuildTransactionsLists(
 		beneficiary,
 		baseFee,
 		blockMaxGasLimit,
@@ -311,6 +311,10 @@ func (a *TaikoAuthAPIBackend) TxPoolContent(
 		locals,
 		maxTransactionsLists,
 	)
+	if err != nil {
+		return nil, txPoolContentError(err)
+	}
+	return lists, nil
 }
 
 // TxPoolContentWithMinTip retrieves the transaction pool content with the given upper limits and minimum tip.
@@ -333,7 +337,7 @@ func (a *TaikoAuthAPIBackend) TxPoolContentWithMinTip(
 		"minTip", minTip,
 	)
 
-	return a.eth.Miner().BuildTransactionsListsWithMinTip(
+	lists, err := a.eth.Miner().BuildTransactionsListsWithMinTip(
 		beneficiary,
 		baseFee,
 		blockMaxGasLimit,
@@ -342,4 +346,27 @@ func (a *TaikoAuthAPIBackend) TxPoolContentWithMinTip(
 		maxTransactionsLists,
 		minTip,
 	)
+	if err != nil {
+		return nil, txPoolContentError(err)
+	}
+	return lists, nil
+}
+
+// txPoolContentParamsError is the JSON-RPC invalid-params (-32602) error the
+// taikoAuth transaction-pool methods return for parameters that an Etna parent
+// cannot simulate with.
+type txPoolContentParamsError struct{ err error }
+
+func (e *txPoolContentParamsError) Error() string  { return e.err.Error() }
+func (e *txPoolContentParamsError) ErrorCode() int { return -32602 }
+func (e *txPoolContentParamsError) Unwrap() error  { return e.err }
+
+// txPoolContentError maps a transaction-pool preselection error to the error
+// the taikoAuth API returns. The RPC server reads the error code only from the
+// returned error itself, so the invalid-params case is not wrapped further.
+func txPoolContentError(err error) error {
+	if errors.Is(err, miner.ErrInvalidPreselectionParams) {
+		return &txPoolContentParamsError{err: err}
+	}
+	return err
 }
