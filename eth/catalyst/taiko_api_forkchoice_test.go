@@ -929,10 +929,11 @@ func TestTaikoForkchoiceUpdatedV3BuildFailureKeepsTheLastPayload(t *testing.T) {
 // them: a base fee above u64, and an anchorTransaction that does not decode as
 // one transaction or has no recoverable signer, are -32603.
 //
-// The checks run after the forkchoice is applied and before the payload ID is
-// looked up. Every request below carries the attributes of the last built
-// payload, so without them it would return that payload's ID and rewrite its
-// L1 origin.
+// The checks run after the forkchoice is applied and the timestamp check
+// passes, and before the payload ID is looked up. They write no L1 origin.
+// The reference client starts a job for every attributed update, so a
+// rejected request with the last built payload's ID drops that payload, while
+// one with another ID leaves it in place.
 func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecks(t *testing.T) {
 	ethservice, api := startTaikoFCUTestService(t)
 	chain := ethservice.BlockChain()
@@ -943,14 +944,10 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecks(t *testing.T) {
 	txList, anchor := taikoFCUTestAnchorTxList(t, config, big.NewInt(params.ShastaInitialBaseFee))
 	id := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList))
 	envelope, _ := fcuTestGetPayloadV5(t, api, id)
-	stored := fcuTestLastPayload(api)
 	block := fcuTestBuiltBlock(t, api, id, common.Hash{})
 	if _, err := chain.InsertBlockWithoutSetHead(context.Background(), block, false); err != nil {
 		t.Fatalf("import the Unzen block: %v", err)
 	}
-	// Clobber the L1 origin records so that a rewrite shows.
-	rawdb.WriteL1Origin(db, big.NewInt(1), &rawdb.L1Origin{BlockID: big.NewInt(1)})
-	rawdb.WriteHeadL1Origin(db, big.NewInt(99))
 
 	anchorTx := func(enc []byte) func(*engine.TaikoPayloadAttributesV3) {
 		return func(a *engine.TaikoPayloadAttributesV3) {
@@ -970,46 +967,89 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecks(t *testing.T) {
 		{"anchor transaction with a high s", anchorTx(fcuTestWithSignature(t, anchor, new(big.Int).Xor(v, common.Big1), r, highS))},
 		{"anchor transaction with a zero r", anchorTx(fcuTestWithSignature(t, anchor, v, new(big.Int), s))},
 	}
-	for _, tt := range tests {
-		// Make the imported block the head, so that the update moves it back.
+	// reject sends attrs at timestamp, broken by mutate, on top of the
+	// genesis while block 1 is the head. The update must fail with -32603,
+	// move the head back to the genesis and write no L1 origin.
+	reject := func(name string, timestamp uint64, mutate func(*engine.TaikoPayloadAttributesV3)) engine.PayloadID {
+		t.Helper()
 		res, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: block.Hash()}, nil)
 		if err != nil || res.PayloadStatus.Status != engine.VALID {
-			t.Fatalf("%s: forkchoice to block 1: status %s, err %v", tt.name, res.PayloadStatus.Status, err)
+			t.Fatalf("%s: forkchoice to block 1: status %s, err %v", name, res.PayloadStatus.Status, err)
 		}
-		attrs := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)
+		// Clobber the L1 origin records so that a rewrite shows.
+		rawdb.WriteL1Origin(db, big.NewInt(1), &rawdb.L1Origin{BlockID: big.NewInt(1)})
+		rawdb.WriteHeadL1Origin(db, big.NewInt(99))
+
+		attrs := taikoFCUTestAttrs(config, timestamp, txList)
 		attrs.L1Origin.L1BlockHash = common.HexToHash("0x22")
-		tt.mutate(attrs)
-		if taikoPayloadID(genesis, &attrs.PayloadAttributes) != id {
-			t.Fatalf("%s: the attributes do not share the last payload's ID", tt.name)
-		}
+		mutate(attrs)
 		_, err = api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, attrs)
 		if err == nil || rpcErrorCode(t, err) != -32603 {
-			t.Fatalf("%s: err %v, want code -32603", tt.name, err)
+			t.Fatalf("%s: err %v, want code -32603", name, err)
 		}
 		if got := chain.CurrentBlock().Hash(); got != genesis {
-			t.Fatalf("%s: head = %v, want the requested genesis", tt.name, got)
-		}
-		if fcuTestLastPayload(api) != stored {
-			t.Fatalf("%s: the last built payload was replaced", tt.name)
-		}
-		if have, _ := fcuTestGetPayloadV5(t, api, id); have != envelope {
-			t.Fatalf("%s: last payload:\nhave %s\nwant %s", tt.name, have, envelope)
+			t.Fatalf("%s: head = %v, want the requested genesis", name, got)
 		}
 		if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != (common.Hash{}) || origin.L1BlockHash != (common.Hash{}) {
-			t.Fatalf("%s: L1 origin rewritten to %+v", tt.name, origin)
+			t.Fatalf("%s: L1 origin rewritten to %+v", name, origin)
 		}
 		if head, _ := rawdb.ReadHeadL1Origin(db); head == nil || head.Uint64() != 99 {
-			t.Fatalf("%s: head L1 origin = %v, want 99", tt.name, head)
+			t.Fatalf("%s: head L1 origin = %v, want 99", name, head)
+		}
+		return taikoPayloadID(genesis, &attrs.PayloadAttributes)
+	}
+
+	for _, tt := range tests {
+		// With the last payload's ID, the rejection drops that payload.
+		if rejected := reject(tt.name, fcuTestPreEtnaTime, tt.mutate); rejected != id {
+			t.Fatalf("%s: rejected id %v, want the last payload's %v", tt.name, rejected, id)
+		}
+		fcuTestUnknownPayload(t, api, id)
+		if fcuTestLastPayload(api) != nil {
+			t.Fatalf("%s: a payload is still stored", tt.name)
+		}
+		// The same attributes without the failing input build it again.
+		if got := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)); got != id {
+			t.Fatalf("%s: rebuilt payload id = %v, want %v", tt.name, got, id)
+		}
+		if have, _ := fcuTestGetPayloadV5(t, api, id); have != envelope {
+			t.Fatalf("%s: rebuilt payload:\nhave %s\nwant %s", tt.name, have, envelope)
+		}
+		if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != block.Hash() {
+			t.Fatalf("%s: L1 origin = %+v after the rebuild, want block %v", tt.name, origin, block.Hash())
+		}
+
+		// With another ID, the rejection leaves the last payload in place.
+		stored := fcuTestLastPayload(api)
+		if rejected := reject(tt.name+" with another id", fcuTestPreEtnaTime+1, tt.mutate); rejected == id {
+			t.Fatalf("%s: the rejected attributes share the last payload's id", tt.name)
+		}
+		if fcuTestLastPayload(api) != stored {
+			t.Fatalf("%s with another id: the last built payload was replaced", tt.name)
+		}
+		if have, _ := fcuTestGetPayloadV5(t, api, id); have != envelope {
+			t.Fatalf("%s with another id: last payload:\nhave %s\nwant %s", tt.name, have, envelope)
 		}
 	}
 
-	// The same attributes without a failing input return the cached ID and
-	// rewrite the L1 origin.
-	if got := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)); got != id {
-		t.Fatalf("payload id = %v, want the cached %v", got, id)
+	// A target before the head is -38003 before any job check runs, and
+	// leaves the last payload in place.
+	res, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: block.Hash()}, nil)
+	if err != nil || res.PayloadStatus.Status != engine.VALID {
+		t.Fatalf("forkchoice to block 1: status %s, err %v", res.PayloadStatus.Status, err)
 	}
-	if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != block.Hash() {
-		t.Fatalf("L1 origin = %+v, want block %v", origin, block.Hash())
+	stored := fcuTestLastPayload(api)
+	for _, tt := range tests {
+		earlier := taikoFCUTestAttrs(config, block.Time()-1, txList)
+		earlier.L1Origin.BlockID = big.NewInt(2)
+		tt.mutate(earlier)
+		_, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: block.Hash()}, earlier)
+		if err == nil || rpcErrorCode(t, err) != -38003 {
+			t.Fatalf("%s before the head: err %v, want code -38003", tt.name, err)
+		}
+		if fcuTestLastPayload(api) != stored {
+			t.Fatalf("%s before the head: the last built payload was replaced", tt.name)
+		}
 	}
 }
 
@@ -1060,7 +1100,8 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaAnchorTransaction(t *testing.T) {
 
 // TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC checks that the
 // anchorTransaction bytes of the wire attributes reach the pre-Etna job
-// checks. Every request carries the attributes of the last built payload.
+// checks. Every request carries the attributes of the first build, whose
+// payload a rejection drops.
 func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC(t *testing.T) {
 	n, ethservice := newEngineTestNode(t, newTaikoFCUTestGenesis())
 	client := n.Attach()
@@ -1099,5 +1140,9 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC(t *testing.T) {
 		if code := rpcErrorCode(t, err); code != tt.code {
 			t.Fatalf("%s: code %d (%v), want %d", tt.name, code, err, tt.code)
 		}
+	}
+	err := client.Call(new(json.RawMessage), "engine_getPayloadV5", id)
+	if err == nil || rpcErrorCode(t, err) != -38001 {
+		t.Fatalf("getPayloadV5 after the rejections: err %v, want code -38001", err)
 	}
 }

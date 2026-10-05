@@ -30,7 +30,7 @@ type TaikoEngineAPI struct {
 	// service drops each job once resolved and keeps only the last result.
 	lastPayloadLock sync.RWMutex
 	lastPayloadID   engine.PayloadID
-	lastPayload     *miner.Payload // nil until a build succeeds
+	lastPayload     *miner.Payload // nil until a build succeeds, and after a drop
 }
 
 // NewTaikoEngineAPI creates the Taiko Engine API service for the given backend.
@@ -45,6 +45,16 @@ func (t *TaikoEngineAPI) setLastPayload(id engine.PayloadID, payload *miner.Payl
 	defer t.lastPayloadLock.Unlock()
 
 	t.lastPayloadID, t.lastPayload = id, payload
+}
+
+// dropLastPayload drops the last built payload if it was built under id.
+func (t *TaikoEngineAPI) dropLastPayload(id engine.PayloadID) {
+	t.lastPayloadLock.Lock()
+	defer t.lastPayloadLock.Unlock()
+
+	if t.lastPayload != nil && t.lastPayloadID == id {
+		t.lastPayloadID, t.lastPayload = engine.PayloadID{}, nil
+	}
 }
 
 // resolveLastPayload returns the last built payload if it was built under id,

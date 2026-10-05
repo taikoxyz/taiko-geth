@@ -24,7 +24,8 @@ import (
 // Invalid attributes do not stop the forkchoice update: the state is applied
 // without them, an INVALID or SYNCING result is returned as a plain status,
 // and otherwise the attribute error is returned. After a VALID update, inputs
-// that fail the job checks are -32603 and build nothing.
+// that fail the job checks are -32603, build nothing and drop the last built
+// payload if the request has its ID.
 func (t *TaikoEngineAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.ForkchoiceStateV1, attrs *engine.TaikoPayloadAttributesV3) (engine.ForkChoiceResponse, error) {
 	api := t.api
 	api.forkchoiceLock.Lock()
@@ -57,6 +58,9 @@ func (t *TaikoEngineAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.
 		return engine.STATUS_INVALID, attributesErr("payload attributes timestamp is before the head block")
 	}
 	if err := checkTaikoJobInputs(attrs); err != nil {
+		// The reference client starts a job for every attributed update, and
+		// the failed job displaces the last built payload if it has its ID.
+		t.dropLastPayload(taikoPayloadID(head.Hash(), &attrs.PayloadAttributes))
 		return engine.STATUS_INVALID, err
 	}
 	id, err := t.buildTaikoPayload(ctx, head, &attrs.PayloadAttributes)
