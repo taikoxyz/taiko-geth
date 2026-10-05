@@ -207,6 +207,7 @@ func (w *Miner) buildTransactionsLists(
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = core.NewGasPool(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
+		// Feeds only the receipts' block hash; an Etna env's EVM keeps the combined GASLIMIT.
 		env.header.GasLimit = blockMaxGasLimit
 
 		result, zkGasExhausted, err := w.commitL2Transactions(

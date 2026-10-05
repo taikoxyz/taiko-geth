@@ -362,10 +362,18 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	} else if evm.ChainConfig().IsOntake(header.Number) {
 		msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 	}
-	// CHANGE(taiko): from Etna on only the 13-byte extraData layout carries a
-	// base-fee share, and any other length burns the base fee. Sealed and
-	// imported Etna blocks always carry 13 bytes; only a simulated child of an
-	// Etna parent (transaction-pool preselection) can carry another length.
+	// CHANGE(taiko): from Etna on, only an extraData of exactly 13 bytes carries
+	// a base-fee share. Any other length burns the base fee, as in the reference
+	// client, which never redistributes it without an authoritative fee context.
+	// The rule applies to every header with an Etna timestamp that reaches this
+	// function: the miner's sealing and transaction-pool preselection, and the
+	// test chain generator. Canonical import (StateProcessor.Process) never
+	// calls it and decodes the fee share itself. A sealed Etna block always
+	// carries 13 bytes (the engine API rejects any other length), so only
+	// preselection's simulated headers can burn: the child of an Etna parent
+	// whose extraData EtnaSimulationExtraData passes through at another length,
+	// and, in the fork window, the time.Now() child of a pre-Etna parent, which
+	// carries the miner's own 7-byte or empty extraData.
 	if evm.ChainConfig().IsEtna(header.Time) {
 		var redistribute bool
 		msg.BasefeeSharingPctg, redistribute = etnaBasefeeSharing(header.Extra)
