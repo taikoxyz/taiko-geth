@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -134,6 +135,21 @@ func TestTaikoEngineAPIRegistration(t *testing.T) {
 		if _, ok := modules[namespace]; !ok {
 			t.Fatalf("namespace %q not registered: %v", namespace, modules)
 		}
+	}
+}
+
+// TestTaikoEngineAPIMethodSet pins the exported methods of TaikoEngineAPI: the
+// RPC server serves every one of them, so an exported helper would become an
+// engine_* method.
+func TestTaikoEngineAPIMethodSet(t *testing.T) {
+	typ := reflect.TypeOf(&TaikoEngineAPI{})
+	have := make([]string, typ.NumMethod())
+	for i := range have {
+		have[i] = typ.Method(i).Name
+	}
+	want := []string{"ExchangeCapabilities", "ForkchoiceUpdatedV3", "GetPayloadV5", "NewPayloadV4"}
+	if !slices.Equal(have, want) {
+		t.Fatalf("exported methods = %v, want %v", have, want)
 	}
 }
 
