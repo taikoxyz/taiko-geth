@@ -3,6 +3,7 @@ package catalyst
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"math/big"
 	"testing"
@@ -144,14 +145,22 @@ func taikoFCUTestAnchorTxList(t *testing.T, config *params.ChainConfig, baseFee 
 	return txList, anchor
 }
 
-// fcuTestCachedPayload returns the execution payload cached under id.
+// fcuTestCachedPayload returns the execution payload of the last build,
+// failing unless that build has the given id.
 func fcuTestCachedPayload(t *testing.T, api *TaikoEngineAPI, id engine.PayloadID) *engine.ExecutableData {
 	t.Helper()
-	envelope := api.api.localBlocks.get(id, false)
+	envelope := api.resolveLastPayload(id)
 	if envelope == nil {
-		t.Fatalf("payload %v is not cached", id)
+		t.Fatalf("payload %v is not the last built payload", id)
 	}
 	return envelope.ExecutionPayload
+}
+
+// fcuTestLastPayload returns the payload object of the last build.
+func fcuTestLastPayload(api *TaikoEngineAPI) *miner.Payload {
+	api.lastPayloadLock.RLock()
+	defer api.lastPayloadLock.RUnlock()
+	return api.lastPayload
 }
 
 // fcuTestBuiltBlock rebuilds the block cached under id with the given parent
@@ -461,8 +470,8 @@ func TestTaikoForkchoiceUpdatedV3BuildFailure(t *testing.T) {
 	if err == nil || rpcErrorCode(t, err) != -32603 {
 		t.Fatalf("err %v, want code -32603", err)
 	}
-	if api.api.localBlocks.has(taikoPayloadID(genesis, &attrs.PayloadAttributes)) {
-		t.Fatal("a failed build cached a payload")
+	if fcuTestLastPayload(api) != nil {
+		t.Fatal("a failed build stored a payload")
 	}
 	db := ethservice.ChainDb()
 	if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin != nil {
@@ -656,9 +665,9 @@ func TestTaikoForkchoiceUpdatedV3L1OriginWrites(t *testing.T) {
 	}
 }
 
-// TestTaikoForkchoiceUpdatedV3CachedPayload checks that repeating a
-// forkchoice update returns the cached ID without rebuilding and rewrites the
-// L1 origin with the cached block.
+// TestTaikoForkchoiceUpdatedV3CachedPayload checks that repeating the
+// forkchoice update of the last built payload returns its ID without
+// rebuilding and rewrites the L1 origin with its block.
 func TestTaikoForkchoiceUpdatedV3CachedPayload(t *testing.T) {
 	ethservice, api := startTaikoFCUTestService(t)
 	db := ethservice.ChainDb()
@@ -670,6 +679,7 @@ func TestTaikoForkchoiceUpdatedV3CachedPayload(t *testing.T) {
 		t.Fatalf("first forkchoice: id %v, err %v", first.PayloadID, err)
 	}
 	built := fcuTestCachedPayload(t, api, *first.PayloadID).BlockHash
+	stored := fcuTestLastPayload(api)
 
 	// Clobber the records; the origin is not part of the payload ID.
 	rawdb.WriteL1Origin(db, big.NewInt(1), &rawdb.L1Origin{BlockID: big.NewInt(1)})
@@ -681,14 +691,8 @@ func TestTaikoForkchoiceUpdatedV3CachedPayload(t *testing.T) {
 	if err != nil || second.PayloadID == nil || *second.PayloadID != *first.PayloadID {
 		t.Fatalf("second forkchoice: id %v, err %v, want the cached id %v", second.PayloadID, err, *first.PayloadID)
 	}
-	entries := 0
-	for _, item := range api.api.localBlocks.payloads {
-		if item != nil && item.id == *first.PayloadID {
-			entries++
-		}
-	}
-	if entries != 1 {
-		t.Fatalf("payload %v cached %d times, want once", *first.PayloadID, entries)
+	if fcuTestLastPayload(api) != stored {
+		t.Fatalf("payload %v was built again, want the last built payload reused", *first.PayloadID)
 	}
 	origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1))
 	if origin == nil || origin.L2BlockHash != built || origin.L1BlockHash != common.HexToHash("0x22") {
@@ -752,5 +756,122 @@ func TestTaikoForkchoiceUpdatedV3OverRPC(t *testing.T) {
 	}
 	if want := taikoPayloadID(genesis, &attrs.PayloadAttributes); *res.PayloadID != want {
 		t.Fatalf("payload id = %v, want %v", *res.PayloadID, want)
+	}
+}
+
+// fcuTestBuild runs a forkchoice update on the genesis that builds the block
+// described by attrs and returns its payload ID.
+func fcuTestBuild(t *testing.T, ethservice *eth.Ethereum, api *TaikoEngineAPI, attrs *engine.TaikoPayloadAttributesV3) engine.PayloadID {
+	t.Helper()
+	update := engine.ForkchoiceStateV1{HeadBlockHash: ethservice.BlockChain().Genesis().Hash()}
+	res, err := api.ForkchoiceUpdatedV3(context.Background(), update, attrs)
+	if err != nil || res.PayloadStatus.Status != engine.VALID || res.PayloadID == nil {
+		t.Fatalf("forkchoice at %d: status %s, id %v, err %v, want VALID with an id", attrs.Timestamp, res.PayloadStatus.Status, res.PayloadID, err)
+	}
+	return *res.PayloadID
+}
+
+// fcuTestGetPayloadV5 returns the JSON engine_getPayloadV5 envelope of id and
+// the hash of the block it carries.
+func fcuTestGetPayloadV5(t *testing.T, api *TaikoEngineAPI, id engine.PayloadID) (string, common.Hash) {
+	t.Helper()
+	envelope, err := api.GetPayloadV5(id)
+	if err != nil {
+		t.Fatalf("getPayloadV5(%v): %v", id, err)
+	}
+	enc, err := json.Marshal(envelope)
+	if err != nil {
+		t.Fatalf("encode envelope: %v", err)
+	}
+	return string(enc), envelope.ExecutionPayload.BlockHash
+}
+
+// fcuTestUnknownPayload fails unless engine_getPayloadV5 answers -38001 for id.
+func fcuTestUnknownPayload(t *testing.T, api *TaikoEngineAPI, id engine.PayloadID) {
+	t.Helper()
+	if _, err := api.GetPayloadV5(id); !errors.Is(err, engine.UnknownPayload) {
+		t.Fatalf("getPayloadV5(%v): err %v, want -38001", id, err)
+	}
+}
+
+// TestTaikoGetPayloadV5ServesOnlyTheLastBuiltPayload checks that a build
+// replaces the previous payload, the way the reference client's payload
+// service keeps only the last resolved one, and that the last payload is
+// served any number of times.
+func TestTaikoGetPayloadV5ServesOnlyTheLastBuiltPayload(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	config := ethservice.BlockChain().Config()
+
+	x := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList))
+	fcuTestGetPayloadV5(t, api, x)
+	z := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestEtnaTarget+1, fcuTestEmptyTxList))
+	if x == z {
+		t.Fatalf("both builds have payload id %v", x)
+	}
+	fcuTestUnknownPayload(t, api, x)
+
+	first, _ := fcuTestGetPayloadV5(t, api, z)
+	second, _ := fcuTestGetPayloadV5(t, api, z)
+	if first != second {
+		t.Fatalf("repeated getPayloadV5 differs:\nfirst  %s\nsecond %s", first, second)
+	}
+}
+
+// TestTaikoForkchoiceUpdatedV3RebuildsAnOlderPayload checks that repeating the
+// attributes of a replaced payload seals the same block again under the same
+// ID, rewrites its L1 origin and makes it the last payload.
+func TestTaikoForkchoiceUpdatedV3RebuildsAnOlderPayload(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	db := ethservice.ChainDb()
+	config := ethservice.BlockChain().Config()
+
+	x := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList))
+	xEnvelope, xHash := fcuTestGetPayloadV5(t, api, x)
+	xPayload := fcuTestLastPayload(api)
+	z := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestEtnaTarget+1, fcuTestEmptyTxList))
+	_, zHash := fcuTestGetPayloadV5(t, api, z)
+	if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != zHash {
+		t.Fatalf("L1 origin = %+v, want block %v", origin, zHash)
+	}
+
+	if again := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList)); again != x {
+		t.Fatalf("rebuilt payload id = %v, want %v", again, x)
+	}
+	if rebuilt := fcuTestLastPayload(api); rebuilt == nil || rebuilt == xPayload {
+		t.Fatalf("payload %v was not built again", x)
+	}
+	envelope, hash := fcuTestGetPayloadV5(t, api, x)
+	if hash != xHash || envelope != xEnvelope {
+		t.Fatalf("rebuilt payload:\nhave %s\nwant %s", envelope, xEnvelope)
+	}
+	fcuTestUnknownPayload(t, api, z)
+	if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != xHash {
+		t.Fatalf("L1 origin = %+v, want the rebuilt block %v", origin, xHash)
+	}
+}
+
+// TestTaikoForkchoiceUpdatedV3BuildFailureKeepsTheLastPayload checks that a
+// failed build leaves the last built payload and its L1 origin in place.
+func TestTaikoForkchoiceUpdatedV3BuildFailureKeepsTheLastPayload(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	config := ethservice.BlockChain().Config()
+	genesis := ethservice.BlockChain().Genesis().Hash()
+
+	x := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList))
+	want, xHash := fcuTestGetPayloadV5(t, api, x)
+
+	// Before Etna an L2 block needs its anchor transaction, so an empty list
+	// cannot be sealed.
+	failing := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, fcuTestEmptyTxList)
+	_, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, failing)
+	if err == nil || rpcErrorCode(t, err) != -32603 {
+		t.Fatalf("failing build: err %v, want code -32603", err)
+	}
+	fcuTestUnknownPayload(t, api, taikoPayloadID(genesis, &failing.PayloadAttributes))
+	if have, _ := fcuTestGetPayloadV5(t, api, x); have != want {
+		t.Fatalf("payload after a failed build:\nhave %s\nwant %s", have, want)
+	}
+	if origin, _ := rawdb.ReadL1Origin(ethservice.ChainDb(), big.NewInt(1)); origin == nil || origin.L2BlockHash != xHash {
+		t.Fatalf("L1 origin = %+v, want block %v", origin, xHash)
 	}
 }

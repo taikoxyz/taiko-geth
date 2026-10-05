@@ -210,8 +210,8 @@ func taikoV5TestBlock(timestamp uint64) *types.Block {
 	return types.NewBlockWithHeader(header).WithBody(types.Body{Withdrawals: []*types.Withdrawal{}})
 }
 
-// putTaikoV5TestJob stores block as the built payload of id, the way the Taiko
-// forkchoice update stores a sealed block.
+// putTaikoV5TestJob stores block as the last built payload under id, the way
+// the Taiko forkchoice update stores a sealed block.
 func putTaikoV5TestJob(t *testing.T, api *TaikoEngineAPI, id engine.PayloadID, block *types.Block) {
 	t.Helper()
 	parent := api.api.eth.BlockChain().CurrentBlock()
@@ -226,7 +226,7 @@ func putTaikoV5TestJob(t *testing.T, api *TaikoEngineAPI, id engine.PayloadID, b
 		t.Fatalf("BuildPayload: %v", err)
 	}
 	payload.SetFullBlock(block, common.Big0)
-	api.api.localBlocks.put(id, payload)
+	api.setLastPayload(id, payload)
 }
 
 func TestTaikoEngineAPIGetPayloadV5(t *testing.T) {
@@ -241,15 +241,14 @@ func TestTaikoEngineAPIGetPayloadV5(t *testing.T) {
 	defer client.Close()
 
 	// The payload IDs repeat the job timestamp in every byte, so none of them
-	// carries the 0x02 version byte the service assigns.
-	blocks := make(map[uint64]*types.Block)
-	for _, timestamp := range []uint64{49, 99, 100} {
-		blocks[timestamp] = taikoV5TestBlock(timestamp)
+	// carries the 0x02 version byte the service assigns. Only the last stored
+	// job is served, so each job is stored right before it is fetched.
+	jobID := func(timestamp uint64) engine.PayloadID {
 		id := engine.PayloadID{}
 		for i := range id {
 			id[i] = byte(timestamp)
 		}
-		putTaikoV5TestJob(t, api, id, blocks[timestamp])
+		return id
 	}
 	call := func(id engine.PayloadID) (json.RawMessage, error) {
 		var result json.RawMessage
@@ -258,21 +257,19 @@ func TestTaikoEngineAPIGetPayloadV5(t *testing.T) {
 	}
 
 	// A job whose own block is pre-Unzen is -38005.
+	putTaikoV5TestJob(t, api, jobID(49), taikoV5TestBlock(49))
 	if _, err := call(engine.PayloadID{49, 49, 49, 49, 49, 49, 49, 49}); rpcErrorCode(t, err) != engine.UnsupportedFork.ErrorCode() {
 		t.Fatalf("pre-Unzen job: error = %v, want -38005", err)
 	}
 
 	// Unzen jobs return exactly the Osaka envelope, with blockValue = difficulty.
 	for _, timestamp := range []uint64{99, 100} {
-		id := engine.PayloadID{}
-		for i := range id {
-			id[i] = byte(timestamp)
-		}
-		have, err := call(id)
+		block := taikoV5TestBlock(timestamp)
+		putTaikoV5TestJob(t, api, jobID(timestamp), block)
+		have, err := call(jobID(timestamp))
 		if err != nil {
 			t.Fatalf("job %d: %v", timestamp, err)
 		}
-		block := blocks[timestamp]
 		hash := func(b byte) string { return common.Hash{31: b}.Hex() }
 		want := `{"executionPayload":{` +
 			`"parentHash":"` + hash(0x11) + `",` +

@@ -17,8 +17,8 @@ import (
 )
 
 // ForkchoiceUpdatedV3 applies the forkchoice state and, given attributes,
-// seals the requested L2 block, caches it under its payload ID and records its
-// L1 origin.
+// seals the requested L2 block, keeps it as the last built payload under its
+// payload ID and records its L1 origin.
 //
 // Invalid attributes do not stop the forkchoice update: the state is applied
 // without them, an INVALID or SYNCING result is returned as a plain status,
@@ -190,15 +190,16 @@ func (t *TaikoEngineAPI) applyForkchoice(update engine.ForkchoiceStateV1) (engin
 	}, block, nil
 }
 
-// buildTaikoPayload seals the block described by attrs on top of head, caches
-// it under its payload ID and writes its L1 origin. A cached ID skips sealing
-// and only rewrites the L1 origin for the block cached under it.
+// buildTaikoPayload seals the block described by attrs on top of head, makes it
+// the last built payload and writes its L1 origin. The ID of the last built
+// payload skips sealing and only rewrites the L1 origin for its block; an
+// earlier ID is sealed again. A failed build keeps the last built payload.
 func (t *TaikoEngineAPI) buildTaikoPayload(ctx context.Context, head *types.Block, attrs *engine.PayloadAttributes) (engine.PayloadID, error) {
 	api := t.api
 	args := taikoBuildPayloadArgs(head.Hash(), attrs)
 	id := args.Id()
-	if cached := api.localBlocks.get(id, false); cached != nil {
-		return id, t.writeL1Origin(attrs, cached.ExecutionPayload.BlockHash)
+	if last := t.resolveLastPayload(id); last != nil {
+		return id, t.writeL1Origin(attrs, last.ExecutionPayload.BlockHash)
 	}
 	var parentBlockTime uint64
 	if head.NumberU64() != 0 {
@@ -219,7 +220,7 @@ func (t *TaikoEngineAPI) buildTaikoPayload(ctx context.Context, head *types.Bloc
 		return id, engine.InternalError.With(err)
 	}
 	payload.SetFullBlock(block, common.Big0)
-	api.localBlocks.put(id, payload)
+	t.setLastPayload(id, payload)
 	return id, t.writeL1Origin(attrs, block.Hash())
 }
 

@@ -2,10 +2,12 @@ package catalyst
 
 import (
 	"slices"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/miner"
 )
 
 // taikoEngineCapabilities is the engine_exchangeCapabilities response on Taiko
@@ -21,6 +23,14 @@ var taikoEngineCapabilities = []string{"engine_forkchoiceUpdatedV3", "engine_get
 // methods are served.
 type TaikoEngineAPI struct {
 	api *ConsensusAPI
+
+	// lastPayload is the payload the last successful build stored under
+	// lastPayloadID, and the only one engine_getPayloadV5 serves. The
+	// upstream payload queue is not used: the reference client's payload
+	// service drops each job once resolved and keeps only the last result.
+	lastPayloadLock sync.RWMutex
+	lastPayloadID   engine.PayloadID
+	lastPayload     *miner.Payload // nil until a build succeeds
 }
 
 // NewTaikoEngineAPI creates the Taiko Engine API service for the given backend.
@@ -28,22 +38,44 @@ func NewTaikoEngineAPI(eth *eth.Ethereum) *TaikoEngineAPI {
 	return &TaikoEngineAPI{api: NewConsensusAPI(eth)}
 }
 
+// setLastPayload makes payload, built under id, the last built payload and
+// drops the previous one.
+func (t *TaikoEngineAPI) setLastPayload(id engine.PayloadID, payload *miner.Payload) {
+	t.lastPayloadLock.Lock()
+	defer t.lastPayloadLock.Unlock()
+
+	t.lastPayloadID, t.lastPayload = id, payload
+}
+
+// resolveLastPayload returns the last built payload if it was built under id,
+// and nil for any other ID.
+func (t *TaikoEngineAPI) resolveLastPayload(id engine.PayloadID) *engine.ExecutionPayloadEnvelope {
+	t.lastPayloadLock.RLock()
+	defer t.lastPayloadLock.RUnlock()
+
+	if t.lastPayload == nil || t.lastPayloadID != id {
+		return nil
+	}
+	return t.lastPayload.Resolve()
+}
+
 // ExchangeCapabilities returns the Engine API methods served on Taiko chains.
 func (t *TaikoEngineAPI) ExchangeCapabilities([]string) []string {
 	return slices.Clone(taikoEngineCapabilities)
 }
 
-// GetPayloadV5 returns a payload built by engine_forkchoiceUpdatedV3.
+// GetPayloadV5 returns the last payload built by engine_forkchoiceUpdatedV3.
 //
-//  1. An unknown or evicted ID returns -38001. The ID's version byte is not
-//     checked.
+//  1. Any ID other than the last built payload's returns -38001, so a build
+//     makes every earlier ID unknown. The last payload is served any number of
+//     times. The ID's version byte is not checked.
 //  2. The job's own block timestamp must be in Osaka (Unzen on Taiko networks)
 //     and not in Amsterdam, else -38005.
 //  3. A job without a built block returns -32603. A failed build stores no job,
-//     so this only guards the queue.
+//     so this only guards the store.
 func (t *TaikoEngineAPI) GetPayloadV5(payloadID engine.PayloadID) (*engine.TaikoExecutionPayloadEnvelopeV5, error) {
 	log.Trace("Engine API request received", "method", "GetPayloadV5", "id", payloadID)
-	envelope := t.api.localBlocks.get(payloadID, false)
+	envelope := t.resolveLastPayload(payloadID)
 	if envelope == nil {
 		return nil, engine.UnknownPayload
 	}
