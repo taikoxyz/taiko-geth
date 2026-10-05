@@ -8,28 +8,31 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// taikoSimulateRootError is the eth_simulateV1 error of a simulated Etna block
-// without a non-zero parent beacon root. The reference client's block executor
-// rejects such a block before running its calls and answers an internal
-// error, so this one answers -32603.
-type taikoSimulateRootError struct{ msg string }
+// taikoSimulateHeaderError is the eth_simulateV1 error of a simulated Etna
+// block whose header breaks an Etna rule the reference client's block
+// executor checks before running the block's calls. The reference answers it
+// as an internal error, so this one answers -32603.
+type taikoSimulateHeaderError struct{ msg string }
 
-func (e *taikoSimulateRootError) Error() string  { return e.msg }
-func (e *taikoSimulateRootError) ErrorCode() int { return errCodeInternalError }
+func (e *taikoSimulateHeaderError) Error() string  { return e.msg }
+func (e *taikoSimulateHeaderError) ErrorCode() int { return errCodeInternalError }
 
-// checkTaikoSimulateRoot returns a taikoSimulateRootError for an Etna header
-// of a Taiko chain whose parent beacon root is missing or zero, and nil for
-// any other header. The messages are those of the Taiko engine's block
-// assembly, which reports the same failures.
-func checkTaikoSimulateRoot(config *params.ChainConfig, header *types.Header) error {
+// checkTaikoSimulateHeader returns a taikoSimulateHeaderError for an Etna
+// header of a Taiko chain without a non-zero parent beacon root or without
+// 13-byte extraData, in that order, and nil for any other header. The root
+// messages are those of the Taiko engine's block assembly, which reports the
+// same failures.
+func checkTaikoSimulateHeader(config *params.ChainConfig, header *types.Header) error {
 	if !config.Taiko || !config.IsEtna(header.Time) {
 		return nil
 	}
 	switch {
 	case header.ParentBeaconRoot == nil:
-		return &taikoSimulateRootError{msg: fmt.Sprintf("parent beacon root missing: have nil, want %v", common.Hash{})}
+		return &taikoSimulateHeaderError{msg: fmt.Sprintf("parent beacon root missing: have nil, want %v", common.Hash{})}
 	case *header.ParentBeaconRoot == (common.Hash{}):
-		return &taikoSimulateRootError{msg: fmt.Sprintf("invalid parent beacon root: Etna block %v requires a non-zero root", header.Number)}
+		return &taikoSimulateHeaderError{msg: fmt.Sprintf("invalid parent beacon root: Etna block %v requires a non-zero root", header.Number)}
+	case len(header.Extra) != params.EtnaExtraDataLen:
+		return &taikoSimulateHeaderError{msg: fmt.Sprintf("Etna block %v requires %d-byte extraData, got %d bytes", header.Number, params.EtnaExtraDataLen, len(header.Extra))}
 	}
 	return nil
 }

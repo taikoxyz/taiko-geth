@@ -268,6 +268,36 @@ func TestSimulateV1Etna(t *testing.T) {
 	}
 }
 
+// TestSimulateV1EtnaExtraDataLength pins that eth_simulateV1 rejects an Etna
+// block whose extraData is not 13 bytes with -32603, like the reference
+// client's block executor. The block derives its extraData from a 32-byte
+// base block, which the derivation passes through unchanged.
+func TestSimulateV1EtnaExtraDataLength(t *testing.T) {
+	zero := uint64(0)
+	root := common.HexToHash("0xe7")
+	sender := newTestAccount().addr
+	b := newEtnaRPCTestBackend(t, etnaRPCChainConfig(&zero), bytes.Repeat([]byte{25}, 32), sender)
+	simulate := func(beaconRoot *common.Hash) error {
+		return taikoSimulateOverRPC(t, b, simOpts{BlockStateCalls: []simBlock{{
+			BlockOverrides: &override.BlockOverrides{
+				BaseFeePerGas: (*hexutil.Big)(big.NewInt(etnaRPCBaseFee)),
+				FeeRecipient:  &etnaRPCCoinbase,
+				BeaconRoot:    beaconRoot,
+			},
+			Calls: []TransactionArgs{etnaRPCTransfer(sender)},
+		}}})
+	}
+	const wantErr = "Etna block 1 requires 13-byte extraData, got 32 bytes"
+	if err := simulate(&root); err == nil || err.Error() != wantErr || taikoRPCErrorCode(err) != -32603 {
+		t.Fatalf("simulating an Etna block with 32-byte extraData: err = %v (code %d), want %q (code -32603)", err, taikoRPCErrorCode(err), wantErr)
+	}
+	// The root is checked first, as in the reference client.
+	const wantRootErr = "invalid parent beacon root: Etna block 1 requires a non-zero root"
+	if err := simulate(nil); err == nil || err.Error() != wantRootErr || taikoRPCErrorCode(err) != -32603 {
+		t.Fatalf("simulating an Etna block with 32-byte extraData and no root: err = %v (code %d), want %q (code -32603)", err, taikoRPCErrorCode(err), wantRootErr)
+	}
+}
+
 // TestSimulateV1EtnaActivation pins eth_simulateV1 across the Etna activation:
 // a simulated pre-Etna block keeps an empty extraData, and the Etna block
 // after it derives its extraData from the base block's 7 bytes, padded to 13,

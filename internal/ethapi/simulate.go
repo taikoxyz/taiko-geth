@@ -288,10 +288,11 @@ func (sim *simulator) processBlock(ctx context.Context, block *simBlock, header,
 	if err := block.StateOverrides.Apply(sim.state, precompiles); err != nil {
 		return nil, nil, nil, err
 	}
-	// CHANGE(taiko): an Etna block needs a non-zero parent beacon root. Like the
-	// reference client's block executor, reject a missing one before the
-	// block's calls run, as a -32603 internal error.
-	if err := checkTaikoSimulateRoot(sim.chainConfig, header); err != nil {
+	// CHANGE(taiko): an Etna block needs a non-zero parent beacon root and
+	// 13-byte extraData. Like the reference client's block executor, reject
+	// either violation before the block's calls run, as a -32603 internal
+	// error.
+	if err := checkTaikoSimulateHeader(sim.chainConfig, header); err != nil {
 		return nil, nil, nil, err
 	}
 	var (

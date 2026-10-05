@@ -14,8 +14,8 @@ import (
 // proposal ID with a zero anchor block number, and an empty genesis gets 13
 // zero bytes. The anchor block number takes part in no execution, so these
 // defaults cannot change a simulation result. Any other length is returned
-// unchanged: block execution rejects it, and the simulated child then runs
-// without base-fee redistribution.
+// unchanged: block execution and eth_simulateV1 reject it, and a tx-pool
+// preselection child then runs without base-fee redistribution.
 func EtnaSimulationExtraData(parent *types.Header) []byte {
 	switch {
 	case len(parent.Extra) == params.ShastaExtraDataLen:
