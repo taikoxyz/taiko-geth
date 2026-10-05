@@ -38,3 +38,15 @@ func etnaBasefeeSharing(extra []byte) (pctg uint8, redistribute bool) {
 	}
 	return extra[params.ShastaExtraDataBasefeeSharingPctgIndex], true
 }
+
+// TaikoRPCBasefeeSharing returns the base-fee share of an eth_call,
+// eth_estimateGas or eth_simulateV1 message executed in the block context of
+// header. From Etna on, a 13-byte extraData shares extra[0] with the coinbase,
+// and any other length (an Etna genesis) redistributes nothing. Before Etna,
+// calls keep sending the whole base fee to the treasury.
+func TaikoRPCBasefeeSharing(config *params.ChainConfig, header *types.Header) (pctg uint8, redistribute bool) {
+	if !config.IsEtna(header.Time) {
+		return 0, true
+	}
+	return etnaBasefeeSharing(header.Extra)
+}

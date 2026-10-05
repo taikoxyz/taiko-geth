@@ -71,6 +71,10 @@ func (b *EthAPIBackend) HeaderByNumber(ctx context.Context, number rpc.BlockNumb
 	if number == rpc.PendingBlockNumber {
 		block, _, _ := b.eth.miner.Pending()
 		if block == nil {
+			// CHANGE(taiko): an Etna pending block is unavailable by design.
+			if b.taikoEtnaPendingUnavailable() {
+				return nil, nil
+			}
 			return nil, errors.New("pending block is not available")
 		}
 		return block.Header(), nil
@@ -128,6 +132,10 @@ func (b *EthAPIBackend) BlockByNumber(ctx context.Context, number rpc.BlockNumbe
 	if number == rpc.PendingBlockNumber {
 		block, _, _ := b.eth.miner.Pending()
 		if block == nil {
+			// CHANGE(taiko): an Etna pending block is unavailable by design.
+			if b.taikoEtnaPendingUnavailable() {
+				return nil, nil
+			}
 			return nil, errors.New("pending block is not available")
 		}
 		return block, nil
@@ -160,6 +168,17 @@ func (b *EthAPIBackend) BlockByNumber(ctx context.Context, number rpc.BlockNumbe
 		return nil, &history.PrunedHistoryError{}
 	}
 	return block, nil
+}
+
+// CHANGE(taiko): taikoEtnaPendingUnavailable reports whether a missing pending
+// block is expected because the head or the next block is an Etna block. An
+// Etna block's parent beacon root is an L1 state root that only its proposer
+// knows, so no pending Etna block is built locally; the pending block and
+// header are then null without an error, as in the reference client. The next
+// block's time is the wall-clock time the pending block would be built at.
+func (b *EthAPIBackend) taikoEtnaPendingUnavailable() bool {
+	config := b.ChainConfig()
+	return config.IsEtna(b.eth.blockchain.CurrentBlock().Time) || config.IsEtna(uint64(time.Now().Unix()))
 }
 
 func (b *EthAPIBackend) BlockByHash(ctx context.Context, hash common.Hash) (*types.Block, error) {

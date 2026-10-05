@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 // TestEtnaSimulationExtraData pins the simulated extraData of an Etna child
@@ -53,6 +54,34 @@ func TestEtnaBasefeeSharing(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			pctg, redistribute := etnaBasefeeSharing(tt.extra)
+			if pctg != tt.pctg || redistribute != tt.redistribute {
+				t.Fatalf("share = (%d, %v), want (%d, %v)", pctg, redistribute, tt.pctg, tt.redistribute)
+			}
+		})
+	}
+}
+
+// TestTaikoRPCBasefeeSharing pins the base-fee share of RPC calls: from Etna
+// on only the 13-byte layout shares extra[0], and before Etna the whole base
+// fee goes to the treasury, as today.
+func TestTaikoRPCBasefeeSharing(t *testing.T) {
+	etnaTime := uint64(10)
+	config := &params.ChainConfig{Taiko: true, EtnaTime: &etnaTime}
+	for _, tt := range []struct {
+		name         string
+		time         uint64
+		extra        []byte
+		pctg         uint8
+		redistribute bool
+	}{
+		{"before etna", 9, []byte{25, 0, 0, 0, 0, 0, 1}, 0, true},
+		{"before etna, thirteen bytes", 9, []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1}, 0, true},
+		{"etna", 10, []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1}, 25, true},
+		{"etna genesis", 10, nil, 0, false},
+		{"etna seven bytes", 10, []byte{25, 0, 0, 0, 0, 0, 1}, 0, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pctg, redistribute := TaikoRPCBasefeeSharing(config, &types.Header{Time: tt.time, Extra: tt.extra})
 			if pctg != tt.pctg || redistribute != tt.redistribute {
 				t.Fatalf("share = (%d, %v), want (%d, %v)", pctg, redistribute, tt.pctg, tt.redistribute)
 			}

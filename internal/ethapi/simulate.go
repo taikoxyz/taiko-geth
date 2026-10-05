@@ -344,6 +344,11 @@ func (sim *simulator) processBlock(ctx context.Context, block *simBlock, header,
 		// EoA check is always skipped, even in validation mode.
 		sim.state.SetTxContext(txHash, i)
 		msg := call.ToMessage(header.BaseFee, !sim.validate)
+		// CHANGE(taiko): from Etna on the call shares the base fee as the
+		// simulated block's extraData does.
+		var redistribute bool
+		msg.BasefeeSharingPctg, redistribute = core.TaikoRPCBasefeeSharing(sim.chainConfig, header)
+		msg.SkipBasefeeRedistribution = !redistribute
 		result, err := applyMessageWithEVM(ctx, evm, msg, timeout, gp)
 		if err != nil {
 			txErr := txValidationError(err)
@@ -568,6 +573,7 @@ func (sim *simulator) makeHeaders(blocks []simBlock) ([]*types.Header, error) {
 		if sim.chainConfig.IsPostMerge(number.Uint64(), timestamp) {
 			difficulty = big.NewInt(0)
 		}
+		parent := header
 		header = overrides.MakeHeader(&types.Header{
 			UncleHash:        types.EmptyUncleHash,
 			ReceiptHash:      types.EmptyReceiptsHash,
@@ -578,6 +584,11 @@ func (sim *simulator) makeHeaders(blocks []simBlock) ([]*types.Header, error) {
 			WithdrawalsHash:  withdrawalsHash,
 			ParentBeaconRoot: parentBeaconRoot,
 		})
+		// CHANGE(taiko): no override sets an Etna block's extraData, which
+		// carries its base-fee share: default it to the parent-derived value.
+		if sim.chainConfig.IsEtna(timestamp) {
+			header.Extra = core.EtnaSimulationExtraData(parent)
+		}
 		res[bi] = header
 	}
 	return res, nil
