@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/params"
@@ -14,22 +15,28 @@ import (
 // null without an error when the head or the next block is Etna, which never
 // has a local pending block, and that a pre-Etna chain keeps serving one.
 func TestEthAPIBackendPendingEtna(t *testing.T) {
+	now := uint64(time.Now().Unix())
 	zero, nextBlock := uint64(0), uint64(1001) // the genesis is at 1000, long past
+	futureEtna := now + 1800                   // after the wall clock, before the genesis below
 	for _, tt := range []struct {
-		name     string
-		etnaTime *uint64
-		wantNull bool
+		name        string
+		genesisTime uint64
+		etnaTime    *uint64
+		wantNull    bool
 	}{
-		{"etna head", &zero, true},
-		{"etna next block", &nextBlock, true},
-		{"before etna", nil, false},
+		{"etna head", 1000, &zero, true},
+		{"etna next block", 1000, &nextBlock, true},
+		// The head is Etna while the wall clock is not: only the head makes
+		// the pending block unavailable.
+		{"etna head before the wall clock", now + 3600, &futureEtna, true},
+		{"before etna", 1000, nil, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			config := etnaTestChainConfig()
 			config.EtnaTime = tt.etnaTime
 			eth := newEtnaTestEthereum(t, &core.Genesis{
 				Config:    config,
-				Timestamp: 1000,
+				Timestamp: tt.genesisTime,
 				GasLimit:  30_000_000,
 				BaseFee:   big.NewInt(params.ShastaInitialBaseFee),
 			}, true)

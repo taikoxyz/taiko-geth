@@ -1061,9 +1061,7 @@ func (api *API) TraceCall(ctx context.Context, args ethapi.TransactionArgs, bloc
 	)
 	// CHANGE(taiko): from Etna on the call shares the base fee as a block with
 	// the traced block's extraData does.
-	var redistribute bool
-	msg.BasefeeSharingPctg, redistribute = core.TaikoRPCBasefeeSharing(api.backend.ChainConfig(), block.Header())
-	msg.SkipBasefeeRedistribution = !redistribute
+	core.SetTaikoRPCBasefeeSharing(msg, api.backend.ChainConfig(), block.Header())
 	// Lower the basefee to 0 to avoid breaking EVM
 	// invariants (basefee < feecap).
 	if msg.GasPrice.Sign() == 0 {

@@ -88,3 +88,31 @@ func TestTaikoRPCBasefeeSharing(t *testing.T) {
 		})
 	}
 }
+
+// TestSetTaikoRPCBasefeeSharing pins that an RPC message takes the Etna share
+// of its block context, overwriting any earlier share, and that before Etna
+// the message is left as it was.
+func TestSetTaikoRPCBasefeeSharing(t *testing.T) {
+	etnaTime := uint64(10)
+	config := &params.ChainConfig{Taiko: true, EtnaTime: &etnaTime}
+	for _, tt := range []struct {
+		name     string
+		time     uint64
+		extra    []byte
+		pctg     uint8
+		skipping bool
+	}{
+		{"etna thirteen bytes", 10, []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1}, 25, false},
+		{"etna seven bytes", 10, []byte{25, 0, 0, 0, 0, 0, 1}, 0, true},
+		{"before etna leaves the message untouched", 9, []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1}, 7, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &Message{BasefeeSharingPctg: 7, SkipBasefeeRedistribution: true}
+			SetTaikoRPCBasefeeSharing(msg, config, &types.Header{Time: tt.time, Extra: tt.extra})
+			if msg.BasefeeSharingPctg != tt.pctg || msg.SkipBasefeeRedistribution != tt.skipping {
+				t.Fatalf("message share = (%d, skip %v), want (%d, skip %v)",
+					msg.BasefeeSharingPctg, msg.SkipBasefeeRedistribution, tt.pctg, tt.skipping)
+			}
+		})
+	}
+}

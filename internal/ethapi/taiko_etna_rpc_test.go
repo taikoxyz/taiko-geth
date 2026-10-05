@@ -134,7 +134,8 @@ func TestDoCallEtnaBasefeeSharing(t *testing.T) {
 }
 
 // TestEstimateGasEtnaGenesis pins that eth_estimateGas runs at an Etna
-// genesis that carries no base-fee share.
+// genesis that carries no base-fee share. It is a smoke test: a single
+// estimate cannot observe its own fee distribution.
 func TestEstimateGasEtnaGenesis(t *testing.T) {
 	zero := uint64(0)
 	sender := newTestAccount().addr
@@ -178,8 +179,9 @@ func TestSimulateV1Etna(t *testing.T) {
 				}
 			}
 
-			if _, err := api.SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{block(nil)}}, nil); err == nil {
-				t.Fatal("simulating an Etna block without a beacon root succeeded")
+			const wantErr = "invalid parent beacon root: Etna block 1 requires a non-zero root"
+			if _, err := api.SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{block(nil)}}, nil); err == nil || err.Error() != wantErr {
+				t.Fatalf("simulating an Etna block without a beacon root: err = %v, want %q", err, wantErr)
 			}
 
 			results, err := api.SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{block(&root)}}, nil)
@@ -200,6 +202,49 @@ func TestSimulateV1Etna(t *testing.T) {
 				t.Fatalf("coinbase balance = %d, want %d", got, tt.coinbase)
 			}
 		})
+	}
+}
+
+// TestSimulateV1EtnaActivation pins eth_simulateV1 across the Etna activation:
+// a simulated pre-Etna block keeps an empty extraData, and the Etna block
+// after it derives its extraData from the base block's 7 bytes, padded to 13,
+// so its calls share the base fee as that extraData does.
+func TestSimulateV1EtnaActivation(t *testing.T) {
+	etnaTime := uint64(1020)
+	root := common.HexToHash("0xe7")
+	sender := newTestAccount().addr
+	b := newEtnaRPCTestBackend(t, etnaRPCChainConfig(&etnaTime), []byte{25, 0, 0, 0, 0, 0, 1}, sender)
+	preEtnaTime, etnaBlockTime := hexutil.Uint64(1010), hexutil.Uint64(etnaTime)
+	results, err := NewBlockChainAPI(b).SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{
+		{BlockOverrides: &override.BlockOverrides{Time: &preEtnaTime}},
+		{
+			BlockOverrides: &override.BlockOverrides{
+				Time:          &etnaBlockTime,
+				BaseFeePerGas: (*hexutil.Big)(big.NewInt(etnaRPCBaseFee)),
+				FeeRecipient:  &etnaRPCCoinbase,
+				BeaconRoot:    &root,
+			},
+			Calls: []TransactionArgs{etnaRPCTransfer(sender), {From: &sender, To: &etnaRPCProbe}},
+		},
+	}}, nil)
+	if err != nil {
+		t.Fatalf("SimulateV1: %v", err)
+	}
+	if got := results[0].Block.Extra(); len(got) != 0 {
+		t.Fatalf("pre-Etna extraData = %x, want empty", got)
+	}
+	if got, want := results[1].Block.Extra(), []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}; !bytes.Equal(got, want) {
+		t.Fatalf("Etna extraData = %x, want %x", got, want)
+	}
+	probe := results[1].Calls[1].ReturnValue
+	if len(probe) != 64 {
+		t.Fatalf("probe returned %x, want two words", probe)
+	}
+	if got, want := new(big.Int).SetBytes(probe[:32]).Uint64(), uint64(157_500_000_000); got != want {
+		t.Fatalf("treasury balance = %d, want %d", got, want)
+	}
+	if got, want := new(big.Int).SetBytes(probe[32:]).Uint64(), uint64(52_500_000_000); got != want {
+		t.Fatalf("coinbase balance = %d, want %d", got, want)
 	}
 }
 

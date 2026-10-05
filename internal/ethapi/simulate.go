@@ -346,9 +346,7 @@ func (sim *simulator) processBlock(ctx context.Context, block *simBlock, header,
 		msg := call.ToMessage(header.BaseFee, !sim.validate)
 		// CHANGE(taiko): from Etna on the call shares the base fee as the
 		// simulated block's extraData does.
-		var redistribute bool
-		msg.BasefeeSharingPctg, redistribute = core.TaikoRPCBasefeeSharing(sim.chainConfig, header)
-		msg.SkipBasefeeRedistribution = !redistribute
+		core.SetTaikoRPCBasefeeSharing(msg, sim.chainConfig, header)
 		result, err := applyMessageWithEVM(ctx, evm, msg, timeout, gp)
 		if err != nil {
 			txErr := txValidationError(err)
@@ -586,7 +584,13 @@ func (sim *simulator) makeHeaders(blocks []simBlock) ([]*types.Header, error) {
 		})
 		// CHANGE(taiko): no override sets an Etna block's extraData, which
 		// carries its base-fee share: default it to the parent-derived value.
+		// A simulated pre-Etna parent keeps an empty extraData, so its Etna
+		// child derives the value from the base block's extraData, carried
+		// through the simulated parents as in the reference client.
 		if sim.chainConfig.IsEtna(timestamp) {
+			if bi > 0 && !sim.chainConfig.IsEtna(parent.Time) {
+				parent = &types.Header{Number: parent.Number, Extra: base.Extra}
+			}
 			header.Extra = core.EtnaSimulationExtraData(parent)
 		}
 		res[bi] = header

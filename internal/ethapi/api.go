@@ -767,9 +767,7 @@ func applyMessage(ctx context.Context, b Backend, args TransactionArgs, state *s
 	msg := args.ToMessage(header.BaseFee, true)
 	// CHANGE(taiko): from Etna on the call shares the base fee as a block with
 	// the context's extraData does.
-	var redistribute bool
-	msg.BasefeeSharingPctg, redistribute = core.TaikoRPCBasefeeSharing(b.ChainConfig(), header)
-	msg.SkipBasefeeRedistribution = !redistribute
+	core.SetTaikoRPCBasefeeSharing(msg, b.ChainConfig(), header)
 	// Lower the basefee to 0 to avoid breaking EVM
 	// invariants (basefee < feecap).
 	if msg.GasPrice.Sign() == 0 {
@@ -928,9 +926,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNr
 	call := args.ToMessage(header.BaseFee, true)
 	// CHANGE(taiko): from Etna on the estimate shares the base fee as a block
 	// with the context's extraData does.
-	var redistribute bool
-	call.BasefeeSharingPctg, redistribute = core.TaikoRPCBasefeeSharing(b.ChainConfig(), header)
-	call.SkipBasefeeRedistribution = !redistribute
+	core.SetTaikoRPCBasefeeSharing(call, b.ChainConfig(), header)
 
 	// Run the gas estimation and wrap any revertals into a custom return
 	estimate, revert, err := gasestimator.Estimate(ctx, call, opts, gasCap)
@@ -1381,9 +1377,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 		msg := args.ToMessage(header.BaseFee, true)
 		// CHANGE(taiko): from Etna on the call shares the base fee as a block
 		// with the context's extraData does.
-		var redistribute bool
-		msg.BasefeeSharingPctg, redistribute = core.TaikoRPCBasefeeSharing(b.ChainConfig(), header)
-		msg.SkipBasefeeRedistribution = !redistribute
+		core.SetTaikoRPCBasefeeSharing(msg, b.ChainConfig(), header)
 
 		// Apply the transaction with the access list tracer
 		tracer := logger.NewAccessListTracer(accessList, addressesToExclude)
