@@ -42,18 +42,33 @@ func NewTaikoEngineAPI(eth *eth.Ethereum) *TaikoEngineAPI {
 // drops the previous one.
 func (t *TaikoEngineAPI) setLastPayload(id engine.PayloadID, payload *miner.Payload) {
 	t.lastPayloadLock.Lock()
-	defer t.lastPayloadLock.Unlock()
-
+	previous := t.lastPayload
 	t.lastPayloadID, t.lastPayload = id, payload
+	t.lastPayloadLock.Unlock()
+
+	stopTaikoPayload(previous)
 }
 
 // dropLastPayload drops the last built payload if it was built under id.
 func (t *TaikoEngineAPI) dropLastPayload(id engine.PayloadID) {
 	t.lastPayloadLock.Lock()
-	defer t.lastPayloadLock.Unlock()
-
+	var dropped *miner.Payload
 	if t.lastPayload != nil && t.lastPayloadID == id {
+		dropped = t.lastPayload
 		t.lastPayloadID, t.lastPayload = engine.PayloadID{}, nil
+	}
+	t.lastPayloadLock.Unlock()
+
+	stopTaikoPayload(dropped)
+}
+
+// stopTaikoPayload stops the background builder of a payload that is no
+// longer served. Resolve terminates it and is safe to call more than once,
+// so a payload already served by engine_getPayloadV5 is unaffected; the
+// envelope it returns is discarded.
+func stopTaikoPayload(payload *miner.Payload) {
+	if payload != nil {
+		payload.Resolve()
 	}
 }
 

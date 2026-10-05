@@ -24,8 +24,9 @@ import (
 // Invalid attributes do not stop the forkchoice update: the state is applied
 // without them, an INVALID or SYNCING result is returned as a plain status,
 // and otherwise the attribute error is returned. After a VALID update, inputs
-// that fail the job checks are -32603, build nothing and drop the last built
-// payload if the request has its ID.
+// that fail the job checks are -32603 and build nothing, and a build failure
+// is -32603. Either failure drops the last built payload if the request has
+// its ID.
 func (t *TaikoEngineAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.ForkchoiceStateV1, attrs *engine.TaikoPayloadAttributesV3) (engine.ForkChoiceResponse, error) {
 	api := t.api
 	api.forkchoiceLock.Lock()
@@ -228,7 +229,9 @@ func (t *TaikoEngineAPI) applyForkchoice(update engine.ForkchoiceStateV1) (engin
 // the last built payload and writes its L1 origin. Every call seals, even with
 // the last built payload's ID: the reference client starts a new job for every
 // attributed update, so inputs the ID does not cover (beneficiary, gas limit,
-// Etna base fee) take effect. A failed build keeps the last built payload.
+// Etna base fee) take effect. A failed build drops the last built payload if
+// it has the same ID, since the reference client's new job replaces it and
+// fills the slot only on success; a payload with another ID stays.
 func (t *TaikoEngineAPI) buildTaikoPayload(ctx context.Context, head *types.Block, attrs *engine.PayloadAttributes) (engine.PayloadID, error) {
 	api := t.api
 	args := taikoBuildPayloadArgs(head.Hash(), attrs)
@@ -242,6 +245,7 @@ func (t *TaikoEngineAPI) buildTaikoPayload(ctx context.Context, head *types.Bloc
 	block, err := api.eth.Miner().SealBlockWith(head.Header(), parentBlockTime, attrs)
 	if err != nil {
 		log.Error("Failed to seal the Taiko block", "id", id, "err", err)
+		t.dropLastPayload(id)
 		return id, engine.InternalError.With(err)
 	}
 	// BuildPayload creates the payload entry around an empty block built from
@@ -249,6 +253,7 @@ func (t *TaikoEngineAPI) buildTaikoPayload(ctx context.Context, head *types.Bloc
 	payload, err := api.eth.Miner().BuildPayload(ctx, args, false)
 	if err != nil {
 		log.Error("Failed to build the Taiko payload", "id", id, "err", err)
+		t.dropLastPayload(id)
 		return id, engine.InternalError.With(err)
 	}
 	payload.SetFullBlock(block, common.Big0)

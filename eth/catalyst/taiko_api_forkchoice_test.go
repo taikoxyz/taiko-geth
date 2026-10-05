@@ -926,8 +926,61 @@ func TestTaikoForkchoiceUpdatedV3RebuildsAnOlderPayload(t *testing.T) {
 	}
 }
 
+// TestTaikoForkchoiceUpdatedV3SameIDBuildFailureDropsTheLastPayload checks a
+// failed pre-Etna build. With another ID it leaves the last built payload in
+// place. With the last payload's ID it drops that payload, the way the
+// reference client's new job replaces the cached one and fills the slot only
+// on success. Neither failure writes an L1 origin.
+func TestTaikoForkchoiceUpdatedV3SameIDBuildFailureDropsTheLastPayload(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	db := ethservice.ChainDb()
+	config := ethservice.BlockChain().Config()
+	genesis := ethservice.BlockChain().Genesis().Hash()
+
+	txList, _ := taikoFCUTestAnchorTxList(t, config, big.NewInt(params.ShastaInitialBaseFee))
+	x := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList))
+	want, xHash := fcuTestGetPayloadV5(t, api, x)
+
+	// A gas limit below the anchor transaction's gas fails the seal: before
+	// Etna the anchor may not fail. The payload ID does not cover the gas
+	// limit.
+	failing := func(timestamp uint64) *engine.TaikoPayloadAttributesV3 {
+		attrs := taikoFCUTestAttrs(config, timestamp, txList)
+		attrs.BlockMetadata.GasLimit = taiko.AnchorV3V4GasLimit - 1
+		attrs.L1Origin.L1BlockHash = common.HexToHash("0x22")
+		return attrs
+	}
+	fail := func(name string, attrs *engine.TaikoPayloadAttributesV3) engine.PayloadID {
+		t.Helper()
+		_, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, attrs)
+		if err == nil || taikoRPCErrorCode(t, err) != -32603 {
+			t.Fatalf("%s: err %v, want code -32603", name, err)
+		}
+		if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != xHash || origin.L1BlockHash != fcuTestL1BlockHash {
+			t.Fatalf("%s: L1 origin = %+v, want block %v with the first origin", name, origin, xHash)
+		}
+		return taikoPayloadID(genesis, &attrs.PayloadAttributes)
+	}
+
+	if id := fail("another id", failing(fcuTestPreEtnaTime+1)); id == x {
+		t.Fatal("the failing attributes share the last payload's id")
+	}
+	if have, _ := fcuTestGetPayloadV5(t, api, x); have != want {
+		t.Fatalf("payload after a failed build with another id:\nhave %s\nwant %s", have, want)
+	}
+
+	if id := fail("same id", failing(fcuTestPreEtnaTime)); id != x {
+		t.Fatalf("failing payload id = %v, want the last payload's %v", id, x)
+	}
+	fcuTestUnknownPayload(t, api, x)
+	if fcuTestLastPayload(api) != nil {
+		t.Fatal("a payload is still stored after a failed build with its id")
+	}
+}
+
 // TestTaikoForkchoiceUpdatedV3BuildFailureKeepsTheLastPayload checks that a
-// failed build leaves the last built payload and its L1 origin in place.
+// failed build with another ID leaves the last built payload and its L1
+// origin in place.
 func TestTaikoForkchoiceUpdatedV3BuildFailureKeepsTheLastPayload(t *testing.T) {
 	ethservice, api := startTaikoFCUTestService(t)
 	config := ethservice.BlockChain().Config()
