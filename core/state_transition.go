@@ -602,7 +602,14 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 				new(uint256.Int).Mul(totalFee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
 				new(uint256.Int).SetUint64(100),
 			)
-			feeTreasury := new(uint256.Int).Sub(totalFee, feeCoinbase)
+			// CHANGE(taiko): from Etna on, a sharing percentage above 100 leaves
+			// the treasury share at zero instead of wrapping around. The coinbase
+			// still receives its full percentage share, so above 100 the credits
+			// can exceed what the sender paid, as in the reference client.
+			feeTreasury := new(uint256.Int)
+			if !st.evm.ChainConfig().IsEtna(st.evm.Context.Time) || !feeCoinbase.Gt(totalFee) {
+				feeTreasury.Sub(totalFee, feeCoinbase)
+			}
 			st.state.AddBalance(st.getTreasuryAddress(), feeTreasury, tracing.BalanceIncreaseTreasury)
 			st.state.AddBalance(st.evm.Context.Coinbase, feeCoinbase, tracing.BalanceIncreaseBaseFeeSharing)
 		}
