@@ -23,9 +23,14 @@ var (
 	MainnetShastaTime  uint64 = 1_775_135_700
 	HoodiShastaTime    uint64 = 1_770_296_400
 
-	DevnetUnzenTime  uint64 = 0
-	MainnetUnzenTime uint64 = 1_786_021_200 // 2026-08-06 13:00:00 UTC
-	HoodiUnzenTime   uint64 = 1_781_787_600
+	InternalUnzenTime uint64 = 0
+	MainnetUnzenTime  uint64 = 1_786_021_200 // 2026-08-06 13:00:00 UTC
+	HoodiUnzenTime    uint64 = 1_781_787_600
+
+	// DevnetEtnaTime is the internal devnet's Etna switch time, set by
+	// --taiko.devnet-etna-time. Nil leaves Etna unscheduled. Mainnet and Hoodi
+	// keep Etna unscheduled, so their fork IDs do not change.
+	DevnetEtnaTime *uint64
 )
 
 // TaikoGenesisBlock returns the Taiko network genesis block configs.
@@ -53,10 +58,11 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
-		chainConfig.UnzenTime = &DevnetUnzenTime
-		chainConfig.CancunTime = &DevnetUnzenTime
-		chainConfig.PragueTime = &DevnetUnzenTime
-		chainConfig.OsakaTime = &DevnetUnzenTime
+		chainConfig.UnzenTime = &InternalUnzenTime
+		chainConfig.EtnaTime = DevnetEtnaTime
+		chainConfig.CancunTime = &InternalUnzenTime
+		chainConfig.PragueTime = &InternalUnzenTime
+		chainConfig.OsakaTime = &InternalUnzenTime
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	case params.TaikoHoodiNetworkID.Uint64():
 		chainConfig.ChainID = params.TaikoHoodiNetworkID
@@ -75,10 +81,11 @@ func TaikoGenesisBlock(networkID uint64) *Genesis {
 		chainConfig.OntakeBlock = InternalDevnetOntakeBlock
 		chainConfig.PacayaBlock = InternalDevnetPacayaBlock
 		chainConfig.ShastaTime = &InternalShastaTime
-		chainConfig.UnzenTime = &DevnetUnzenTime
-		chainConfig.CancunTime = &DevnetUnzenTime
-		chainConfig.PragueTime = &DevnetUnzenTime
-		chainConfig.OsakaTime = &DevnetUnzenTime
+		chainConfig.UnzenTime = &InternalUnzenTime
+		chainConfig.EtnaTime = DevnetEtnaTime
+		chainConfig.CancunTime = &InternalUnzenTime
+		chainConfig.PragueTime = &InternalUnzenTime
+		chainConfig.OsakaTime = &InternalUnzenTime
 		allocJSON = taikoGenesis.InternalGenesisAllocJSON
 	}
 	var alloc GenesisAlloc
