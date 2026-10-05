@@ -965,6 +965,11 @@ func (api *API) TraceTransaction(ctx context.Context, hash common.Hash, config *
 	if err != nil {
 		return nil, err
 	}
+	// CHANGE(taiko): an Etna block shares its base fee by extraData[0], as on
+	// import.
+	if api.backend.ChainConfig().IsEtna(block.Time()) {
+		msg.BasefeeSharingPctg = core.DecodeShastaBasefeeSharingPctg(block.Header().Extra)
+	}
 	txctx := &Context{
 		BlockHash:   blockHash,
 		BlockNumber: block.Number(),

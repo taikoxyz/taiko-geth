@@ -131,37 +131,56 @@ func newEtnaTraceBackend(t *testing.T, pctg byte) (*testBackend, *types.Block) {
 	return &testBackend{chainConfig: &config, engine: eng, chaindb: db, chain: chain}, block
 }
 
+// etnaTraceFeeDeltas returns the balance changes of the traced block's only
+// transaction when it uses gasUsed gas in a block sharing pctg percent of the
+// base fee: the golden touch pays the base fee and the tip, the beneficiary
+// receives the tip and its share of the base fee, and the treasury receives
+// the rest of the base fee.
+func etnaTraceFeeDeltas(backend *testBackend, gasUsed uint64, pctg byte) map[common.Address]*big.Int {
+	gas := new(big.Int).SetUint64(gasUsed)
+	baseFee := new(big.Int).Mul(gas, big.NewInt(params.ShastaInitialBaseFee))
+	shared := new(big.Int).Div(new(big.Int).Mul(baseFee, big.NewInt(int64(pctg))), big.NewInt(100))
+	tip := new(big.Int).Mul(gas, big.NewInt(etnaTraceTip))
+	treasury := core.TaikoTreasuryAddress(backend.chainConfig.ChainID)
+	return map[common.Address]*big.Int{
+		taiko.GoldenTouchAccount: new(big.Int).Neg(new(big.Int).Add(baseFee, tip)),
+		treasury:                 new(big.Int).Sub(baseFee, shared),
+		etnaTraceBeneficiary:     new(big.Int).Add(shared, tip),
+	}
+}
+
+// checkEtnaTraceFeeDeltas fails unless the balance-delta trace result carries
+// every balance change in want.
+func checkEtnaTraceFeeDeltas(t *testing.T, result any, want map[common.Address]*big.Int) {
+	t.Helper()
+	var got map[common.Address]*big.Int
+	if err := json.Unmarshal(result.(json.RawMessage), &got); err != nil {
+		t.Fatalf("decode trace: %v", err)
+	}
+	for addr, delta := range want {
+		if got[addr] == nil || got[addr].Cmp(delta) != 0 {
+			t.Fatalf("balance change of %v = %v, want %v", addr, got[addr], delta)
+		}
+	}
+}
+
 // TestTraceBlockEtnaFirstTransactionPaysFees pins that tracing an Etna block,
 // block by block on the native and the parallel path and as part of a chain
 // range, charges its first transaction, a golden-touch call to the treasury,
-// ordinary fees.
+// ordinary fees and shares a quarter of its base fee with the beneficiary.
 func TestTraceBlockEtnaFirstTransactionPaysFees(t *testing.T) {
-	backend, block := newEtnaTraceBackend(t, 0)
+	backend, block := newEtnaTraceBackend(t, 25)
 	DefaultDirectory.Register(balanceDeltaTracer, newBalanceDeltaTracer, false)
 	DefaultDirectory.Register(balanceDeltaTracerJS, newBalanceDeltaTracer, true)
 	api := NewAPI(backend)
 
-	gasUsed := new(big.Int).SetUint64(backend.chain.GetReceiptsByHash(block.Hash())[0].GasUsed)
-	treasury := core.TaikoTreasuryAddress(backend.chainConfig.ChainID)
-	want := map[common.Address]*big.Int{
-		taiko.GoldenTouchAccount: new(big.Int).Neg(new(big.Int).Mul(gasUsed, big.NewInt(params.ShastaInitialBaseFee+etnaTraceTip))),
-		treasury:                 new(big.Int).Mul(gasUsed, big.NewInt(params.ShastaInitialBaseFee)),
-		etnaTraceBeneficiary:     new(big.Int).Mul(gasUsed, big.NewInt(etnaTraceTip)),
-	}
+	want := etnaTraceFeeDeltas(backend, backend.chain.GetReceiptsByHash(block.Hash())[0].GasUsed, 25)
 	check := func(t *testing.T, results []*txTraceResult) {
 		t.Helper()
 		if len(results) != 1 || results[0].Error != "" {
 			t.Fatalf("results = %+v, want one successful trace", results)
 		}
-		var got map[common.Address]*big.Int
-		if err := json.Unmarshal(results[0].Result.(json.RawMessage), &got); err != nil {
-			t.Fatalf("decode trace: %v", err)
-		}
-		for addr, delta := range want {
-			if got[addr] == nil || got[addr].Cmp(delta) != 0 {
-				t.Fatalf("balance change of %v = %v, want %v", addr, got[addr], delta)
-			}
-		}
+		checkEtnaTraceFeeDeltas(t, results[0].Result, want)
 	}
 	for _, name := range []string{balanceDeltaTracer, balanceDeltaTracerJS} {
 		t.Run(name, func(t *testing.T) {
@@ -185,6 +204,23 @@ func TestTraceBlockEtnaFirstTransactionPaysFees(t *testing.T) {
 			t.Fatalf("traced %d blocks, want 1", traced)
 		}
 	})
+}
+
+// TestTraceTransactionEtnaSharesBaseFee pins that tracing one Etna
+// transaction shares extraData[0] percent of its base fee with the
+// beneficiary, as import does, instead of crediting the whole base fee to the
+// treasury.
+func TestTraceTransactionEtnaSharesBaseFee(t *testing.T) {
+	backend, block := newEtnaTraceBackend(t, 25)
+	DefaultDirectory.Register(balanceDeltaTracer, newBalanceDeltaTracer, false)
+
+	tracer := balanceDeltaTracer
+	result, err := NewAPI(backend).TraceTransaction(context.Background(), block.Transactions()[0].Hash(), &TraceConfig{Tracer: &tracer})
+	if err != nil {
+		t.Fatalf("TraceTransaction: %v", err)
+	}
+	gasUsed := backend.chain.GetReceiptsByHash(block.Hash())[0].GasUsed
+	checkEtnaTraceFeeDeltas(t, result, etnaTraceFeeDeltas(backend, gasUsed, 25))
 }
 
 // TestIntermediateRootsEtnaFirstTransactionPaysFees pins that the
