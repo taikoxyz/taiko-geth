@@ -2,10 +2,15 @@ package miner
 
 import (
 	"bytes"
+	"encoding/json"
+	"errors"
 	"math/big"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/params"
@@ -251,6 +256,130 @@ func TestDecodeEtnaTxList(t *testing.T) {
 				if txs[i].Hash() != tt.want[i].Hash() {
 					t.Fatalf("transaction %d = %v, want %v", i, txs[i].Hash(), tt.want[i].Hash())
 				}
+			}
+		})
+	}
+}
+
+// etnaTxListCorpusEntry is one input of testdata/etna_txlist_corpus.json with
+// its expected verdict from the shared cross-client vectors: whether the list
+// decodes and, for every decoded transaction, its hash and the recovered
+// sender (null when signer recovery fails).
+type etnaTxListCorpusEntry struct {
+	Name  string        `json:"name"`
+	Input hexutil.Bytes `json:"input"`
+	OK    bool          `json:"ok"`
+	Txs   []struct {
+		Hash   common.Hash     `json:"hash"`
+		Sender *common.Address `json:"sender"`
+	} `json:"txs"`
+}
+
+// TestDecodeEtnaTxListCorpus checks decodeEtnaTxList and the signer recovery
+// of the Etna sealer against the shared cross-client vectors, which cover the
+// list framing, every transaction type, field widths, signature values and
+// sender recovery.
+//
+// The vectors recover a sender without checking the chain ID; execution then
+// rejects a mismatching chain ID as an invalid transaction. The sealer's
+// signer rejects it during recovery instead. Both skip the transaction, so a
+// chain-ID error here stands for a recovered sender.
+func TestDecodeEtnaTxListCorpus(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "etna_txlist_corpus.json"))
+	if err != nil {
+		t.Fatalf("read corpus: %v", err)
+	}
+	var corpus []etnaTxListCorpusEntry
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatalf("parse corpus: %v", err)
+	}
+	if len(corpus) < 40 {
+		t.Fatalf("corpus has %d entries, want at least 40", len(corpus))
+	}
+	signer := types.LatestSignerForChainID(params.TaikoInternalNetworkID)
+	for _, tc := range corpus {
+		t.Run(tc.Name, func(t *testing.T) {
+			txs, err := decodeEtnaTxList(tc.Input)
+			if !tc.OK {
+				if err == nil {
+					t.Fatalf("decoded %d transactions, want the list rejected", len(txs))
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if len(txs) != len(tc.Txs) {
+				t.Fatalf("decoded %d transactions, want %d", len(txs), len(tc.Txs))
+			}
+			for i, want := range tc.Txs {
+				if txs[i].Hash() != want.Hash {
+					t.Fatalf("transaction %d hash = %v, want %v", i, txs[i].Hash(), want.Hash)
+				}
+				sender, err := types.Sender(signer, txs[i])
+				switch {
+				case want.Sender == nil:
+					if err == nil {
+						t.Fatalf("transaction %d recovered sender %v, want a recovery failure", i, sender)
+					}
+				case errors.Is(err, types.ErrInvalidChainId):
+					// Skipped by both: see the test comment.
+				case err != nil:
+					t.Fatalf("transaction %d recovery failed: %v, want sender %v", i, err, *want.Sender)
+				case sender != *want.Sender:
+					t.Fatalf("transaction %d sender = %v, want %v", i, sender, *want.Sender)
+				}
+			}
+		})
+	}
+}
+
+// TestSealBlockWith_EtnaAcceptsEveryItemShape seals and imports Etna blocks
+// whose single transfer is framed in each list item shape the grammar
+// accepts beyond the canonical one. The sealed block holds the transfer in its
+// canonical encoding either way.
+func TestSealBlockWith_EtnaAcceptsEveryItemShape(t *testing.T) {
+	config := newEtnaTestChainConfig()
+	signer := types.LatestSigner(config)
+	transfer := bankTransfer(t, config, 0)
+	typed, err := transfer.MarshalBinary()
+	if err != nil {
+		t.Fatalf("encode transfer: %v", err)
+	}
+	legacy := types.MustSignNewTx(testBankKey, signer, &types.LegacyTx{
+		GasPrice: big.NewInt(2 * params.InitialBaseFee), Gas: params.TxGas, To: &testUserAddress, Value: common.Big1,
+	})
+	legacyPayload, err := legacy.MarshalBinary()
+	if err != nil {
+		t.Fatalf("encode legacy transfer: %v", err)
+	}
+	list := func(items ...[]byte) []byte {
+		raw := make([]rlp.RawValue, len(items))
+		for i, item := range items {
+			raw[i] = item
+		}
+		enc, err := rlp.EncodeToBytes(raw)
+		if err != nil {
+			t.Fatalf("encode list: %v", err)
+		}
+		return enc
+	}
+
+	for _, tt := range []struct {
+		name string
+		item []byte
+		want *types.Transaction
+	}{
+		{"bare typed item", typed, transfer},
+		{"wrapped with declared length 0", append([]byte{0x80}, typed...), transfer},
+		{"payload without type byte", typed[1:], transfer},
+		{"legacy with type byte 0", append([]byte{types.LegacyTxType}, legacyPayload...), legacy},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w, b := newUnzenTestWorker(t, newEtnaTestGenesis(config))
+			block := sealAndImportEtna(t, w, b, etnaTestAttributes(b.chain.CurrentBlock(), list(tt.item)))
+			if txs := block.Transactions(); len(txs) != 1 || txs[0].Hash() != tt.want.Hash() {
+				t.Fatalf("sealed %d transactions, want exactly %v", len(txs), tt.want.Hash())
 			}
 		})
 	}
