@@ -378,7 +378,7 @@ func TestTaikoForkchoiceUpdatedV3AttributeChecks(t *testing.T) {
 			t.Errorf("%s: no error, want code %d", tt.name, tt.code)
 			continue
 		}
-		if code := rpcErrorCode(t, err); code != tt.code {
+		if code := taikoRPCErrorCode(t, err); code != tt.code {
 			t.Errorf("%s: code %d (%v), want %d", tt.name, code, err, tt.code)
 		}
 	}
@@ -424,7 +424,7 @@ func TestTaikoForkchoiceUpdatedV3ForkchoiceState(t *testing.T) {
 		if tt.code != 0 {
 			if err == nil {
 				t.Errorf("%s: no error, want code %d", tt.name, tt.code)
-			} else if code := rpcErrorCode(t, err); code != tt.code {
+			} else if code := taikoRPCErrorCode(t, err); code != tt.code {
 				t.Errorf("%s: code %d (%v), want %d", tt.name, code, err, tt.code)
 			}
 			continue
@@ -460,7 +460,7 @@ func TestTaikoForkchoiceUpdatedV3AppliesForkchoiceWithInvalidAttributes(t *testi
 
 	for _, head := range []common.Hash{block.Hash(), chain.Genesis().Hash()} {
 		_, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: head}, invalid)
-		if err == nil || rpcErrorCode(t, err) != -32602 {
+		if err == nil || taikoRPCErrorCode(t, err) != -32602 {
 			t.Fatalf("forkchoice to %v: err %v, want code -32602", head, err)
 		}
 		if got := chain.CurrentBlock().Hash(); got != head {
@@ -480,7 +480,7 @@ func TestTaikoForkchoiceUpdatedV3TimestampAgainstHead(t *testing.T) {
 	earlier := taikoFCUTestAttrs(chain.Config(), block.Time()-1, fcuTestEmptyTxList)
 	earlier.L1Origin.BlockID = big.NewInt(2)
 	_, err := api.ForkchoiceUpdatedV3(context.Background(), update, earlier)
-	if err == nil || rpcErrorCode(t, err) != -38003 {
+	if err == nil || taikoRPCErrorCode(t, err) != -38003 {
 		t.Fatalf("earlier target: err %v, want code -38003", err)
 	}
 	if got := chain.CurrentBlock().Hash(); got != block.Hash() {
@@ -510,7 +510,7 @@ func TestTaikoForkchoiceUpdatedV3BuildFailure(t *testing.T) {
 	// cannot be sealed.
 	attrs := taikoFCUTestAttrs(ethservice.BlockChain().Config(), fcuTestPreEtnaTime, fcuTestEmptyTxList)
 	_, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, attrs)
-	if err == nil || rpcErrorCode(t, err) != -32603 {
+	if err == nil || taikoRPCErrorCode(t, err) != -32603 {
 		t.Fatalf("err %v, want code -32603", err)
 	}
 	if fcuTestLastPayload(api) != nil {
@@ -794,7 +794,7 @@ func fcuTestWireAttrs(t *testing.T, attrs *engine.TaikoPayloadAttributesV3, extr
 // through Register and JSON, where slotNumber, targetGasLimit and
 // anchorTransaction are keys on the wire and null means absent.
 func TestTaikoForkchoiceUpdatedV3OverRPC(t *testing.T) {
-	n, ethservice := newEngineTestNode(t, newTaikoFCUTestGenesis())
+	n, ethservice := taikoEngineTestNode(t, newTaikoFCUTestGenesis())
 	client := n.Attach()
 	defer client.Close()
 
@@ -821,7 +821,7 @@ func TestTaikoForkchoiceUpdatedV3OverRPC(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: no error, want code %d", tt.name, tt.code)
 		}
-		if code := rpcErrorCode(t, err); code != tt.code {
+		if code := taikoRPCErrorCode(t, err); code != tt.code {
 			t.Fatalf("%s: code %d (%v), want %d", tt.name, code, err, tt.code)
 		}
 	}
@@ -940,7 +940,7 @@ func TestTaikoForkchoiceUpdatedV3BuildFailureKeepsTheLastPayload(t *testing.T) {
 	// cannot be sealed.
 	failing := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, fcuTestEmptyTxList)
 	_, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, failing)
-	if err == nil || rpcErrorCode(t, err) != -32603 {
+	if err == nil || taikoRPCErrorCode(t, err) != -32603 {
 		t.Fatalf("failing build: err %v, want code -32603", err)
 	}
 	fcuTestUnknownPayload(t, api, taikoPayloadID(genesis, &failing.PayloadAttributes))
@@ -1012,7 +1012,7 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecks(t *testing.T) {
 		attrs.L1Origin.L1BlockHash = common.HexToHash("0x22")
 		mutate(attrs)
 		_, err = api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, attrs)
-		if err == nil || rpcErrorCode(t, err) != -32603 {
+		if err == nil || taikoRPCErrorCode(t, err) != -32603 {
 			t.Fatalf("%s: err %v, want code -32603", name, err)
 		}
 		if got := chain.CurrentBlock().Hash(); got != genesis {
@@ -1072,7 +1072,7 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecks(t *testing.T) {
 		earlier.L1Origin.BlockID = big.NewInt(2)
 		tt.mutate(earlier)
 		_, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: block.Hash()}, earlier)
-		if err == nil || rpcErrorCode(t, err) != -38003 {
+		if err == nil || taikoRPCErrorCode(t, err) != -38003 {
 			t.Fatalf("%s before the head: err %v, want code -38003", tt.name, err)
 		}
 		if fcuTestLastPayload(api) != stored {
@@ -1132,7 +1132,7 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaAnchorTransaction(t *testing.T) {
 // checks. Every request carries the attributes of the first build, whose
 // payload a rejection drops.
 func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC(t *testing.T) {
-	n, ethservice := newEngineTestNode(t, newTaikoFCUTestGenesis())
+	n, ethservice := taikoEngineTestNode(t, newTaikoFCUTestGenesis())
 	client := n.Attach()
 	defer client.Close()
 
@@ -1166,12 +1166,12 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: no error, want code %d", tt.name, tt.code)
 		}
-		if code := rpcErrorCode(t, err); code != tt.code {
+		if code := taikoRPCErrorCode(t, err); code != tt.code {
 			t.Fatalf("%s: code %d (%v), want %d", tt.name, code, err, tt.code)
 		}
 	}
 	err := client.Call(new(json.RawMessage), "engine_getPayloadV5", id)
-	if err == nil || rpcErrorCode(t, err) != -38001 {
+	if err == nil || taikoRPCErrorCode(t, err) != -38001 {
 		t.Fatalf("getPayloadV5 after the rejections: err %v, want code -38001", err)
 	}
 }

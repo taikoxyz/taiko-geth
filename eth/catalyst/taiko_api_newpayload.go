@@ -167,11 +167,13 @@ func (t *TaikoEngineAPI) latestValidHashForInvalidPayload(parentHash common.Hash
 
 // importPayload is the import step of the upstream newPayload (everything
 // after the block conversion), kept here so that the upstream method stays
-// unchanged. The caller holds newPayloadLock. It differs in two ways:
+// unchanged. The caller holds newPayloadLock. It differs in three ways:
 //   - before Etna, a zk-gas exhaustion or a zk-gas/difficulty mismatch is an
 //     internal error (-32603) and is not cached as invalid;
 //   - there is no separate parent-timestamp check: header verification rejects
-//     the timestamp, and that failure is cached like any other.
+//     the timestamp, and that failure is cached like any other;
+//   - a failed import answers INVALID with the parent hash as the latest valid
+//     hash, whatever the parent's difficulty.
 func (t *TaikoEngineAPI) importPayload(ctx context.Context, block *types.Block) (engine.PayloadStatusV1, error) {
 	api := t.api
 
@@ -212,7 +214,12 @@ func (t *TaikoEngineAPI) importPayload(ctx context.Context, block *types.Block) 
 		api.invalidTipsets[hash] = block.Header()
 		api.invalidLock.Unlock()
 
-		return api.invalid(err, parent.Header()), nil
+		// Unlike the upstream invalid response, the latest valid hash is the
+		// parent hash even when the parent's difficulty is nonzero: from Unzen
+		// on the difficulty carries zk gas and never marks a proof-of-work
+		// parent.
+		parentHash, msg := parent.Hash(), err.Error()
+		return engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &parentHash, ValidationError: &msg}, nil
 	}
 	chain.SendNewPayloadEvent(core.NewPayloadEvent{
 		Hash:           hash,

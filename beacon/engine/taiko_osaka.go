@@ -58,12 +58,12 @@ func (a *TaikoPayloadAttributesV3) UnmarshalJSON(input []byte) error {
 	if err := json.Unmarshal(input, &fields); err != nil {
 		return err
 	}
-	targetGasLimitSet, err := optionalFieldSet(fields, "targetGasLimit", new(hexutil.Uint64))
+	targetGasLimitSet, err := taikoOptionalFieldSet(fields, "targetGasLimit", new(hexutil.Uint64))
 	if err != nil {
 		return err
 	}
 	var anchorTransaction hexutil.Bytes
-	anchorTransactionSet, err := optionalFieldSet(fields, "anchorTransaction", &anchorTransaction)
+	anchorTransactionSet, err := taikoOptionalFieldSet(fields, "anchorTransaction", &anchorTransaction)
 	if err != nil {
 		return err
 	}
@@ -76,9 +76,9 @@ func (a *TaikoPayloadAttributesV3) UnmarshalJSON(input []byte) error {
 	return nil
 }
 
-// optionalFieldSet reports whether key is present with a non-null value, after
-// checking that the value decodes into dst.
-func optionalFieldSet(fields map[string]json.RawMessage, key string, dst any) (bool, error) {
+// taikoOptionalFieldSet reports whether key is present with a non-null value,
+// after checking that the value decodes into dst.
+func taikoOptionalFieldSet(fields map[string]json.RawMessage, key string, dst any) (bool, error) {
 	raw, ok := fields[key]
 	if !ok || bytes.Equal(raw, []byte("null")) {
 		return false, nil
@@ -129,7 +129,7 @@ var taikoPayloadV3Keys = []string{
 //     negative numbers, fractions and exponents are rejected;
 //   - any other property is rejected, even when null.
 func (p *TaikoExecutionPayloadV3) UnmarshalJSON(input []byte) error {
-	fields, err := readJSONObject(input)
+	fields, err := taikoReadJSONObject(input)
 	if err != nil {
 		return fmt.Errorf("invalid execution payload: %w", err)
 	}
@@ -166,30 +166,30 @@ func (p *TaikoExecutionPayloadV3) UnmarshalJSON(input []byte) error {
 		{"transactions", &transactions},
 	}
 	for _, target := range targets {
-		if err := decodeRequiredField(fields, target.key, target.dst); err != nil {
+		if err := taikoDecodeRequiredField(fields, target.key, target.dst); err != nil {
 			return err
 		}
 	}
 	if len(logsBloom) != types.BloomByteLength {
 		return fmt.Errorf("invalid field \"logsBloom\": have %d bytes, want %d", len(logsBloom), types.BloomByteLength)
 	}
-	raw, err := requiredField(fields, "withdrawals")
+	raw, err := taikoRequiredField(fields, "withdrawals")
 	if err != nil {
 		return err
 	}
-	if dec.Withdrawals, err = decodeWithdrawals(raw); err != nil {
+	if dec.Withdrawals, err = taikoDecodeWithdrawals(raw); err != nil {
 		return fmt.Errorf("invalid field \"withdrawals\": %w", err)
 	}
-	if err := decodeRequiredField(fields, "blobGasUsed", &blobGasUsed); err != nil {
+	if err := taikoDecodeRequiredField(fields, "blobGasUsed", &blobGasUsed); err != nil {
 		return err
 	}
-	if err := decodeRequiredField(fields, "excessBlobGas", &excessBlob); err != nil {
+	if err := taikoDecodeRequiredField(fields, "excessBlobGas", &excessBlob); err != nil {
 		return err
 	}
-	if raw, err = requiredField(fields, "headerDifficulty"); err != nil {
+	if raw, err = taikoRequiredField(fields, "headerDifficulty"); err != nil {
 		return err
 	}
-	if dec.HeaderDifficulty, err = decodeDecimalUint64(raw); err != nil {
+	if dec.HeaderDifficulty, err = taikoDecodeDecimalUint64(raw); err != nil {
 		return fmt.Errorf("invalid field \"headerDifficulty\": %w", err)
 	}
 	var unexpected []string
@@ -438,9 +438,9 @@ func NewTaikoExecutionPayloadEnvelopeV5(data *ExecutableData) *TaikoExecutionPay
 	}
 }
 
-// readJSONObject splits a JSON object into its members. Keys keep their exact
-// case, and a repeated key is an error.
-func readJSONObject(input []byte) (map[string]json.RawMessage, error) {
+// taikoReadJSONObject splits a JSON object into its members. Keys keep their
+// exact case, and a repeated key is an error.
+func taikoReadJSONObject(input []byte) (map[string]json.RawMessage, error) {
 	dec := json.NewDecoder(bytes.NewReader(input))
 	tok, err := dec.Token()
 	if err != nil {
@@ -474,8 +474,9 @@ func readJSONObject(input []byte) (map[string]json.RawMessage, error) {
 	return fields, nil
 }
 
-// requiredField returns the raw value of key, which must be present and non-null.
-func requiredField(fields map[string]json.RawMessage, key string) (json.RawMessage, error) {
+// taikoRequiredField returns the raw value of key, which must be present and
+// non-null.
+func taikoRequiredField(fields map[string]json.RawMessage, key string) (json.RawMessage, error) {
 	raw, ok := fields[key]
 	if !ok {
 		return nil, fmt.Errorf("missing required field %q", key)
@@ -486,9 +487,9 @@ func requiredField(fields map[string]json.RawMessage, key string) (json.RawMessa
 	return raw, nil
 }
 
-// decodeRequiredField decodes the present, non-null value of key into dst.
-func decodeRequiredField(fields map[string]json.RawMessage, key string, dst any) error {
-	raw, err := requiredField(fields, key)
+// taikoDecodeRequiredField decodes the present, non-null value of key into dst.
+func taikoDecodeRequiredField(fields map[string]json.RawMessage, key string, dst any) error {
+	raw, err := taikoRequiredField(fields, key)
 	if err != nil {
 		return err
 	}
@@ -498,17 +499,17 @@ func decodeRequiredField(fields map[string]json.RawMessage, key string, dst any)
 	return nil
 }
 
-// decodeWithdrawals decodes a withdrawals array. Every element must be an
+// taikoDecodeWithdrawals decodes a withdrawals array. Every element must be an
 // object with non-null index, validatorIndex, address and amount; other keys
 // inside an element are ignored.
-func decodeWithdrawals(raw json.RawMessage) ([]*types.Withdrawal, error) {
+func taikoDecodeWithdrawals(raw json.RawMessage) ([]*types.Withdrawal, error) {
 	var elems []json.RawMessage
 	if err := json.Unmarshal(raw, &elems); err != nil {
 		return nil, err
 	}
 	withdrawals := make([]*types.Withdrawal, 0, len(elems))
 	for i, elem := range elems {
-		fields, err := readJSONObject(elem)
+		fields, err := taikoReadJSONObject(elem)
 		if err != nil {
 			return nil, fmt.Errorf("withdrawal %d: %w", i, err)
 		}
@@ -526,7 +527,7 @@ func decodeWithdrawals(raw json.RawMessage) ([]*types.Withdrawal, error) {
 			{"amount", &amount},
 		}
 		for _, target := range targets {
-			if err := decodeRequiredField(fields, target.key, target.dst); err != nil {
+			if err := taikoDecodeRequiredField(fields, target.key, target.dst); err != nil {
 				return nil, fmt.Errorf("withdrawal %d: %w", i, err)
 			}
 		}
@@ -540,9 +541,9 @@ func decodeWithdrawals(raw json.RawMessage) ([]*types.Withdrawal, error) {
 	return withdrawals, nil
 }
 
-// decodeDecimalUint64 decodes a JSON number made only of decimal digits that
-// fits in a uint64.
-func decodeDecimalUint64(raw json.RawMessage) (uint64, error) {
+// taikoDecodeDecimalUint64 decodes a JSON number made only of decimal digits
+// that fits in a uint64.
+func taikoDecodeDecimalUint64(raw json.RawMessage) (uint64, error) {
 	if len(raw) == 0 {
 		return 0, errors.New("empty value")
 	}

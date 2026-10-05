@@ -350,8 +350,8 @@ func TestTaikoNewPayloadV4StrictDecoding(t *testing.T) {
 	}
 	for name, args := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := call(args...); rpcErrorCode(t, err) != -32602 {
-				t.Fatalf("error = %v (code %d), want -32602", err, rpcErrorCode(t, err))
+			if _, err := call(args...); taikoRPCErrorCode(t, err) != -32602 {
+				t.Fatalf("error = %v (code %d), want -32602", err, taikoRPCErrorCode(t, err))
 			}
 		})
 	}
@@ -375,15 +375,15 @@ func TestTaikoNewPayloadV4UnsupportedFork(t *testing.T) {
 		Withdrawals:   []*types.Withdrawal{},
 	}
 	nonzero := common.Hash{0x01}
-	if _, err := env.newPayload(payload, nonzero); rpcErrorCode(t, err) != -38005 {
+	if _, err := env.newPayload(payload, nonzero); taikoRPCErrorCode(t, err) != -38005 {
 		t.Fatalf("pre-Unzen payload: error = %v, want -38005", err)
 	}
 	_, err := env.api.NewPayloadV4(context.Background(), payload, nil, &nonzero, []hexutil.Bytes{})
-	if rpcErrorCode(t, err) != -32602 {
+	if taikoRPCErrorCode(t, err) != -32602 {
 		t.Fatalf("pre-Unzen payload with null versioned hashes: error = %v, want -32602", err)
 	}
 	payload.Timestamp = unzenTime
-	if _, err := env.newPayload(payload, nonzero); rpcErrorCode(t, err) != -32602 || taikoNPErrorDetail(err) != errPreEtnaBeaconRoot.Error() {
+	if _, err := env.newPayload(payload, nonzero); taikoRPCErrorCode(t, err) != -32602 || taikoNPErrorDetail(err) != errPreEtnaBeaconRoot.Error() {
 		t.Fatalf("Unzen payload with a nonzero root: error = %v (%s), want -32602 %q", err, taikoNPErrorDetail(err), errPreEtnaBeaconRoot)
 	}
 }
@@ -422,7 +422,7 @@ func TestTaikoNewPayloadV4EtnaParams(t *testing.T) {
 			payload := taikoNPPayload(block)
 			tt.edit(&payload)
 			_, err := env.api.NewPayloadV4(context.Background(), payload, tt.hashes, &tt.root, tt.requests)
-			if rpcErrorCode(t, err) != -32602 || taikoNPErrorDetail(err) != tt.want.Error() {
+			if taikoRPCErrorCode(t, err) != -32602 || taikoNPErrorDetail(err) != tt.want.Error() {
 				t.Fatalf("error = %v (%s), want -32602 %q", err, taikoNPErrorDetail(err), tt.want)
 			}
 		})
@@ -447,7 +447,7 @@ func TestTaikoNewPayloadV4UnzenSideData(t *testing.T) {
 	// The root check comes before the side-data check.
 	payload := taikoNPPayload(block)
 	payload.Withdrawals = withdrawal
-	if _, err := env.newPayload(payload, common.Hash{0x01}); rpcErrorCode(t, err) != -32602 || taikoNPErrorDetail(err) != errPreEtnaBeaconRoot.Error() {
+	if _, err := env.newPayload(payload, common.Hash{0x01}); taikoRPCErrorCode(t, err) != -32602 || taikoNPErrorDetail(err) != errPreEtnaBeaconRoot.Error() {
 		t.Fatalf("nonzero root: error = %v (%s), want -32602 %q", err, taikoNPErrorDetail(err), errPreEtnaBeaconRoot)
 	}
 
@@ -595,12 +595,12 @@ func TestTaikoNewPayloadV4ParentTimestamp(t *testing.T) {
 // on Taiko chains: a call without arguments fails argument decoding (-32602)
 // instead of naming an unknown method (-32601).
 func TestTaikoNewPayloadV4IsServed(t *testing.T) {
-	n, _ := newEngineTestNode(t, newTaikoEngineTestGenesis())
+	n, _ := taikoEngineTestNode(t, newTaikoEngineTestGenesis())
 	client := n.Attach()
 	defer client.Close()
 
 	err := client.Call(new(json.RawMessage), "engine_newPayloadV4")
-	if code := rpcErrorCode(t, err); code != -32602 {
+	if code := taikoRPCErrorCode(t, err); code != -32602 {
 		t.Fatalf("engine_newPayloadV4 without arguments: error code = %d (%v), want -32602", code, err)
 	}
 }
@@ -675,7 +675,7 @@ func TestTaikoNewPayloadV4ZkGas(t *testing.T) {
 			for range 2 { // a rejection before Etna is not cached
 				status, err := env.newPayload(taikoNPPayload(block), root)
 				if !tt.etna {
-					if rpcErrorCode(t, err) != -32603 {
+					if taikoRPCErrorCode(t, err) != -32603 {
 						t.Fatalf("status = %+v, error = %v, want -32603", status, err)
 					}
 					if env.cachedInvalid(block.Hash()) {

@@ -1010,10 +1010,7 @@ func (api *ConsensusAPI) checkInvalidAncestor(check common.Hash, head common.Has
 func (api *ConsensusAPI) invalid(err error, latestValid *types.Header) engine.PayloadStatusV1 {
 	var currentHash *common.Hash
 	if latestValid != nil {
-		// CHANGE(taiko): Taiko headers carry zk gas in the difficulty field from
-		// Unzen on, so a nonzero difficulty never marks a PoW parent there; the
-		// parent hash is always the latest valid hash.
-		if latestValid.Difficulty.BitLen() != 0 && !api.config().Taiko {
+		if latestValid.Difficulty.BitLen() != 0 {
 			// Set latest valid hash to 0x0 if parent is PoW block
 			currentHash = &common.Hash{}
 		} else {

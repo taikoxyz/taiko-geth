@@ -51,9 +51,9 @@ func newTaikoEngineTestGenesis() *core.Genesis {
 	}
 }
 
-// newEngineTestNode starts a node whose engine namespace is mounted by Register,
-// the way cmd/geth mounts it.
-func newEngineTestNode(t *testing.T, genesis *core.Genesis) (*node.Node, *eth.Ethereum) {
+// taikoEngineTestNode starts a node whose engine namespace is mounted by
+// Register, the way cmd/geth mounts it.
+func taikoEngineTestNode(t *testing.T, genesis *core.Genesis) (*node.Node, *eth.Ethereum) {
 	t.Helper()
 	n, err := node.New(&node.Config{P2P: p2p.Config{ListenAddr: "0.0.0.0:0", NoDiscovery: true, MaxPeers: 25}})
 	if err != nil {
@@ -83,8 +83,8 @@ func newEngineTestNode(t *testing.T, genesis *core.Genesis) (*node.Node, *eth.Et
 	return n, ethservice
 }
 
-// rpcErrorCode returns the JSON-RPC error code carried by err.
-func rpcErrorCode(t *testing.T, err error) int {
+// taikoRPCErrorCode returns the JSON-RPC error code carried by err.
+func taikoRPCErrorCode(t *testing.T, err error) int {
 	t.Helper()
 	var rpcErr rpc.Error
 	if !errors.As(err, &rpcErr) {
@@ -94,7 +94,7 @@ func rpcErrorCode(t *testing.T, err error) int {
 }
 
 func TestTaikoEngineAPIRegistration(t *testing.T) {
-	n, _ := newEngineTestNode(t, newTaikoEngineTestGenesis())
+	n, _ := taikoEngineTestNode(t, newTaikoEngineTestGenesis())
 	client := n.Attach()
 	defer client.Close()
 
@@ -121,7 +121,7 @@ func TestTaikoEngineAPIRegistration(t *testing.T) {
 		if err == nil {
 			t.Fatalf("%s: want -32601, have a result", method)
 		}
-		if code := rpcErrorCode(t, err); code != -32601 {
+		if code := taikoRPCErrorCode(t, err); code != -32601 {
 			t.Fatalf("%s: error code = %d (%v), want -32601", method, code, err)
 		}
 	}
@@ -155,7 +155,7 @@ func TestTaikoEngineAPIMethodSet(t *testing.T) {
 
 func TestRegisterKeepsConsensusAPIOnNonTaikoChains(t *testing.T) {
 	genesis, _ := generateMergeChain(0, true)
-	n, _ := newEngineTestNode(t, genesis)
+	n, _ := taikoEngineTestNode(t, genesis)
 	client := n.Attach()
 	defer client.Close()
 
@@ -168,7 +168,7 @@ func TestRegisterKeepsConsensusAPIOnNonTaikoChains(t *testing.T) {
 	}
 	// engine_getPayloadV2 is served: an unknown ID is -38001, not -32601.
 	err := client.Call(new(json.RawMessage), "engine_getPayloadV2", engine.PayloadID{0x02})
-	if code := rpcErrorCode(t, err); code != engine.UnknownPayload.ErrorCode() {
+	if code := taikoRPCErrorCode(t, err); code != engine.UnknownPayload.ErrorCode() {
 		t.Fatalf("engine_getPayloadV2 error code = %d (%v), want -38001", code, err)
 	}
 }
@@ -230,7 +230,7 @@ func putTaikoV5TestJob(t *testing.T, api *TaikoEngineAPI, id engine.PayloadID, b
 }
 
 func TestTaikoEngineAPIGetPayloadV5(t *testing.T) {
-	_, ethservice := newEngineTestNode(t, newTaikoEngineTestGenesis())
+	_, ethservice := taikoEngineTestNode(t, newTaikoEngineTestGenesis())
 	api := NewTaikoEngineAPI(ethservice)
 	server := rpc.NewServer()
 	defer server.Stop()
@@ -258,7 +258,7 @@ func TestTaikoEngineAPIGetPayloadV5(t *testing.T) {
 
 	// A job whose own block is pre-Unzen is -38005.
 	putTaikoV5TestJob(t, api, jobID(49), taikoV5TestBlock(49))
-	if _, err := call(engine.PayloadID{49, 49, 49, 49, 49, 49, 49, 49}); rpcErrorCode(t, err) != engine.UnsupportedFork.ErrorCode() {
+	if _, err := call(engine.PayloadID{49, 49, 49, 49, 49, 49, 49, 49}); taikoRPCErrorCode(t, err) != engine.UnsupportedFork.ErrorCode() {
 		t.Fatalf("pre-Unzen job: error = %v, want -38005", err)
 	}
 
@@ -295,7 +295,7 @@ func TestTaikoEngineAPIGetPayloadV5(t *testing.T) {
 	// byte the upstream getPayloadV5 requires.
 	for _, id := range []engine.PayloadID{{}, {0x03, 1, 2, 3, 4, 5, 6, 7}} {
 		_, err := call(id)
-		if code := rpcErrorCode(t, err); code != engine.UnknownPayload.ErrorCode() {
+		if code := taikoRPCErrorCode(t, err); code != engine.UnknownPayload.ErrorCode() {
 			t.Fatalf("unknown id %v: error code = %d (%v), want -38001", id, code, err)
 		}
 		if err.Error() != "Unknown payload" {
@@ -311,7 +311,7 @@ func TestTaikoEngineAPIGetPayloadV5RejectsAmsterdamJobs(t *testing.T) {
 	blobSchedule.Amsterdam = blobSchedule.Osaka
 	genesis.Config.BlobScheduleConfig = &blobSchedule
 	genesis.Config.AmsterdamTime = &amsterdam
-	_, ethservice := newEngineTestNode(t, genesis)
+	_, ethservice := taikoEngineTestNode(t, genesis)
 	api := NewTaikoEngineAPI(ethservice)
 
 	id := engine.PayloadID{0x02, 0xc8}
