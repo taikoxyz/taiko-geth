@@ -3,6 +3,8 @@ package ethapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"math/big"
 	"testing"
 
@@ -149,6 +151,46 @@ func TestEstimateGasEtnaGenesis(t *testing.T) {
 	}
 }
 
+// taikoSimulateOverRPC calls eth_simulateV1 with opts on the latest block of
+// b over JSON-RPC and returns its error.
+func taikoSimulateOverRPC(t *testing.T, b Backend, opts simOpts) error {
+	t.Helper()
+	server := rpc.NewServer()
+	t.Cleanup(server.Stop)
+	if err := server.RegisterName("eth", NewBlockChainAPI(b)); err != nil {
+		t.Fatalf("register eth API: %v", err)
+	}
+	client := rpc.DialInProc(server)
+	defer client.Close()
+	return client.Call(new(json.RawMessage), "eth_simulateV1", opts, "latest")
+}
+
+// taikoRPCErrorCode returns the JSON-RPC error code of err, or 0 if it has
+// none.
+func taikoRPCErrorCode(err error) int {
+	var rpcErr rpc.Error
+	if errors.As(err, &rpcErr) {
+		return rpcErr.ErrorCode()
+	}
+	return 0
+}
+
+// TestSimulateV1PreEtnaErrorCode pins that a failing pre-Etna simulation
+// keeps the default -32000: a pre-Etna block's first transaction must be its
+// anchor, so a block with an ordinary call fails to assemble.
+func TestSimulateV1PreEtnaErrorCode(t *testing.T) {
+	etnaTime := uint64(5000)
+	sender := newTestAccount().addr
+	b := newEtnaRPCTestBackend(t, etnaRPCChainConfig(&etnaTime), []byte{25, 0, 0, 0, 0, 0, 1}, sender)
+	err := taikoSimulateOverRPC(t, b, simOpts{BlockStateCalls: []simBlock{{
+		BlockOverrides: &override.BlockOverrides{BaseFeePerGas: (*hexutil.Big)(big.NewInt(etnaRPCBaseFee))},
+		Calls:          []TransactionArgs{etnaRPCTransfer(sender)},
+	}}})
+	if code := taikoRPCErrorCode(err); err == nil || code != -32000 || err.Error() != taiko.ErrAnchorTxNotFound.Error() {
+		t.Fatalf("pre-Etna simulation: err = %v (code %d), want %q (code -32000)", err, code, taiko.ErrAnchorTxNotFound)
+	}
+}
+
 // TestSimulateV1Etna pins eth_simulateV1 for an Etna target: it needs a
 // non-zero beaconRoot override, its extraData defaults to the parent-derived
 // 13 bytes, and its calls share the base fee as that extraData does.
@@ -182,6 +224,27 @@ func TestSimulateV1Etna(t *testing.T) {
 			const wantErr = "invalid parent beacon root: Etna block 1 requires a non-zero root"
 			if _, err := api.SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{block(nil)}}, nil); err == nil || err.Error() != wantErr {
 				t.Fatalf("simulating an Etna block without a beacon root: err = %v, want %q", err, wantErr)
+			}
+			// Like the reference client, the missing root is an internal error,
+			// found before the block's calls run: it takes precedence over a
+			// call that fails validation.
+			zeroRoot := common.Hash{}
+			badNonce := block(&zeroRoot)
+			badNonce.Calls = []TransactionArgs{etnaRPCTransfer(sender)}
+			badNonce.Calls[0].Nonce = (*hexutil.Uint64)(new(uint64))
+			*badNonce.Calls[0].Nonce = 99
+			for _, tt := range []struct {
+				name string
+				opts simOpts
+			}{
+				{"no root", simOpts{BlockStateCalls: []simBlock{block(nil)}}},
+				{"zero root", simOpts{BlockStateCalls: []simBlock{block(&zeroRoot)}}},
+				{"zero root and a failing call", simOpts{BlockStateCalls: []simBlock{badNonce}, Validation: true}},
+			} {
+				err := taikoSimulateOverRPC(t, b, tt.opts)
+				if code := taikoRPCErrorCode(err); err == nil || err.Error() != wantErr || code != -32603 {
+					t.Fatalf("%s over RPC: err = %v (code %d), want %q (code -32603)", tt.name, err, code, wantErr)
+				}
 			}
 
 			results, err := api.SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{block(&root)}}, nil)
