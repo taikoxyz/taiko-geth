@@ -24,20 +24,23 @@ var InternalError = &EngineAPIError{code: -32603, msg: "Internal error"}
 //
 // The embedded PayloadAttributes is decoded by its generated decoder. The two
 // flags record whether "targetGasLimit" and "anchorTransaction" are present
-// with a non-null value; key matching for them is exact-case.
+// with a non-null value; key matching for them is exact-case. A present
+// anchorTransaction also keeps its bytes for the pre-Etna job checks.
 //
 // The type has no MarshalJSON of its own: json.Marshal uses the promoted
-// PayloadAttributes encoder and drops both flags, so a caller that needs either
+// PayloadAttributes encoder and drops both keys, so a caller that needs either
 // key on the wire has to send raw JSON.
 type TaikoPayloadAttributesV3 struct {
 	PayloadAttributes
-	TargetGasLimitSet    bool // "targetGasLimit" present with a non-null value
-	AnchorTransactionSet bool // "anchorTransaction" present with a non-null value
+	TargetGasLimitSet    bool   // "targetGasLimit" present with a non-null value
+	AnchorTransactionSet bool   // "anchorTransaction" present with a non-null value
+	AnchorTransaction    []byte // the "anchorTransaction" bytes when AnchorTransactionSet
 }
 
-// UnmarshalJSON decodes the attributes and records the presence of
-// targetGasLimit and anchorTransaction. A present, non-null value of either key
-// must still be well formed (a hex quantity and hex bytes respectively).
+// UnmarshalJSON decodes the attributes, records the presence of
+// targetGasLimit and anchorTransaction and keeps the anchorTransaction bytes.
+// A present, non-null value of either key must still be well formed (a hex
+// quantity and hex bytes respectively).
 func (a *TaikoPayloadAttributesV3) UnmarshalJSON(input []byte) error {
 	var attrs PayloadAttributes
 	if err := attrs.UnmarshalJSON(input); err != nil {
@@ -51,7 +54,8 @@ func (a *TaikoPayloadAttributesV3) UnmarshalJSON(input []byte) error {
 	if err != nil {
 		return err
 	}
-	anchorTransactionSet, err := optionalFieldSet(fields, "anchorTransaction", new(hexutil.Bytes))
+	var anchorTransaction hexutil.Bytes
+	anchorTransactionSet, err := optionalFieldSet(fields, "anchorTransaction", &anchorTransaction)
 	if err != nil {
 		return err
 	}
@@ -59,6 +63,7 @@ func (a *TaikoPayloadAttributesV3) UnmarshalJSON(input []byte) error {
 		PayloadAttributes:    attrs,
 		TargetGasLimitSet:    targetGasLimitSet,
 		AnchorTransactionSet: anchorTransactionSet,
+		AnchorTransaction:    anchorTransaction,
 	}
 	return nil
 }

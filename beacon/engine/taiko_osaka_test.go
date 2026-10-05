@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
 	"math/big"
 	"reflect"
@@ -286,6 +287,7 @@ func TestTaikoPayloadAttributesV3Decoding(t *testing.T) {
 		edit               func(map[string]json.RawMessage)
 		wantTargetGasLimit bool
 		wantAnchorTx       bool
+		wantAnchorTxBytes  string // hex of the kept anchorTransaction bytes
 		wantSlotNumber     bool
 		wantErr            string
 	}{
@@ -295,6 +297,7 @@ func TestTaikoPayloadAttributesV3Decoding(t *testing.T) {
 		{name: "targetGasLimit case variant", edit: set("TargetGasLimit", `"0x1"`)},
 		{name: "targetGasLimit malformed", edit: set("targetGasLimit", "true"), wantErr: `invalid field "targetGasLimit"`},
 		{name: "anchorTransaction present", edit: set("anchorTransaction", `"0x"`), wantAnchorTx: true},
+		{name: "anchorTransaction bytes", edit: set("anchorTransaction", `"0x02c0ff"`), wantAnchorTx: true, wantAnchorTxBytes: "0x02c0ff"},
 		{name: "anchorTransaction null", edit: set("anchorTransaction", "null")},
 		{name: "anchorTransaction case variant", edit: set("AnchorTransaction", `"0x"`)},
 		{name: "anchorTransaction malformed", edit: set("anchorTransaction", "1"), wantErr: `invalid field "anchorTransaction"`},
@@ -319,6 +322,9 @@ func TestTaikoPayloadAttributesV3Decoding(t *testing.T) {
 			}
 			if attrs.AnchorTransactionSet != tt.wantAnchorTx {
 				t.Errorf("AnchorTransactionSet = %v, want %v", attrs.AnchorTransactionSet, tt.wantAnchorTx)
+			}
+			if want := common.FromHex(tt.wantAnchorTxBytes); !bytes.Equal(attrs.AnchorTransaction, want) {
+				t.Errorf("AnchorTransaction = %x, want %x", attrs.AnchorTransaction, want)
 			}
 			if (attrs.SlotNumber != nil) != tt.wantSlotNumber {
 				t.Errorf("SlotNumber = %v, want set %v", attrs.SlotNumber, tt.wantSlotNumber)

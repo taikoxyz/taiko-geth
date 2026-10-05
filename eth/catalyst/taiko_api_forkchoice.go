@@ -3,6 +3,7 @@ package catalyst
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
@@ -22,7 +23,8 @@ import (
 //
 // Invalid attributes do not stop the forkchoice update: the state is applied
 // without them, an INVALID or SYNCING result is returned as a plain status,
-// and otherwise the attribute error is returned.
+// and otherwise the attribute error is returned. After a VALID update, inputs
+// that fail the job checks are -32603 and build nothing.
 func (t *TaikoEngineAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.ForkchoiceStateV1, attrs *engine.TaikoPayloadAttributesV3) (engine.ForkChoiceResponse, error) {
 	api := t.api
 	api.forkchoiceLock.Lock()
@@ -53,6 +55,9 @@ func (t *TaikoEngineAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.
 	// head's timestamp; only an earlier one is rejected.
 	if attrs.Timestamp < head.Time() {
 		return engine.STATUS_INVALID, attributesErr("payload attributes timestamp is before the head block")
+	}
+	if err := checkTaikoJobInputs(attrs); err != nil {
+		return engine.STATUS_INVALID, err
 	}
 	id, err := t.buildTaikoPayload(ctx, head, &attrs.PayloadAttributes)
 	if err != nil {
@@ -96,6 +101,31 @@ func validateTaikoForkchoiceAttributes(config *params.ChainConfig, attrs *engine
 	}
 	if *attrs.BeaconRoot != (common.Hash{}) {
 		return paramsErr("non-zero parent beacon block root is unsupported before Etna")
+	}
+	return nil
+}
+
+// checkTaikoJobInputs makes the checks of the reference client's payload
+// builder when it creates a job, before the payload ID is looked up: a present
+// anchorTransaction must decode as one network transaction, with any bytes
+// after it ignored, and recover its signer with a low s and no chain-ID check;
+// the base fee must fit in 64 bits. A failure is -32603.
+//
+// Etna validation already rejects both inputs, so only a pre-Etna target can
+// fail here. Before Etna, a valid anchorTransaction is otherwise ignored: the
+// block is built from the tx list.
+func checkTaikoJobInputs(attrs *engine.TaikoPayloadAttributesV3) error {
+	if attrs.AnchorTransactionSet {
+		tx, err := miner.DecodeTaikoNetworkTransaction(attrs.AnchorTransaction)
+		if err != nil {
+			return engine.InternalError.With(fmt.Errorf("invalid anchor transaction: %w", err))
+		}
+		if _, err := miner.RecoverTaikoTransactionSender(tx); err != nil {
+			return engine.InternalError.With(fmt.Errorf("anchor transaction signer is not recoverable: %w", err))
+		}
+	}
+	if !attrs.BaseFeePerGas.IsUint64() {
+		return engine.InternalError.With(errors.New("base fee per gas does not fit in 64 bits"))
 	}
 	return nil
 }

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -52,6 +54,67 @@ func decodeEtnaTxList(txList []byte) (types.Transactions, error) {
 		items = rest
 	}
 	return txs, nil
+}
+
+// DecodeTaikoNetworkTransaction decodes one transaction in network form: the
+// item at the start of b, read with the item grammar of an Etna transaction
+// list (see decodeEtnaTxList). Any bytes after the item are ignored. The
+// signature is not checked.
+func DecodeTaikoNetworkTransaction(b []byte) (*types.Transaction, error) {
+	tx, _, err := decodeEtnaTxListItem(b)
+	return tx, err
+}
+
+// RecoverTaikoTransactionSender recovers the signer of tx without a chain-ID
+// check: a protected transaction is hashed with the chain ID it carries, and
+// an unprotected legacy one with none. The signature must have a low s
+// (EIP-2).
+func RecoverTaikoTransactionSender(tx *types.Transaction) (common.Address, error) {
+	switch {
+	case !tx.Protected():
+		return types.HomesteadSigner{}.Sender(tx)
+	case tx.Type() == types.LegacyTxType:
+		return types.NewEIP155Signer(tx.ChainId()).Sender(tx)
+	case tx.ChainId().Sign() > 0:
+		return types.LatestSignerForChainID(tx.ChainId()).Sender(tx)
+	default:
+		return zeroChainIDSender(tx)
+	}
+}
+
+// zeroChainIDSender recovers the signer of a typed transaction with chain ID
+// zero, which the typed signers do not take. Such a transaction signs the
+// keccak256 of its type byte followed by the RLP list of its payload fields
+// without the trailing y-parity, r and s.
+func zeroChainIDSender(tx *types.Transaction) (common.Address, error) {
+	enc, err := tx.WithoutBlobTxSidecar().MarshalBinary()
+	if err != nil {
+		return common.Address{}, err
+	}
+	var fields []rlp.RawValue
+	if err := rlp.DecodeBytes(enc[1:], &fields); err != nil {
+		return common.Address{}, err
+	}
+	if len(fields) < 3 {
+		return common.Address{}, errors.New("typed transaction payload without a signature")
+	}
+	unsigned, err := rlp.EncodeToBytes(fields[:len(fields)-3])
+	if err != nil {
+		return common.Address{}, err
+	}
+	v, r, s := tx.RawSignatureValues()
+	if !v.IsUint64() || v.Uint64() > 1 || !crypto.ValidateSignatureValues(byte(v.Uint64()), r, s, true) {
+		return common.Address{}, types.ErrInvalidSig
+	}
+	sig := make([]byte, crypto.SignatureLength)
+	r.FillBytes(sig[:32])
+	s.FillBytes(sig[32:64])
+	sig[64] = byte(v.Uint64())
+	pub, err := crypto.SigToPub(crypto.Keccak256(append([]byte{tx.Type()}, unsigned...)), sig)
+	if err != nil {
+		return common.Address{}, err
+	}
+	return crypto.PubkeyToAddress(*pub), nil
 }
 
 // decodeEtnaTxListItem decodes the transaction list item at the start of b

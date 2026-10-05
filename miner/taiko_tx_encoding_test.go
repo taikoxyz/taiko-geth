@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -382,5 +384,189 @@ func TestSealBlockWith_EtnaAcceptsEveryItemShape(t *testing.T) {
 				t.Fatalf("sealed %d transactions, want exactly %v", len(txs), tt.want.Hash())
 			}
 		})
+	}
+}
+
+// TestDecodeTaikoNetworkTransactionCorpus decodes the first item of every
+// decodable list of the shared cross-client vectors as a single transaction,
+// with the later items as trailing bytes, and recovers its signer without a
+// chain-ID check: the vectors' sender, or a recovery failure where they have
+// none.
+func TestDecodeTaikoNetworkTransactionCorpus(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "etna_txlist_corpus.json"))
+	if err != nil {
+		t.Fatalf("read corpus: %v", err)
+	}
+	var corpus []etnaTxListCorpusEntry
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatalf("parse corpus: %v", err)
+	}
+	var checked int
+	for _, tc := range corpus {
+		if !tc.OK || len(tc.Txs) == 0 {
+			continue
+		}
+		checked++
+		t.Run(tc.Name, func(t *testing.T) {
+			_, items, _, err := rlp.Split(tc.Input)
+			if err != nil {
+				t.Fatalf("split list: %v", err)
+			}
+			tx, err := DecodeTaikoNetworkTransaction(items)
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			want := tc.Txs[0]
+			if tx.Hash() != want.Hash {
+				t.Fatalf("hash = %v, want %v", tx.Hash(), want.Hash)
+			}
+			sender, err := RecoverTaikoTransactionSender(tx)
+			switch {
+			case want.Sender == nil:
+				if err == nil {
+					t.Fatalf("recovered sender %v, want a recovery failure", sender)
+				}
+			case err != nil:
+				t.Fatalf("recovery failed: %v, want sender %v", err, *want.Sender)
+			case sender != *want.Sender:
+				t.Fatalf("sender = %v, want %v", sender, *want.Sender)
+			}
+		})
+	}
+	if checked < 40 {
+		t.Fatalf("checked %d decodable lists, want at least 40", checked)
+	}
+}
+
+// TestDecodeTaikoNetworkTransactionRejects checks that a single item outside
+// the grammar does not decode: the only item of some undecodable lists of the
+// shared cross-client vectors, and inputs too short to hold a transaction.
+func TestDecodeTaikoNetworkTransactionRejects(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("testdata", "etna_txlist_corpus.json"))
+	if err != nil {
+		t.Fatalf("read corpus: %v", err)
+	}
+	var corpus []etnaTxListCorpusEntry
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatalf("parse corpus: %v", err)
+	}
+	entries := make(map[string]etnaTxListCorpusEntry, len(corpus))
+	for _, tc := range corpus {
+		entries[tc.Name] = tc
+	}
+	for _, name := range []string{
+		"element-empty-list",
+		"element-zero-byte",
+		"element-non-canonical-single-byte",
+		"typed-payload-extra-field",
+		"typed-payload-not-a-list",
+		"unknown-type-5-bare",
+		"wrapped-declared-one",
+		"wrapped-declared-beyond-list",
+		"wrapped-legacy-without-type",
+		"fee-cap-2^128",
+		"typed-parity-2",
+		"legacy-v-29",
+		"blob-sidecar-wrapper",
+	} {
+		tc, ok := entries[name]
+		if !ok || tc.OK {
+			t.Fatalf("%s: not an undecodable list of the corpus", name)
+		}
+		_, items, _, err := rlp.Split(tc.Input)
+		if err != nil {
+			t.Fatalf("%s: split list: %v", name, err)
+		}
+		if tx, err := DecodeTaikoNetworkTransaction(items); err == nil {
+			t.Errorf("%s: decoded %v, want an error", name, tx.Hash())
+		}
+	}
+	for _, input := range []string{"0x", "0x80", "0xc0", "0x02", "0x8102", "0xdead"} {
+		if tx, err := DecodeTaikoNetworkTransaction(common.FromHex(input)); err == nil {
+			t.Errorf("%s: decoded %v, want an error", input, tx.Hash())
+		}
+	}
+}
+
+// TestDecodeTaikoNetworkTransactionTrailingBytes checks that the bytes after
+// the transaction, in each item shape, are ignored.
+func TestDecodeTaikoNetworkTransactionTrailingBytes(t *testing.T) {
+	config := newEtnaTestChainConfig()
+	transfer := bankTransfer(t, config, 0)
+	typed, err := transfer.MarshalBinary()
+	if err != nil {
+		t.Fatalf("encode transfer: %v", err)
+	}
+	wrapped, err := rlp.EncodeToBytes(typed)
+	if err != nil {
+		t.Fatalf("wrap transfer: %v", err)
+	}
+	for _, tt := range []struct {
+		name string
+		item []byte
+	}{
+		{"bare typed", typed},
+		{"wrapped typed", wrapped},
+		{"payload without type byte", typed[1:]},
+	} {
+		for _, junk := range [][]byte{nil, {0x00}, {0xc0}, {0xff, 0xff}, typed} {
+			input := append(append([]byte{}, tt.item...), junk...)
+			tx, err := DecodeTaikoNetworkTransaction(input)
+			if err != nil || tx.Hash() != transfer.Hash() {
+				t.Fatalf("%s with trailing %x: decoded %v (err %v), want %v", tt.name, junk, tx, err, transfer.Hash())
+			}
+		}
+	}
+}
+
+// TestRecoverTaikoTransactionSenderChainIDs checks that a signature recovers
+// whatever chain ID it was made for, including the zero chain ID the signers
+// do not take, and that a high s never recovers.
+func TestRecoverTaikoTransactionSenderChainIDs(t *testing.T) {
+	want := crypto.PubkeyToAddress(testBankKey.PublicKey)
+	to := testUserAddress
+	unsigned := types.DynamicFeeTx{
+		Nonce:     3,
+		GasTipCap: common.Big1,
+		GasFeeCap: big.NewInt(params.InitialBaseFee),
+		Gas:       params.TxGas,
+		To:        &to,
+		Value:     common.Big1,
+		Data:      []byte{0xca, 0xfe},
+	}
+	// sign signs unsigned for chainID over its EIP-1559 signing payload,
+	// returning a signature with a low s.
+	sign := func(chainID *big.Int) *types.DynamicFeeTx {
+		inner := unsigned
+		inner.ChainID = chainID
+		payload, err := rlp.EncodeToBytes([]any{
+			inner.ChainID, inner.Nonce, inner.GasTipCap, inner.GasFeeCap, inner.Gas,
+			inner.To, inner.Value, inner.Data, types.AccessList{},
+		})
+		if err != nil {
+			t.Fatalf("encode signing payload: %v", err)
+		}
+		sig, err := crypto.Sign(crypto.Keccak256(append([]byte{types.DynamicFeeTxType}, payload...)), testBankKey)
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+		inner.R = new(big.Int).SetBytes(sig[:32])
+		inner.S = new(big.Int).SetBytes(sig[32:64])
+		inner.V = big.NewInt(int64(sig[64]))
+		return &inner
+	}
+	for _, chainID := range []*big.Int{common.Big0, common.Big1, params.TaikoInternalNetworkID, new(big.Int).SetUint64(math.MaxUint64)} {
+		signed := sign(chainID)
+		if sender, err := RecoverTaikoTransactionSender(types.NewTx(signed)); err != nil || sender != want {
+			t.Fatalf("chain ID %v: sender %v (err %v), want %v", chainID, sender, err, want)
+		}
+		// The same signature with s mirrored to the upper half of the curve
+		// order is valid ECDSA but not EIP-2.
+		highS := *signed
+		highS.S = new(big.Int).Sub(crypto.S256().Params().N, signed.S)
+		highS.V = new(big.Int).Xor(signed.V, common.Big1)
+		if sender, err := RecoverTaikoTransactionSender(types.NewTx(&highS)); err == nil {
+			t.Fatalf("chain ID %v: high-s signature recovered %v", chainID, sender)
+		}
 	}
 }

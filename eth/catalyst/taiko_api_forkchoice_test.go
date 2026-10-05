@@ -145,6 +145,49 @@ func taikoFCUTestAnchorTxList(t *testing.T, config *params.ChainConfig, baseFee 
 	return txList, anchor
 }
 
+// fcuTestEncodeTx returns the EIP-2718 encoding of tx.
+func fcuTestEncodeTx(t *testing.T, tx *types.Transaction) []byte {
+	t.Helper()
+	enc, err := tx.MarshalBinary()
+	if err != nil {
+		t.Fatalf("encode transaction: %v", err)
+	}
+	return enc
+}
+
+// fcuTestGoldenTouchTx signs inner with the golden touch key.
+func fcuTestGoldenTouchTx(t *testing.T, signer types.Signer, inner types.TxData) *types.Transaction {
+	t.Helper()
+	key, err := crypto.HexToECDSA("92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
+	if err != nil {
+		t.Fatalf("golden touch key: %v", err)
+	}
+	tx, err := types.SignNewTx(key, signer, inner)
+	if err != nil {
+		t.Fatalf("sign transaction: %v", err)
+	}
+	return tx
+}
+
+// fcuTestWithSignature returns the encoding of the dynamic fee transaction tx
+// with its signature values replaced.
+func fcuTestWithSignature(t *testing.T, tx *types.Transaction, v, r, s *big.Int) []byte {
+	t.Helper()
+	return fcuTestEncodeTx(t, types.NewTx(&types.DynamicFeeTx{
+		ChainID:   tx.ChainId(),
+		Nonce:     tx.Nonce(),
+		GasTipCap: tx.GasTipCap(),
+		GasFeeCap: tx.GasFeeCap(),
+		Gas:       tx.Gas(),
+		To:        tx.To(),
+		Value:     tx.Value(),
+		Data:      tx.Data(),
+		V:         v,
+		R:         r,
+		S:         s,
+	}))
+}
+
 // fcuTestCachedPayload returns the execution payload of the last build,
 // failing unless that build has the given id.
 func fcuTestCachedPayload(t *testing.T, api *TaikoEngineAPI, id engine.PayloadID) *engine.ExecutableData {
@@ -484,7 +527,7 @@ func TestTaikoForkchoiceUpdatedV3BuildFailure(t *testing.T) {
 
 // TestTaikoForkchoiceUpdatedV3UnzenBuild builds a pre-Etna block through the
 // service. Its ID equals the one the V2 wire path derived from the sealed
-// block, the anchorTransaction flag is ignored before Etna, and the block's
+// block, a valid anchorTransaction is ignored before Etna, and the block's
 // zk-gas difficulty does not stop it from becoming the head.
 func TestTaikoForkchoiceUpdatedV3UnzenBuild(t *testing.T) {
 	ethservice, api := startTaikoFCUTestService(t)
@@ -494,6 +537,7 @@ func TestTaikoForkchoiceUpdatedV3UnzenBuild(t *testing.T) {
 	txList, anchor := taikoFCUTestAnchorTxList(t, config, big.NewInt(params.ShastaInitialBaseFee))
 	attrs := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)
 	attrs.AnchorTransactionSet = true
+	attrs.AnchorTransaction = fcuTestEncodeTx(t, anchor)
 
 	res, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, attrs)
 	if err != nil {
@@ -703,6 +747,21 @@ func TestTaikoForkchoiceUpdatedV3CachedPayload(t *testing.T) {
 	}
 }
 
+// fcuTestWireAttrs returns the JSON object of attrs with the extra keys set.
+func fcuTestWireAttrs(t *testing.T, attrs *engine.TaikoPayloadAttributesV3, extra map[string]any) map[string]any {
+	t.Helper()
+	enc, err := json.Marshal(&attrs.PayloadAttributes)
+	if err != nil {
+		t.Fatalf("encode attributes: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(enc, &fields); err != nil {
+		t.Fatalf("decode attributes: %v", err)
+	}
+	maps.Copy(fields, extra)
+	return fields
+}
+
 // TestTaikoForkchoiceUpdatedV3OverRPC calls the method the way a driver does,
 // through Register and JSON, where slotNumber, targetGasLimit and
 // anchorTransaction are keys on the wire and null means absent.
@@ -715,18 +774,7 @@ func TestTaikoForkchoiceUpdatedV3OverRPC(t *testing.T) {
 	genesis := ethservice.BlockChain().Genesis().Hash()
 	state := engine.ForkchoiceStateV1{HeadBlockHash: genesis}
 	attrs := taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList)
-	enc, err := json.Marshal(&attrs.PayloadAttributes)
-	if err != nil {
-		t.Fatalf("encode attributes: %v", err)
-	}
-	wire := func(extra map[string]any) map[string]any {
-		var fields map[string]any
-		if err := json.Unmarshal(enc, &fields); err != nil {
-			t.Fatalf("decode attributes: %v", err)
-		}
-		maps.Copy(fields, extra)
-		return fields
-	}
+	wire := func(extra map[string]any) map[string]any { return fcuTestWireAttrs(t, attrs, extra) }
 
 	var res engine.ForkChoiceResponse
 	if err := client.Call(&res, "engine_forkchoiceUpdatedV3", state, nil); err != nil || res.PayloadStatus.Status != engine.VALID {
@@ -750,7 +798,7 @@ func TestTaikoForkchoiceUpdatedV3OverRPC(t *testing.T) {
 		}
 	}
 	res = engine.ForkChoiceResponse{}
-	err = client.Call(&res, "engine_forkchoiceUpdatedV3", state, wire(map[string]any{"targetGasLimit": nil, "anchorTransaction": nil, "slotNumber": nil}))
+	err := client.Call(&res, "engine_forkchoiceUpdatedV3", state, wire(map[string]any{"targetGasLimit": nil, "anchorTransaction": nil, "slotNumber": nil}))
 	if err != nil || res.PayloadID == nil {
 		t.Fatalf("null optional keys: id %v, err %v, want a payload id", res.PayloadID, err)
 	}
@@ -873,5 +921,183 @@ func TestTaikoForkchoiceUpdatedV3BuildFailureKeepsTheLastPayload(t *testing.T) {
 	}
 	if origin, _ := rawdb.ReadL1Origin(ethservice.ChainDb(), big.NewInt(1)); origin == nil || origin.L2BlockHash != xHash {
 		t.Fatalf("L1 origin = %+v, want block %v", origin, xHash)
+	}
+}
+
+// TestTaikoForkchoiceUpdatedV3PreEtnaJobChecks checks the job-creation checks
+// of a pre-Etna target, the way the reference client's payload builder makes
+// them: a base fee above u64, and an anchorTransaction that does not decode as
+// one transaction or has no recoverable signer, are -32603.
+//
+// The checks run after the forkchoice is applied and before the payload ID is
+// looked up. Every request below carries the attributes of the last built
+// payload, so without them it would return that payload's ID and rewrite its
+// L1 origin.
+func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecks(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	chain := ethservice.BlockChain()
+	config := chain.Config()
+	db := ethservice.ChainDb()
+	genesis := chain.Genesis().Hash()
+
+	txList, anchor := taikoFCUTestAnchorTxList(t, config, big.NewInt(params.ShastaInitialBaseFee))
+	id := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList))
+	envelope, _ := fcuTestGetPayloadV5(t, api, id)
+	stored := fcuTestLastPayload(api)
+	block := fcuTestBuiltBlock(t, api, id, common.Hash{})
+	if _, err := chain.InsertBlockWithoutSetHead(context.Background(), block, false); err != nil {
+		t.Fatalf("import the Unzen block: %v", err)
+	}
+	// Clobber the L1 origin records so that a rewrite shows.
+	rawdb.WriteL1Origin(db, big.NewInt(1), &rawdb.L1Origin{BlockID: big.NewInt(1)})
+	rawdb.WriteHeadL1Origin(db, big.NewInt(99))
+
+	anchorTx := func(enc []byte) func(*engine.TaikoPayloadAttributesV3) {
+		return func(a *engine.TaikoPayloadAttributesV3) {
+			a.AnchorTransactionSet = true
+			a.AnchorTransaction = enc
+		}
+	}
+	v, r, s := anchor.RawSignatureValues()
+	highS := new(big.Int).Sub(crypto.S256().Params().N, s)
+	tests := []struct {
+		name   string
+		mutate func(*engine.TaikoPayloadAttributesV3)
+	}{
+		{"base fee of 2^64", func(a *engine.TaikoPayloadAttributesV3) { a.BaseFeePerGas = new(big.Int).Lsh(common.Big1, 64) }},
+		{"empty anchor transaction", anchorTx([]byte{})},
+		{"undecodable anchor transaction", anchorTx(common.FromHex("0xdeadbeef"))},
+		{"anchor transaction with a high s", anchorTx(fcuTestWithSignature(t, anchor, new(big.Int).Xor(v, common.Big1), r, highS))},
+		{"anchor transaction with a zero r", anchorTx(fcuTestWithSignature(t, anchor, v, new(big.Int), s))},
+	}
+	for _, tt := range tests {
+		// Make the imported block the head, so that the update moves it back.
+		res, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: block.Hash()}, nil)
+		if err != nil || res.PayloadStatus.Status != engine.VALID {
+			t.Fatalf("%s: forkchoice to block 1: status %s, err %v", tt.name, res.PayloadStatus.Status, err)
+		}
+		attrs := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)
+		attrs.L1Origin.L1BlockHash = common.HexToHash("0x22")
+		tt.mutate(attrs)
+		if taikoPayloadID(genesis, &attrs.PayloadAttributes) != id {
+			t.Fatalf("%s: the attributes do not share the last payload's ID", tt.name)
+		}
+		_, err = api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, attrs)
+		if err == nil || rpcErrorCode(t, err) != -32603 {
+			t.Fatalf("%s: err %v, want code -32603", tt.name, err)
+		}
+		if got := chain.CurrentBlock().Hash(); got != genesis {
+			t.Fatalf("%s: head = %v, want the requested genesis", tt.name, got)
+		}
+		if fcuTestLastPayload(api) != stored {
+			t.Fatalf("%s: the last built payload was replaced", tt.name)
+		}
+		if have, _ := fcuTestGetPayloadV5(t, api, id); have != envelope {
+			t.Fatalf("%s: last payload:\nhave %s\nwant %s", tt.name, have, envelope)
+		}
+		if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != (common.Hash{}) || origin.L1BlockHash != (common.Hash{}) {
+			t.Fatalf("%s: L1 origin rewritten to %+v", tt.name, origin)
+		}
+		if head, _ := rawdb.ReadHeadL1Origin(db); head == nil || head.Uint64() != 99 {
+			t.Fatalf("%s: head L1 origin = %v, want 99", tt.name, head)
+		}
+	}
+
+	// The same attributes without a failing input return the cached ID and
+	// rewrite the L1 origin.
+	if got := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)); got != id {
+		t.Fatalf("payload id = %v, want the cached %v", got, id)
+	}
+	if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != block.Hash() {
+		t.Fatalf("L1 origin = %+v, want block %v", origin, block.Hash())
+	}
+}
+
+// TestTaikoForkchoiceUpdatedV3PreEtnaAnchorTransaction checks that a pre-Etna
+// anchorTransaction that decodes and recovers its signer is accepted whatever
+// chain ID it was signed for and whatever bytes follow it, and does not
+// change the block: the attributes seal the block they seal without it.
+func TestTaikoForkchoiceUpdatedV3PreEtnaAnchorTransaction(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	config := ethservice.BlockChain().Config()
+
+	txList, anchor := taikoFCUTestAnchorTxList(t, config, big.NewInt(params.ShastaInitialBaseFee))
+	id := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList))
+	want, _ := fcuTestGetPayloadV5(t, api, id)
+
+	to := core.TaikoTreasuryAddress(config.ChainID)
+	foreign := fcuTestGoldenTouchTx(t, types.LatestSignerForChainID(common.Big1), &types.DynamicFeeTx{
+		ChainID: common.Big1, GasFeeCap: common.Big1, Gas: taiko.AnchorV3V4GasLimit, To: &to, Data: taiko.AnchorV4Selector,
+	})
+	unprotected := fcuTestGoldenTouchTx(t, types.HomesteadSigner{}, &types.LegacyTx{
+		GasPrice: common.Big1, Gas: taiko.AnchorV3V4GasLimit, To: &to, Data: taiko.AnchorV4Selector,
+	})
+	trailing := append(fcuTestEncodeTx(t, anchor), 0xc0, 0xff)
+
+	for _, tt := range []struct {
+		name     string
+		anchorTx []byte
+	}{
+		{"anchor transaction of another chain", fcuTestEncodeTx(t, foreign)},
+		{"unprotected legacy anchor transaction", fcuTestEncodeTx(t, unprotected)},
+		{"anchor transaction with trailing bytes", trailing},
+	} {
+		// Replace the last payload, so that the attributes are sealed again.
+		fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime+1, txList))
+		fcuTestUnknownPayload(t, api, id)
+
+		attrs := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)
+		attrs.AnchorTransactionSet = true
+		attrs.AnchorTransaction = tt.anchorTx
+		if got := fcuTestBuild(t, ethservice, api, attrs); got != id {
+			t.Fatalf("%s: payload id = %v, want %v", tt.name, got, id)
+		}
+		if have, _ := fcuTestGetPayloadV5(t, api, id); have != want {
+			t.Fatalf("%s: payload:\nhave %s\nwant %s", tt.name, have, want)
+		}
+	}
+}
+
+// TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC checks that the
+// anchorTransaction bytes of the wire attributes reach the pre-Etna job
+// checks. Every request carries the attributes of the last built payload.
+func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC(t *testing.T) {
+	n, ethservice := newEngineTestNode(t, newTaikoFCUTestGenesis())
+	client := n.Attach()
+	defer client.Close()
+
+	config := ethservice.BlockChain().Config()
+	state := engine.ForkchoiceStateV1{HeadBlockHash: ethservice.BlockChain().Genesis().Hash()}
+	txList, anchor := taikoFCUTestAnchorTxList(t, config, big.NewInt(params.ShastaInitialBaseFee))
+	attrs := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)
+
+	var res engine.ForkChoiceResponse
+	if err := client.Call(&res, "engine_forkchoiceUpdatedV3", state, fcuTestWireAttrs(t, attrs, nil)); err != nil || res.PayloadID == nil {
+		t.Fatalf("build: id %v, err %v, want a payload id", res.PayloadID, err)
+	}
+	id := *res.PayloadID
+	for _, tt := range []struct {
+		name  string
+		extra map[string]any
+		code  int // expected error code, or 0 for the cached ID
+	}{
+		{"valid anchorTransaction", map[string]any{"anchorTransaction": hexutil.Bytes(fcuTestEncodeTx(t, anchor))}, 0},
+		{"undecodable anchorTransaction", map[string]any{"anchorTransaction": "0x02"}, -32603},
+		{"baseFeePerGas above u64", map[string]any{"baseFeePerGas": "0x10000000000000000"}, -32603},
+	} {
+		res = engine.ForkChoiceResponse{}
+		err := client.Call(&res, "engine_forkchoiceUpdatedV3", state, fcuTestWireAttrs(t, attrs, tt.extra))
+		if tt.code == 0 {
+			if err != nil || res.PayloadID == nil || *res.PayloadID != id {
+				t.Fatalf("%s: id %v, err %v, want the cached id %v", tt.name, res.PayloadID, err, id)
+			}
+			continue
+		}
+		if err == nil {
+			t.Fatalf("%s: no error, want code %d", tt.name, tt.code)
+		}
+		if code := rpcErrorCode(t, err); code != tt.code {
+			t.Fatalf("%s: code %d (%v), want %d", tt.name, code, err, tt.code)
+		}
 	}
 }
