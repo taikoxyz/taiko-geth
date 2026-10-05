@@ -43,13 +43,14 @@ type txListWitnessOptions struct {
 	SkipZkGasDifficultyCheck bool `json:"skipZkGasDifficultyCheck"`
 }
 
-// txListDecodeError is the error of an Etna transaction list outside the
-// grammar the Etna sealer uses. Like the reference client, it answers -32603.
-type txListDecodeError struct{ err error }
+// etnaTxListError is the error of an Etna transaction list that exceeds a
+// size limit or lies outside the grammar the Etna sealer uses. Like the
+// reference client, it answers -32603.
+type etnaTxListError struct{ err error }
 
-func (e *txListDecodeError) Error() string  { return "failed to decode tx list: " + e.err.Error() }
-func (e *txListDecodeError) ErrorCode() int { return -32603 }
-func (e *txListDecodeError) Unwrap() error  { return e.err }
+func (e *etnaTxListError) Error() string  { return e.err.Error() }
+func (e *etnaTxListError) ErrorCode() int { return -32603 }
+func (e *etnaTxListError) Unwrap() error  { return e.err }
 
 // decodeTxListWitnessTxs decodes the RLP transaction list of a pre-Etna block
 // and drops any transaction whose signature cannot be recovered, mirroring the
@@ -85,7 +86,7 @@ func decodeTxListWitnessTxs(txListRLP []byte) (types.Transactions, error) {
 func decodeEtnaTxListWitnessTxs(txList []byte) (types.Transactions, error) {
 	txs, err := miner.DecodeEtnaTxList(txList)
 	if err != nil {
-		return nil, &txListDecodeError{err: err}
+		return nil, &etnaTxListError{err: fmt.Errorf("failed to decode tx list: %w", err)}
 	}
 	recovered := make(types.Transactions, 0, len(txs))
 	for _, tx := range txs {
@@ -618,10 +619,16 @@ func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, tx
 	if opts != nil {
 		options = *opts
 	}
-	if err := checkTxListSize(txList); err != nil {
-		return nil, err
-	}
+	// A size-limit error still takes precedence over an unknown block. The
+	// block is resolved only to answer it with -32603 from Etna on.
+	sizeErr := checkTxListSize(txList)
 	block, err := resolveWitnessBlock(bc, bn)
+	if sizeErr != nil {
+		if err == nil && bc.Config().IsEtna(block.Time()) {
+			return nil, &etnaTxListError{err: sizeErr}
+		}
+		return nil, sizeErr
+	}
 	if err != nil {
 		return nil, err
 	}

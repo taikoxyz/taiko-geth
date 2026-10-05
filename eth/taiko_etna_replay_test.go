@@ -3,6 +3,7 @@ package eth
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"math/big"
@@ -10,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
@@ -397,6 +399,68 @@ func TestDecodeEtnaTxListWitnessTxsCorpus(t *testing.T) {
 			}
 			if !slices.Equal(got, want) {
 				t.Fatalf("kept %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// witnessSizeErrorCode calls debug_executionWitnessForTxList over JSON-RPC
+// for block with txList and returns the code of the error it must answer.
+func witnessSizeErrorCode(t *testing.T, eth *Ethereum, block common.Hash, txList []byte) int {
+	t.Helper()
+	server := rpc.NewServer()
+	t.Cleanup(server.Stop)
+	if err := server.RegisterName("debug", NewDebugAPI(eth)); err != nil {
+		t.Fatalf("register debug API: %v", err)
+	}
+	client := rpc.DialInProc(server)
+	defer client.Close()
+	err := client.Call(new(json.RawMessage), "debug_executionWitnessForTxList", block.Hex(), hexutil.Bytes(txList))
+	if err == nil {
+		t.Fatal("produced a witness, want a size-limit error")
+	}
+	return witnessErrorCode(err)
+}
+
+// TestExecutionWitnessForTxListSizeLimitErrorCodes pins the JSON-RPC code of
+// the tx-list size-limit errors: -32603 for an Etna block, like the
+// reference client, and the default -32000 before Etna.
+func TestExecutionWitnessForTxListSizeLimitErrorCodes(t *testing.T) {
+	etna, etnaBlock := newEtnaReplayChain(t)
+
+	// A chain whose genesis is an Unzen block, with Etna scheduled later.
+	config := etnaTestChainConfig()
+	later := uint64(5000)
+	config.EtnaTime = &later
+	preEtna := newEtnaTestEthereum(t, etnaReplayGenesis(config), false)
+	preEtnaBlock := preEtna.blockchain.Genesis()
+	if config.IsEtna(preEtnaBlock.Time()) || !config.IsUnzen(preEtnaBlock.Time()) {
+		t.Fatalf("block at %d is not a pre-Etna Unzen block", preEtnaBlock.Time())
+	}
+
+	// Random bytes do not compress: below the raw limit, they still exceed
+	// one blob of data once compressed.
+	incompressible := make([]byte, 2*maxTxListCompressedBytes)
+	if _, err := rand.Read(incompressible); err != nil {
+		t.Fatalf("random tx list: %v", err)
+	}
+	for _, tt := range []struct {
+		name   string
+		txList []byte
+		want   string
+	}{
+		{"raw limit", make([]byte, maxTxListRawBytes+1), "exceeds raw limit"},
+		{"compressed limit", incompressible, "exceeds block data limit"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := checkTxListSize(tt.txList); err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("size check: %v, want an error containing %q", err, tt.want)
+			}
+			if code := witnessSizeErrorCode(t, etna, etnaBlock.Hash(), tt.txList); code != -32603 {
+				t.Fatalf("Etna block: code %d, want -32603", code)
+			}
+			if code := witnessSizeErrorCode(t, preEtna, preEtnaBlock.Hash(), tt.txList); code != -32000 {
+				t.Fatalf("pre-Etna block: code %d, want -32000", code)
 			}
 		})
 	}
