@@ -207,31 +207,125 @@ func (w *Miner) buildTransactionsLists(
 	return txsLists, nil
 }
 
-// sealBlockWith mines and seals a block with the given block metadata.
+// taikoParentBeaconRoot returns the parent beacon root of a Taiko Unzen block
+// built from genParams. From Etna on it is the state root of the L1 block at
+// the final anchorBlockNumber, which the caller must supply as a non-zero
+// root. Before Etna it is the canonical zero hash: a non-zero root cannot
+// survive the engine round trip and is rejected, except in transaction-pool
+// preselection, which only simulates its target.
+func taikoParentBeaconRoot(config *params.ChainConfig, time uint64, genParams *generateParams) (*common.Hash, error) {
+	root := new(common.Hash)
+	if genParams.beaconRoot != nil {
+		*root = *genParams.beaconRoot
+	}
+	if config.IsEtna(time) {
+		if *root == (common.Hash{}) {
+			return nil, errors.New("missing non-zero parent beacon root for an Etna block")
+		}
+		return root, nil
+	}
+	if *root != (common.Hash{}) && !genParams.taikoPreselection {
+		return nil, fmt.Errorf("non-zero parent beacon root %v is unsupported on Taiko", *root)
+	}
+	return root, nil
+}
+
+// etnaSkippedTxErrors are the errors for which the Etna sealer skips a
+// proposed transaction: the transaction is invalid against the block or the
+// sender's state, or its gas limit exceeds the remaining block gas. Any other
+// error from applying a transaction aborts an Etna build.
+var etnaSkippedTxErrors = []error{
+	types.ErrInvalidSig,
+	types.ErrInvalidChainId,
+	core.ErrNonceTooLow,
+	core.ErrNonceTooHigh,
+	core.ErrNonceMax,
+	core.ErrGasLimitReached,
+	core.ErrGasLimitTooHigh,
+	core.ErrInsufficientFunds,
+	core.ErrInsufficientFundsForTransfer,
+	core.ErrGasUintOverflow,
+	core.ErrIntrinsicGas,
+	core.ErrFloorDataGas,
+	core.ErrTxTypeNotSupported,
+	core.ErrTipAboveFeeCap,
+	core.ErrTipVeryHigh,
+	core.ErrFeeCapVeryHigh,
+	core.ErrFeeCapTooLow,
+	core.ErrSenderNoEOA,
+	core.ErrBlobFeeCapTooLow,
+	core.ErrMissingBlobHashes,
+	core.ErrTooManyBlobs,
+	core.ErrBlobTxCreate,
+	core.ErrEmptyAuthList,
+	core.ErrSetCodeTxCreate,
+	vm.ErrMaxInitCodeSizeExceeded,
+}
+
+// isEtnaSkippedTxError reports whether the Etna sealer skips a transaction
+// that failed with err.
+func isEtnaSkippedTxError(err error) bool {
+	for _, target := range etnaSkippedTxErrors {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
+// sealBlockWith mines and seals a block from the given payload attributes.
+//
+// From Etna on the block has no anchor transaction and its header comes from
+// the attributes: the timestamp, beneficiary, gas limit and extra data of the
+// block metadata, prevRandao as the mix digest, the base fee as given, and the
+// parent beacon root, which is the state root of the L1 block at the final
+// anchorBlockNumber. Its withdrawals are always empty. A transaction list that
+// does not decode seals an empty block. Every position, the first included,
+// is ordinary: blob transactions, transactions whose signer cannot be
+// recovered and invalid transactions are skipped, zk-gas exhaustion ends the
+// block before the exhausting transaction, and any other error aborts the
+// build.
 func (w *Miner) sealBlockWith(
 	parent *types.Header,
-	timestamp uint64,
 	parentBlockTime uint64,
-	blkMeta *engine.BlockMetadata,
-	baseFeePerGas *big.Int,
-	withdrawals types.Withdrawals,
+	attrs *engine.PayloadAttributes,
 ) (*types.Block, error) {
-	// Decode transactions bytes.
+	var (
+		timestamp   = attrs.Timestamp
+		blkMeta     = attrs.BlockMetadata
+		withdrawals = attrs.Withdrawals
+		isEtna      = w.chainConfig.IsEtna(timestamp)
+	)
+	if isEtna {
+		// The engine API rejects Etna attributes whose two timestamps differ,
+		// so the header time is the block metadata timestamp either way.
+		if blkMeta.Timestamp != timestamp {
+			return nil, fmt.Errorf("block metadata timestamp %d differs from payload timestamp %d", blkMeta.Timestamp, timestamp)
+		}
+		withdrawals = make(types.Withdrawals, 0)
+	}
+
+	// Decode transactions bytes. From Etna on, the list is decoded with the
+	// shared execution transaction grammar, and a list that does not decode
+	// under it seals an empty block instead of failing.
 	var txs types.Transactions
-	if err := rlp.DecodeBytes(blkMeta.TxList, &txs); err != nil {
+	if isEtna {
+		decoded, err := decodeEtnaTxList(blkMeta.TxList)
+		if err != nil {
+			log.Debug("Failed to decode txList, sealing an empty Etna block", "err", err)
+		}
+		txs = decoded
+	} else if err := rlp.DecodeBytes(blkMeta.TxList, &txs); err != nil {
 		return nil, fmt.Errorf("failed to decode txList: %w", err)
 	}
 
-	if len(txs) == 0 {
-		// A L2 block needs to have have at least one `TaikoL2.anchor` / `TaikoL2.anchorV2` / `TaikoL2.anchorV3`.
+	// Before Etna every L2 block starts with its anchor transaction; Etna
+	// blocks have none and may be empty.
+	if len(txs) == 0 && !isEtna {
 		return nil, fmt.Errorf("too less transactions in the block")
 	}
 
-	if w.chainConfig.IsShasta(timestamp) {
-		baseFeePerGas = misc.CalcEIP4396BaseFee(w.chainConfig, parent, parentBlockTime)
-	}
-
-	params := &generateParams{
+	genParams := &generateParams{
 		timestamp:     timestamp,
 		forceTime:     true,
 		parentHash:    parent.Hash(),
@@ -239,19 +333,37 @@ func (w *Miner) sealBlockWith(
 		random:        blkMeta.MixHash,
 		withdrawals:   withdrawals,
 		noTxs:         false,
-		baseFeePerGas: baseFeePerGas,
+		baseFeePerGas: attrs.BaseFeePerGas,
+	}
+	if isEtna {
+		// Etna blocks take their randomness, base fee, extra data and parent
+		// beacon root from the payload attributes as given. The base fee is
+		// not recomputed here: import validates it.
+		genParams.random = attrs.Random
+		genParams.beaconRoot = attrs.BeaconRoot
+		genParams.forceOverrides = true
+		genParams.overrideExtraData = blkMeta.ExtraData
+	} else if w.chainConfig.IsShasta(timestamp) {
+		genParams.baseFeePerGas = misc.CalcEIP4396BaseFee(w.chainConfig, parent, parentBlockTime)
 	}
 
 	// Set extraData
 	w.SetExtra(blkMeta.ExtraData)
 
 	ctx := context.Background()
-	env, err := w.prepareWork(ctx, params, false)
+	env, err := w.prepareWork(ctx, genParams, false)
 	if err != nil {
 		return nil, err
 	}
 
 	env.header.GasLimit = blkMeta.GasLimit
+	if isEtna {
+		// prepareWork built the EVM block context with the miner's own gas
+		// limit target. Etna transactions read the metadata gas limit through
+		// GASLIMIT instead, as they do on import; before Etna the sealing EVM
+		// keeps that target.
+		env.evm.Context.GasLimit = env.header.GasLimit
+	}
 
 	// Commit transactions.
 	gasLimit := env.header.GasLimit
@@ -269,7 +381,11 @@ func (w *Miner) sealBlockWith(
 	}
 
 	for i, tx := range txs {
-		if i == 0 {
+		// Before Etna the first transaction is the anchor: it is marked so the
+		// state transition grants its exemptions, and it may neither fail nor
+		// be truncated. Etna blocks have no anchor transaction.
+		isAnchor := i == 0 && w.chainConfig.HasTaikoAnchor(timestamp)
+		if isAnchor {
 			if err := tx.MarkAsAnchor(); err != nil {
 				return nil, err
 			}
@@ -296,8 +412,8 @@ func (w *Miner) sealBlockWith(
 
 		if err := w.commitTransaction(ctx, env, tx); err != nil {
 			// CHANGE(taiko): if zk gas exceeded, stop including transactions.
-			// The anchor tx (i==0) is never discarded — it must always be in the block.
-			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
+			// The anchor is never discarded — it must always be in the block.
+			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && !isAnchor {
 				log.Debug(
 					"Unzen zk gas limit reached during sealing; truncating block",
 					"txIndex", i,
@@ -308,8 +424,13 @@ func (w *Miner) sealBlockWith(
 				env.evm.ResetZkGasErr()
 				break
 			}
-			if i == 0 {
+			if isAnchor {
 				return nil, fmt.Errorf("anchor transaction failed: %w", err)
+			}
+			// From Etna on only an invalid transaction is skipped; before
+			// Etna every failing transaction is.
+			if isEtna && !isEtnaSkippedTxError(err) {
+				return nil, fmt.Errorf("failed to apply transaction %d (%v): %w", i, tx.Hash(), err)
 			}
 			log.Debug("Skip an invalid proposed transaction", "hash", tx.Hash(), "reason", err)
 			continue
@@ -322,7 +443,7 @@ func (w *Miner) sealBlockWith(
 				// building a block the reference implementation rejects.
 				// Unreachable in practice, since charging already bounds
 				// committed+in-flight zk gas to the block limit.
-				if i == 0 {
+				if isAnchor {
 					return nil, fmt.Errorf("anchor transaction failed: %w", commitErr)
 				}
 				zkGasMeter.ResetTransaction()

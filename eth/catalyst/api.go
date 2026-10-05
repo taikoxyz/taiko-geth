@@ -385,14 +385,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 					parentBlockTime = block.Time() - ancestor.Time
 				}
 			}
-			block, err := api.eth.Miner().SealBlockWith(
-				block.Header(),
-				payloadAttributes.Timestamp,
-				parentBlockTime,
-				payloadAttributes.BlockMetadata,
-				payloadAttributes.BaseFeePerGas,
-				payloadAttributes.Withdrawals,
-			)
+			block, err := api.eth.Miner().SealBlockWith(block.Header(), parentBlockTime, payloadAttributes)
 			if err != nil {
 				log.Error("Failed to create sealing block", "err", err)
 				return valid(nil), engine.InvalidPayloadAttributes.With(err)
