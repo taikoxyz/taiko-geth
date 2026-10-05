@@ -299,9 +299,9 @@ func etnaWitnessCorpus(t *testing.T) []etnaWitnessCorpusEntry {
 	return corpus
 }
 
-// sortedExecutionWitness returns a copy of w with its state, codes and keys
-// sorted, so that two witnesses compare as sets.
-func sortedExecutionWitness(w *stateless.ExecutionWitness) *stateless.ExecutionWitness {
+// taikoSortedExecutionWitness returns a copy of w with its state, codes and
+// keys sorted, so that two witnesses compare as sets.
+func taikoSortedExecutionWitness(w *stateless.ExecutionWitness) *stateless.ExecutionWitness {
 	sorted := &stateless.ExecutionWitness{
 		State:   slices.Clone(w.State),
 		Codes:   slices.Clone(w.Codes),
@@ -314,8 +314,9 @@ func sortedExecutionWitness(w *stateless.ExecutionWitness) *stateless.ExecutionW
 	return sorted
 }
 
-// witnessErrorCode returns the JSON-RPC error code of err, or 0 if it has none.
-func witnessErrorCode(err error) int {
+// taikoWitnessErrorCode returns the JSON-RPC error code of err, or 0 if it has
+// none.
+func taikoWitnessErrorCode(err error) int {
 	var rpcErr rpc.Error
 	if errors.As(err, &rpcErr) {
 		return rpcErr.ErrorCode()
@@ -363,7 +364,7 @@ func TestExecutionWitnessForTxListEtnaSharedGrammar(t *testing.T) {
 			if err != nil {
 				t.Fatalf("executionWitnessForTxList: %v", err)
 			}
-			if !reflect.DeepEqual(sortedExecutionWitness(got), sortedExecutionWitness(want)) {
+			if !reflect.DeepEqual(taikoSortedExecutionWitness(got), taikoSortedExecutionWitness(want)) {
 				t.Fatal("witness differs from the witness of the canonical encoding")
 			}
 		})
@@ -379,7 +380,7 @@ func TestDecodeEtnaTxListWitnessTxsCorpus(t *testing.T) {
 		t.Run(tc.Name, func(t *testing.T) {
 			txs, err := decodeEtnaTxListWitnessTxs(tc.Input)
 			if !tc.OK {
-				if code := witnessErrorCode(err); err == nil || code != -32603 {
+				if code := taikoWitnessErrorCode(err); err == nil || code != -32603 {
 					t.Fatalf("decoded %d transactions (error %v, code %d), want a -32603 error", len(txs), err, code)
 				}
 				return
@@ -404,9 +405,9 @@ func TestDecodeEtnaTxListWitnessTxsCorpus(t *testing.T) {
 	}
 }
 
-// witnessSizeErrorCode calls debug_executionWitnessForTxList over JSON-RPC
+// taikoWitnessSizeErrorCode calls debug_executionWitnessForTxList over JSON-RPC
 // for block with txList and returns the code of the error it must answer.
-func witnessSizeErrorCode(t *testing.T, eth *Ethereum, block common.Hash, txList []byte) int {
+func taikoWitnessSizeErrorCode(t *testing.T, eth *Ethereum, block common.Hash, txList []byte) int {
 	t.Helper()
 	server := rpc.NewServer()
 	t.Cleanup(server.Stop)
@@ -419,7 +420,7 @@ func witnessSizeErrorCode(t *testing.T, eth *Ethereum, block common.Hash, txList
 	if err == nil {
 		t.Fatal("produced a witness, want a size-limit error")
 	}
-	return witnessErrorCode(err)
+	return taikoWitnessErrorCode(err)
 }
 
 // TestExecutionWitnessForTxListSizeLimitErrorCodes pins the JSON-RPC code of
@@ -456,10 +457,10 @@ func TestExecutionWitnessForTxListSizeLimitErrorCodes(t *testing.T) {
 			if err := checkTxListSize(tt.txList); err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("size check: %v, want an error containing %q", err, tt.want)
 			}
-			if code := witnessSizeErrorCode(t, etna, etnaBlock.Hash(), tt.txList); code != -32603 {
+			if code := taikoWitnessSizeErrorCode(t, etna, etnaBlock.Hash(), tt.txList); code != -32603 {
 				t.Fatalf("Etna block: code %d, want -32603", code)
 			}
-			if code := witnessSizeErrorCode(t, preEtna, preEtnaBlock.Hash(), tt.txList); code != -32000 {
+			if code := taikoWitnessSizeErrorCode(t, preEtna, preEtnaBlock.Hash(), tt.txList); code != -32000 {
 				t.Fatalf("pre-Etna block: code %d, want -32000", code)
 			}
 		})
@@ -486,7 +487,7 @@ func TestExecutionWitnessForTxListEtnaCorpus(t *testing.T) {
 			if err == nil {
 				t.Fatal("produced a witness, want the list rejected")
 			}
-			if code := witnessErrorCode(err); code != -32603 {
+			if code := taikoWitnessErrorCode(err); code != -32603 {
 				t.Fatalf("error %v has code %d, want -32603", err, code)
 			}
 		})
