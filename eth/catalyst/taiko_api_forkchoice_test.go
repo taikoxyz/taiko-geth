@@ -709,20 +709,17 @@ func TestTaikoForkchoiceUpdatedV3L1OriginWrites(t *testing.T) {
 	}
 }
 
-// TestTaikoForkchoiceUpdatedV3CachedPayload checks that repeating the
-// forkchoice update of the last built payload returns its ID without
-// rebuilding and rewrites the L1 origin with its block.
-func TestTaikoForkchoiceUpdatedV3CachedPayload(t *testing.T) {
+// TestTaikoForkchoiceUpdatedV3RepeatedPayloadRebuilds checks that repeating
+// the forkchoice update of the last built payload builds it again, the way
+// the reference client starts a new job for every update: the same ID, a new
+// payload with the same envelope, and the L1 origin rewritten with its block.
+func TestTaikoForkchoiceUpdatedV3RepeatedPayloadRebuilds(t *testing.T) {
 	ethservice, api := startTaikoFCUTestService(t)
 	db := ethservice.ChainDb()
 	config := ethservice.BlockChain().Config()
-	update := engine.ForkchoiceStateV1{HeadBlockHash: ethservice.BlockChain().Genesis().Hash()}
 
-	first, err := api.ForkchoiceUpdatedV3(context.Background(), update, taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList))
-	if err != nil || first.PayloadID == nil {
-		t.Fatalf("first forkchoice: id %v, err %v", first.PayloadID, err)
-	}
-	built := fcuTestCachedPayload(t, api, *first.PayloadID).BlockHash
+	id := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList))
+	want, built := fcuTestGetPayloadV5(t, api, id)
 	stored := fcuTestLastPayload(api)
 
 	// Clobber the records; the origin is not part of the payload ID.
@@ -731,12 +728,14 @@ func TestTaikoForkchoiceUpdatedV3CachedPayload(t *testing.T) {
 	again := taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList)
 	again.L1Origin.L1BlockHash = common.HexToHash("0x22")
 
-	second, err := api.ForkchoiceUpdatedV3(context.Background(), update, again)
-	if err != nil || second.PayloadID == nil || *second.PayloadID != *first.PayloadID {
-		t.Fatalf("second forkchoice: id %v, err %v, want the cached id %v", second.PayloadID, err, *first.PayloadID)
+	if got := fcuTestBuild(t, ethservice, api, again); got != id {
+		t.Fatalf("repeated payload id = %v, want %v", got, id)
 	}
-	if fcuTestLastPayload(api) != stored {
-		t.Fatalf("payload %v was built again, want the last built payload reused", *first.PayloadID)
+	if rebuilt := fcuTestLastPayload(api); rebuilt == nil || rebuilt == stored {
+		t.Fatalf("payload %v was not built again", id)
+	}
+	if have, _ := fcuTestGetPayloadV5(t, api, id); have != want {
+		t.Fatalf("rebuilt payload:\nhave %s\nwant %s", have, want)
 	}
 	origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1))
 	if origin == nil || origin.L2BlockHash != built || origin.L1BlockHash != common.HexToHash("0x22") {
@@ -744,6 +743,35 @@ func TestTaikoForkchoiceUpdatedV3CachedPayload(t *testing.T) {
 	}
 	if head, _ := rawdb.ReadHeadL1Origin(db); head == nil || head.Cmp(common.Big1) != 0 {
 		t.Fatalf("head L1 origin = %v, want 1", head)
+	}
+}
+
+// TestTaikoForkchoiceUpdatedV3SameIDNewInputs checks that a forkchoice update
+// with the last built payload's ID but another gas limit, which the ID does
+// not cover, builds the new block: engine_getPayloadV5 serves it under the
+// same ID and the L1 origin points to it.
+func TestTaikoForkchoiceUpdatedV3SameIDNewInputs(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	config := ethservice.BlockChain().Config()
+
+	id := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList))
+	_, oldHash := fcuTestGetPayloadV5(t, api, id)
+
+	attrs := taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList)
+	attrs.BlockMetadata.GasLimit = fcuTestGasLimit - 1_000_000
+	if got := fcuTestBuild(t, ethservice, api, attrs); got != id {
+		t.Fatalf("payload id = %v, want the same id %v", got, id)
+	}
+	envelope, err := api.GetPayloadV5(id)
+	if err != nil {
+		t.Fatalf("getPayloadV5(%v): %v", id, err)
+	}
+	if payload := envelope.ExecutionPayload; payload.GasLimit != attrs.BlockMetadata.GasLimit || payload.BlockHash == oldHash {
+		t.Fatalf("payload %v has gas limit %d and hash %v, want the new block with gas limit %d", id, payload.GasLimit, payload.BlockHash, attrs.BlockMetadata.GasLimit)
+	}
+	origin, _ := rawdb.ReadL1Origin(ethservice.ChainDb(), big.NewInt(1))
+	if origin == nil || origin.L2BlockHash != envelope.ExecutionPayload.BlockHash {
+		t.Fatalf("L1 origin = %+v, want the new block %v", origin, envelope.ExecutionPayload.BlockHash)
 	}
 }
 
@@ -930,7 +958,7 @@ func TestTaikoForkchoiceUpdatedV3BuildFailureKeepsTheLastPayload(t *testing.T) {
 // one transaction or has no recoverable signer, are -32603.
 //
 // The checks run after the forkchoice is applied and the timestamp check
-// passes, and before the payload ID is looked up. They write no L1 origin.
+// passes, and before anything is built. They write no L1 origin.
 // The reference client starts a job for every attributed update, so a
 // rejected request with the last built payload's ID drops that payload, while
 // one with another ID leaves it in place.
@@ -1082,7 +1110,8 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaAnchorTransaction(t *testing.T) {
 		{"unprotected legacy anchor transaction", fcuTestEncodeTx(t, unprotected)},
 		{"anchor transaction with trailing bytes", trailing},
 	} {
-		// Replace the last payload, so that the attributes are sealed again.
+		// Replace the last payload first, so that only a fresh build of the
+		// attributes can serve their ID.
 		fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime+1, txList))
 		fcuTestUnknownPayload(t, api, id)
 
@@ -1120,7 +1149,7 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
 		extra map[string]any
-		code  int // expected error code, or 0 for the cached ID
+		code  int // expected error code, or 0 for the same ID
 	}{
 		{"valid anchorTransaction", map[string]any{"anchorTransaction": hexutil.Bytes(fcuTestEncodeTx(t, anchor))}, 0},
 		{"undecodable anchorTransaction", map[string]any{"anchorTransaction": "0x02"}, -32603},
@@ -1130,7 +1159,7 @@ func TestTaikoForkchoiceUpdatedV3PreEtnaJobChecksOverRPC(t *testing.T) {
 		err := client.Call(&res, "engine_forkchoiceUpdatedV3", state, fcuTestWireAttrs(t, attrs, tt.extra))
 		if tt.code == 0 {
 			if err != nil || res.PayloadID == nil || *res.PayloadID != id {
-				t.Fatalf("%s: id %v, err %v, want the cached id %v", tt.name, res.PayloadID, err, id)
+				t.Fatalf("%s: id %v, err %v, want the same id %v", tt.name, res.PayloadID, err, id)
 			}
 			continue
 		}

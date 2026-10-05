@@ -110,7 +110,7 @@ func validateTaikoForkchoiceAttributes(config *params.ChainConfig, attrs *engine
 }
 
 // checkTaikoJobInputs makes the checks of the reference client's payload
-// builder when it creates a job, before the payload ID is looked up: a present
+// builder when it creates a job, before anything is built: a present
 // anchorTransaction must decode as one network transaction, with any bytes
 // after it ignored, and recover its signer with a low s and no chain-ID check;
 // the base fee must fit in 64 bits. A failure is -32603.
@@ -225,16 +225,14 @@ func (t *TaikoEngineAPI) applyForkchoice(update engine.ForkchoiceStateV1) (engin
 }
 
 // buildTaikoPayload seals the block described by attrs on top of head, makes it
-// the last built payload and writes its L1 origin. The ID of the last built
-// payload skips sealing and only rewrites the L1 origin for its block; an
-// earlier ID is sealed again. A failed build keeps the last built payload.
+// the last built payload and writes its L1 origin. Every call seals, even with
+// the last built payload's ID: the reference client starts a new job for every
+// attributed update, so inputs the ID does not cover (beneficiary, gas limit,
+// Etna base fee) take effect. A failed build keeps the last built payload.
 func (t *TaikoEngineAPI) buildTaikoPayload(ctx context.Context, head *types.Block, attrs *engine.PayloadAttributes) (engine.PayloadID, error) {
 	api := t.api
 	args := taikoBuildPayloadArgs(head.Hash(), attrs)
 	id := args.Id()
-	if last := t.resolveLastPayload(id); last != nil {
-		return id, t.writeL1Origin(attrs, last.ExecutionPayload.BlockHash)
-	}
 	var parentBlockTime uint64
 	if head.NumberU64() != 0 {
 		if ancestor := api.eth.BlockChain().GetHeaderByHash(head.ParentHash()); ancestor != nil {
