@@ -56,6 +56,13 @@ func decodeEtnaTxList(txList []byte) (types.Transactions, error) {
 	return txs, nil
 }
 
+// DecodeEtnaTxList decodes the transaction list of an Etna block with the
+// grammar the Etna sealer uses (see decodeEtnaTxList). The signatures are not
+// checked.
+func DecodeEtnaTxList(txList []byte) (types.Transactions, error) {
+	return decodeEtnaTxList(txList)
+}
+
 // DecodeTaikoNetworkTransaction decodes one transaction in network form: the
 // item at the start of b, read with the item grammar of an Etna transaction
 // list (see decodeEtnaTxList). Any bytes after the item are ignored. The

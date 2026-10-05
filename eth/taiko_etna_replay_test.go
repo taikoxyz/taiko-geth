@@ -1,20 +1,29 @@
 package eth
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"math/big"
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
 )
@@ -239,7 +248,7 @@ func TestBuildTxListWitnessEtnaFirstPosition(t *testing.T) {
 			if err != nil {
 				t.Fatalf("encode tx list: %v", err)
 			}
-			txs, err := decodeTxListWitnessTxs(txList)
+			txs, err := decodeEtnaTxListWitnessTxs(txList)
 			if err != nil || len(txs) != 2 {
 				t.Fatalf("decoded %d transactions (%v), want both", len(txs), err)
 			}
@@ -252,6 +261,169 @@ func TestBuildTxListWitnessEtnaFirstPosition(t *testing.T) {
 			}
 			if tt.committed == 1 && committed[0].Hash() != valid.Hash() {
 				t.Fatalf("committed %v, want the valid transfer", committed[0].Hash())
+			}
+		})
+	}
+}
+
+// etnaWitnessCorpusEntry is one input of the shared cross-client tx-list
+// vectors (miner/testdata/etna_txlist_corpus.json): whether the list decodes
+// and, for every decoded transaction, its hash and the sender recovered
+// without a chain-ID check (null when recovery fails).
+type etnaWitnessCorpusEntry struct {
+	Name  string        `json:"name"`
+	Input hexutil.Bytes `json:"input"`
+	OK    bool          `json:"ok"`
+	Txs   []struct {
+		Hash   common.Hash     `json:"hash"`
+		Sender *common.Address `json:"sender"`
+	} `json:"txs"`
+}
+
+// etnaWitnessCorpus reads the shared cross-client tx-list vectors.
+func etnaWitnessCorpus(t *testing.T) []etnaWitnessCorpusEntry {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join("..", "miner", "testdata", "etna_txlist_corpus.json"))
+	if err != nil {
+		t.Fatalf("read corpus: %v", err)
+	}
+	var corpus []etnaWitnessCorpusEntry
+	if err := json.Unmarshal(data, &corpus); err != nil {
+		t.Fatalf("parse corpus: %v", err)
+	}
+	if len(corpus) < 40 {
+		t.Fatalf("corpus has %d entries, want at least 40", len(corpus))
+	}
+	return corpus
+}
+
+// sortedExecutionWitness returns a copy of w with its state, codes and keys
+// sorted, so that two witnesses compare as sets.
+func sortedExecutionWitness(w *stateless.ExecutionWitness) *stateless.ExecutionWitness {
+	sorted := &stateless.ExecutionWitness{
+		State:   slices.Clone(w.State),
+		Codes:   slices.Clone(w.Codes),
+		Keys:    slices.Clone(w.Keys),
+		Headers: slices.Clone(w.Headers),
+	}
+	for _, list := range [][]hexutil.Bytes{sorted.State, sorted.Codes, sorted.Keys} {
+		slices.SortFunc(list, func(a, b hexutil.Bytes) int { return bytes.Compare(a, b) })
+	}
+	return sorted
+}
+
+// witnessErrorCode returns the JSON-RPC error code of err, or 0 if it has none.
+func witnessErrorCode(err error) int {
+	var rpcErr rpc.Error
+	if errors.As(err, &rpcErr) {
+		return rpcErr.ErrorCode()
+	}
+	return 0
+}
+
+// TestExecutionWitnessForTxListEtnaSharedGrammar pins that the tx list of an
+// Etna block is decoded with the grammar the Etna sealer uses: the block's
+// own transactions, framed in shapes only that grammar accepts, produce the
+// witness of the canonical encoding, zk gas difficulty check included.
+func TestExecutionWitnessForTxListEtnaSharedGrammar(t *testing.T) {
+	eth, block := newEtnaReplayChain(t)
+	bn := rpc.BlockNumberOrHashWithHash(block.Hash(), false)
+	canonical, err := rlp.EncodeToBytes(block.Transactions())
+	if err != nil {
+		t.Fatalf("encode tx list: %v", err)
+	}
+	want, err := executionWitnessForTxList(eth.blockchain, bn, canonical, nil, nil)
+	if err != nil {
+		t.Fatalf("canonical tx list: %v", err)
+	}
+	// Bare typed items: each transaction's type byte and payload list, without
+	// the RLP string header of the canonical encoding.
+	bare := rlp.NewEncoderBuffer(nil)
+	list := bare.List()
+	for _, tx := range block.Transactions() {
+		enc, err := tx.MarshalBinary()
+		if err != nil {
+			t.Fatalf("encode transaction: %v", err)
+		}
+		bare.Write(enc)
+	}
+	bare.ListEnd(list)
+
+	for _, tt := range []struct {
+		name   string
+		txList []byte
+	}{
+		{"trailing bytes after the list", append(slices.Clone(canonical), 0xc0, 0x00)},
+		{"bare typed items", bare.ToBytes()},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := executionWitnessForTxList(eth.blockchain, bn, tt.txList, nil, nil)
+			if err != nil {
+				t.Fatalf("executionWitnessForTxList: %v", err)
+			}
+			if !reflect.DeepEqual(sortedExecutionWitness(got), sortedExecutionWitness(want)) {
+				t.Fatal("witness differs from the witness of the canonical encoding")
+			}
+		})
+	}
+}
+
+// TestDecodeEtnaTxListWitnessTxsCorpus pins the Etna witness decoding against
+// the shared cross-client tx-list vectors: a list outside the grammar is a
+// -32603 error, and a decodable list keeps exactly the transactions whose
+// signer the vectors recover, in list order.
+func TestDecodeEtnaTxListWitnessTxsCorpus(t *testing.T) {
+	for _, tc := range etnaWitnessCorpus(t) {
+		t.Run(tc.Name, func(t *testing.T) {
+			txs, err := decodeEtnaTxListWitnessTxs(tc.Input)
+			if !tc.OK {
+				if code := witnessErrorCode(err); err == nil || code != -32603 {
+					t.Fatalf("decoded %d transactions (error %v, code %d), want a -32603 error", len(txs), err, code)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			var want []common.Hash
+			for _, tx := range tc.Txs {
+				if tx.Sender != nil {
+					want = append(want, tx.Hash)
+				}
+			}
+			got := make([]common.Hash, len(txs))
+			for i, tx := range txs {
+				got[i] = tx.Hash()
+			}
+			if !slices.Equal(got, want) {
+				t.Fatalf("kept %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// TestExecutionWitnessForTxListEtnaCorpus replays every list of the shared
+// cross-client tx-list vectors on an Etna block: a list the grammar accepts
+// produces a witness, and any other list is a -32603 error, the code of the
+// reference client.
+func TestExecutionWitnessForTxListEtnaCorpus(t *testing.T) {
+	eth, block := newEtnaReplayChain(t)
+	bn := rpc.BlockNumberOrHashWithHash(block.Hash(), false)
+	opts := &txListWitnessOptions{SkipZkGasDifficultyCheck: true}
+	for _, tc := range etnaWitnessCorpus(t) {
+		t.Run(tc.Name, func(t *testing.T) {
+			witness, err := executionWitnessForTxList(eth.blockchain, bn, tc.Input, nil, opts)
+			if tc.OK {
+				if err != nil || witness == nil {
+					t.Fatalf("executionWitnessForTxList: %v, want a witness", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("produced a witness, want the list rejected")
+			}
+			if code := witnessErrorCode(err); code != -32603 {
+				t.Fatalf("error %v has code %d, want -32603", err, code)
 			}
 		})
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -42,11 +43,20 @@ type txListWitnessOptions struct {
 	SkipZkGasDifficultyCheck bool `json:"skipZkGasDifficultyCheck"`
 }
 
-// decodeTxListWitnessTxs decodes an RLP list of transactions and drops any
-// whose signature cannot be recovered, mirroring the reference ingestion: list
-// positions are assigned after the drop, so the first remaining transaction —
-// not the first decoded one — takes the first-position fatality role below.
-// It errors only on a malformed top-level list.
+// txListDecodeError is the error of an Etna transaction list outside the
+// grammar the Etna sealer uses. Like the reference client, it answers -32603.
+type txListDecodeError struct{ err error }
+
+func (e *txListDecodeError) Error() string  { return "failed to decode tx list: " + e.err.Error() }
+func (e *txListDecodeError) ErrorCode() int { return -32603 }
+func (e *txListDecodeError) Unwrap() error  { return e.err }
+
+// decodeTxListWitnessTxs decodes the RLP transaction list of a pre-Etna block
+// and drops any transaction whose signature cannot be recovered, mirroring the
+// reference ingestion: list positions are assigned after the drop, so before
+// Etna the first remaining transaction — not the first decoded one — takes the
+// first-position fatality role in buildTxListWitness. It errors only on a
+// malformed top-level list.
 func decodeTxListWitnessTxs(txListRLP []byte) (types.Transactions, error) {
 	var txs types.Transactions
 	if err := rlp.DecodeBytes(txListRLP, &txs); err != nil {
@@ -59,6 +69,27 @@ func decodeTxListWitnessTxs(txListRLP []byte) (types.Transactions, error) {
 		// validation), while a cryptographically unrecoverable signature drops
 		// the transaction before positions are assigned.
 		if _, err := types.Sender(types.LatestSignerForChainID(tx.ChainId()), tx); err != nil {
+			continue
+		}
+		recovered = append(recovered, tx)
+	}
+	return recovered, nil
+}
+
+// decodeEtnaTxListWitnessTxs decodes the transaction list of an Etna block
+// with the grammar the Etna sealer uses, as the reference decodes it with its
+// block builder's grammar, and drops any transaction whose signer cannot be
+// recovered. Recovery checks no chain ID, so a transaction of another chain
+// stays in the list and is skipped by the replay. A list outside the grammar
+// is a -32603 error.
+func decodeEtnaTxListWitnessTxs(txList []byte) (types.Transactions, error) {
+	txs, err := miner.DecodeEtnaTxList(txList)
+	if err != nil {
+		return nil, &txListDecodeError{err: err}
+	}
+	recovered := make(types.Transactions, 0, len(txs))
+	for _, tx := range txs {
+		if _, err := miner.RecoverTaikoTransactionSender(tx); err != nil {
 			continue
 		}
 		recovered = append(recovered, tx)
@@ -576,8 +607,9 @@ func (api *DebugAPI) ExecutionWitnessForTxList(bn rpc.BlockNumberOrHash, txList 
 }
 
 // CHANGE(taiko): executionWitnessForTxList validates the request, resolves the
-// target block, decodes the transaction list, and returns the cross-client
-// execution witness produced by replaying it on the parent state.
+// target block, decodes the transaction list (from Etna on, with the grammar
+// the Etna sealer uses), and returns the cross-client execution witness
+// produced by replaying it on the parent state.
 func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*stateless.ExecutionWitness, error) {
 	if mode != nil && *mode != "" && *mode != "legacy" {
 		return nil, fmt.Errorf("unsupported witness mode %q", *mode)
@@ -593,7 +625,12 @@ func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, tx
 	if err != nil {
 		return nil, err
 	}
-	txs, err := decodeTxListWitnessTxs(txList)
+	var txs types.Transactions
+	if bc.Config().IsEtna(block.Time()) {
+		txs, err = decodeEtnaTxListWitnessTxs(txList)
+	} else {
+		txs, err = decodeTxListWitnessTxs(txList)
+	}
 	if err != nil {
 		return nil, err
 	}
