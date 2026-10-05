@@ -141,6 +141,12 @@ const (
 	ShastaExtraDataProposalIDLength        = 6
 	ShastaExtraDataLen                     = 1 + ShastaExtraDataProposalIDLength
 
+	// CHANGE(taiko): extraData layout for Etna blocks:
+	// [basefeeSharingPctg(1) | proposalId(6, BE) | anchorBlockNumber(6, BE)].
+	EtnaExtraDataAnchorBlockNumberIndex  = ShastaExtraDataLen
+	EtnaExtraDataAnchorBlockNumberLength = 6
+	EtnaExtraDataLen                     = EtnaExtraDataAnchorBlockNumberIndex + EtnaExtraDataAnchorBlockNumberLength
+
 	MaxCodeSize              = 24576                    // Maximum bytecode to permit for a contract
 	MaxInitCodeSize          = 2 * MaxCodeSize          // Maximum initcode to permit in a creation transaction and create instructions
 	MaxCodeSizeAmsterdam     = 32768                    // Maximum bytecode to permit for a contract post Amsterdam

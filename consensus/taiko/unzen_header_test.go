@@ -87,7 +87,7 @@ func TestVerifyUnzenHeaderFieldsParentBeaconRoot(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			header := unzenHeader()
 			header.ParentBeaconRoot = tt.root
-			err := verifyUnzenHeaderFields(header)
+			err := verifyUnzenHeaderFields(header, false)
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("expected header to be accepted, got %v", err)

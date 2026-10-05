@@ -173,12 +173,14 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return consensus.ErrInvalidNumber
 	}
 
+	isEtna := t.chainConfig.IsEtna(header.Time)
+
 	// CHANGE(taiko): Unzen repurposes difficulty for zk gas; only enforce zero before Unzen.
 	if !t.chainConfig.IsUnzen(header.Time) {
 		if header.Difficulty != nil && header.Difficulty.Cmp(common.Big0) != 0 {
 			return fmt.Errorf("invalid difficulty: have %v, want %v", header.Difficulty, common.Big0)
 		}
-	} else if err := verifyUnzenHeaderFields(header); err != nil {
+	} else if err := verifyUnzenHeaderFields(header, isEtna); err != nil {
 		return err
 	}
 
@@ -202,15 +204,23 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 		return ErrEmptyBasefee
 	}
 
-	// Verify the header's EIP-4396 attributes.
-	// Shasta extraData must be the 7-byte [pctg | proposalId(6)] layout — the
-	// only shape the drivers produce and the live chains carry. Reject anything
-	// else at import so a misbehaving block producer fails loudly here instead
-	// of minting headers whose embedded proposalId consumers cannot decode.
-	if t.chainConfig.IsShasta(header.Time) {
+	// Etna extraData must be the 13-byte [pctg | proposalId(6) | anchorBlockNumber(6)]
+	// layout and Shasta/Unzen extraData the 7-byte [pctg | proposalId(6)] layout:
+	// the only shapes the drivers produce. Reject anything else at import so a
+	// misbehaving block producer fails loudly here instead of minting headers
+	// whose fields consumers cannot decode. Only the length is checked.
+	if isEtna {
+		if l := len(header.Extra); l != params.EtnaExtraDataLen {
+			return fmt.Errorf("invalid Etna extra-data length: have %d, want %d", l, params.EtnaExtraDataLen)
+		}
+	} else if t.chainConfig.IsShasta(header.Time) {
 		if l := len(header.Extra); l != params.ShastaExtraDataLen {
 			return fmt.Errorf("invalid Shasta extra-data length: have %d, want %d", l, params.ShastaExtraDataLen)
 		}
+	}
+
+	// Verify the header's EIP-4396 attributes.
+	if t.chainConfig.IsShasta(header.Time) {
 		if header.Number.Cmp(common.Big1) > 0 {
 			if ancestorBlock := chain.GetHeader(parent.ParentHash, parent.Number.Uint64()-1); ancestorBlock != nil {
 				if err := misc.VerifyEIP4396Header(t.chainConfig, parent, parent.Time-ancestorBlock.Time, header); err != nil {
@@ -223,12 +233,23 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 					"number", parent.Number,
 				)
 			}
+		} else if isEtna {
+			// Block 1 has no grandparent, so EIP-4396 gives it the Shasta
+			// initial base fee. Etna enforces it; earlier forks do not.
+			if want := new(big.Int).SetUint64(params.ShastaInitialBaseFee); header.BaseFee.Cmp(want) != 0 {
+				return fmt.Errorf("invalid baseFee: have %v, want %v", header.BaseFee, want)
+			}
 		}
 	}
 
 	// WithdrawalsHash should not be empty
 	if header.WithdrawalsHash == nil {
 		return ErrEmptyWithdrawalsHash
+	}
+	// Etna credits no withdrawals, so an Etna header commits to the empty
+	// withdrawals list, and the body root check rejects a body carrying any.
+	if isEtna && *header.WithdrawalsHash != types.EmptyWithdrawalsHash {
+		return fmt.Errorf("invalid Etna withdrawals hash: have %v, want %v", *header.WithdrawalsHash, types.EmptyWithdrawalsHash)
 	}
 
 	l1Origin, err := rawdb.ReadL1Origin(t.chainDB, header.Number)
@@ -244,9 +265,12 @@ func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *
 	return nil
 }
 
-// CHANGE(taiko): verifyUnzenHeaderFields enforces the canonical Unzen header fields
-// for imported blocks so the import path matches local sealing/finalization.
-func verifyUnzenHeaderFields(header *types.Header) error {
+// verifyUnzenHeaderFields enforces the canonical Unzen header fields for
+// imported blocks so the import path matches local sealing/finalization.
+// Before Etna the parent beacon root is the canonical zero hash. From Etna on
+// it is the state root of the L1 block at the final anchorBlockNumber, which
+// the execution layer only requires to be non-zero.
+func verifyUnzenHeaderFields(header *types.Header, isEtna bool) error {
 	if header.RequestsHash == nil {
 		return fmt.Errorf("requests hash missing")
 	}
@@ -256,12 +280,17 @@ func verifyUnzenHeaderFields(header *types.Header) error {
 	if header.ParentBeaconRoot == nil {
 		return fmt.Errorf("parent beacon root missing")
 	}
-	// The reference client rebuilds every Unzen payload header with the zero
-	// root before checking its block hash, so it can never import a block that
-	// carries any other root. Accepting one here would let geth run the EIP-4788
-	// system call with that root, agree with itself on the resulting state root
-	// and make canonical a block the reference rejects.
-	if *header.ParentBeaconRoot != (common.Hash{}) {
+	if isEtna {
+		if *header.ParentBeaconRoot == (common.Hash{}) {
+			return errEtnaZeroParentBeaconRoot(header.Number)
+		}
+	} else if *header.ParentBeaconRoot != (common.Hash{}) {
+		// The reference client rebuilds every pre-Etna Unzen payload header
+		// with the zero root before checking its block hash, so it can never
+		// import a block that carries any other root. Accepting one here would
+		// let geth run the EIP-4788 system call with that root, agree with
+		// itself on the resulting state root and make canonical a block the
+		// reference rejects.
 		return fmt.Errorf("invalid parent beacon root: have %v, want %v", *header.ParentBeaconRoot, common.Hash{})
 	}
 	if header.BlobGasUsed == nil {
@@ -277,6 +306,13 @@ func verifyUnzenHeaderFields(header *types.Header) error {
 		return fmt.Errorf("invalid excess blob gas: have %d, want 0", *header.ExcessBlobGas)
 	}
 	return nil
+}
+
+// errEtnaZeroParentBeaconRoot reports an Etna block whose parent beacon root,
+// the state root of the L1 block at the final anchorBlockNumber, is the zero
+// hash.
+func errEtnaZeroParentBeaconRoot(number *big.Int) error {
+	return fmt.Errorf("invalid parent beacon root: Etna block %v requires a non-zero root", number)
 }
 
 // VerifyUncles verifies that the given block's uncles conform to the consensus
@@ -332,7 +368,11 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 		header.ExcessBlobGas = &excessBlobGas
 	}
 
-	// Withdrawals processing.
+	// Withdrawals processing. Etna credits no withdrawals: an Etna header
+	// commits to the empty withdrawals list.
+	if t.chainConfig.IsEtna(header.Time) {
+		return
+	}
 	for _, w := range body.Withdrawals {
 		state.AddBalance(
 			w.Address,
@@ -351,9 +391,10 @@ func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHe
 	if body.Withdrawals == nil {
 		body.Withdrawals = make([]*types.Withdrawal, 0)
 	}
+	isEtna := t.chainConfig.IsEtna(header.Time)
 
-	// Verify anchor transaction
-	if len(body.Transactions) != 0 { // Transactions list might be empty when building empty payload.
+	// Verify anchor transaction; Etna blocks have no anchor transaction.
+	if !isEtna && len(body.Transactions) != 0 { // Transactions list might be empty when building empty payload.
 		isAnchor, err := t.ValidateAnchorTx(body.Transactions[0], header)
 		if err != nil {
 			return nil, err
@@ -369,12 +410,18 @@ func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHe
 		// state root committed below. Backfilling a missing root at this point
 		// would instead dress a build path that skipped that system call up as a
 		// canonical-looking header over a wrong state root, which every importer
-		// rejects once the EIP-4788 contract has code. The root's value is not
-		// checked here: prepareWork rejects a non-zero root before building and
-		// header verification rejects one on import, while eth_simulateV1 has to
-		// keep a caller's beaconRoot block override, as the reference client does.
+		// rejects once the EIP-4788 contract has code. Before Etna the root's
+		// value is not checked here: prepareWork rejects a non-zero root before
+		// building and header verification rejects one on import, while
+		// eth_simulateV1 has to keep a caller's beaconRoot block override, as the
+		// reference client does.
 		if header.ParentBeaconRoot == nil {
 			return nil, fmt.Errorf("parent beacon root missing: have nil, want %v", common.Hash{})
+		}
+		// From Etna on the root is the state root of the L1 block at the
+		// final anchorBlockNumber, which is never the zero hash.
+		if isEtna && *header.ParentBeaconRoot == (common.Hash{}) {
+			return nil, errEtnaZeroParentBeaconRoot(header.Number)
 		}
 
 		// CHANGE(taiko): Unzen blocks must not contain blob transactions.
