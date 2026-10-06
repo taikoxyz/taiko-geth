@@ -6,6 +6,7 @@ import (
 	"errors"
 	"maps"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
@@ -317,8 +318,8 @@ func TestTaikoPayloadID(t *testing.T) {
 }
 
 // TestTaikoForkchoiceUpdatedV3AttributeChecks covers every attribute check.
-// A row also carries the later failures it can, so its code shows which
-// check runs first.
+// A row also carries the later failures it can, so its code and error detail
+// show which check runs first.
 func TestTaikoForkchoiceUpdatedV3AttributeChecks(t *testing.T) {
 	ethservice, api := startTaikoFCUTestService(t)
 	config := ethservice.BlockChain().Config()
@@ -335,9 +336,14 @@ func TestTaikoForkchoiceUpdatedV3AttributeChecks(t *testing.T) {
 			a.BlockMetadata.Timestamp = a.Timestamp
 		}
 		metadataTime mutation = func(a *engine.TaikoPayloadAttributesV3) { a.BlockMetadata.Timestamp++ }
-		zeroRoot     mutation = func(a *engine.TaikoPayloadAttributesV3) { a.BeaconRoot = new(common.Hash) }
-		anchorTx     mutation = func(a *engine.TaikoPayloadAttributesV3) { a.AnchorTransactionSet = true }
-		withdrawal   mutation = func(a *engine.TaikoPayloadAttributesV3) {
+		// etnaMetadataTime makes a pre-Etna target build at an Etna timestamp.
+		etnaMetadataTime mutation = func(a *engine.TaikoPayloadAttributesV3) { a.BlockMetadata.Timestamp = fcuTestEtnaTarget }
+		// metadataOverflow flags a wire blockMetadata.timestamp wider than u64
+		// but leaves the decoded value equal, so the flag alone must fail.
+		metadataOverflow mutation = func(a *engine.TaikoPayloadAttributesV3) { a.MetadataTimestampOverflow = true }
+		zeroRoot         mutation = func(a *engine.TaikoPayloadAttributesV3) { a.BeaconRoot = new(common.Hash) }
+		anchorTx         mutation = func(a *engine.TaikoPayloadAttributesV3) { a.AnchorTransactionSet = true }
+		withdrawal       mutation = func(a *engine.TaikoPayloadAttributesV3) {
 			a.Withdrawals = []*types.Withdrawal{{Index: 1, Validator: 1, Address: common.HexToAddress("0x01"), Amount: 1}}
 		}
 		shortExtra  mutation = func(a *engine.TaikoPayloadAttributesV3) { a.BlockMetadata.ExtraData = a.BlockMetadata.ExtraData[:7] }
@@ -347,26 +353,49 @@ func TestTaikoForkchoiceUpdatedV3AttributeChecks(t *testing.T) {
 			a.BeaconRoot = &root
 		}
 	)
+	const (
+		slotNumberErr   = "slot number is unsupported"
+		withdrawalsErr  = "missing withdrawals"
+		rootErr         = "missing beacon root"
+		forkErr         = "forkchoiceUpdatedV3 must only be called for Unzen payloads"
+		targetGasErr    = "target gas limit is unsupported"
+		metadataTimeErr = "block metadata timestamp must match the payload attributes timestamp"
+		etnaZeroRootErr = "a non-zero parent beacon block root is required from Etna"
+		etnaAnchorErr   = "an anchor transaction is unsupported from Etna"
+		etnaWithdrawErr = "withdrawals must be empty from Etna"
+		etnaExtraErr    = "extra data must be exactly 13 bytes from Etna"
+		etnaBaseFeeErr  = "base fee per gas does not fit in 64 bits"
+		preEtnaRootErr  = "non-zero parent beacon block root is unsupported before Etna"
+	)
+	// etnaFailures breaks every Etna-only rule, which all run after the
+	// timestamp rule.
+	etnaFailures := []mutation{zeroRoot, anchorTx, withdrawal, shortExtra, bigBaseFee}
+	with := func(first ...mutation) []mutation { return append(first, etnaFailures...) }
 	tests := []struct {
 		name      string
 		timestamp uint64
 		mutations []mutation
 		code      int
+		detail    string
 	}{
-		{"slot number", fcuTestEtnaTarget, []mutation{slotNumber, noWithdrawals, noRoot, preUnzen, targetGasLimit}, -38003},
-		{"missing withdrawals", fcuTestEtnaTarget, []mutation{noWithdrawals, noRoot, preUnzen, targetGasLimit}, -38003},
-		{"missing root", fcuTestEtnaTarget, []mutation{noRoot, preUnzen, targetGasLimit}, -38003},
-		{"pre-Unzen target", fcuTestEtnaTarget, []mutation{preUnzen, targetGasLimit}, -38005},
-		{"pre-Unzen target with a non-zero root", fcuTestPreEtnaTime, []mutation{preUnzen, nonZeroRoot}, -38005},
-		{"target gas limit", fcuTestEtnaTarget, []mutation{targetGasLimit, metadataTime, zeroRoot, anchorTx, withdrawal, shortExtra, bigBaseFee}, -32602},
-		{"target gas limit before Etna", fcuTestPreEtnaTime, []mutation{targetGasLimit}, -32602},
-		{"Etna metadata timestamp", fcuTestEtnaTarget, []mutation{metadataTime}, -32602},
-		{"Etna zero root", fcuTestEtnaTarget, []mutation{zeroRoot}, -32602},
-		{"Etna anchor transaction", fcuTestEtnaTarget, []mutation{anchorTx}, -32602},
-		{"Etna withdrawals", fcuTestEtnaTarget, []mutation{withdrawal}, -32602},
-		{"Etna extra data length", fcuTestEtnaTarget, []mutation{shortExtra}, -32602},
-		{"Etna base fee above u64", fcuTestEtnaTarget, []mutation{bigBaseFee}, -32602},
-		{"pre-Etna non-zero root", fcuTestPreEtnaTime, []mutation{nonZeroRoot}, -32602},
+		{"slot number", fcuTestEtnaTarget, []mutation{slotNumber, noWithdrawals, noRoot, preUnzen, targetGasLimit, metadataTime}, -38003, slotNumberErr},
+		{"missing withdrawals", fcuTestEtnaTarget, []mutation{noWithdrawals, noRoot, preUnzen, targetGasLimit, metadataTime}, -38003, withdrawalsErr},
+		{"missing root", fcuTestEtnaTarget, []mutation{noRoot, preUnzen, targetGasLimit, metadataTime}, -38003, rootErr},
+		{"pre-Unzen target", fcuTestEtnaTarget, []mutation{preUnzen, targetGasLimit, metadataTime}, -38005, forkErr},
+		{"pre-Unzen target with a non-zero root", fcuTestPreEtnaTime, []mutation{preUnzen, nonZeroRoot}, -38005, forkErr},
+		{"target gas limit", fcuTestEtnaTarget, with(targetGasLimit, metadataTime), -32602, targetGasErr},
+		{"target gas limit before Etna", fcuTestPreEtnaTime, []mutation{targetGasLimit, metadataTime, nonZeroRoot}, -32602, targetGasErr},
+		{"Etna metadata timestamp", fcuTestEtnaTarget, with(metadataTime), -32602, metadataTimeErr},
+		{"Etna metadata timestamp above u64", fcuTestEtnaTarget, with(metadataOverflow), -32602, metadataTimeErr},
+		{"Unzen metadata timestamp", fcuTestPreEtnaTime, []mutation{metadataTime, nonZeroRoot}, -32602, metadataTimeErr},
+		{"Unzen target with an Etna metadata timestamp", fcuTestPreEtnaTime, []mutation{etnaMetadataTime, nonZeroRoot}, -32602, metadataTimeErr},
+		{"Unzen metadata timestamp above u64", fcuTestPreEtnaTime, []mutation{metadataOverflow, nonZeroRoot}, -32602, metadataTimeErr},
+		{"Etna zero root", fcuTestEtnaTarget, []mutation{zeroRoot}, -32602, etnaZeroRootErr},
+		{"Etna anchor transaction", fcuTestEtnaTarget, []mutation{anchorTx}, -32602, etnaAnchorErr},
+		{"Etna withdrawals", fcuTestEtnaTarget, []mutation{withdrawal}, -32602, etnaWithdrawErr},
+		{"Etna extra data length", fcuTestEtnaTarget, []mutation{shortExtra}, -32602, etnaExtraErr},
+		{"Etna base fee above u64", fcuTestEtnaTarget, []mutation{bigBaseFee}, -32602, etnaBaseFeeErr},
+		{"pre-Etna non-zero root", fcuTestPreEtnaTime, []mutation{nonZeroRoot}, -32602, preEtnaRootErr},
 	}
 	for _, tt := range tests {
 		attrs := taikoFCUTestAttrs(config, tt.timestamp, fcuTestEmptyTxList)
@@ -381,9 +410,148 @@ func TestTaikoForkchoiceUpdatedV3AttributeChecks(t *testing.T) {
 		if code := taikoRPCErrorCode(t, err); code != tt.code {
 			t.Errorf("%s: code %d (%v), want %d", tt.name, code, err, tt.code)
 		}
+		if detail := taikoNPErrorDetail(err); detail != tt.detail {
+			t.Errorf("%s: error detail %q, want %q", tt.name, detail, tt.detail)
+		}
 	}
 	if origin, _ := rawdb.ReadL1Origin(ethservice.ChainDb(), big.NewInt(1)); origin != nil {
 		t.Fatalf("rejected attributes wrote an L1 origin: %+v", origin)
+	}
+}
+
+// TestTaikoForkchoiceUpdatedV3MetadataTimestampMismatch checks the timestamp
+// rule on a pre-Etna target, where the reference client applies it as on
+// every fork: a blockMetadata.timestamp that differs from the attributes'
+// timestamp, or does not fit in u64, is -32602 after the forkchoice is
+// applied. It builds nothing and writes no L1 origin. The last built payload
+// stays, although the request has its ID and an anchorTransaction that fails
+// the job checks.
+func TestTaikoForkchoiceUpdatedV3MetadataTimestampMismatch(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	chain := ethservice.BlockChain()
+	config := chain.Config()
+	db := ethservice.ChainDb()
+	genesis := chain.Genesis().Hash()
+
+	txList, _ := taikoFCUTestAnchorTxList(t, config, big.NewInt(params.ShastaInitialBaseFee))
+	id := fcuTestBuild(t, ethservice, api, taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList))
+	envelope, built := fcuTestGetPayloadV5(t, api, id)
+	stored := fcuTestLastPayload(api)
+	block := fcuTestBuiltBlock(t, api, id, common.Hash{})
+	if _, err := chain.InsertBlockWithoutSetHead(context.Background(), block, false); err != nil {
+		t.Fatalf("import the Unzen block: %v", err)
+	}
+
+	for _, tt := range []struct {
+		name     string
+		mismatch func(*engine.TaikoPayloadAttributesV3)
+	}{
+		{"one second later", func(a *engine.TaikoPayloadAttributesV3) { a.BlockMetadata.Timestamp++ }},
+		{"an Etna timestamp", func(a *engine.TaikoPayloadAttributesV3) { a.BlockMetadata.Timestamp = fcuTestEtnaTarget }},
+		{"wider than u64", func(a *engine.TaikoPayloadAttributesV3) { a.MetadataTimestampOverflow = true }},
+	} {
+		res, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: block.Hash()}, nil)
+		if err != nil || res.PayloadStatus.Status != engine.VALID {
+			t.Fatalf("%s: forkchoice to block 1: status %s, err %v", tt.name, res.PayloadStatus.Status, err)
+		}
+		attrs := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)
+		attrs.L1Origin.L1BlockHash = common.HexToHash("0x22")
+		attrs.AnchorTransactionSet = true
+		attrs.AnchorTransaction = []byte{0x02}
+		tt.mismatch(attrs)
+		if got := taikoPayloadID(genesis, &attrs.PayloadAttributes); got != id {
+			t.Fatalf("%s: payload id = %v, want the last payload's %v", tt.name, got, id)
+		}
+
+		res, err = api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: genesis}, attrs)
+		if err == nil || taikoRPCErrorCode(t, err) != -32602 {
+			t.Fatalf("%s: err %v, want code -32602", tt.name, err)
+		}
+		if res.PayloadID != nil {
+			t.Fatalf("%s: payload id %v returned", tt.name, res.PayloadID)
+		}
+		if got := chain.CurrentBlock().Hash(); got != genesis {
+			t.Fatalf("%s: head = %v, want the requested genesis", tt.name, got)
+		}
+		if fcuTestLastPayload(api) != stored {
+			t.Fatalf("%s: the last built payload was replaced or dropped", tt.name)
+		}
+		if have, _ := fcuTestGetPayloadV5(t, api, id); have != envelope {
+			t.Fatalf("%s: last payload:\nhave %s\nwant %s", tt.name, have, envelope)
+		}
+		if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != built || origin.L1BlockHash != fcuTestL1BlockHash {
+			t.Fatalf("%s: L1 origin = %+v, want block %v with the first origin", tt.name, origin, built)
+		}
+	}
+}
+
+// TestTaikoForkchoiceUpdatedV3MetadataTimestampOverflowOverRPC sends a
+// pre-Etna target whose blockMetadata.timestamp is 2^256-1 on the wire. The
+// attributes decode, and the timestamp rule answers -32602 after the
+// forkchoice is applied; the last built payload and its L1 origin stay. A
+// value wider than 256 bits does not decode, which is -32602 without the
+// forkchoice.
+func TestTaikoForkchoiceUpdatedV3MetadataTimestampOverflowOverRPC(t *testing.T) {
+	n, ethservice := taikoEngineTestNode(t, newTaikoFCUTestGenesis())
+	client := n.Attach()
+	defer client.Close()
+
+	chain := ethservice.BlockChain()
+	config := chain.Config()
+	db := ethservice.ChainDb()
+	genesis := chain.Genesis().Hash()
+
+	// A second service imports block 1 without moving the head.
+	block := fcuTestInsertEtnaBlock(t, ethservice, &TaikoEngineAPI{api: newConsensusAPIWithoutHeartbeat(ethservice)})
+
+	txList, _ := taikoFCUTestAnchorTxList(t, config, big.NewInt(params.ShastaInitialBaseFee))
+	attrs := taikoFCUTestAttrs(config, fcuTestPreEtnaTime, txList)
+	var res engine.ForkChoiceResponse
+	if err := client.Call(&res, "engine_forkchoiceUpdatedV3", engine.ForkchoiceStateV1{HeadBlockHash: genesis}, fcuTestWireAttrs(t, attrs, nil)); err != nil || res.PayloadID == nil {
+		t.Fatalf("build: id %v, err %v, want a payload id", res.PayloadID, err)
+	}
+	id := *res.PayloadID
+	var want json.RawMessage
+	if err := client.Call(&want, "engine_getPayloadV5", id); err != nil {
+		t.Fatalf("getPayloadV5(%v): %v", id, err)
+	}
+	built, _ := rawdb.ReadL1Origin(db, big.NewInt(1))
+	if built == nil || built.L1BlockHash != fcuTestL1BlockHash {
+		t.Fatalf("L1 origin = %+v after the build, want the attributes' origin", built)
+	}
+
+	attrs.L1Origin.L1BlockHash = common.HexToHash("0x22")
+	for _, tt := range []struct {
+		name      string
+		timestamp string
+		applied   bool // whether the forkchoice is applied
+	}{
+		{"2^256-1", "0x" + strings.Repeat("f", 64), true},
+		{"2^256", "0x1" + strings.Repeat("0", 64), false},
+	} {
+		if err := client.Call(&res, "engine_forkchoiceUpdatedV3", engine.ForkchoiceStateV1{HeadBlockHash: block.Hash()}, nil); err != nil || res.PayloadStatus.Status != engine.VALID {
+			t.Fatalf("%s: forkchoice to block 1: status %s, err %v", tt.name, res.PayloadStatus.Status, err)
+		}
+		wire := fcuTestWireAttrs(t, attrs, nil)
+		wire["blockMetadata"].(map[string]any)["timestamp"] = tt.timestamp
+		err := client.Call(new(json.RawMessage), "engine_forkchoiceUpdatedV3", engine.ForkchoiceStateV1{HeadBlockHash: genesis}, wire)
+		if err == nil || taikoRPCErrorCode(t, err) != -32602 {
+			t.Fatalf("%s: err %v, want code -32602", tt.name, err)
+		}
+		wantHead := block.Hash()
+		if tt.applied {
+			wantHead = genesis
+		}
+		if got := chain.CurrentBlock().Hash(); got != wantHead {
+			t.Fatalf("%s: head = %v, want %v", tt.name, got, wantHead)
+		}
+		var have json.RawMessage
+		if err := client.Call(&have, "engine_getPayloadV5", id); err != nil || string(have) != string(want) {
+			t.Fatalf("%s: getPayloadV5(%v): err %v\nhave %s\nwant %s", tt.name, id, err, have, want)
+		}
+		if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin == nil || origin.L2BlockHash != built.L2BlockHash || origin.L1BlockHash != fcuTestL1BlockHash {
+			t.Fatalf("%s: L1 origin = %+v, want %+v", tt.name, origin, built)
+		}
 	}
 }
 

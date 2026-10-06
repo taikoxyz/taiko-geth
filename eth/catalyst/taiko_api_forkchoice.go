@@ -74,6 +74,10 @@ func (t *TaikoEngineAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.
 
 // validateTaikoForkchoiceAttributes runs the engine_forkchoiceUpdatedV3
 // attribute checks in order and returns the first failure.
+//
+// On every fork, blockMetadata.timestamp must equal the attributes'
+// timestamp: the fork is chosen from the latter and the block is built at the
+// former. A metadata timestamp wider than 64 bits never matches.
 func validateTaikoForkchoiceAttributes(config *params.ChainConfig, attrs *engine.TaikoPayloadAttributesV3) error {
 	switch {
 	case attrs.SlotNumber != nil:
@@ -86,11 +90,11 @@ func validateTaikoForkchoiceAttributes(config *params.ChainConfig, attrs *engine
 		return unsupportedForkErr("forkchoiceUpdatedV3 must only be called for Unzen payloads")
 	case attrs.TargetGasLimitSet:
 		return paramsErr("target gas limit is unsupported")
+	case attrs.MetadataTimestampOverflow || attrs.BlockMetadata.Timestamp != attrs.Timestamp:
+		return paramsErr("block metadata timestamp must match the payload attributes timestamp")
 	}
 	if config.IsEtna(attrs.Timestamp) {
 		switch {
-		case attrs.BlockMetadata.Timestamp != attrs.Timestamp:
-			return paramsErr("block metadata timestamp must match the payload attributes timestamp")
 		case *attrs.BeaconRoot == (common.Hash{}):
 			return paramsErr("a non-zero parent beacon block root is required from Etna")
 		case attrs.AnchorTransactionSet:

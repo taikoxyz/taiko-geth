@@ -388,12 +388,12 @@ func (w *Miner) sealBlockWith(
 		withdrawals = attrs.Withdrawals
 		isEtna      = w.chainConfig.IsEtna(timestamp)
 	)
+	// The engine API rejects attributes whose two timestamps differ on every
+	// fork, so the header time is the block metadata timestamp either way.
+	if blkMeta.Timestamp != timestamp {
+		return nil, fmt.Errorf("block metadata timestamp %d differs from payload timestamp %d", blkMeta.Timestamp, timestamp)
+	}
 	if isEtna {
-		// The engine API rejects Etna attributes whose two timestamps differ,
-		// so the header time is the block metadata timestamp either way.
-		if blkMeta.Timestamp != timestamp {
-			return nil, fmt.Errorf("block metadata timestamp %d differs from payload timestamp %d", blkMeta.Timestamp, timestamp)
-		}
 		withdrawals = make(types.Withdrawals, 0)
 	}
 

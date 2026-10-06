@@ -35,21 +35,35 @@ var InternalError = &EngineAPIError{code: -32603, msg: "Internal error"}
 // with a non-null value; key matching for them is exact-case. A present
 // anchorTransaction also keeps its bytes for the pre-Etna job checks.
 //
+// A blockMetadata.timestamp that is a hex quantity wider than 64 bits still
+// decodes, so that the forkchoice is applied before the attributes are
+// rejected: MetadataTimestampOverflow records it, and BlockMetadata.Timestamp
+// then holds math.MaxUint64 in its place.
+//
 // The type has no MarshalJSON of its own: json.Marshal uses the promoted
 // PayloadAttributes encoder and drops both keys, so a caller that needs either
 // key on the wire has to send raw JSON.
 type TaikoPayloadAttributesV3 struct {
 	PayloadAttributes
-	TargetGasLimitSet    bool   // "targetGasLimit" present with a non-null value
-	AnchorTransactionSet bool   // "anchorTransaction" present with a non-null value
-	AnchorTransaction    []byte // the "anchorTransaction" bytes when AnchorTransactionSet
+	TargetGasLimitSet         bool   // "targetGasLimit" present with a non-null value
+	AnchorTransactionSet      bool   // "anchorTransaction" present with a non-null value
+	AnchorTransaction         []byte // the "anchorTransaction" bytes when AnchorTransactionSet
+	MetadataTimestampOverflow bool   // blockMetadata.timestamp is wider than 64 bits
 }
 
 // UnmarshalJSON decodes the attributes, records the presence of
 // targetGasLimit and anchorTransaction and keeps the anchorTransaction bytes.
 // A present, non-null value of either key must still be well formed (a hex
 // quantity and hex bytes respectively).
+//
+// An exact-case blockMetadata.timestamp holding a hex quantity of 65 to 256
+// bits sets MetadataTimestampOverflow; any other malformed value fails as
+// before.
 func (a *TaikoPayloadAttributesV3) UnmarshalJSON(input []byte) error {
+	input, overflow, err := taikoClampMetadataTimestamp(input)
+	if err != nil {
+		return err
+	}
 	var attrs PayloadAttributes
 	if err := attrs.UnmarshalJSON(input); err != nil {
 		return err
@@ -68,12 +82,42 @@ func (a *TaikoPayloadAttributesV3) UnmarshalJSON(input []byte) error {
 		return err
 	}
 	*a = TaikoPayloadAttributesV3{
-		PayloadAttributes:    attrs,
-		TargetGasLimitSet:    targetGasLimitSet,
-		AnchorTransactionSet: anchorTransactionSet,
-		AnchorTransaction:    anchorTransaction,
+		PayloadAttributes:         attrs,
+		TargetGasLimitSet:         targetGasLimitSet,
+		AnchorTransactionSet:      anchorTransactionSet,
+		AnchorTransaction:         anchorTransaction,
+		MetadataTimestampOverflow: overflow,
 	}
 	return nil
+}
+
+// taikoClampMetadataTimestamp replaces an exact-case blockMetadata.timestamp
+// that is a hex quantity wider than 64 bits with math.MaxUint64, which the
+// generated decoder accepts, and reports whether it did. Any other input is
+// returned unchanged, for the generated decoder to accept or reject.
+func taikoClampMetadataTimestamp(input []byte) ([]byte, bool, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(input, &fields); err != nil {
+		return input, false, nil
+	}
+	var meta map[string]json.RawMessage
+	if err := json.Unmarshal(fields["blockMetadata"], &meta); err != nil {
+		return input, false, nil
+	}
+	var timestamp hexutil.Big
+	if err := json.Unmarshal(meta["timestamp"], &timestamp); err != nil || timestamp.ToInt().IsUint64() {
+		return input, false, nil
+	}
+	meta["timestamp"] = json.RawMessage(`"0xffffffffffffffff"`)
+	enc, err := json.Marshal(meta)
+	if err != nil {
+		return nil, false, err
+	}
+	fields["blockMetadata"] = enc
+	if input, err = json.Marshal(fields); err != nil {
+		return nil, false, err
+	}
+	return input, true, nil
 }
 
 // taikoOptionalFieldSet reports whether key is present with a non-null value,

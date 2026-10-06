@@ -282,15 +282,37 @@ func TestSealBlockWith_EtnaHeaderFields(t *testing.T) {
 	}
 }
 
-// TestSealBlockWith_EtnaRejectsMismatchedMetadataTimestamp pins that an Etna
-// block is never sealed from attributes whose two timestamps differ.
-func TestSealBlockWith_EtnaRejectsMismatchedMetadataTimestamp(t *testing.T) {
-	config := newEtnaTestChainConfig()
-	w, b := newUnzenTestWorker(t, newEtnaTestGenesis(config))
-	attrs := etnaTestAttributes(b.chain.CurrentBlock(), []byte{0xc0})
-	attrs.BlockMetadata.Timestamp++
-	if _, err := w.sealBlockWith(b.chain.CurrentBlock(), 0, attrs); err == nil {
-		t.Fatal("sealed an Etna block from mismatched timestamps")
+// TestSealBlockWith_RejectsMismatchedMetadataTimestamp pins that no block is
+// sealed from attributes whose two timestamps differ, before Etna as from it.
+// The attributes seal with equal timestamps.
+func TestSealBlockWith_RejectsMismatchedMetadataTimestamp(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		config *params.ChainConfig
+		attrs  func(t *testing.T, config *params.ChainConfig, parent *types.Header) *engine.PayloadAttributes
+	}{
+		{"etna", newEtnaTestChainConfig(), func(t *testing.T, config *params.ChainConfig, parent *types.Header) *engine.PayloadAttributes {
+			return etnaTestAttributes(parent, []byte{0xc0})
+		}},
+		{"before etna", newPreEtnaTestChainConfig(), func(t *testing.T, config *params.ChainConfig, parent *types.Header) *engine.PayloadAttributes {
+			attrs := preEtnaTestAttributes(parent, nil)
+			attrs.BlockMetadata.TxList = encodeTestTxList(t, anchorShapedTx(t, config, misc.CalcEIP4396BaseFee(config, parent, 0)))
+			return attrs
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w, b := newUnzenTestWorker(t, newEtnaTestGenesis(tt.config))
+			parent := b.chain.CurrentBlock()
+			attrs := tt.attrs(t, tt.config, parent)
+			attrs.BlockMetadata.Timestamp++
+			if _, err := w.sealBlockWith(parent, 0, attrs); err == nil || !strings.Contains(err.Error(), "differs from payload timestamp") {
+				t.Fatalf("sealBlockWith error = %v, want a timestamp mismatch", err)
+			}
+			attrs.BlockMetadata.Timestamp--
+			if _, err := w.sealBlockWith(parent, 0, attrs); err != nil {
+				t.Fatalf("sealBlockWith with equal timestamps: %v", err)
+			}
+		})
 	}
 }
 

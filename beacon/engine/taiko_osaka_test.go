@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
+	"math"
 	"math/big"
 	"reflect"
 	"strings"
@@ -282,6 +283,25 @@ func TestTaikoPayloadAttributesV3Decoding(t *testing.T) {
 	set := func(key, value string) func(map[string]json.RawMessage) {
 		return func(f map[string]json.RawMessage) { f[key] = json.RawMessage(value) }
 	}
+	// setMetadata sets key of blockMetadata to value; an empty value deletes it.
+	setMetadata := func(key, value string) func(map[string]json.RawMessage) {
+		return func(f map[string]json.RawMessage) {
+			var meta map[string]json.RawMessage
+			if err := json.Unmarshal(f["blockMetadata"], &meta); err != nil {
+				panic(err)
+			}
+			if value == "" {
+				delete(meta, key)
+			} else {
+				meta[key] = json.RawMessage(value)
+			}
+			f["blockMetadata"], _ = json.Marshal(meta)
+		}
+	}
+	replaceMetadataTimestamp := func(f map[string]json.RawMessage) {
+		setMetadata("timestamp", "")(f)
+		setMetadata("Timestamp", `"0x10000000000000000"`)(f)
+	}
 	tests := []struct {
 		name               string
 		edit               func(map[string]json.RawMessage)
@@ -289,6 +309,8 @@ func TestTaikoPayloadAttributesV3Decoding(t *testing.T) {
 		wantAnchorTx       bool
 		wantAnchorTxBytes  string // hex of the kept anchorTransaction bytes
 		wantSlotNumber     bool
+		wantOverflow       bool   // MetadataTimestampOverflow
+		wantMetadataTime   uint64 // blockMetadata.timestamp when not 100
 		wantErr            string
 	}{
 		{name: "neither key"},
@@ -303,6 +325,12 @@ func TestTaikoPayloadAttributesV3Decoding(t *testing.T) {
 		{name: "anchorTransaction malformed", edit: set("anchorTransaction", "1"), wantErr: `invalid field "anchorTransaction"`},
 		{name: "slotNumber present", edit: set("slotNumber", `"0x1"`), wantSlotNumber: true},
 		{name: "missing required field", edit: func(f map[string]json.RawMessage) { delete(f, "l1Origin") }, wantErr: "missing required field 'l1Origin'"},
+		{name: "metadata timestamp of 2^64-1", edit: setMetadata("timestamp", `"0xffffffffffffffff"`), wantMetadataTime: math.MaxUint64},
+		{name: "metadata timestamp of 2^64", edit: setMetadata("timestamp", `"0x10000000000000000"`), wantOverflow: true, wantMetadataTime: math.MaxUint64},
+		{name: "metadata timestamp of 2^256-1", edit: setMetadata("timestamp", `"0x`+strings.Repeat("f", 64)+`"`), wantOverflow: true, wantMetadataTime: math.MaxUint64},
+		{name: "metadata timestamp above 256 bits", edit: setMetadata("timestamp", `"0x1`+strings.Repeat("0", 64)+`"`), wantErr: "hex number > 64 bits"},
+		{name: "metadata timestamp with a leading zero", edit: setMetadata("timestamp", `"0x010000000000000000"`), wantErr: "hex number with leading zero digits"},
+		{name: "metadata timestamp case variant above u64", edit: replaceMetadataTimestamp, wantErr: "hex number > 64 bits"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -328,6 +356,16 @@ func TestTaikoPayloadAttributesV3Decoding(t *testing.T) {
 			}
 			if (attrs.SlotNumber != nil) != tt.wantSlotNumber {
 				t.Errorf("SlotNumber = %v, want set %v", attrs.SlotNumber, tt.wantSlotNumber)
+			}
+			if attrs.MetadataTimestampOverflow != tt.wantOverflow {
+				t.Errorf("MetadataTimestampOverflow = %v, want %v", attrs.MetadataTimestampOverflow, tt.wantOverflow)
+			}
+			wantTime := uint64(100)
+			if tt.wantMetadataTime != 0 {
+				wantTime = tt.wantMetadataTime
+			}
+			if attrs.BlockMetadata == nil || attrs.BlockMetadata.Timestamp != wantTime || attrs.BlockMetadata.GasLimit != 30_000_000 {
+				t.Errorf("block metadata = %+v, want timestamp %d and gas limit 30000000", attrs.BlockMetadata, wantTime)
 			}
 			if attrs.Timestamp != 100 || attrs.L1Origin == nil || attrs.L1Origin.BlockID.Uint64() != 100 {
 				t.Errorf("embedded attributes not decoded: %+v", attrs.PayloadAttributes)
