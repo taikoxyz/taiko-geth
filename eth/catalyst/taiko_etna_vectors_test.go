@@ -100,16 +100,11 @@ func replayTaikoEtnaVectors(t *testing.T, path string) {
 		if step.Error != nil {
 			wantCode = step.Error.Code
 		}
-		switch {
-		case step.Mode == "bothFail":
-			if gotCode == 0 {
-				t.Fatalf("step %d %q (%s): succeeded with %s, want an error", i, step.Name, step.Method, result)
-			}
-		case gotCode != 0 || wantCode != 0:
+		if gotCode != 0 || wantCode != 0 {
 			if gotCode != wantCode {
 				t.Fatalf("step %d %q (%s): error code %d, want %d (result %s)", i, step.Name, step.Method, gotCode, wantCode, result)
 			}
-		default:
+		} else {
 			got := projectTaikoEtnaVector(t, step.Mode, result)
 			want := projectTaikoEtnaVector(t, step.Mode, step.Result)
 			if !reflect.DeepEqual(got, want) {
@@ -204,8 +199,9 @@ func projectTaikoEtnaVector(t *testing.T, mode string, raw json.RawMessage) any 
 		}
 		return out
 	case "txLists":
-		// Every list with its transaction objects and gas. The compressed
-		// size is client-specific, so only whether it is zero counts.
+		// Every list in order, with each transaction object field by field
+		// and the list's gas used. bytesLength is each client's own DA-size
+		// measure, so only whether it is zero counts.
 		if v == nil {
 			return nil
 		}

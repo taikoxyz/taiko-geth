@@ -1,5 +1,5 @@
 {
-  "description": "Engine API, taikoAuth and eth RPC exchanges captured from the shared cross-client differential run (boundary profile); replayed by TestTaikoEtnaVectors.",
+  "description": "Engine API, taikoAuth and eth RPC exchanges captured from the shared cross-client differential run against the reference client at revision 1e25b4849259320fca1123de362bc38b0b090ece (boundary profile); replayed by TestTaikoEtnaVectors.",
   "networkId": 167001,
   "etnaTime": 100,
   "genesisHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
@@ -62,9 +62,9 @@
       ],
       "mode": "sortedStrings",
       "result": [
+        "engine_newPayloadV4",
         "engine_forkchoiceUpdatedV3",
-        "engine_getPayloadV5",
-        "engine_newPayloadV4"
+        "engine_getPayloadV5"
       ]
     },
     {
@@ -1920,6 +1920,188 @@
       }
     },
     {
+      "name": "Unzen metadata timestamp: nonce of 0x0000777735367b36bC9B61C50022d9D0700dB4Ec",
+      "method": "eth_getTransactionCount",
+      "params": [
+        "0x0000777735367b36bc9b61c50022d9d0700db4ec",
+        "latest"
+      ],
+      "mode": "exact",
+      "result": "0x1"
+    },
+    {
+      "name": "Unzen attrs: blockMetadata.timestamp differs (FCU to the imported U2)",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0xa6689dddc4314c1afc879d3de7c4dc9d340c7047201e1f2571ffac6e05556c9b",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "baseFeePerGas": "0xde0903",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAAAw==",
+            "gasLimit": 30000000,
+            "mixHash": "0x7b20fe4d989dbe4208a7d45bc98caf1704fe3098b883bc8032c34565292aee17",
+            "timestamp": "0x33",
+            "txList": "0xf872b87002f86d83028c59018083de0903830f42409416700100000000000000000000000000000100018084523e6854c001a0d342d3f7af6ab875ec6e6afb2d448a4a2e66ffa2f7eb1c8a3116e343f792a461a02475dcd2c1f1fc67f0e0531268245b238ad01b5f0c515439f29626a1c05b9a15"
+          },
+          "l1Origin": {
+            "blockID": "0x5f",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0xcdc50d7e4718097193f8cf06e84d24546cad88d767e39169fc78293291085b9e",
+            "l1BlockHeight": "0x447",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0x7b20fe4d989dbe4208a7d45bc98caf1704fe3098b883bc8032c34565292aee17",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x32",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "error": {
+        "code": -32602
+      }
+    },
+    {
+      "name": "Unzen attrs: head after the rejected metadata timestamp",
+      "method": "eth_getBlockByNumber",
+      "params": [
+        "latest",
+        false
+      ],
+      "mode": "header",
+      "result": {
+        "hash": "0xa6689dddc4314c1afc879d3de7c4dc9d340c7047201e1f2571ffac6e05556c9b",
+        "parentHash": "0x7b90771901cceb25516bc0495419fbca84c4e942220988cc34a8a43ab786a388",
+        "sha3Uncles": "0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347",
+        "miner": "0x0000000000000000000000000000000000000042",
+        "stateRoot": "0xc6678549a57c285ebc81ff40a6dc835460d8e9522d2a7b47244486b435ae19d5",
+        "transactionsRoot": "0x8e8e124614e8031223f32ad3f6a7600add5afdd517398f9d3087406719fc3f04",
+        "receiptsRoot": "0x8fb67c7b239f00b07968928a1561b69f34b8201fb2b9c20f332c86f7c1a8fa16",
+        "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "difficulty": "0x5e346",
+        "number": "0x2",
+        "gasLimit": "0x1c9c380",
+        "gasUsed": "0x7463",
+        "timestamp": "0x14",
+        "extraData": "0x19000000000002",
+        "mixHash": "0x53c75fd277c9e79d54729b34bc42ef663ca78122b21389b37f496bd0a71f0caf",
+        "nonce": "0x0000000000000000",
+        "baseFeePerGas": "0x1231952",
+        "withdrawalsRoot": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+        "blobGasUsed": "0x0",
+        "excessBlobGas": "0x0",
+        "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+        "requestsHash": "0xe3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "size": "0x2e4",
+        "uncles": [],
+        "transactions": [
+          "0xabca93680842a1468a8f8c1ea4b202e5e8c5b205f22655c57d90227cbc16c9c3"
+        ],
+        "withdrawals": []
+      }
+    },
+    {
+      "name": "Unzen attrs: rejected metadata timestamp wrote no L1 origin",
+      "method": "taiko_l1OriginByID",
+      "params": [
+        "0x5f"
+      ],
+      "mode": "lowerKeys",
+      "error": {
+        "code": -32000
+      }
+    },
+    {
+      "name": "Unzen attrs: head L1 origin after the rejected metadata timestamp",
+      "method": "taiko_headL1Origin",
+      "params": [],
+      "mode": "lowerKeys",
+      "result": {
+        "blockId": "0x2",
+        "l2BlockHash": "0xa6689dddc4314c1afc879d3de7c4dc9d340c7047201e1f2571ffac6e05556c9b",
+        "l1BlockHeight": "0x3ea",
+        "l1BlockHash": "0x3efb61692b8ce6da05f0cce2be5e181f131a08a0e21dbb461c60aa508de81ba7",
+        "buildPayloadArgsId": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "isForcedInclusion": false,
+        "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    {
+      "name": "Unzen attrs: blockMetadata.timestamp 2^256-1",
+      "method": "engine_forkchoiceUpdatedV3",
+      "params": [
+        {
+          "finalizedBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
+          "headBlockHash": "0xa6689dddc4314c1afc879d3de7c4dc9d340c7047201e1f2571ffac6e05556c9b",
+          "safeBlockHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4"
+        },
+        {
+          "baseFeePerGas": "0xde0903",
+          "blockMetadata": {
+            "beneficiary": "0x0000000000000000000000000000000000000042",
+            "extraData": "GQAAAAAAAw==",
+            "gasLimit": 30000000,
+            "mixHash": "0x7b20fe4d989dbe4208a7d45bc98caf1704fe3098b883bc8032c34565292aee17",
+            "timestamp": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "txList": "0xf872b87002f86d83028c59018083de0903830f42409416700100000000000000000000000000000100018084523e6854c001a0d342d3f7af6ab875ec6e6afb2d448a4a2e66ffa2f7eb1c8a3116e343f792a461a02475dcd2c1f1fc67f0e0531268245b238ad01b5f0c515439f29626a1c05b9a15"
+          },
+          "l1Origin": {
+            "blockID": "0x5f",
+            "buildPayloadArgsID": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "isForcedInclusion": false,
+            "l1BlockHash": "0xcdc50d7e4718097193f8cf06e84d24546cad88d767e39169fc78293291085b9e",
+            "l1BlockHeight": "0x447",
+            "l2BlockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "parentBeaconBlockRoot": "0x0000000000000000000000000000000000000000000000000000000000000000",
+          "prevRandao": "0x7b20fe4d989dbe4208a7d45bc98caf1704fe3098b883bc8032c34565292aee17",
+          "suggestedFeeRecipient": "0x0000000000000000000000000000000000000042",
+          "timestamp": "0x32",
+          "withdrawals": []
+        }
+      ],
+      "mode": "forkchoice",
+      "error": {
+        "code": -32602
+      }
+    },
+    {
       "name": "U2 Unzen block truncated by zk gas: forkchoiceUpdatedV3 to a6689d..556c9b",
       "method": "engine_forkchoiceUpdatedV3",
       "params": [
@@ -3267,6 +3449,51 @@
       ],
       "mode": "header",
       "result": null
+    },
+    {
+      "name": "U3 head (7-byte extraData): nonce of 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "method": "eth_getTransactionCount",
+      "params": [
+        "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+        "latest"
+      ],
+      "mode": "exact",
+      "result": "0x0"
+    },
+    {
+      "name": "U3 head (7-byte extraData): eth_simulateV1 Etna child of a short-extraData base",
+      "method": "eth_simulateV1",
+      "params": [
+        {
+          "blockStateCalls": [
+            {
+              "blockOverrides": {
+                "baseFeePerGas": "0x3b9aca00",
+                "beaconRoot": "0x713c644097e21f4067bbe8443001fcc149701846530171daa6649950a9a29f18",
+                "feeRecipient": "0x00000000000000000000000000000000c0ffee01",
+                "time": "0x64"
+              },
+              "calls": [
+                {
+                  "from": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+                  "gas": "0x5208",
+                  "maxFeePerGas": "0x3b9aca00",
+                  "maxPriorityFeePerGas": "0x0",
+                  "nonce": "0x0",
+                  "to": "0x000000000000000000000000000000000000beef",
+                  "value": "0x0"
+                }
+              ]
+            }
+          ],
+          "validation": true
+        },
+        "latest"
+      ],
+      "mode": "exact",
+      "error": {
+        "code": -32603
+      }
     },
     {
       "name": "E1: nonce of 0x0000777735367b36bC9B61C50022d9D0700dB4Ec",
@@ -4627,6 +4854,26 @@
       "result": null
     },
     {
+      "name": "E1 head: debug_executionWitness pending",
+      "method": "debug_executionWitness",
+      "params": [
+        "pending"
+      ],
+      "mode": "exact",
+      "error": {
+        "code": -32001
+      }
+    },
+    {
+      "name": "E1 head: eth_getBlockReceipts pending",
+      "method": "eth_getBlockReceipts",
+      "params": [
+        "pending"
+      ],
+      "mode": "exact",
+      "result": null
+    },
+    {
       "name": "E1 head (fee share 25): nonce of 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
       "method": "eth_getTransactionCount",
       "params": [
@@ -4818,7 +5065,7 @@
         },
         "latest"
       ],
-      "mode": "bothFail",
+      "mode": "exact",
       "error": {
         "code": -32603
       }
@@ -6416,7 +6663,7 @@
         },
         "latest"
       ],
-      "mode": "bothFail",
+      "mode": "exact",
       "error": {
         "code": -32603
       }

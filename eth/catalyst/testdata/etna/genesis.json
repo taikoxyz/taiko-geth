@@ -1,5 +1,5 @@
 {
-  "description": "Engine API, taikoAuth and eth RPC exchanges captured from the shared cross-client differential run (genesis profile); replayed by TestTaikoEtnaVectors.",
+  "description": "Engine API, taikoAuth and eth RPC exchanges captured from the shared cross-client differential run against the reference client at revision 1e25b4849259320fca1123de362bc38b0b090ece (genesis profile); replayed by TestTaikoEtnaVectors.",
   "networkId": 167001,
   "etnaTime": 0,
   "genesisHash": "0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4",
@@ -368,6 +368,51 @@
       ],
       "mode": "header",
       "result": null
+    },
+    {
+      "name": "Etna genesis head (empty extraData): nonce of 0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+      "method": "eth_getTransactionCount",
+      "params": [
+        "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+        "latest"
+      ],
+      "mode": "exact",
+      "result": "0x0"
+    },
+    {
+      "name": "Etna genesis head (empty extraData): eth_simulateV1 Etna child of a short-extraData base",
+      "method": "eth_simulateV1",
+      "params": [
+        {
+          "blockStateCalls": [
+            {
+              "blockOverrides": {
+                "baseFeePerGas": "0x3b9aca00",
+                "beaconRoot": "0x713c644097e21f4067bbe8443001fcc149701846530171daa6649950a9a29f18",
+                "feeRecipient": "0x00000000000000000000000000000000c0ffee01",
+                "time": "0x1"
+              },
+              "calls": [
+                {
+                  "from": "0x3c44cdddb6a900fa2b585dd299e03d12fa4293bc",
+                  "gas": "0x5208",
+                  "maxFeePerGas": "0x3b9aca00",
+                  "maxPriorityFeePerGas": "0x0",
+                  "nonce": "0x0",
+                  "to": "0x000000000000000000000000000000000000beef",
+                  "value": "0x0"
+                }
+              ]
+            }
+          ],
+          "validation": true
+        },
+        "latest"
+      ],
+      "mode": "exact",
+      "error": {
+        "code": -32603
+      }
     },
     {
       "name": "Etna genesis: taikoAuth_txPoolContent on an empty pool",
@@ -1209,7 +1254,7 @@
         },
         "latest"
       ],
-      "mode": "bothFail",
+      "mode": "exact",
       "error": {
         "code": -32603
       }
