@@ -648,6 +648,10 @@ func (api *BlockChainAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash rp
 	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
 		block, receipts, _ = api.b.Pending()
 		if block == nil {
+			// CHANGE(taiko): null, like the pending block, when Etna leaves it unavailable.
+			if taikoPendingBlockNull(ctx, api.b) {
+				return nil, nil
+			}
 			return nil, errors.New("pending receipts is not available")
 		}
 	} else {

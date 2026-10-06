@@ -52,6 +52,14 @@ func (e *etnaTxListError) Error() string  { return e.err.Error() }
 func (e *etnaTxListError) ErrorCode() int { return -32603 }
 func (e *etnaTxListError) Unwrap() error  { return e.err }
 
+// taikoBlockNotFoundError is the error of a block lookup that finds no block
+// without failing: the pending block when Etna leaves it unavailable, or a
+// future block number. Like the reference client, it answers -32001.
+type taikoBlockNotFoundError struct{ bn rpc.BlockNumberOrHash }
+
+func (e *taikoBlockNotFoundError) Error() string  { return fmt.Sprintf("block %v not found", e.bn) }
+func (e *taikoBlockNotFoundError) ErrorCode() int { return -32001 }
+
 // decodeTxListWitnessTxs decodes the RLP transaction list of a pre-Etna block
 // and drops any transaction whose signature cannot be recovered, mirroring the
 // reference ingestion: list positions are assigned after the drop, so before
