@@ -7,6 +7,8 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -374,6 +376,66 @@ func TestBuildTransactionsLists_PreEtnaParentAfterEtnaWallClock(t *testing.T) {
 	}
 	if got := listHashes(lists); len(got) != 1 || len(got[0]) != 1 || got[0][0] != transfer.Hash() {
 		t.Fatalf("lists = %v, want the transfer", got)
+	}
+}
+
+// taikoGoroutineGrowth runs f n times and returns how many goroutines it left
+// running. Each environment that is never discarded leaves its state
+// prefetcher's goroutine behind.
+func taikoGoroutineGrowth(t *testing.T, n int, f func()) int {
+	t.Helper()
+	f() // let any lazily started goroutine settle first
+	before := runtime.NumGoroutine()
+	for range n {
+		f()
+	}
+	return runtime.NumGoroutine() - before
+}
+
+// TestBuildTransactionsLists_DiscardsEnvironment pins that preselection stops
+// the state prefetcher of the environment it simulates in, on both sides of
+// Etna, so repeated calls leave no goroutine behind.
+func TestBuildTransactionsLists_DiscardsEnvironment(t *testing.T) {
+	for _, fork := range []struct {
+		name   string
+		config func() *params.ChainConfig
+		extra  []byte
+	}{
+		{"etna parent", newEtnaTestChainConfig, etnaTestExtraData},
+		{"pre-etna parent", newPreEtnaTestChainConfig, preEtnaTestExtraData},
+	} {
+		t.Run(fork.name, func(t *testing.T) {
+			config := fork.config()
+			w := newPreselectionTestWorker(t, newPreselectionTestGenesis(config, fork.extra), preselectionTransfer(t, config, testBankKey, 0, 1))
+			growth := taikoGoroutineGrowth(t, 50, func() {
+				lists, err := w.BuildTransactionsLists(preselectionTestBeneficiary, big.NewInt(preselectionTestBaseFee), 30_000_000, 100_000, nil, 1)
+				if err != nil || len(lists) != 1 {
+					t.Fatalf("BuildTransactionsLists = %v, %v; want one list", lists, err)
+				}
+			})
+			if growth > 5 {
+				t.Fatalf("50 preselections left %d goroutines running", growth)
+			}
+		})
+	}
+}
+
+// TestSealBlockWith_DiscardsEnvironment pins that sealing stops the state
+// prefetcher of its environment when the build fails, as it does when the
+// block is assembled.
+func TestSealBlockWith_DiscardsEnvironment(t *testing.T) {
+	config := newPreEtnaTestChainConfig()
+	w, b := newUnzenTestWorker(t, newEtnaTestGenesis(config))
+	// A nonce gap fails the anchor, the first transaction, after the
+	// environment was prepared.
+	attrs := preEtnaTestAttributes(b.chain.CurrentBlock(), encodeTestTxList(t, bankTransfer(t, config, 5)))
+	growth := taikoGoroutineGrowth(t, 50, func() {
+		if _, err := w.sealBlockWith(b.chain.CurrentBlock(), 0, attrs); err == nil || !strings.Contains(err.Error(), "anchor transaction failed") {
+			t.Fatalf("sealBlockWith error = %v, want an anchor failure", err)
+		}
+	})
+	if growth > 5 {
+		t.Fatalf("50 failing seals left %d goroutines running", growth)
 	}
 }
 

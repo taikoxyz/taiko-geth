@@ -197,6 +197,9 @@ func (w *Miner) buildTransactionsLists(
 	if err != nil {
 		return nil, err
 	}
+	// The simulation never reaches IntermediateRoot, which would stop the
+	// state prefetcher on its own.
+	defer env.discard()
 
 	var (
 		signer = types.MakeSigner(w.chainConfig, new(big.Int).Add(currentHead.Number, common.Big1), currentHead.Time)
@@ -451,6 +454,9 @@ func (w *Miner) sealBlockWith(
 	if err != nil {
 		return nil, err
 	}
+	// Stop the state prefetcher on every return path. Once the block is
+	// assembled, IntermediateRoot has already stopped it, and this is a no-op.
+	defer env.discard()
 
 	env.header.GasLimit = blkMeta.GasLimit
 	if isEtna {
