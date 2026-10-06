@@ -204,13 +204,19 @@ func projectTaikoEtnaVector(t *testing.T, mode string, raw json.RawMessage) any 
 		}
 		return out
 	case "txLists":
-		var out []string
-		for _, l := range list(v) {
-			for _, tx := range list(obj(l)["txList"]) {
-				out = append(out, fmt.Sprint(obj(tx)["hash"]))
-			}
+		// Every list with its transaction objects and gas. The compressed
+		// size is client-specific, so only whether it is zero counts.
+		if v == nil {
+			return nil
 		}
-		sort.Strings(out)
+		out := []any{}
+		for _, l := range list(v) {
+			out = append(out, map[string]any{
+				"txList":           obj(l)["txList"],
+				"estimatedGasUsed": obj(l)["estimatedGasUsed"],
+				"bytesLength":      fmt.Sprint(obj(l)["bytesLength"]) != "0",
+			})
+		}
 		return out
 	case "simulate":
 		var out [][]map[string]any
