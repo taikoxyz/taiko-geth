@@ -274,15 +274,18 @@ func (api *API) traceChain(start, end *types.Block, config *TraceConfig, closed 
 				)
 				// Trace all the transactions contained within
 				for i, tx := range task.block.Transactions() {
-					// CHANGE(taiko): before Etna the first transaction is the anchor.
-					if i == 0 && api.backend.ChainConfig().HasTaikoAnchor(task.block.Time()) {
-						if err := tx.MarkAsAnchor(); err != nil {
-							log.Warn("Mark anchor transaction error", "error", err)
+					// CHANGE(taiko): before Etna the first transaction is the anchor,
+					// flagged on its message rather than on the shared transaction.
+					isAnchor := i == 0 && api.backend.ChainConfig().HasTaikoAnchor(task.block.Time())
+					if isAnchor {
+						if err := core.ValidateAnchorTxType(tx); err != nil {
+							log.Warn("Invalid anchor transaction", "error", err)
 							task.results[i] = &txTraceResult{TxHash: tx.Hash(), Error: err.Error()}
 							break
 						}
 					}
 					msg, _ := core.TransactionToMessage(tx, signer, task.block.BaseFee())
+					msg.IsAnchor = isAnchor
 					// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata.
 					if api.backend.ChainConfig().IsShasta(task.block.Time()) {
 						msg.BasefeeSharingPctg = core.DecodeShastaBasefeeSharingPctg(task.block.Header().Extra)
@@ -560,9 +563,11 @@ func (api *API) IntermediateRoots(ctx context.Context, hash common.Hash, config 
 		core.ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 	for i, tx := range block.Transactions() {
-		// CHANGE(taiko): before Etna the first transaction is the anchor.
-		if i == 0 && chainConfig.HasTaikoAnchor(block.Time()) {
-			if err := tx.MarkAsAnchor(); err != nil {
+		// CHANGE(taiko): before Etna the first transaction is the anchor, flagged
+		// on its message rather than on the shared transaction.
+		isAnchor := i == 0 && chainConfig.HasTaikoAnchor(block.Time())
+		if isAnchor {
+			if err := core.ValidateAnchorTxType(tx); err != nil {
 				return nil, err
 			}
 		}
@@ -570,6 +575,7 @@ func (api *API) IntermediateRoots(ctx context.Context, hash common.Hash, config 
 			return nil, err
 		}
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
+		msg.IsAnchor = isAnchor
 		// CHANGE(taiko): an Etna block shares its base fee by extraData[0], as
 		// on import.
 		if chainConfig.IsEtna(block.Time()) {
@@ -651,14 +657,17 @@ func (api *API) traceBlock(ctx context.Context, block *types.Block, config *Trac
 		results   = make([]*txTraceResult, len(txs))
 	)
 	for i, tx := range txs {
-		// CHANGE(taiko): before Etna the first transaction is the anchor.
-		if i == 0 && api.backend.ChainConfig().HasTaikoAnchor(block.Time()) {
-			if err := tx.MarkAsAnchor(); err != nil {
+		// CHANGE(taiko): before Etna the first transaction is the anchor, flagged
+		// on its message rather than on the shared transaction.
+		isAnchor := i == 0 && api.backend.ChainConfig().HasTaikoAnchor(block.Time())
+		if isAnchor {
+			if err := core.ValidateAnchorTxType(tx); err != nil {
 				return nil, err
 			}
 		}
 		// Generate the next state snapshot fast without tracing
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
+		msg.IsAnchor = isAnchor
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata.
 		if api.backend.ChainConfig().IsShasta(block.Time()) {
 			msg.BasefeeSharingPctg = core.DecodeShastaBasefeeSharingPctg(block.Header().Extra)
@@ -697,10 +706,11 @@ func (api *API) traceBlockParallel(ctx context.Context, block *types.Block, stat
 		threads = len(txs)
 	}
 
-	// CHANGE(taiko): mark the first transaction as anchor transaction; Etna
-	// blocks have none.
-	if len(txs) > 0 && api.backend.ChainConfig().HasTaikoAnchor(block.Time()) {
-		if err := txs[0].MarkAsAnchor(); err != nil {
+	// CHANGE(taiko): before Etna the first transaction is the anchor, flagged on
+	// its messages rather than on the shared transaction; Etna blocks have none.
+	hasAnchor := len(txs) > 0 && api.backend.ChainConfig().HasTaikoAnchor(block.Time())
+	if hasAnchor {
+		if err := core.ValidateAnchorTxType(txs[0]); err != nil {
 			return nil, err
 		}
 	}
@@ -713,6 +723,7 @@ func (api *API) traceBlockParallel(ctx context.Context, block *types.Block, stat
 			// Fetch and execute the next transaction trace tasks
 			for task := range jobs {
 				msg, _ := core.TransactionToMessage(txs[task.index], signer, block.BaseFee())
+				msg.IsAnchor = hasAnchor && task.index == 0
 				// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata.
 				if api.backend.ChainConfig().IsShasta(block.Time()) {
 					msg.BasefeeSharingPctg = core.DecodeShastaBasefeeSharingPctg(block.Header().Extra)
@@ -757,6 +768,7 @@ txloop:
 		}
 		// Generate the next state snapshot fast without tracing
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
+		msg.IsAnchor = hasAnchor && i == 0
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata.
 		if api.backend.ChainConfig().IsShasta(block.Time()) {
 			msg.BasefeeSharingPctg = core.DecodeShastaBasefeeSharingPctg(block.Header().Extra)
@@ -845,14 +857,17 @@ func (api *API) standardTraceBlockToFile(ctx context.Context, block *types.Block
 		core.ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 	for i, tx := range block.Transactions() {
-		// CHANGE(taiko): before Etna the first transaction is the anchor.
-		if i == 0 && chainConfig.HasTaikoAnchor(block.Time()) {
-			if err := tx.MarkAsAnchor(); err != nil {
+		// CHANGE(taiko): before Etna the first transaction is the anchor, flagged
+		// on its message rather than on the shared transaction.
+		isAnchor := i == 0 && chainConfig.HasTaikoAnchor(block.Time())
+		if isAnchor {
+			if err := core.ValidateAnchorTxType(tx); err != nil {
 				return nil, err
 			}
 		}
 		// Prepare the transaction for un-traced execution
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
+		msg.IsAnchor = isAnchor
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata.
 		if api.backend.ChainConfig().IsShasta(block.Time()) {
 			msg.BasefeeSharingPctg = core.DecodeShastaBasefeeSharingPctg(block.Header().Extra)
@@ -964,6 +979,14 @@ func (api *API) TraceTransaction(ctx context.Context, hash common.Hash, config *
 	msg, err := core.TransactionToMessage(tx, types.MakeSigner(api.backend.ChainConfig(), block.Number(), block.Time()), block.BaseFee())
 	if err != nil {
 		return nil, err
+	}
+	// CHANGE(taiko): before Etna the first transaction is the anchor, flagged
+	// on its message: StateAtTransaction never marks the transaction.
+	if index == 0 && api.backend.ChainConfig().HasTaikoAnchor(block.Time()) {
+		if err := core.ValidateAnchorTxType(tx); err != nil {
+			return nil, err
+		}
+		msg.IsAnchor = true
 	}
 	// CHANGE(taiko): an Etna block shares its base fee by extraData[0], as on
 	// import.

@@ -114,9 +114,10 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
-		// CHANGE(taiko): mark the first transaction as anchor transaction.
-		if i == 0 && hasAnchor {
-			if err := tx.MarkAsAnchor(); err != nil {
+		// CHANGE(taiko): flag the anchor on its message, never on the shared tx; see taiko_anchor.go.
+		isAnchor := i == 0 && hasAnchor
+		if isAnchor {
+			if err := ValidateAnchorTxType(tx); err != nil {
 				return nil, err
 			}
 		}
@@ -124,6 +125,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		if err != nil {
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
+		msg.IsAnchor = isAnchor
 		if config.IsShasta(header.Time) {
 			msg.BasefeeSharingPctg = DecodeShastaBasefeeSharingPctg(header.Extra)
 		} else if config.IsOntake(block.Number()) {

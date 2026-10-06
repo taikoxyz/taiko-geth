@@ -200,7 +200,9 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 		SkipTransactionChecks: false,
 		BlobHashes:            tx.BlobHashes(),
 		BlobGasFeeCap:         tx.BlobGasFeeCap(),
-		IsAnchor:              tx.IsAnchor(),
+		// CHANGE(taiko): only an external caller's private, marked copy sets this;
+		// this module never marks a tx and flags the anchor's message instead.
+		IsAnchor: tx.IsAnchor(),
 	}
 	// If baseFee provided, set gasPrice to effectiveGasPrice.
 	if baseFee != nil {

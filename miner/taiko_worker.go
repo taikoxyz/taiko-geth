@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/internal/telemetry"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -483,12 +484,12 @@ func (w *Miner) sealBlockWith(
 	}
 
 	for i, tx := range txs {
-		// Before Etna the first transaction is the anchor: it is marked so the
-		// state transition grants its exemptions, and it may neither fail nor
-		// be truncated. Etna blocks have no anchor transaction.
+		// Before Etna the first transaction is the anchor: its message is
+		// flagged so the state transition grants its exemptions, and it may
+		// neither fail nor be truncated. Etna blocks have no anchor transaction.
 		isAnchor := i == 0 && w.chainConfig.HasTaikoAnchor(timestamp)
 		if isAnchor {
-			if err := tx.MarkAsAnchor(); err != nil {
+			if err := core.ValidateAnchorTxType(tx); err != nil {
 				return nil, err
 			}
 		}
@@ -512,7 +513,11 @@ func (w *Miner) sealBlockWith(
 			env.evm.ResetZkGasErr()
 		}
 
-		if err := w.commitTransaction(ctx, env, tx); err != nil {
+		commit := w.commitTransaction
+		if isAnchor {
+			commit = w.commitAnchorTransaction
+		}
+		if err := commit(ctx, env, tx); err != nil {
 			// CHANGE(taiko): if zk gas exceeded, stop including transactions.
 			// The anchor is never discarded — it must always be in the block.
 			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && !isAnchor {
@@ -580,6 +585,32 @@ func (w *Miner) sealBlockWith(
 	block = <-results
 
 	return block, nil
+}
+
+// commitAnchorTransaction commits the anchor transaction tx like
+// commitTransaction, flagging its message as the anchor instead of marking tx,
+// which other readers of the block may share. The anchor is a dynamic-fee
+// transaction, never a blob transaction.
+func (w *Miner) commitAnchorTransaction(ctx context.Context, env *environment, tx *types.Transaction) (err error) {
+	_, _, spanEnd := telemetry.StartSpan(ctx, "miner.commitAnchorTransaction")
+	defer spanEnd(&err)
+
+	var (
+		snap = env.state.Snapshot()
+		gp   = env.gasPool.Snapshot()
+	)
+	receipt, err := core.ApplyAnchorTransaction(env.evm, env.gasPool, env.state, env.header, tx)
+	if err != nil {
+		env.state.RevertToSnapshot(snap)
+		env.gasPool.Set(gp)
+		return err
+	}
+	env.header.GasUsed = env.gasPool.Used()
+	env.txs = append(env.txs, tx)
+	env.receipts = append(env.receipts, receipt)
+	env.size += tx.Size()
+	env.tcount++
+	return nil
 }
 
 // getPendingTxs fetches the pending transactions from tx pool. The golden
