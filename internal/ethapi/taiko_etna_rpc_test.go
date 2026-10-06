@@ -192,19 +192,22 @@ func TestSimulateV1PreEtnaErrorCode(t *testing.T) {
 }
 
 // TestSimulateV1Etna pins eth_simulateV1 for an Etna target: it needs a
-// non-zero beaconRoot override, its extraData defaults to the parent-derived
-// 13 bytes, and its calls share the base fee as that extraData does.
+// non-zero beaconRoot override, its extraData is the base block's verbatim,
+// and its calls share the base fee as that extraData does. An Etna genesis
+// with an empty or 7-byte extraData therefore fails the 13-byte rule with
+// -32603, like the reference client.
 func TestSimulateV1Etna(t *testing.T) {
 	zero := uint64(0)
 	root := common.HexToHash("0xe7")
 	for _, tt := range []struct {
 		name               string
 		parentExtra        []byte
-		wantExtra          []byte
+		wantErr            string // the error of the simulation with a root, if any
 		coinbase, treasury uint64
 	}{
-		{"thirteen-byte parent", []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1}, []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1}, 52_500_000_000, 157_500_000_000},
-		{"empty genesis parent", nil, make([]byte, params.EtnaExtraDataLen), 0, 210_000_000_000},
+		{"thirteen-byte parent", []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1}, "", 52_500_000_000, 157_500_000_000},
+		{"empty genesis parent", nil, "Etna block 1 requires 13-byte extraData, got 0 bytes", 0, 0},
+		{"seven-byte genesis parent", []byte{25, 0, 0, 0, 0, 0, 1}, "Etna block 1 requires 13-byte extraData, got 7 bytes", 0, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			sender := newTestAccount().addr
@@ -247,12 +250,24 @@ func TestSimulateV1Etna(t *testing.T) {
 				}
 			}
 
-			results, err := api.SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{block(&root)}}, nil)
+			if tt.wantErr != "" {
+				err := taikoSimulateOverRPC(t, b, simOpts{BlockStateCalls: []simBlock{block(&root)}})
+				if code := taikoRPCErrorCode(err); err == nil || err.Error() != tt.wantErr || code != -32603 {
+					t.Fatalf("simulating with a root: err = %v (code %d), want %q (code -32603)", err, code, tt.wantErr)
+				}
+				return
+			}
+			// The base block's extraData carries through every simulated block.
+			next := block(&root)
+			next.Calls = []TransactionArgs{{From: &sender, To: &etnaRPCProbe}}
+			results, err := api.SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{block(&root), next}}, nil)
 			if err != nil {
 				t.Fatalf("SimulateV1: %v", err)
 			}
-			if got := results[0].Block.Extra(); !bytes.Equal(got, tt.wantExtra) {
-				t.Fatalf("extraData = %x, want %x", got, tt.wantExtra)
+			for i, result := range results {
+				if got := result.Block.Extra(); !bytes.Equal(got, tt.parentExtra) {
+					t.Fatalf("block %d extraData = %x, want the base block's %x", i+1, got, tt.parentExtra)
+				}
 			}
 			probe := results[0].Calls[1].ReturnValue
 			if len(probe) != 64 {
@@ -270,8 +285,8 @@ func TestSimulateV1Etna(t *testing.T) {
 
 // TestSimulateV1EtnaExtraDataLength pins that eth_simulateV1 rejects an Etna
 // block whose extraData is not 13 bytes with -32603, like the reference
-// client's block executor. The block derives its extraData from a 32-byte
-// base block, which the derivation passes through unchanged.
+// client's block executor. The block takes its extraData from a 32-byte base
+// block.
 func TestSimulateV1EtnaExtraDataLength(t *testing.T) {
 	zero := uint64(0)
 	root := common.HexToHash("0xe7")
@@ -299,18 +314,18 @@ func TestSimulateV1EtnaExtraDataLength(t *testing.T) {
 }
 
 // TestSimulateV1EtnaActivation pins eth_simulateV1 across the Etna activation:
-// a simulated pre-Etna block keeps an empty extraData, and the Etna block
-// after it derives its extraData from the base block's 7 bytes, padded to 13,
-// so its calls share the base fee as that extraData does.
+// every simulated Etna block takes the base block's extraData verbatim,
+// carried through the simulated pre-Etna blocks, which keep an empty
+// extraData. The last pre-Etna block's 7 bytes therefore fail the Etna block
+// with -32603, straddling or not, like the reference client, while a 13-byte
+// base block shares its extra[0].
 func TestSimulateV1EtnaActivation(t *testing.T) {
 	etnaTime := uint64(1020)
 	root := common.HexToHash("0xe7")
-	sender := newTestAccount().addr
-	b := newEtnaRPCTestBackend(t, etnaRPCChainConfig(&etnaTime), []byte{25, 0, 0, 0, 0, 0, 1}, sender)
 	preEtnaTime, etnaBlockTime := hexutil.Uint64(1010), hexutil.Uint64(etnaTime)
-	results, err := NewBlockChainAPI(b).SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{
-		{BlockOverrides: &override.BlockOverrides{Time: &preEtnaTime}},
-		{
+	preEtnaBlock := func() simBlock { return simBlock{BlockOverrides: &override.BlockOverrides{Time: &preEtnaTime}} }
+	etnaBlock := func(sender common.Address) simBlock {
+		return simBlock{
 			BlockOverrides: &override.BlockOverrides{
 				Time:          &etnaBlockTime,
 				BaseFeePerGas: (*hexutil.Big)(big.NewInt(etnaRPCBaseFee)),
@@ -318,16 +333,42 @@ func TestSimulateV1EtnaActivation(t *testing.T) {
 				BeaconRoot:    &root,
 			},
 			Calls: []TransactionArgs{etnaRPCTransfer(sender), {From: &sender, To: &etnaRPCProbe}},
-		},
-	}}, nil)
+		}
+	}
+
+	seven := []byte{25, 0, 0, 0, 0, 0, 1}
+	for _, tt := range []struct {
+		name    string
+		blocks  func(sender common.Address) []simBlock
+		wantErr string
+	}{
+		{"straddling", func(sender common.Address) []simBlock { return []simBlock{etnaBlock(sender)} }, "Etna block 1 requires 13-byte extraData, got 7 bytes"},
+		{"after a pre-Etna block", func(sender common.Address) []simBlock { return []simBlock{preEtnaBlock(), etnaBlock(sender)} }, "Etna block 2 requires 13-byte extraData, got 7 bytes"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			sender := newTestAccount().addr
+			b := newEtnaRPCTestBackend(t, etnaRPCChainConfig(&etnaTime), seven, sender)
+			err := taikoSimulateOverRPC(t, b, simOpts{BlockStateCalls: tt.blocks(sender)})
+			if code := taikoRPCErrorCode(err); err == nil || err.Error() != tt.wantErr || code != -32603 {
+				t.Fatalf("err = %v (code %d), want %q (code -32603)", err, code, tt.wantErr)
+			}
+		})
+	}
+
+	// A 13-byte base block, which only a test genesis can give a pre-Etna
+	// chain, shows the carry-through across a simulated pre-Etna block.
+	sender := newTestAccount().addr
+	thirteen := []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1}
+	b := newEtnaRPCTestBackend(t, etnaRPCChainConfig(&etnaTime), thirteen, sender)
+	results, err := NewBlockChainAPI(b).SimulateV1(context.Background(), simOpts{BlockStateCalls: []simBlock{preEtnaBlock(), etnaBlock(sender)}}, nil)
 	if err != nil {
 		t.Fatalf("SimulateV1: %v", err)
 	}
 	if got := results[0].Block.Extra(); len(got) != 0 {
 		t.Fatalf("pre-Etna extraData = %x, want empty", got)
 	}
-	if got, want := results[1].Block.Extra(), []byte{25, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0}; !bytes.Equal(got, want) {
-		t.Fatalf("Etna extraData = %x, want %x", got, want)
+	if got := results[1].Block.Extra(); !bytes.Equal(got, thirteen) {
+		t.Fatalf("Etna extraData = %x, want the base block's %x", got, thirteen)
 	}
 	probe := results[1].Calls[1].ReturnValue
 	if len(probe) != 64 {

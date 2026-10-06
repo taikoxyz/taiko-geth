@@ -198,37 +198,43 @@ func TestPrepareEtnaPreselectionWork_Environment(t *testing.T) {
 	}
 }
 
-// TestPrepareEtnaPreselectionWork_ExtraData pins the simulated child's
-// extraData for each parent length.
+// TestPrepareEtnaPreselectionWork_ExtraData pins that the simulated child
+// takes the parent's extraData verbatim, at every length, without aliasing it.
 func TestPrepareEtnaPreselectionWork_ExtraData(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
 		extra []byte
-		want  []byte
 	}{
-		{"empty genesis", nil, make([]byte, params.EtnaExtraDataLen)},
-		{"seven bytes", []byte{25, 0, 0, 0, 0, 0, 7}, []byte{25, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0}},
-		{"thirteen bytes", []byte{25, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 9}, []byte{25, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 9}},
-		{"other length", []byte{25, 1, 2, 3, 4}, []byte{25, 1, 2, 3, 4}},
+		{"empty genesis", nil},
+		{"seven bytes", []byte{25, 0, 0, 0, 0, 0, 7}},
+		{"thirteen bytes", []byte{25, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 9}},
+		{"other length", []byte{25, 1, 2, 3, 4}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			w := newPreselectionTestWorker(t, newPreselectionTestGenesis(newEtnaTestChainConfig(), tt.extra))
-			env, err := w.prepareEtnaPreselectionWork(w.chain.CurrentBlock(), preselectionTestBeneficiary, big.NewInt(preselectionTestBaseFee), 30_000_000)
+			parent := w.chain.CurrentBlock()
+			env, err := w.prepareEtnaPreselectionWork(parent, preselectionTestBeneficiary, big.NewInt(preselectionTestBaseFee), 30_000_000)
 			if err != nil {
 				t.Fatalf("prepareEtnaPreselectionWork: %v", err)
 			}
 			defer env.discard()
-			if !bytes.Equal(env.header.Extra, tt.want) {
-				t.Fatalf("extraData = %x, want %x", env.header.Extra, tt.want)
+			if !bytes.Equal(env.header.Extra, tt.extra) {
+				t.Fatalf("extraData = %x, want the parent's %x", env.header.Extra, tt.extra)
+			}
+			if len(tt.extra) > 0 {
+				env.header.Extra[0]++
+				if parent.Extra[0] != tt.extra[0] {
+					t.Fatal("the simulated extraData aliases the parent's")
+				}
 			}
 		})
 	}
 }
 
 // TestPrepareEtnaPreselectionWork_FeeShare pins the base-fee split of the
-// simulated child: extraData[0] of a 13-byte extraData goes to the
-// beneficiary and the rest to the treasury, and any other length burns the
-// base fee.
+// simulated child: extraData[0] of a 13-byte parent extraData goes to the
+// beneficiary and the rest to the treasury, and any other length, an Etna
+// genesis with an empty or 7-byte extraData included, burns the base fee.
 func TestPrepareEtnaPreselectionWork_FeeShare(t *testing.T) {
 	for _, tt := range []struct {
 		name        string
@@ -236,9 +242,11 @@ func TestPrepareEtnaPreselectionWork_FeeShare(t *testing.T) {
 		beneficiary uint64
 		treasury    uint64
 	}{
-		{"padded fee share", []byte{25, 0, 0, 0, 0, 0, 7}, 52_500_000_000, 157_500_000_000},
-		{"zero fee share", nil, 0, 210_000_000_000},
-		{"no fee share", []byte{25, 1, 2, 3, 4}, 0, 0},
+		{"thirteen-byte fee share", []byte{25, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 9}, 52_500_000_000, 157_500_000_000},
+		{"thirteen-byte zero fee share", make([]byte, params.EtnaExtraDataLen), 0, 210_000_000_000},
+		{"empty genesis burns", nil, 0, 0},
+		{"seven-byte genesis burns", []byte{25, 0, 0, 0, 0, 0, 7}, 0, 0},
+		{"other length burns", []byte{25, 1, 2, 3, 4}, 0, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			config := newEtnaTestChainConfig()

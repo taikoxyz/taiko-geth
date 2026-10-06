@@ -370,9 +370,9 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	// test chain generator. Canonical import (StateProcessor.Process) never
 	// calls it and decodes the fee share itself. A sealed Etna block always
 	// carries 13 bytes (the engine API rejects any other length), so only
-	// preselection's simulated headers can burn: the child of an Etna parent
-	// whose extraData EtnaSimulationExtraData passes through at another length,
-	// and, in the fork window, the time.Now() child of a pre-Etna parent. That
+	// preselection's simulated headers can burn: the child of an Etna genesis,
+	// which inherits the genesis' empty or 7-byte extraData verbatim, and, in
+	// the fork window, the time.Now() child of a pre-Etna parent. That
 	// child carries the miner's current extraData: normally the last sealed
 	// block's 7 bytes, or the client-version default on a node that never
 	// sealed, so it burns; once the node has built its first Etna payload it

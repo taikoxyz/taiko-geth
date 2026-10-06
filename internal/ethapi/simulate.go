@@ -578,7 +578,6 @@ func (sim *simulator) makeHeaders(blocks []simBlock) ([]*types.Header, error) {
 		if sim.chainConfig.IsPostMerge(number.Uint64(), timestamp) {
 			difficulty = big.NewInt(0)
 		}
-		parent := header
 		header = overrides.MakeHeader(&types.Header{
 			UncleHash:        types.EmptyUncleHash,
 			ReceiptHash:      types.EmptyReceiptsHash,
@@ -589,16 +588,11 @@ func (sim *simulator) makeHeaders(blocks []simBlock) ([]*types.Header, error) {
 			WithdrawalsHash:  withdrawalsHash,
 			ParentBeaconRoot: parentBeaconRoot,
 		})
-		// CHANGE(taiko): no override sets an Etna block's extraData, which
-		// carries its base-fee share: default it to the parent-derived value.
-		// A simulated pre-Etna parent keeps an empty extraData, so its Etna
-		// child derives the value from the base block's extraData, carried
-		// through the simulated parents as in the reference client.
+		// CHANGE(taiko): an Etna block's extraData, which carries its base-fee
+		// share, is the base block's verbatim, carried through the simulated
+		// parents as in the reference client.
 		if sim.chainConfig.IsEtna(timestamp) {
-			if bi > 0 && !sim.chainConfig.IsEtna(parent.Time) {
-				parent = &types.Header{Number: parent.Number, Extra: base.Extra}
-			}
-			header.Extra = core.EtnaSimulationExtraData(parent)
+			header.Extra = common.CopyBytes(base.Extra)
 		}
 		res[bi] = header
 	}

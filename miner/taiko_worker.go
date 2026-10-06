@@ -55,11 +55,13 @@ func etnaPreselectionGasLimit(baseFee *big.Int, blockMaxGasLimit, maxTransaction
 
 // prepareEtnaPreselectionWork returns the environment that transaction-pool
 // preselection simulates the child of an Etna parent in. The child keeps the
-// parent's timestamp and randomness, uses the given beneficiary, base fee and
-// gas limit, and takes its extraData from core.EtnaSimulationExtraData. It has
-// no parent beacon root and runs no system calls: the root of an Etna block is
-// an L1 state root that only its proposer knows. One zk gas meter covers the
-// whole simulation, with nothing reserved.
+// parent's timestamp, randomness and extraData, and uses the given
+// beneficiary, base fee and gas limit. Its base fee is shared as extra[0] says
+// only when that extraData has the 13-byte Etna layout; an Etna genesis with
+// an empty or 7-byte extraData burns it. It has no parent beacon root and runs
+// no system calls: the root of an Etna block is an L1 state root that only its
+// proposer knows. One zk gas meter covers the whole simulation, with nothing
+// reserved.
 func (w *Miner) prepareEtnaPreselectionWork(parent *types.Header, beneficiary common.Address, baseFee *big.Int, gasLimit uint64) (*environment, error) {
 	header := &types.Header{
 		ParentHash:    parent.Hash(),
@@ -69,7 +71,7 @@ func (w *Miner) prepareEtnaPreselectionWork(parent *types.Header, beneficiary co
 		Coinbase:      beneficiary,
 		MixDigest:     parent.MixDigest,
 		BaseFee:       new(big.Int).Set(baseFee),
-		Extra:         core.EtnaSimulationExtraData(parent),
+		Extra:         common.CopyBytes(parent.Extra),
 		Difficulty:    new(big.Int),
 		BlobGasUsed:   new(uint64),
 		ExcessBlobGas: new(uint64),
