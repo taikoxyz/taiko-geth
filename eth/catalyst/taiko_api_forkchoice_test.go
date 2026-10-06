@@ -255,6 +255,63 @@ func TestTaikoPayloadIDVector(t *testing.T) {
 	}
 }
 
+// TestTaikoPayloadIDFullPreimageVector pins taikoPayloadID on the shared
+// cross-client vector in which every hashed field is non-zero: parent 0xaa..,
+// timestamp 1000, prevRandao 0x11.., fee recipient 0x22.., one withdrawal
+// {1, 2, 0x44.., 3}, root 0x33.., txList 0xc180 and a 13-byte extraData with
+// proposal ID 7 and anchor block number 9. Dropping, reordering or
+// re-encoding any term changes the ID, and so does each change below. An
+// absent tx list, which the vector's peers hash as a zero list hash, has no
+// counterpart here: txList is required.
+func TestTaikoPayloadIDFullPreimageVector(t *testing.T) {
+	repeat := func(b string, n int) []byte { return common.FromHex("0x" + strings.Repeat(b, n)) }
+	parent := common.BytesToHash(repeat("aa", 32))
+	newAttrs := func() *engine.PayloadAttributes {
+		root := common.BytesToHash(repeat("33", 32))
+		return &engine.PayloadAttributes{
+			Timestamp:             1000,
+			Random:                common.BytesToHash(repeat("11", 32)),
+			SuggestedFeeRecipient: common.BytesToAddress(repeat("22", 20)),
+			Withdrawals:           []*types.Withdrawal{{Index: 1, Validator: 2, Address: common.BytesToAddress(repeat("44", 20)), Amount: 3}},
+			BeaconRoot:            &root,
+			BaseFeePerGas:         big.NewInt(1),
+			BlockMetadata: &engine.BlockMetadata{
+				GasLimit:  fcuTestGasLimit,
+				Timestamp: 1000,
+				TxList:    []byte{0xc1, 0x80},
+				ExtraData: []byte{50, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 9},
+			},
+			L1Origin: &rawdb.L1Origin{BlockID: big.NewInt(1)},
+		}
+	}
+	base := taikoPayloadID(parent, newAttrs())
+	if want := (engine.PayloadID{0x02, 0x34, 0xc1, 0x7f, 0x9e, 0xfa, 0x03, 0x8e}); base != want {
+		t.Fatalf("payload id = %v, want %v", base, want)
+	}
+
+	ids := map[engine.PayloadID]string{base: "the vector"}
+	for _, tt := range []struct {
+		name   string
+		mutate func(*engine.PayloadAttributes)
+	}{
+		// A zero root is the pre-Etna shape and must not alias an Etna build.
+		{"zero root", func(a *engine.PayloadAttributes) { a.BeaconRoot = new(common.Hash) }},
+		// The proposal ID is extraData[1:7] and the anchor block number
+		// extraData[7:13].
+		{"proposal id 8", func(a *engine.PayloadAttributes) { a.BlockMetadata.ExtraData[6] = 8 }},
+		{"anchor block number 10", func(a *engine.PayloadAttributes) { a.BlockMetadata.ExtraData[12] = 10 }},
+		{"empty tx list", func(a *engine.PayloadAttributes) { a.BlockMetadata.TxList = []byte{} }},
+	} {
+		attrs := newAttrs()
+		tt.mutate(attrs)
+		id := taikoPayloadID(parent, attrs)
+		if other, ok := ids[id]; ok {
+			t.Errorf("%s: payload id %v equals the id of %s", tt.name, id, other)
+		}
+		ids[id] = tt.name
+	}
+}
+
 // TestTaikoPayloadID pins taikoPayloadID to the attribute-only preimage: the
 // expected values are sha256 digests computed independently of Go, and only
 // the fields of that preimage change the ID.
