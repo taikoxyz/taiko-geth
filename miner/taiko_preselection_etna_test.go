@@ -376,3 +376,56 @@ func TestBuildTransactionsLists_PreEtnaParentAfterEtnaWallClock(t *testing.T) {
 		t.Fatalf("lists = %v, want the transfer", got)
 	}
 }
+
+// TestBuildTransactionsLists_EstimatedGasUsed pins that every list reports the
+// gas its own transactions use, on both sides of Etna, whether the lists split
+// on the gas limit or on the compressed size.
+func TestBuildTransactionsLists_EstimatedGasUsed(t *testing.T) {
+	for _, fork := range []struct {
+		name   string
+		config func() *params.ChainConfig
+		extra  []byte
+	}{
+		{"etna parent", newEtnaTestChainConfig, etnaTestExtraData},
+		{"pre-etna parent", newPreEtnaTestChainConfig, preEtnaTestExtraData},
+	} {
+		config := fork.config()
+		txs := []*types.Transaction{
+			preselectionTransfer(t, config, testBankKey, 0, 1),
+			preselectionTransfer(t, config, testBankKey, 1, 1),
+			preselectionTransfer(t, config, testBankKey, 2, 1),
+		}
+		// The compressed size of the first two transfers: the third one no
+		// longer fits under it.
+		twoTxs, err := encodeAndCompressTxList(txs[:2])
+		if err != nil {
+			t.Fatalf("encodeAndCompressTxList: %v", err)
+		}
+		for _, split := range []struct {
+			name     string
+			gasLimit uint64
+			maxBytes uint64
+		}{
+			{"split on gas", 2 * params.TxGas, 100_000},
+			{"split on size", 30_000_000, uint64(len(twoTxs))},
+		} {
+			t.Run(fork.name+"/"+split.name, func(t *testing.T) {
+				w := newPreselectionTestWorker(t, newPreselectionTestGenesis(config, fork.extra), txs...)
+				lists, err := w.BuildTransactionsLists(preselectionTestBeneficiary, big.NewInt(preselectionTestBaseFee), split.gasLimit, split.maxBytes, nil, 2)
+				if err != nil {
+					t.Fatalf("BuildTransactionsLists: %v", err)
+				}
+				got := listHashes(lists)
+				if len(got) != 2 || len(got[0]) != 2 || len(got[1]) != 1 ||
+					got[0][0] != txs[0].Hash() || got[0][1] != txs[1].Hash() || got[1][0] != txs[2].Hash() {
+					t.Fatalf("lists = %v, want [[tx0 tx1] [tx2]]", got)
+				}
+				for i, want := range []uint64{2 * params.TxGas, params.TxGas} {
+					if lists[i].EstimatedGasUsed != want {
+						t.Fatalf("list %d estimatedGasUsed = %d, want %d", i, lists[i].EstimatedGasUsed, want)
+					}
+				}
+			})
+		}
+	}
+}

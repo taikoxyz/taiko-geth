@@ -208,6 +208,8 @@ func (w *Miner) buildTransactionsLists(
 	commitTxs := func(pruningResult *txsPruningResult) (*txsPruningResult, *PreBuiltTxList, bool, error) {
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
+		// Each list sums the gas of its own receipts only.
+		env.receipts = nil
 		env.gasPool = core.NewGasPool(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
 		// Feeds only the receipts' block hash; an Etna env's EVM keeps the combined GASLIMIT.
 		env.header.GasLimit = blockMaxGasLimit
@@ -800,10 +802,11 @@ func pruneTransactions(
 		}
 		if len(b) <= int(sizeLimit) {
 			return &txsPruningResult{
-				TxsPruned:      prunedTxs,
-				ReceiptsPruned: prunedReceipts,
-				TxsRemaining:   txs,
-				Size:           len(b),
+				TxsPruned:         prunedTxs,
+				ReceiptsPruned:    prunedReceipts,
+				TxsRemaining:      txs,
+				ReceiptsRemaining: receipts,
+				Size:              len(b),
 			}, nil
 		}
 
