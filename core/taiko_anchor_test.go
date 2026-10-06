@@ -3,12 +3,14 @@ package core
 import (
 	"errors"
 	"math/big"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -180,5 +182,59 @@ func TestApplyAnchorTransaction(t *testing.T) {
 	}
 	if _, err := apply(t, ApplyAnchorTransaction, unsupportedAnchorTxs(t, config)["legacy"]); !errors.Is(err, types.ErrTxTypeNotSupported) {
 		t.Fatalf("ApplyAnchorTransaction of a legacy transaction: expected %v, got %v", types.ErrTxTypeNotSupported, err)
+	}
+}
+
+// TestPrefetchFlagsAnchorOnMessage pins that the state prefetcher executes the
+// pre-Etna anchor with its exemptions: the anchor of the golden touch, which
+// holds no funds, reaches the EVM and warms the state it touches. From Etna on
+// the same first transaction fails to buy gas before execution.
+func TestPrefetchFlagsAnchorOnMessage(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		etnaTime uint64
+		calls    int64
+	}{
+		{"before etna", 2, 1},
+		{"etna", 0, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			config := etnaProcessConfig(t, tt.etnaTime)
+			db := rawdb.NewMemoryDatabase()
+			gspec := &Genesis{Config: config, GasLimit: 30_000_000, BaseFee: big.NewInt(10_000_000)}
+			chain, err := NewBlockChain(db, gspec, taiko.New(config, db), DefaultConfig())
+			if err != nil {
+				t.Fatalf("new blockchain: %v", err)
+			}
+			defer chain.Stop()
+			statedb, err := chain.State()
+			if err != nil {
+				t.Fatalf("state: %v", err)
+			}
+			tx := goldenTouchTx(t, config, 0, TaikoTreasuryAddress(config.ChainID), 10_000_000, 1_000_000)
+			block := types.NewBlockWithHeader(&types.Header{
+				ParentHash: chain.Genesis().Hash(),
+				Number:     big.NewInt(1),
+				Time:       1,
+				GasLimit:   30_000_000,
+				BaseFee:    big.NewInt(10_000_000),
+				Coinbase:   etnaTestCoinbase,
+				Difficulty: common.Big0,
+			}).WithBody(types.Body{Transactions: types.Transactions{tx}})
+
+			var calls atomic.Int64
+			hooks := &tracing.Hooks{OnEnter: func(depth int, _ byte, _, _ common.Address, _ []byte, _ uint64, _ *big.Int) {
+				if depth == 0 {
+					calls.Add(1)
+				}
+			}}
+			newStatePrefetcher(config, chain.hc).Prefetch(block, statedb, vm.Config{Tracer: hooks}, nil)
+			if got := calls.Load(); got != tt.calls {
+				t.Fatalf("prefetch executed %d top-level calls, want %d", got, tt.calls)
+			}
+			if tx.IsAnchor() {
+				t.Fatal("prefetching marked the anchor transaction")
+			}
+		})
 	}
 }
