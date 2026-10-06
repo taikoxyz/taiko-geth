@@ -614,6 +614,69 @@ func TestTaikoForkchoiceUpdatedV3ForkchoiceState(t *testing.T) {
 	}
 }
 
+// TestTaikoForkchoiceUpdatedV3SetCanonicalFailure checks that a known head
+// the chain fails to make canonical is an internal error (-32603), not an
+// INVALID status, whether the attributes are absent, valid or invalid. The
+// head stays, and nothing is built or recorded.
+func TestTaikoForkchoiceUpdatedV3SetCanonicalFailure(t *testing.T) {
+	ethservice, api := startTaikoFCUTestService(t)
+	chain := ethservice.BlockChain()
+	config := chain.Config()
+	db := ethservice.ChainDb()
+	genesis := chain.Genesis().Hash()
+
+	// A stored block without its state or its parent: its state cannot be
+	// regenerated, so it cannot become the head.
+	orphan := types.NewBlockWithHeader(&types.Header{
+		ParentHash: common.HexToHash("0xdead"),
+		Number:     big.NewInt(5),
+		Root:       common.HexToHash("0xbeef"),
+		Time:       fcuTestEtnaTarget,
+		GasLimit:   fcuTestGasLimit,
+		Difficulty: common.Big0,
+		BaseFee:    big.NewInt(params.ShastaInitialBaseFee),
+	})
+	rawdb.WriteBlock(db, orphan)
+	if chain.GetBlockByHash(orphan.Hash()) == nil {
+		t.Fatal("the stored block is not found")
+	}
+	valid := taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList)
+	invalid := taikoFCUTestAttrs(config, fcuTestEtnaTarget, fcuTestEmptyTxList)
+	invalid.TargetGasLimitSet = true
+
+	for _, tt := range []struct {
+		name  string
+		attrs *engine.TaikoPayloadAttributesV3
+	}{
+		{"no attributes", nil},
+		{"valid attributes", valid},
+		{"invalid attributes", invalid},
+	} {
+		res, err := api.ForkchoiceUpdatedV3(context.Background(), engine.ForkchoiceStateV1{HeadBlockHash: orphan.Hash()}, tt.attrs)
+		if err == nil || taikoRPCErrorCode(t, err) != -32603 {
+			t.Fatalf("%s: status %s, err %v, want code -32603", tt.name, res.PayloadStatus.Status, err)
+		}
+		if detail := taikoNPErrorDetail(err); detail != "missing parent" {
+			t.Fatalf("%s: error detail %q, want the failure to set the head", tt.name, detail)
+		}
+		if res.PayloadID != nil {
+			t.Fatalf("%s: payload id %v returned", tt.name, res.PayloadID)
+		}
+		if got := chain.CurrentBlock().Hash(); got != genesis {
+			t.Fatalf("%s: head = %v, want the genesis", tt.name, got)
+		}
+	}
+	if fcuTestLastPayload(api) != nil {
+		t.Fatal("a failed forkchoice stored a payload")
+	}
+	if origin, _ := rawdb.ReadL1Origin(db, big.NewInt(1)); origin != nil {
+		t.Fatalf("a failed forkchoice wrote an L1 origin: %+v", origin)
+	}
+	if head, _ := rawdb.ReadHeadL1Origin(db); head != nil {
+		t.Fatalf("a failed forkchoice wrote the head L1 origin: %v", head)
+	}
+}
+
 // TestTaikoForkchoiceUpdatedV3AppliesForkchoiceWithInvalidAttributes checks
 // that invalid attributes still move the head, forward and back.
 func TestTaikoForkchoiceUpdatedV3AppliesForkchoiceWithInvalidAttributes(t *testing.T) {

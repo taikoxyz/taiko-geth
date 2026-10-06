@@ -22,11 +22,12 @@ import (
 // payload ID and records its L1 origin.
 //
 // Invalid attributes do not stop the forkchoice update: the state is applied
-// without them, an INVALID or SYNCING result is returned as a plain status,
-// and otherwise the attribute error is returned. After a VALID update, inputs
-// that fail the job checks are -32603 and build nothing, and a build failure
-// is -32603. Either failure drops the last built payload if the request has
-// its ID.
+// without them, an INVALID or SYNCING result is returned as a plain status, a
+// forkchoice error such as a failure to set the head (-32603) is returned as
+// it is, and otherwise the attribute error is returned. After a VALID update,
+// inputs that fail the job checks are -32603 and build nothing, and a build
+// failure is -32603. Either failure drops the last built payload if the
+// request has its ID.
 func (t *TaikoEngineAPI) ForkchoiceUpdatedV3(ctx context.Context, update engine.ForkchoiceStateV1, attrs *engine.TaikoPayloadAttributesV3) (engine.ForkChoiceResponse, error) {
 	api := t.api
 	api.forkchoiceLock.Lock()
@@ -143,7 +144,8 @@ func checkTaikoJobInputs(attrs *engine.TaikoPayloadAttributesV3) error {
 // and safe blocks. It returns the head block when the result is VALID.
 //
 // Unlike the upstream method, a head that is already a canonical ancestor
-// rewinds the chain to it, since L2 drivers reorg their own chain.
+// rewinds the chain to it, since L2 drivers reorg their own chain. A known
+// head that cannot be made canonical is -32603 rather than an INVALID status.
 func (t *TaikoEngineAPI) applyForkchoice(update engine.ForkchoiceStateV1) (engine.ForkChoiceResponse, *types.Block, error) {
 	api := t.api
 	if update.HeadBlockHash == (common.Hash{}) {
@@ -193,9 +195,11 @@ func (t *TaikoEngineAPI) applyForkchoice(update engine.ForkchoiceStateV1) (engin
 		}
 	}
 	if chain.CurrentBlock().Hash() != update.HeadBlockHash {
-		if latestValid, err := chain.SetCanonical(block); err != nil {
-			log.Warn("Failed to set the forkchoice head", "number", block.NumberU64(), "hash", update.HeadBlockHash, "err", err)
-			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, nil, nil
+		// A stored block was validated when it was imported, so failing to
+		// make it canonical is an internal error, not an invalid head.
+		if _, err := chain.SetCanonical(block); err != nil {
+			log.Error("Failed to set the forkchoice head", "number", block.NumberU64(), "hash", update.HeadBlockHash, "err", err)
+			return engine.STATUS_INVALID, nil, engine.InternalError.With(err)
 		}
 	}
 	api.eth.SetSynced()

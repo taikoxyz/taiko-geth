@@ -20,8 +20,8 @@ import (
 //   - engine_forkchoiceUpdatedV3: a failed payload build; a pre-Etna target
 //     failing the job-input checks (an anchorTransaction that does not decode
 //     or has no recoverable signer, a base fee above 64 bits); a failed L1
-//     origin write; and a head whose parent header is unavailable for the
-//     difficulty check;
+//     origin write; a head whose parent header is unavailable for the
+//     difficulty check; and a known head that cannot be made canonical;
 //   - engine_newPayloadV4: a pre-Etna (Unzen) block whose import exhausts zk
 //     gas or mismatches its zk gas and header difficulty;
 //   - engine_getPayloadV5: a stored payload without a block, which a failed
