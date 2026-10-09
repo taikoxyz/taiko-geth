@@ -151,6 +151,14 @@ func (t *Taiko) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*type
 }
 
 func (t *Taiko) verifyHeader(chain consensus.ChainHeaderReader, header, parent *types.Header, unixNow int64) error {
+	// CHANGE(taiko): These shared L1 header fields are not part of any Taiko L2 era.
+	if header.BlockAccessListHash != nil {
+		return fmt.Errorf("unexpected block access list hash")
+	}
+	if header.SlotNumber != nil {
+		return fmt.Errorf("unexpected slot number")
+	}
+
 	// Ensure that the header's extra-data section is of a reasonable size (<= 32 bytes)
 	if uint64(len(header.Extra)) > params.MaximumExtraDataSize {
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), params.MaximumExtraDataSize)

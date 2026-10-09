@@ -101,7 +101,8 @@ type Header struct {
 
 	// CHANGE(taiko): Preserve the EIP-7928 hash when reading L1 headers.
 	// BlockAccessListHash was added by EIP-7928 and is ignored in legacy headers.
-	BlockAccessListHash *common.Hash `json:"blockAccessListHash" rlp:"optional"`
+	// A nil value uses an empty-string placeholder when SlotNumber is present.
+	BlockAccessListHash *common.Hash `json:"blockAccessListHash" rlp:"optional,nilString"`
 
 	// SlotNumber was added by EIP-7843 and is ignored in legacy headers.
 	SlotNumber *uint64 `json:"slotNumber" rlp:"optional"`

@@ -20,10 +20,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"math/big"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 )
 
@@ -98,15 +100,20 @@ func TestHeaderBALRLPRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
 		bal, slot bool
+		slotValue uint64
 		rlp       string
 		hash      string
 	}{
-		{"bal_and_slot", true, true, "f90281" + headerBALLegacyBody + headerBALPragueTail + "a0" + headerBALValue + "01", "0xa0b985526c11666e3da8990ac0c07ab5ad84cab8fdabddf37a5e295235ce3245"},
-		{"bal_only", true, false, "f90280" + headerBALLegacyBody + headerBALPragueTail + "a0" + headerBALValue, "0x0c684917556c551e2dbbfe14af9e5b88007fca0a7f8fb07f19d27b19b649592b"},
-		{"neither", false, false, "f9025f" + headerBALLegacyBody + headerBALPragueTail, "0x6c67738268744a5563b0557feadaa29b39dbd7cad6a2939f3adf8507283e885d"},
+		{"bal_and_slot", true, true, 1, "f90281" + headerBALLegacyBody + headerBALPragueTail + "a0" + headerBALValue + "01", "0xa0b985526c11666e3da8990ac0c07ab5ad84cab8fdabddf37a5e295235ce3245"},
+		{"bal_only", true, false, 0, "f90280" + headerBALLegacyBody + headerBALPragueTail + "a0" + headerBALValue, "0x0c684917556c551e2dbbfe14af9e5b88007fca0a7f8fb07f19d27b19b649592b"},
+		{"nil_bal_slot_zero", false, true, 0, "f90261" + headerBALLegacyBody + headerBALPragueTail + "8080", ""},
+		{"nil_bal_slot_one", false, true, 1, "f90261" + headerBALLegacyBody + headerBALPragueTail + "8001", ""},
+		{"neither", false, false, 0, "f9025f" + headerBALLegacyBody + headerBALPragueTail, "0x6c67738268744a5563b0557feadaa29b39dbd7cad6a2939f3adf8507283e885d"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := headerBALFixture()
+			slot := tc.slotValue
+			h.SlotNumber = &slot
 			if !tc.bal {
 				h.BlockAccessListHash = nil
 			}
@@ -114,6 +121,10 @@ func TestHeaderBALRLPRoundTrip(t *testing.T) {
 				h.SlotNumber = nil
 			}
 			wantRLP := common.FromHex(tc.rlp)
+			wantHash := common.HexToHash(tc.hash)
+			if tc.hash == "" {
+				wantHash = crypto.Keccak256Hash(wantRLP)
+			}
 			encoded, err := rlp.EncodeToBytes(h)
 			if err != nil {
 				t.Fatal(err)
@@ -134,8 +145,8 @@ func TestHeaderBALRLPRoundTrip(t *testing.T) {
 			if tc.slot && *decoded.SlotNumber != *h.SlotNumber {
 				t.Fatal("slot number changed")
 			}
-			if got := decoded.Hash(); got != common.HexToHash(tc.hash) {
-				t.Fatalf("hash: got %s, want %s", got, tc.hash)
+			if got := decoded.Hash(); got != wantHash {
+				t.Fatalf("hash: got %s, want %s", got, wantHash)
 			}
 			reencoded, err := rlp.EncodeToBytes(&decoded)
 			if err != nil {
@@ -144,8 +155,8 @@ func TestHeaderBALRLPRoundTrip(t *testing.T) {
 			if !bytes.Equal(reencoded, wantRLP) {
 				t.Fatal("RLP changed after round trip")
 			}
-			if got := NewBlockWithHeader(&decoded).Hash(); got != common.HexToHash(tc.hash) {
-				t.Fatalf("block hash: got %s, want %s", got, tc.hash)
+			if got := NewBlockWithHeader(&decoded).Hash(); got != wantHash {
+				t.Fatalf("block hash: got %s, want %s", got, wantHash)
 			}
 		})
 	}
@@ -276,7 +287,6 @@ func TestHeaderBALMalformedRLP(t *testing.T) {
 		name  string
 		value any
 	}{
-		{"empty", []byte{}},
 		{"short", make([]byte, 31)},
 		{"long", make([]byte, 33)},
 		{"list", []any{}},
@@ -296,5 +306,63 @@ func TestHeaderBALMalformedRLP(t *testing.T) {
 				t.Fatal("malformed BAL was accepted")
 			}
 		})
+	}
+}
+
+// CHANGE(taiko): A nil BAL before a present slot is an empty-string placeholder.
+// A redundant trailing nil BAL is accepted as absence and normalizes to omission.
+func TestHeaderBALAbsentRLPTail(t *testing.T) {
+	encoded := common.FromHex("f90260" + headerBALLegacyBody + headerBALPragueTail + "80")
+	var header Header
+	if err := rlp.DecodeBytes(encoded, &header); err != nil {
+		t.Fatal(err)
+	}
+	if header.BlockAccessListHash != nil || header.SlotNumber != nil {
+		t.Fatal("nil tail was populated")
+	}
+	canonical := common.FromHex("f9025f" + headerBALLegacyBody + headerBALPragueTail)
+	actual, err := rlp.EncodeToBytes(&header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(actual, canonical) {
+		t.Fatalf("absent tail did not normalize: got %x", actual)
+	}
+}
+
+// CHANGE(taiko): Pin a real post-Amsterdam Sepolia RPC header independently.
+func TestHeaderBALSepoliaFixture(t *testing.T) {
+	data, err := os.ReadFile("testdata/taiko_sepolia_bal_header.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var header Header
+	if err := json.Unmarshal(data, &header); err != nil {
+		t.Fatal(err)
+	}
+	wantHash := common.HexToHash("0xfd4eb21751cb7c7d94d75f61c9f6364558923a2db73599f9ed917ee65d8c5680")
+	if got := header.Hash(); got != wantHash {
+		t.Fatalf("Sepolia header hash: got %s, want %s", got, wantHash)
+	}
+	if header.Number.Uint64() != 11873940 {
+		t.Fatalf("block number: got %s", header.Number)
+	}
+	wantBAL := common.HexToHash("0x68398eaab5b495749cccc4a7b91b7eaa3e2f863e569ddf0cc2fe0d4ea16c526b")
+	if header.BlockAccessListHash == nil || *header.BlockAccessListHash != wantBAL {
+		t.Fatalf("BAL hash: got %v, want %s", header.BlockAccessListHash, wantBAL)
+	}
+	if header.SlotNumber == nil || *header.SlotNumber != 0xaca561 {
+		t.Fatalf("slot number: got %v, want 0xaca561", header.SlotNumber)
+	}
+	encoded, err := rlp.EncodeToBytes(&header)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Header
+	if err := rlp.DecodeBytes(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if got := decoded.Hash(); got != wantHash {
+		t.Fatalf("Sepolia RLP round trip hash: got %s, want %s", got, wantHash)
 	}
 }
