@@ -177,6 +177,10 @@ type Message struct {
 	// CHANGE(taiko): basefeeSharingPctg of the basefee will be sent to the block.coinbase,
 	// the remaining will be sent to the treasury address.
 	BasefeeSharingPctg uint8
+	// CHANGE(taiko): SkipBasefeeRedistribution burns the base fee instead of
+	// crediting it to the treasury and block.coinbase. From Etna on, a block
+	// context whose extraData lacks the 13-byte layout has no base-fee share.
+	SkipBasefeeRedistribution bool
 }
 
 // TransactionToMessage converts a transaction into a Message.
@@ -196,7 +200,9 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 		SkipTransactionChecks: false,
 		BlobHashes:            tx.BlobHashes(),
 		BlobGasFeeCap:         tx.BlobGasFeeCap(),
-		IsAnchor:              tx.IsAnchor(),
+		// CHANGE(taiko): only an external caller's private, marked copy sets this;
+		// this module never marks a tx and flags the anchor's message instead.
+		IsAnchor: tx.IsAnchor(),
 	}
 	// If baseFee provided, set gasPrice to effectiveGasPrice.
 	if baseFee != nil {
@@ -592,8 +598,9 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 		fee.Mul(fee, effectiveTipU256)
 		st.state.AddBalance(st.evm.Context.Coinbase, fee, tracing.BalanceIncreaseRewardTransactionFee)
 
-		// CHANGE(taiko): basefee is not burnt, but sent to a treasury and block.coinbase instead.
-		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.msg.IsAnchor {
+		// CHANGE(taiko): basefee is not burnt, but sent to a treasury and block.coinbase instead,
+		// unless the message carries no base-fee share.
+		if st.evm.ChainConfig().Taiko && st.evm.Context.BaseFee != nil && !st.msg.IsAnchor && !st.msg.SkipBasefeeRedistribution {
 			totalFee := new(uint256.Int).Mul(
 				new(uint256.Int).SetUint64(st.gasUsed()),
 				new(uint256.Int).SetUint64(st.evm.Context.BaseFee.Uint64()),
@@ -602,7 +609,14 @@ func (st *stateTransition) execute() (*ExecutionResult, error) {
 				new(uint256.Int).Mul(totalFee, new(uint256.Int).SetUint64(uint64(st.msg.BasefeeSharingPctg))),
 				new(uint256.Int).SetUint64(100),
 			)
-			feeTreasury := new(uint256.Int).Sub(totalFee, feeCoinbase)
+			// CHANGE(taiko): from Etna on, a sharing percentage above 100 leaves
+			// the treasury share at zero instead of wrapping around. The coinbase
+			// still receives its full percentage share, so above 100 the credits
+			// can exceed what the sender paid, as in the reference client.
+			feeTreasury := new(uint256.Int)
+			if !st.evm.ChainConfig().IsEtna(st.evm.Context.Time) || !feeCoinbase.Gt(totalFee) {
+				feeTreasury.Sub(totalFee, feeCoinbase)
+			}
 			st.state.AddBalance(st.getTreasuryAddress(), feeTreasury, tracing.BalanceIncreaseTreasury)
 			st.state.AddBalance(st.evm.Context.Coinbase, feeCoinbase, tracing.BalanceIncreaseBaseFeeSharing)
 		}

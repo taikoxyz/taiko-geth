@@ -352,13 +352,17 @@ func TestSealBlockWith_UnzenSealedRootMatchesImport(t *testing.T) {
 		t.Fatalf("encode tx list: %v", err)
 	}
 
-	block, err := w.sealBlockWith(parent, timestamp, 0, &engine.BlockMetadata{
-		Beneficiary: testUserAddress,
-		GasLimit:    parent.GasLimit,
-		Timestamp:   timestamp,
-		TxList:      txList,
-		ExtraData:   []byte{},
-	}, baseFee, nil)
+	block, err := w.sealBlockWith(parent, 0, &engine.PayloadAttributes{
+		Timestamp:     timestamp,
+		BaseFeePerGas: baseFee,
+		BlockMetadata: &engine.BlockMetadata{
+			Beneficiary: testUserAddress,
+			GasLimit:    parent.GasLimit,
+			Timestamp:   timestamp,
+			TxList:      txList,
+			ExtraData:   []byte{},
+		},
+	})
 	if err != nil {
 		t.Fatalf("sealBlockWith: %v", err)
 	}

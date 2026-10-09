@@ -84,3 +84,10 @@ var TaikoChainConfig = &ChainConfig{
 		BPO2:   DefaultBPO2BlobConfig,
 	},
 }
+
+// HasTaikoAnchor reports whether a Taiko block with the given timestamp starts
+// with an anchor transaction. Every Taiko block does before Etna; Etna removes
+// the anchor transaction.
+func (c *ChainConfig) HasTaikoAnchor(time uint64) bool {
+	return c.Taiko && !c.IsEtna(time)
+}

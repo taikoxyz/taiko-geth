@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/params"
@@ -285,6 +287,56 @@ func (a *TaikoAuthAPIBackend) SetL1OriginSignature(blockID *math.HexOrDecimal256
 	return l1Origin, nil
 }
 
+// RPCPreBuiltTxList is a miner.PreBuiltTxList as the taikoAuth
+// transaction-pool methods return it, in the reference client's shape: each
+// transaction is the RPC object of a pending transaction. It still decodes
+// into a miner.PreBuiltTxList, whose transaction decoder ignores the keys a
+// transaction's own JSON form lacks.
+type RPCPreBuiltTxList struct {
+	TxList           []*RPCPreBuiltTx `json:"txList"`
+	EstimatedGasUsed uint64           `json:"estimatedGasUsed"`
+	BytesLength      uint64           `json:"bytesLength"`
+}
+
+// RPCPreBuiltTx is a selected transaction as the RPC object of a pending
+// transaction: it names its sender and hash, and its block hash, block number
+// and index are null.
+type RPCPreBuiltTx struct {
+	*ethapi.RPCTransaction
+	// BlockTimestamp shadows the embedded field, which a pending transaction
+	// leaves null, to leave the key out like the reference client.
+	BlockTimestamp *hexutil.Uint64 `json:"blockTimestamp,omitempty"`
+}
+
+// newRPCPreBuiltTxLists returns the RPC form of the lists a preselection
+// built when asked for at most maxTransactionsLists lists. An empty selection
+// is one empty list, as in the reference client, unless no list was asked
+// for.
+func newRPCPreBuiltTxLists(lists []*miner.PreBuiltTxList, maxTransactionsLists uint64, head *types.Header, config *params.ChainConfig) []*RPCPreBuiltTxList {
+	// The transactions were selected under the fork rules of the head's
+	// simulated child, which may be newer than the head's own: recover their
+	// senders with the latest signer.
+	signer := types.LatestSignerForChainID(config.ChainID)
+	result := make([]*RPCPreBuiltTxList, 0, len(lists)+1)
+	for _, list := range lists {
+		txs := make([]*RPCPreBuiltTx, len(list.TxList))
+		for i, tx := range list.TxList {
+			rpcTx := ethapi.NewRPCPendingTransaction(tx, head, config)
+			rpcTx.From, _ = types.Sender(signer, tx)
+			txs[i] = &RPCPreBuiltTx{RPCTransaction: rpcTx}
+		}
+		result = append(result, &RPCPreBuiltTxList{
+			TxList:           txs,
+			EstimatedGasUsed: list.EstimatedGasUsed,
+			BytesLength:      list.BytesLength,
+		})
+	}
+	if len(result) == 0 && maxTransactionsLists > 0 {
+		result = append(result, &RPCPreBuiltTxList{TxList: []*RPCPreBuiltTx{}})
+	}
+	return result
+}
+
 // TxPoolContent retrieves the transaction pool content with the given upper limits.
 func (a *TaikoAuthAPIBackend) TxPoolContent(
 	beneficiary common.Address,
@@ -293,7 +345,7 @@ func (a *TaikoAuthAPIBackend) TxPoolContent(
 	maxBytesPerTxList uint64,
 	locals []string,
 	maxTransactionsLists uint64,
-) ([]*miner.PreBuiltTxList, error) {
+) ([]*RPCPreBuiltTxList, error) {
 	log.Debug(
 		"Fetching L2 pending transactions finished",
 		"baseFee", baseFee,
@@ -303,7 +355,7 @@ func (a *TaikoAuthAPIBackend) TxPoolContent(
 		"locals", locals,
 	)
 
-	return a.eth.Miner().BuildTransactionsLists(
+	lists, err := a.eth.Miner().BuildTransactionsLists(
 		beneficiary,
 		baseFee,
 		blockMaxGasLimit,
@@ -311,6 +363,10 @@ func (a *TaikoAuthAPIBackend) TxPoolContent(
 		locals,
 		maxTransactionsLists,
 	)
+	if err != nil {
+		return nil, txPoolContentError(err)
+	}
+	return newRPCPreBuiltTxLists(lists, maxTransactionsLists, a.eth.BlockChain().CurrentHeader(), a.eth.BlockChain().Config()), nil
 }
 
 // TxPoolContentWithMinTip retrieves the transaction pool content with the given upper limits and minimum tip.
@@ -322,7 +378,7 @@ func (a *TaikoAuthAPIBackend) TxPoolContentWithMinTip(
 	locals []string,
 	maxTransactionsLists uint64,
 	minTip uint64,
-) ([]*miner.PreBuiltTxList, error) {
+) ([]*RPCPreBuiltTxList, error) {
 	log.Debug(
 		"Fetching L2 pending transactions finished",
 		"baseFee", baseFee,
@@ -333,7 +389,7 @@ func (a *TaikoAuthAPIBackend) TxPoolContentWithMinTip(
 		"minTip", minTip,
 	)
 
-	return a.eth.Miner().BuildTransactionsListsWithMinTip(
+	lists, err := a.eth.Miner().BuildTransactionsListsWithMinTip(
 		beneficiary,
 		baseFee,
 		blockMaxGasLimit,
@@ -342,4 +398,27 @@ func (a *TaikoAuthAPIBackend) TxPoolContentWithMinTip(
 		maxTransactionsLists,
 		minTip,
 	)
+	if err != nil {
+		return nil, txPoolContentError(err)
+	}
+	return newRPCPreBuiltTxLists(lists, maxTransactionsLists, a.eth.BlockChain().CurrentHeader(), a.eth.BlockChain().Config()), nil
+}
+
+// txPoolContentParamsError is the JSON-RPC invalid-params (-32602) error the
+// taikoAuth transaction-pool methods return for parameters that an Etna parent
+// cannot simulate with.
+type txPoolContentParamsError struct{ err error }
+
+func (e *txPoolContentParamsError) Error() string  { return e.err.Error() }
+func (e *txPoolContentParamsError) ErrorCode() int { return -32602 }
+func (e *txPoolContentParamsError) Unwrap() error  { return e.err }
+
+// txPoolContentError maps a transaction-pool preselection error to the error
+// the taikoAuth API returns. The RPC server reads the error code only from the
+// returned error itself, so the invalid-params case is not wrapped further.
+func txPoolContentError(err error) error {
+	if errors.Is(err, miner.ErrInvalidPreselectionParams) {
+		return &txPoolContentParamsError{err: err}
+	}
+	return err
 }

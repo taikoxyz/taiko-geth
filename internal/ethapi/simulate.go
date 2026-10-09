@@ -288,6 +288,13 @@ func (sim *simulator) processBlock(ctx context.Context, block *simBlock, header,
 	if err := block.StateOverrides.Apply(sim.state, precompiles); err != nil {
 		return nil, nil, nil, err
 	}
+	// CHANGE(taiko): an Etna block needs a non-zero parent beacon root and
+	// 13-byte extraData. Like the reference client's block executor, reject
+	// either violation before the block's calls run, as a -32603 internal
+	// error.
+	if err := checkTaikoSimulateHeader(sim.chainConfig, header); err != nil {
+		return nil, nil, nil, err
+	}
 	var (
 		gp          = core.NewGasPool(blockContext.GasLimit)
 		blobGasUsed uint64
@@ -344,6 +351,9 @@ func (sim *simulator) processBlock(ctx context.Context, block *simBlock, header,
 		// EoA check is always skipped, even in validation mode.
 		sim.state.SetTxContext(txHash, i)
 		msg := call.ToMessage(header.BaseFee, !sim.validate)
+		// CHANGE(taiko): from Etna on the call shares the base fee as the
+		// simulated block's extraData does.
+		core.SetTaikoRPCBasefeeSharing(msg, sim.chainConfig, header)
 		result, err := applyMessageWithEVM(ctx, evm, msg, timeout, gp)
 		if err != nil {
 			txErr := txValidationError(err)
@@ -578,6 +588,12 @@ func (sim *simulator) makeHeaders(blocks []simBlock) ([]*types.Header, error) {
 			WithdrawalsHash:  withdrawalsHash,
 			ParentBeaconRoot: parentBeaconRoot,
 		})
+		// CHANGE(taiko): an Etna block's extraData, which carries its base-fee
+		// share, is the base block's verbatim, carried through the simulated
+		// parents as in the reference client.
+		if sim.chainConfig.IsEtna(timestamp) {
+			header.Extra = common.CopyBytes(base.Extra)
+		}
 		res[bi] = header
 	}
 	return res, nil

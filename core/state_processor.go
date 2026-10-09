@@ -108,11 +108,16 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 
+	// CHANGE(taiko): before Etna the first transaction of a Taiko block is the
+	// anchor transaction; Etna blocks have none.
+	hasAnchor := config.HasTaikoAnchor(header.Time)
+
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
-		// CHANGE(taiko): mark the first transaction as anchor transaction.
-		if i == 0 && config.Taiko {
-			if err := tx.MarkAsAnchor(); err != nil {
+		// CHANGE(taiko): flag the anchor on its message, never on the shared tx; see taiko_anchor.go.
+		isAnchor := i == 0 && hasAnchor
+		if isAnchor {
+			if err := ValidateAnchorTxType(tx); err != nil {
 				return nil, err
 			}
 		}
@@ -120,6 +125,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		if err != nil {
 			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
+		msg.IsAnchor = isAnchor
 		if config.IsShasta(header.Time) {
 			msg.BasefeeSharingPctg = DecodeShastaBasefeeSharingPctg(header.Extra)
 		} else if config.IsOntake(block.Number()) {
@@ -139,9 +145,9 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 
 		receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, evm)
 		if err != nil {
-			// CHANGE(taiko): if zk gas exceeded on a non-anchor tx, abort and skip remaining.
-			// The anchor tx (i==0) is never discarded — it must always be in the block.
-			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && i > 0 {
+			// CHANGE(taiko): if zk gas exceeded, abort and skip remaining.
+			// The pre-Etna anchor (index 0) is never discarded — it must always be in the block.
+			if cfg.ZkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) && (i > 0 || !hasAnchor) {
 				log.Debug(
 					"Unzen zk gas limit reached during block processing; truncating",
 					"txIndex", i,
@@ -164,7 +170,7 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 				// reference executor does instead of committing a body the
 				// reference rejects. Unreachable in practice, since charging
 				// already bounds committed+in-flight zk gas to the block limit.
-				if i == 0 {
+				if i == 0 && hasAnchor {
 					spanEnd(&commitErr)
 					return nil, fmt.Errorf("could not apply anchor tx [%v]: %w", tx.Hash().Hex(), commitErr)
 				}
@@ -189,15 +195,15 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		// Mirrors the Rust reference block-executor body_transaction_count == committed_receipt_count check.
 		if len(block.Transactions()) != len(receipts) {
 			return nil, fmt.Errorf(
-				"Unzen block body extends past zk gas truncation point: body has %d transactions but execution committed %d",
-				len(block.Transactions()), len(receipts),
+				"%w: body has %d transactions but execution committed %d",
+				ErrZkGasBodyPastTruncation, len(block.Transactions()), len(receipts),
 			)
 		}
 		// Validate that the imported header difficulty matches the recomputed
 		// finalized block zk gas.
 		recomputed := new(big.Int).SetUint64(cfg.ZkGasMeter.BlockZkGasUsed())
 		if header.Difficulty.Cmp(recomputed) != 0 {
-			return nil, fmt.Errorf("zk gas difficulty mismatch: header has %v, recomputed %v", header.Difficulty, recomputed)
+			return nil, fmt.Errorf("%w: header has %v, recomputed %v", ErrZkGasDifficultyMismatch, header.Difficulty, recomputed)
 		}
 	}
 
@@ -358,6 +364,8 @@ func ApplyTransaction(evm *vm.EVM, gp *GasPool, statedb *state.StateDB, header *
 	} else if evm.ChainConfig().IsOntake(header.Number) {
 		msg.BasefeeSharingPctg = DecodeOntakeExtraData(header.Extra)
 	}
+	// CHANGE(taiko): from Etna on, only a 13-byte extraData shares the base fee; see setEtnaBasefeeSharing.
+	setEtnaBasefeeSharing(msg, evm.ChainConfig(), header)
 	// Create a new context to be used in the EVM environment
 	return ApplyTransactionWithEVM(msg, gp, statedb, header.Number, header.Hash(), header.Time, tx, evm)
 }

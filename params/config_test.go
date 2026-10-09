@@ -174,6 +174,28 @@ func TestTaikoUnzenConfigJSONAndActivation(t *testing.T) {
 	require.NotContains(t, string(out), oldTypoKey)
 }
 
+func TestTaikoEtnaConfigJSONAndActivation(t *testing.T) {
+	var cfg ChainConfig
+	err := json.Unmarshal([]byte(`{"chainId":167000,"taiko":true,"etnaTime":42}`), &cfg)
+	require.NoError(t, err)
+	require.NotNil(t, cfg.EtnaTime)
+	require.Equal(t, uint64(42), *cfg.EtnaTime)
+	require.False(t, cfg.IsEtna(41))
+	require.True(t, cfg.IsEtna(42))
+	require.True(t, cfg.IsEtna(43))
+
+	out, err := json.Marshal(&cfg)
+	require.NoError(t, err)
+	require.Contains(t, string(out), `"etnaTime":42`)
+	require.Contains(t, cfg.Description(), " - Etna:                        @42")
+
+	var unset ChainConfig
+	require.False(t, unset.IsEtna(0))
+	require.False(t, unset.IsEtna(math.MaxUint64))
+	unset.ChainID = big.NewInt(167000)
+	require.NotContains(t, unset.Description(), "Etna")
+}
+
 func TestTaikoNetworkIDsArePinned(t *testing.T) {
 	// Network IDs are part of consensus and must not silently drift if
 	// params/taiko_config.go is edited. Genesis-hash tests do not depend on
@@ -192,4 +214,19 @@ func TestTaikoNetworkIDsArePinned(t *testing.T) {
 			t.Fatalf("%s network id = %v, want %d", c.name, c.got, c.want)
 		}
 	}
+}
+
+func TestHasTaikoAnchor(t *testing.T) {
+	etna := uint64(100)
+	cfg := &ChainConfig{Taiko: true, EtnaTime: &etna}
+	require.True(t, cfg.HasTaikoAnchor(99))
+	require.False(t, cfg.HasTaikoAnchor(100))
+	require.False(t, cfg.HasTaikoAnchor(101))
+
+	unscheduled := &ChainConfig{Taiko: true}
+	require.True(t, unscheduled.HasTaikoAnchor(math.MaxUint64))
+
+	nonTaiko := &ChainConfig{EtnaTime: &etna}
+	require.False(t, nonTaiko.HasTaikoAnchor(0))
+	require.False(t, nonTaiko.HasTaikoAnchor(100))
 }

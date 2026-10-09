@@ -225,6 +225,9 @@ func (eth *Ethereum) stateAtBlock(ctx context.Context, block *types.Block, reexe
 // function will return the state of block after the pre-block operations have
 // been completed (e.g. updating system contracts), but before post-block
 // operations are completed (e.g. processing withdrawals).
+//
+// CHANGE(taiko): the returned transaction is never marked as the anchor. Before
+// Etna, a caller executing the one at index 0 flags its message as the anchor.
 func (eth *Ethereum) stateAtTransaction(ctx context.Context, block *types.Block, txIndex int, reexec uint64) (*types.Transaction, vm.BlockContext, *state.StateDB, tracers.StateReleaseFunc, error) {
 	// Short circuit if it's genesis block.
 	if block.NumberU64() == 0 {
@@ -257,8 +260,11 @@ func (eth *Ethereum) stateAtTransaction(ctx context.Context, block *types.Block,
 	// Recompute transactions up to the target index.
 	signer := types.MakeSigner(eth.blockchain.Config(), block.Number(), block.Time())
 	for idx, tx := range block.Transactions() {
-		if idx == 0 && eth.config.Genesis.Config.Taiko {
-			if err := tx.MarkAsAnchor(); err != nil {
+		// CHANGE(taiko): before Etna the first transaction is the anchor, flagged
+		// on its message rather than on the shared transaction.
+		isAnchor := idx == 0 && eth.blockchain.Config().HasTaikoAnchor(block.Time())
+		if isAnchor {
+			if err := core.ValidateAnchorTxType(tx); err != nil {
 				return nil, vm.BlockContext{}, nil, nil, err
 			}
 		}
@@ -267,6 +273,7 @@ func (eth *Ethereum) stateAtTransaction(ctx context.Context, block *types.Block,
 		}
 		// Assemble the transaction call message and return if the requested offset
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())
+		msg.IsAnchor = isAnchor
 
 		// CHANGE(taiko): decode the basefeeSharingPctg config from the extradata.
 		if eth.blockchain.Config().IsShasta(block.Time()) {

@@ -137,9 +137,9 @@ func generateTypeRef(goType reflect.Type) map[string]interface{} {
 	switch goType.Kind() {
 	case reflect.Ptr:
 		switch goType.String() {
-		case "*miner.PreBuiltTxList":
+		case "*eth.RPCPreBuiltTxList":
 			return map[string]interface{}{
-				"$ref": "#/definitions/*miner.PreBuiltTxList",
+				"$ref": "#/definitions/*eth.RPCPreBuiltTxList",
 			}
 		case "*big.Int":
 			return map[string]interface{}{
@@ -273,10 +273,14 @@ func main() {
 			Description: []string{"Auto-generated JSON-RPC API for Taiko backend."},
 		},
 		Definitions: map[string]interface{}{
-			"*miner.PreBuiltTxList": map[string]interface{}{
+			"*eth.RPCPreBuiltTxList": map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
-					"txList":           map[string]interface{}{"type": "array"},
+					"txList": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "object"},
+						"description": "Transactions as RPC objects of pending transactions: they name their sender and hash, and their block hash, block number and index are null.",
+					},
 					"estimatedGasUsed": map[string]interface{}{"type": "integer", "examples": []int{10000}},
 					"bytesLength":      map[string]interface{}{"type": "integer", "examples": []int{10000}},
 				},

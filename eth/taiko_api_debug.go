@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/miner"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -42,11 +43,29 @@ type txListWitnessOptions struct {
 	SkipZkGasDifficultyCheck bool `json:"skipZkGasDifficultyCheck"`
 }
 
-// decodeTxListWitnessTxs decodes an RLP list of transactions and drops any
-// whose signature cannot be recovered, mirroring the reference ingestion: list
-// positions are assigned after the drop, so the first remaining transaction —
-// not the first decoded one — takes the first-position fatality role below.
-// It errors only on a malformed top-level list.
+// etnaTxListError is the error of an Etna transaction list that exceeds a
+// size limit or lies outside the grammar the Etna sealer uses. Like the
+// reference client, it answers -32603.
+type etnaTxListError struct{ err error }
+
+func (e *etnaTxListError) Error() string  { return e.err.Error() }
+func (e *etnaTxListError) ErrorCode() int { return -32603 }
+func (e *etnaTxListError) Unwrap() error  { return e.err }
+
+// taikoBlockNotFoundError is the error of a block lookup that finds no block
+// without failing: the pending block when Etna leaves it unavailable, or a
+// future block number. Like the reference client, it answers -32001.
+type taikoBlockNotFoundError struct{ bn rpc.BlockNumberOrHash }
+
+func (e *taikoBlockNotFoundError) Error() string  { return fmt.Sprintf("block %v not found", e.bn) }
+func (e *taikoBlockNotFoundError) ErrorCode() int { return -32001 }
+
+// decodeTxListWitnessTxs decodes the RLP transaction list of a pre-Etna block
+// and drops any transaction whose signature cannot be recovered, mirroring the
+// reference ingestion: list positions are assigned after the drop, so before
+// Etna the first remaining transaction — not the first decoded one — takes the
+// first-position fatality role in buildTxListWitness. It errors only on a
+// malformed top-level list.
 func decodeTxListWitnessTxs(txListRLP []byte) (types.Transactions, error) {
 	var txs types.Transactions
 	if err := rlp.DecodeBytes(txListRLP, &txs); err != nil {
@@ -59,6 +78,27 @@ func decodeTxListWitnessTxs(txListRLP []byte) (types.Transactions, error) {
 		// validation), while a cryptographically unrecoverable signature drops
 		// the transaction before positions are assigned.
 		if _, err := types.Sender(types.LatestSignerForChainID(tx.ChainId()), tx); err != nil {
+			continue
+		}
+		recovered = append(recovered, tx)
+	}
+	return recovered, nil
+}
+
+// decodeEtnaTxListWitnessTxs decodes the transaction list of an Etna block
+// with the grammar the Etna sealer uses, as the reference decodes it with its
+// block builder's grammar, and drops any transaction whose signer cannot be
+// recovered. Recovery checks no chain ID, so a transaction of another chain
+// stays in the list and is skipped by the replay. A list outside the grammar
+// is a -32603 error.
+func decodeEtnaTxListWitnessTxs(txList []byte) (types.Transactions, error) {
+	txs, err := miner.DecodeEtnaTxList(txList)
+	if err != nil {
+		return nil, &etnaTxListError{err: fmt.Errorf("failed to decode tx list: %w", err)}
+	}
+	recovered := make(types.Transactions, 0, len(txs))
+	for _, tx := range txs {
+		if _, err := miner.RecoverTaikoTransactionSender(tx); err != nil {
 			continue
 		}
 		recovered = append(recovered, tx)
@@ -149,12 +189,13 @@ func isRecoverableNonAnchorTxError(err error) bool {
 
 // CHANGE(taiko): buildTxListWitness replays txs on top of the parent state of
 // `block` and returns the collected execution witness plus the committed
-// (post-filter) transactions. It mirrors the reference replay: the first
-// transaction must succeed (any failure there is fatal), later failures in the
-// recoverable class are skipped, and a zk-gas-limit error truncates the block.
-// Anchor execution exemptions follow the reference identity — the golden-touch
-// sender, its block-start nonce, and the treasury target — at any position,
-// independent of transaction type.
+// (post-filter) transactions. It mirrors the reference replay: before Etna the
+// first transaction must succeed (any failure there is fatal), later failures
+// in the recoverable class are skipped, and a zk-gas-limit error truncates the
+// block. Before Etna, anchor execution exemptions follow the reference
+// identity — the golden-touch sender, its block-start nonce, and the treasury
+// target — at any position, independent of transaction type. Etna blocks have
+// no anchor: no position is special and no transaction gets an exemption.
 func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Transactions, opts txListWitnessOptions) (*stateless.Witness, types.Transactions, error) {
 	config := bc.Config()
 	header := block.Header() // copy; safe to mutate during finalize
@@ -221,12 +262,14 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// before any replayed transaction, and the chain's treasury — never by list
 	// position or transaction type. Its pre-execution marker call also loads
 	// the golden-touch and treasury accounts, so the equivalent reads here keep
-	// the witness carrying the same pre-execution dependencies.
+	// the witness carrying the same pre-execution dependencies. Etna blocks
+	// have no anchor and no marker call, so neither account is read.
 	var (
+		hasAnchor        = config.HasTaikoAnchor(header.Time)
 		goldenTouchNonce uint64
 		treasury         common.Address
 	)
-	if config.Taiko {
+	if hasAnchor {
 		goldenTouchNonce = statedb.GetNonce(taiko.GoldenTouchAccount)
 		treasury = core.TaikoTreasuryAddress(config.ChainID)
 		statedb.GetBalance(treasury)
@@ -234,9 +277,10 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 
 	committed := make(types.Transactions, 0, len(txs))
 	for i, tx := range txs {
-		// The first list position only decides fatality: any failure there
-		// aborts the request instead of skipping the transaction.
-		isFirst := i == 0 && config.Taiko
+		// Before Etna the first list position only decides fatality: any
+		// failure there aborts the request instead of skipping the
+		// transaction. From Etna on it is an ordinary position.
+		isFirst := i == 0 && hasAnchor
 		if tx.Type() == types.BlobTxType {
 			if isFirst {
 				return nil, nil, errors.New("first transaction must not be a blob transaction")
@@ -277,9 +321,9 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 			msg.BasefeeSharingPctg = core.DecodeOntakeExtraData(header.Extra)
 		}
 		// CHANGE(taiko): anchor exemptions follow the reference triple at any
-		// list position; the assignment also clears any in-memory flag the
-		// transaction object may carry.
-		msg.IsAnchor = config.Taiko && sender == taiko.GoldenTouchAccount &&
+		// list position, and only before Etna; the assignment also clears any
+		// in-memory flag the transaction object may carry.
+		msg.IsAnchor = hasAnchor && sender == taiko.GoldenTouchAccount &&
 			tx.Nonce() == goldenTouchNonce && tx.To() != nil && *tx.To() == treasury
 
 		snap := statedb.Snapshot()
@@ -295,7 +339,8 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 			if !isRecoverableNonAnchorTxError(err) {
 				return nil, nil, fmt.Errorf("non-anchor transaction at index %d failed: %w", i, err)
 			}
-			// A non-first zk-gas-limit error truncates the block.
+			// A zk-gas-limit error truncates the block (before Etna, only
+			// past the first position).
 			if zkGasMeter != nil && errors.Is(err, vm.ErrZkGasLimitExceeded) {
 				zkGasMeter.ResetTransaction()
 				evm.ResetZkGasErr()
@@ -304,7 +349,7 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 			continue
 		}
 		if zkGasMeter != nil {
-			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil && i > 0 {
+			if commitErr := zkGasMeter.CommitTransaction(); commitErr != nil && !isFirst {
 				zkGasMeter.ResetTransaction()
 				break
 			}
@@ -322,7 +367,7 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	if zkGasMeter != nil && !opts.SkipZkGasDifficultyCheck {
 		recomputed := zkGasMeter.BlockZkGasUsed()
 		if zkGasDifficultyMismatch(header.Difficulty, recomputed) {
-			return nil, nil, fmt.Errorf("zk gas difficulty mismatch: header has %v, recomputed %d", header.Difficulty, recomputed)
+			return nil, nil, fmt.Errorf("%w: header has %v, recomputed %d", core.ErrZkGasDifficultyMismatch, header.Difficulty, recomputed)
 		}
 	}
 
@@ -571,8 +616,9 @@ func (api *DebugAPI) ExecutionWitnessForTxList(bn rpc.BlockNumberOrHash, txList 
 }
 
 // CHANGE(taiko): executionWitnessForTxList validates the request, resolves the
-// target block, decodes the transaction list, and returns the cross-client
-// execution witness produced by replaying it on the parent state.
+// target block, decodes the transaction list (from Etna on, with the grammar
+// the Etna sealer uses), and returns the cross-client execution witness
+// produced by replaying it on the parent state.
 func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, txList hexutil.Bytes, mode *string, opts *txListWitnessOptions) (*stateless.ExecutionWitness, error) {
 	if mode != nil && *mode != "" && *mode != "legacy" {
 		return nil, fmt.Errorf("unsupported witness mode %q", *mode)
@@ -581,14 +627,25 @@ func executionWitnessForTxList(bc *core.BlockChain, bn rpc.BlockNumberOrHash, tx
 	if opts != nil {
 		options = *opts
 	}
-	if err := checkTxListSize(txList); err != nil {
-		return nil, err
-	}
+	// A size-limit error still takes precedence over an unknown block. The
+	// block is resolved only to answer it with -32603 from Etna on.
+	sizeErr := checkTxListSize(txList)
 	block, err := resolveWitnessBlock(bc, bn)
+	if sizeErr != nil {
+		if err == nil && bc.Config().IsEtna(block.Time()) {
+			return nil, &etnaTxListError{err: sizeErr}
+		}
+		return nil, sizeErr
+	}
 	if err != nil {
 		return nil, err
 	}
-	txs, err := decodeTxListWitnessTxs(txList)
+	var txs types.Transactions
+	if bc.Config().IsEtna(block.Time()) {
+		txs, err = decodeEtnaTxListWitnessTxs(txList)
+	} else {
+		txs, err = decodeTxListWitnessTxs(txList)
+	}
 	if err != nil {
 		return nil, err
 	}
