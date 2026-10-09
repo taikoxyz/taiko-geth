@@ -985,6 +985,10 @@ func RPCMarshalHeader(head *types.Header) map[string]interface{} {
 	if head.RequestsHash != nil {
 		result["requestsHash"] = head.RequestsHash
 	}
+	// CHANGE(taiko): Preserve the EIP-7928 commitment in RPC header responses.
+	if head.BlockAccessListHash != nil {
+		result["blockAccessListHash"] = head.BlockAccessListHash
+	}
 	if head.SlotNumber != nil {
 		result["slotNumber"] = hexutil.Uint64(*head.SlotNumber)
 	}
