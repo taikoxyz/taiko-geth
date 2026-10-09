@@ -276,6 +276,10 @@ func (beacon *Beacon) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 	}
 
 	amsterdam := chain.Config().IsAmsterdam(header.Number, header.Time)
+	// CHANGE(taiko): The shared L1 BAL field must remain absent before Amsterdam.
+	if !amsterdam && header.BlockAccessListHash != nil {
+		return fmt.Errorf("invalid blockAccessListHash: have %x, expected nil", *header.BlockAccessListHash)
+	}
 	if amsterdam && header.SlotNumber == nil {
 		return errors.New("header is missing slotNumber")
 	}
