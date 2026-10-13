@@ -170,7 +170,10 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	if err != nil {
 		return nil, nil, err
 	}
-	statedb.StartPrefetcher("txlist-witness", witness)
+	// CHANGE(taiko): the namespace becomes part of the prefetcher's metric
+	// names, and the Prometheus exporter only rewrites '/', so it must not
+	// contain characters that are invalid in a metric name (such as '-').
+	statedb.StartPrefetcher("txlist_witness", witness)
 	defer statedb.StopPrefetcher()
 
 	// CHANGE(taiko): record which storage slots the replay writes, per account.
