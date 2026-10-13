@@ -1,9 +1,19 @@
 package types
 
+// MarkAsAnchor marks tx as a Taiko anchor transaction, which
+// core.TransactionToMessage carries into the message it converts. Only a
+// dynamic-fee transaction can be one; any other type returns
+// ErrTxTypeNotSupported.
+//
+// It mutates tx, so call it only on a private copy: a block's transactions are
+// shared with its cached copies and with concurrent readers. Block import,
+// sealing, replay and tracing never mark a transaction; they flag the anchor's
+// message (core.Message.IsAnchor) instead.
 func (tx *Transaction) MarkAsAnchor() error {
 	return tx.inner.markAsAnchor()
 }
 
+// IsAnchor reports whether MarkAsAnchor marked tx.
 func (tx *Transaction) IsAnchor() bool {
 	return tx.inner.isAnchorTx()
 }

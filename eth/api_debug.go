@@ -508,6 +508,10 @@ func (api *DebugAPI) ExecutionWitness(bn rpc.BlockNumberOrHash) (*stateless.Exec
 	if err != nil {
 		return nil, fmt.Errorf("block %v not found", bn)
 	}
+	// CHANGE(taiko): a lookup can find no block without failing (Etna pending, a future number).
+	if block == nil {
+		return nil, &taikoBlockNotFoundError{bn: bn}
+	}
 	return executionWitnessForBlock(bc, block)
 }
 

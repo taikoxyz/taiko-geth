@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"reflect"
 	"strconv"
 	"sync"
@@ -35,7 +34,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/internal/telemetry"
@@ -51,11 +49,19 @@ import (
 
 // Register adds the engine API and related APIs to the full node.
 func Register(stack *node.Node, backend *eth.Ethereum) error {
+	// CHANGE(taiko): Taiko chains mount only the Taiko Engine API service, so no
+	// upstream engine_* method is served there.
+	var service any
+	if backend.BlockChain().Config().Taiko {
+		service = NewTaikoEngineAPI(backend)
+	} else {
+		service = NewConsensusAPI(backend)
+	}
 	stack.RegisterAPIs([]rpc.API{
 		newTestingAPI(backend),
 		{
 			Namespace:     "engine",
-			Service:       NewConsensusAPI(backend),
+			Service:       service,
 			Authenticated: true,
 		},
 	})
@@ -187,8 +193,7 @@ func (api *ConsensusAPI) ForkchoiceUpdatedV2(ctx context.Context, update engine.
 			return engine.STATUS_INVALID, attributesErr("withdrawals before shanghai")
 		case api.checkFork(params.Timestamp, forks.Shanghai) && params.Withdrawals == nil:
 			return engine.STATUS_INVALID, attributesErr("missing withdrawals")
-		// CHANGE(taiko): allow Taiko Unzen payload building to continue on the V2 wire path.
-		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai) && !api.allowTaikoUnzenForkchoiceV2(params.Timestamp):
+		case !api.checkFork(params.Timestamp, forks.Paris, forks.Shanghai):
 			return engine.STATUS_INVALID, unsupportedForkErr("fcuV2 must only be called with paris or shanghai payloads")
 		}
 	}
@@ -300,10 +305,7 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 		if ph == nil {
 			return engine.STATUS_INVALID, errors.New("parent unavailable for difficulty check")
 		}
-		// CHANGE(taiko): Unzen repurposes block difficulty for zk-gas, so a positive
-		// difficulty no longer indicates an invalid post-merge terminal block.
-		if ph.Difficulty.Sign() == 0 && block.Difficulty().Sign() > 0 &&
-			!(api.eth.BlockChain().Config().Taiko && api.eth.BlockChain().Config().IsUnzen(block.Time())) {
+		if ph.Difficulty.Sign() == 0 && block.Difficulty().Sign() > 0 {
 			log.Error("Parent block is already post-ttd", "number", block.NumberU64(), "hash", update.HeadBlockHash, "diff", block.Difficulty(), "age", common.PrettyAge(time.Unix(int64(block.Time()), 0)))
 			return engine.ForkChoiceResponse{PayloadStatus: engine.INVALID_TERMINAL_BLOCK, PayloadID: nil}, nil
 		}
@@ -317,10 +319,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 			PayloadID: id,
 		}
 	}
-
-	// CHANGE(taiko): check whether `--taiko` flag is set.
-	isTaiko := api.eth.BlockChain().Config().Taiko
-
 	if rawdb.ReadCanonicalHash(api.eth.ChainDb(), block.NumberU64()) != update.HeadBlockHash {
 		// Block is not canonical, set head.
 		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
@@ -330,10 +328,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 		// If the specified head matches with our local head, do nothing and keep
 		// generating the payload. It's a special corner case that a few slots are
 		// missing and we are requested to generate the payload in slot.
-	} else if isTaiko { // CHANGE(taiko): reorg is allowed in L2.
-		if latestValid, err := api.eth.BlockChain().SetCanonical(block); err != nil {
-			return engine.ForkChoiceResponse{PayloadStatus: engine.PayloadStatusV1{Status: engine.INVALID, LatestValidHash: &latestValid}}, err
-		}
 	} else {
 		// If the head block is already in our canonical chain, the beacon client is
 		// probably resyncing. Ignore the update.
@@ -375,102 +369,6 @@ func (api *ConsensusAPI) forkchoiceUpdated(ctx context.Context, update engine.Fo
 	// sealed by the beacon client. The payload will be requested later, and we
 	// will replace it arbitrarily many times in between.
 	if payloadAttributes != nil {
-		// CHANGE(taiko): create a L2 block by Taiko protocol.
-		if isTaiko {
-			// No need to check payloadAttribute here, because all its fields are
-			// marked as required.
-			var parentBlockTime uint64
-			if block.Number().Cmp(common.Big0) != 0 {
-				if ancestor := api.eth.BlockChain().GetHeaderByHash(block.ParentHash()); ancestor != nil {
-					parentBlockTime = block.Time() - ancestor.Time
-				}
-			}
-			block, err := api.eth.Miner().SealBlockWith(
-				block.Header(),
-				payloadAttributes.Timestamp,
-				parentBlockTime,
-				payloadAttributes.BlockMetadata,
-				payloadAttributes.BaseFeePerGas,
-				payloadAttributes.Withdrawals,
-			)
-			if err != nil {
-				log.Error("Failed to create sealing block", "err", err)
-				return valid(nil), engine.InvalidPayloadAttributes.With(err)
-			}
-
-			// L1Origin **MUST NOT** be nil, it's a required field in PayloadAttributesV1.
-			l1Origin := payloadAttributes.L1Origin
-
-			// Set the block hash before inserting the L1Origin into database.
-			l1Origin.L2BlockHash = block.Hash()
-
-			// Use the tx list hash as the beacon root.
-			txListHash := crypto.Keccak256Hash(payloadAttributes.BlockMetadata.TxList[:])
-			// Cache the mined block for later use.
-			args := &miner.BuildPayloadArgs{
-				Parent:       block.ParentHash(),
-				Timestamp:    block.Time(),
-				FeeRecipient: block.Coinbase(),
-				Random:       block.MixDigest(),
-				Withdrawals:  block.Withdrawals(),
-				Version:      payloadVersion,
-				TxListHash:   &txListHash,
-				Extra:        block.Header().Extra,
-			}
-			id := args.Id()
-
-			log.Debug(
-				"Payload arguments",
-				"parent", args.Parent.Hex(),
-				"timestamp", args.Timestamp,
-				"feeRecipient", args.FeeRecipient.Hex(),
-				"random", args.Random.Hex(),
-				"withdrawals", args.Withdrawals,
-				"version", args.Version,
-				"id", id.String(),
-				"txListHash", txListHash.Hex(),
-				"extra", args.Extra,
-			)
-
-			// If we already are busy generating this work, then we do not need
-			// to start a second process.
-			if api.localBlocks.has(id) {
-				// Write L1Origin and HeadL1Origin even if the payload is already in the cache.
-				rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
-				if !l1Origin.IsPreconfBlock() {
-					rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
-					// Write the batch to block mapping if the batch ID is given.
-					if payloadAttributes.BlockMetadata.BatchID != nil {
-						rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
-					}
-				}
-				return valid(&id), nil
-			}
-			payload, err := api.eth.Miner().BuildPayload(ctx, args, false)
-			if err != nil {
-				log.Error("Failed to build payload", "err", err)
-				return valid(nil), engine.InvalidPayloadAttributes.With(err)
-			}
-
-			payload.SetFullBlock(block, common.Big0)
-
-			api.localBlocks.put(id, payload)
-
-			// Write L1Origin.
-			rawdb.WriteL1Origin(api.eth.ChainDb(), l1Origin.BlockID, l1Origin)
-
-			// Write the head L1Origin, only when it's not a preconfirmation block.
-			if !l1Origin.IsPreconfBlock() {
-				rawdb.WriteHeadL1Origin(api.eth.ChainDb(), l1Origin.BlockID)
-				// Write the batch to block mapping if the batch ID is given.
-				if payloadAttributes.BlockMetadata.BatchID != nil {
-					rawdb.WriteBatchToLastBlockID(api.eth.ChainDb(), payloadAttributes.BlockMetadata.BatchID, l1Origin.BlockID)
-				}
-			}
-
-			return valid(&id), nil
-		}
-
 		args := &miner.BuildPayloadArgs{
 			Parent:       update.HeadBlockHash,
 			Timestamp:    payloadAttributes.Timestamp,
@@ -542,21 +440,12 @@ func (api *ConsensusAPI) GetPayloadV1(payloadID engine.PayloadID) (*engine.Execu
 
 // GetPayloadV2 returns a cached payload by id.
 func (api *ConsensusAPI) GetPayloadV2(payloadID engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
-	// CHANGE(taiko): allow Taiko Unzen payload retrieval on the V2 wire path.
-	data, err := api.getPayload(
+	return api.getPayload(
 		payloadID,
 		false,
 		[]engine.PayloadVersion{engine.PayloadV1, engine.PayloadV2},
-		nil,
+		[]forks.Fork{forks.Paris, forks.Shanghai},
 	)
-	if err != nil {
-		return nil, err
-	}
-	if api.checkFork(data.ExecutionPayload.Timestamp, forks.Paris, forks.Shanghai) ||
-		api.allowTaikoUnzenGetPayloadV2(data.ExecutionPayload.Timestamp) {
-		return data, nil
-	}
-	return nil, engine.UnsupportedFork
 }
 
 // GetPayloadV3 returns a cached payload by id. This endpoint should only
@@ -795,49 +684,20 @@ func (api *ConsensusAPI) NewPayloadV2(ctx context.Context, params engine.Executa
 	var (
 		cancun   = api.config().IsCancun(api.config().LondonBlock, params.Timestamp)
 		shanghai = api.config().IsShanghai(api.config().LondonBlock, params.Timestamp)
-		// CHANGE(taiko): Taiko drivers may submit L2 payloads with nil Withdrawals
-		// and a non-zero WithdrawalsHash (the txHash-only optimization path). Allow
-		// that case through the Shanghai post-fork validation.
-		taikoWithdrawalsHashOnly = api.config().Taiko && params.WithdrawalsHash != (common.Hash{})
-		// CHANGE(taiko): allow Taiko Unzen payload execution on the V2 wire path when
-		// header difficulty is provided for the reconstructed block header.
-		taikoUnzenV2Allowed = api.allowTaikoUnzenPayloadV2(params)
 	)
 	switch {
-	case cancun && !taikoUnzenV2Allowed:
+	case cancun:
 		return invalidStatus, paramsErr("can't use newPayloadV2 post-cancun")
-	case shanghai && params.Withdrawals == nil && !taikoWithdrawalsHashOnly:
+	case shanghai && params.Withdrawals == nil:
 		return invalidStatus, paramsErr("nil withdrawals post-shanghai")
 	case !shanghai && params.Withdrawals != nil:
 		return invalidStatus, paramsErr("non-nil withdrawals pre-shanghai")
-	// CHANGE(taiko): allow Taiko Unzen payload execution on the V2 wire path when
-	// blob gas fields are present in the replayed payload shape.
-	case params.ExcessBlobGas != nil && !taikoUnzenV2Allowed:
+	case params.ExcessBlobGas != nil:
 		return invalidStatus, paramsErr("non-nil excessBlobGas pre-cancun")
-	// CHANGE(taiko): allow Taiko Unzen payload execution on the V2 wire path when
-	// blob gas fields are present in the replayed payload shape.
-	case params.BlobGasUsed != nil && !taikoUnzenV2Allowed:
+	case params.BlobGasUsed != nil:
 		return invalidStatus, paramsErr("non-nil blobGasUsed pre-cancun")
 	}
 	return api.newPayload(ctx, params, nil, nil, nil, false)
-}
-
-// CHANGE(taiko): keep Taiko Unzen forkchoice on the V2 Engine API path for
-// compatibility with legacy clients that still speak V2 on the wire.
-func (api *ConsensusAPI) allowTaikoUnzenForkchoiceV2(timestamp uint64) bool {
-	return api.config().Taiko && api.config().IsUnzen(timestamp)
-}
-
-// CHANGE(taiko): keep Taiko Unzen getPayload on the V2 Engine API path for
-// compatibility with legacy clients that still speak V2 on the wire.
-func (api *ConsensusAPI) allowTaikoUnzenGetPayloadV2(timestamp uint64) bool {
-	return api.config().Taiko && api.config().IsUnzen(timestamp)
-}
-
-// CHANGE(taiko): keep Taiko Unzen newPayload on the V2 Engine API path when the
-// payload carries header difficulty needed to restore the Unzen header fields.
-func (api *ConsensusAPI) allowTaikoUnzenPayloadV2(params engine.ExecutableData) bool {
-	return api.config().Taiko && api.config().IsUnzen(params.Timestamp) && params.HeaderDifficulty != nil
 }
 
 // NewPayloadV3 creates an Eth1 block, inserts it in the chain, and returns the status of the chain.
@@ -936,80 +796,43 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	defer api.newPayloadLock.Unlock()
 
 	log.Trace("Engine API request received", "method", "NewPayload", "number", params.Number, "hash", params.BlockHash)
-	// CHANGE(taiko): allow passing the executable data with txHash instead of all transactions.
-	var block *types.Block
-	params.TaikoBlock = api.eth.BlockChain().Config().Taiko
-	if api.eth.BlockChain().Config().Taiko && params.Transactions == nil && params.Withdrawals == nil {
-		header := &types.Header{
-			ParentHash:      params.ParentHash,
-			UncleHash:       types.EmptyUncleHash,
-			Coinbase:        params.FeeRecipient,
-			Root:            params.StateRoot,
-			TxHash:          params.TxHash,
-			ReceiptHash:     params.ReceiptsRoot,
-			Bloom:           types.BytesToBloom(params.LogsBloom),
-			Difficulty:      params.HeaderDifficultyOrZero(), // CHANGE(taiko): use Unzen difficulty
-			Number:          new(big.Int).SetUint64(params.Number),
-			GasLimit:        params.GasLimit,
-			GasUsed:         params.GasUsed,
-			Time:            params.Timestamp,
-			BaseFee:         params.BaseFeePerGas,
-			Extra:           params.ExtraData,
-			MixDigest:       params.Random,
-			WithdrawalsHash: &params.WithdrawalsHash,
+	block, err := engine.ExecutableDataToBlock(params, versionedHashes, beaconRoot, requests)
+	if err != nil {
+		bgu := "nil"
+		if params.BlobGasUsed != nil {
+			bgu = strconv.Itoa(int(*params.BlobGasUsed))
 		}
-		// CHANGE(taiko): set Unzen header fields.
-		if params.HeaderDifficulty != nil {
-			emptyRequests := types.EmptyRequestsHash
-			header.RequestsHash = &emptyRequests
-			zero := common.Hash{}
-			header.ParentBeaconRoot = &zero
-			zeroBlobGas := uint64(0)
-			header.BlobGasUsed = &zeroBlobGas
-			excessBlobGas := uint64(0)
-			header.ExcessBlobGas = &excessBlobGas
+		ebg := "nil"
+		if params.ExcessBlobGas != nil {
+			ebg = strconv.Itoa(int(*params.ExcessBlobGas))
 		}
-		block = types.NewBlockWithHeader(header)
-	} else {
-		block, err = engine.ExecutableDataToBlock(params, versionedHashes, beaconRoot, requests)
-		if err != nil {
-			bgu := "nil"
-			if params.BlobGasUsed != nil {
-				bgu = strconv.Itoa(int(*params.BlobGasUsed))
-			}
-			ebg := "nil"
-			if params.ExcessBlobGas != nil {
-				ebg = strconv.Itoa(int(*params.ExcessBlobGas))
-			}
-			slotNum := "nil"
-			if params.SlotNumber != nil {
-				slotNum = strconv.Itoa(int(*params.SlotNumber))
-			}
-			log.Warn("Invalid NewPayload params",
-				"params.Number", params.Number,
-				"params.ParentHash", params.ParentHash,
-				"params.BlockHash", params.BlockHash,
-				"params.StateRoot", params.StateRoot,
-				"params.FeeRecipient", params.FeeRecipient,
-				"params.LogsBloom", common.PrettyBytes(params.LogsBloom),
-				"params.Random", params.Random,
-				"params.GasLimit", params.GasLimit,
-				"params.GasUsed", params.GasUsed,
-				"params.Timestamp", params.Timestamp,
-				"params.ExtraData", common.PrettyBytes(params.ExtraData),
-				"params.BaseFeePerGas", params.BaseFeePerGas,
-				"params.BlobGasUsed", bgu,
-				"params.ExcessBlobGas", ebg,
-				"params.SlotNumber", slotNum,
-				"len(params.Transactions)", len(params.Transactions),
-				"len(params.Withdrawals)", len(params.Withdrawals),
-				"beaconRoot", beaconRoot,
-				"len(requests)", len(requests),
-				"error", err)
-			return api.invalid(err, nil), nil
+		slotNum := "nil"
+		if params.SlotNumber != nil {
+			slotNum = strconv.Itoa(int(*params.SlotNumber))
 		}
+		log.Warn("Invalid NewPayload params",
+			"params.Number", params.Number,
+			"params.ParentHash", params.ParentHash,
+			"params.BlockHash", params.BlockHash,
+			"params.StateRoot", params.StateRoot,
+			"params.FeeRecipient", params.FeeRecipient,
+			"params.LogsBloom", common.PrettyBytes(params.LogsBloom),
+			"params.Random", params.Random,
+			"params.GasLimit", params.GasLimit,
+			"params.GasUsed", params.GasUsed,
+			"params.Timestamp", params.Timestamp,
+			"params.ExtraData", common.PrettyBytes(params.ExtraData),
+			"params.BaseFeePerGas", params.BaseFeePerGas,
+			"params.BlobGasUsed", bgu,
+			"params.ExcessBlobGas", ebg,
+			"params.SlotNumber", slotNum,
+			"len(params.Transactions)", len(params.Transactions),
+			"len(params.Withdrawals)", len(params.Withdrawals),
+			"beaconRoot", beaconRoot,
+			"len(requests)", len(requests),
+			"error", err)
+		return api.invalid(err, nil), nil
 	}
-
 	// Stash away the last update to warn the user if the beacon client goes offline
 	api.lastNewPayloadUpdate.Store(time.Now().Unix())
 
@@ -1034,18 +857,9 @@ func (api *ConsensusAPI) newPayload(ctx context.Context, params engine.Executabl
 	if parent == nil {
 		return api.delayPayloadImport(block), nil
 	}
-	// CHANGE(taiko): a block that has the same timestamp as its parents is
-	// allowed in Taiko protocol.
-	if api.eth.BlockChain().Config().Taiko {
-		if block.Time() < parent.Time() {
-			log.Warn("Invalid timestamp", "parent", parent.Time(), "block", block.Time())
-			return api.invalid(errors.New("invalid timestamp"), parent.Header()), nil
-		}
-	} else {
-		if block.Time() <= parent.Time() {
-			log.Warn("Invalid timestamp", "parent", parent.Time(), "block", block.Time())
-			return api.invalid(errors.New("invalid timestamp"), parent.Header()), nil
-		}
+	if block.Time() <= parent.Time() {
+		log.Warn("Invalid timestamp", "parent", parent.Time(), "block", block.Time())
+		return api.invalid(errors.New("invalid timestamp"), parent.Header()), nil
 	}
 	// Another corner case: if the node is in snap sync mode, but the CL client
 	// tries to make it import a block. That should be denied as pushing something

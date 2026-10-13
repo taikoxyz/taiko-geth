@@ -102,6 +102,9 @@ func (p *statePrefetcher) Prefetch(block *types.Block, statedb *state.StateDB, c
 			}
 			// Disable the nonce check
 			msg.SkipNonceChecks = true
+			// CHANGE(taiko): before Etna the first transaction is the anchor;
+			// Process flags it the same way, never on the shared transaction.
+			msg.IsAnchor = i == 0 && p.config.HasTaikoAnchor(header.Time)
 
 			stateCpy.SetTxContext(tx.Hash(), i)
 
