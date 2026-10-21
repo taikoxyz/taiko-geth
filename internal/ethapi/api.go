@@ -648,6 +648,10 @@ func (api *BlockChainAPI) GetBlockReceipts(ctx context.Context, blockNrOrHash rp
 	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
 		block, receipts, _ = api.b.Pending()
 		if block == nil {
+			// CHANGE(taiko): null, like the pending block, when Etna leaves it unavailable.
+			if taikoPendingBlockNull(ctx, api.b) {
+				return nil, nil
+			}
 			return nil, errors.New("pending receipts is not available")
 		}
 	} else {
@@ -765,6 +769,9 @@ func applyMessage(ctx context.Context, b Backend, args TransactionArgs, state *s
 		return nil, err
 	}
 	msg := args.ToMessage(header.BaseFee, true)
+	// CHANGE(taiko): from Etna on the call shares the base fee as a block with
+	// the context's extraData does.
+	core.SetTaikoRPCBasefeeSharing(msg, b.ChainConfig(), header)
 	// Lower the basefee to 0 to avoid breaking EVM
 	// invariants (basefee < feecap).
 	if msg.GasPrice.Sign() == 0 {
@@ -921,6 +928,9 @@ func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNr
 		return 0, err
 	}
 	call := args.ToMessage(header.BaseFee, true)
+	// CHANGE(taiko): from Etna on the estimate shares the base fee as a block
+	// with the context's extraData does.
+	core.SetTaikoRPCBasefeeSharing(call, b.ChainConfig(), header)
 
 	// Run the gas estimation and wrap any revertals into a custom return
 	estimate, revert, err := gasestimator.Estimate(ctx, call, opts, gasCap)
@@ -1373,6 +1383,9 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 		// Set the accesslist to the last al
 		args.AccessList = &accessList
 		msg := args.ToMessage(header.BaseFee, true)
+		// CHANGE(taiko): from Etna on the call shares the base fee as a block
+		// with the context's extraData does.
+		core.SetTaikoRPCBasefeeSharing(msg, b.ChainConfig(), header)
 
 		// Apply the transaction with the access list tracer
 		tracer := logger.NewAccessListTracer(accessList, addressesToExclude)

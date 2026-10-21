@@ -502,6 +502,7 @@ type ChainConfig struct {
 	PacayaBlock *big.Int `json:"pacayaBlock,omitempty"` // Pacaya switch block (nil = no fork, 0 = already activated)
 	ShastaTime  *uint64  `json:"shastaTime,omitempty"`  // Shasta switch time (nil = no fork, 0 = already activated)
 	UnzenTime   *uint64  `json:"unzenTime,omitempty"`   // CHANGE(taiko): Unzen switch time (nil = no fork, 0 = already activated)
+	EtnaTime    *uint64  `json:"etnaTime,omitempty"`    // CHANGE(taiko): Etna switch time (nil = no fork, 0 = already activated)
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -724,6 +725,9 @@ func (c *ChainConfig) Description() string {
 	if c.UnzenTime != nil {
 		banner += fmt.Sprintf(" - Unzen:                        @%-10v\n", *c.UnzenTime)
 	}
+	if c.EtnaTime != nil {
+		banner += fmt.Sprintf(" - Etna:                        @%-10v\n", *c.EtnaTime)
+	}
 	return banner
 }
 
@@ -919,6 +923,11 @@ func (c *ChainConfig) IsShasta(time uint64) bool {
 // CHANGE(taiko): IsUnzen returns whether time is either equal to the Unzen fork time or greater.
 func (c *ChainConfig) IsUnzen(time uint64) bool {
 	return isTimestampForked(c.UnzenTime, time)
+}
+
+// CHANGE(taiko): IsEtna returns whether time is either equal to the Etna fork time or greater.
+func (c *ChainConfig) IsEtna(time uint64) bool {
+	return isTimestampForked(c.EtnaTime, time)
 }
 
 // IsVerkleGenesis checks whether the verkle fork is activated at the genesis block.

@@ -122,6 +122,10 @@ type generateParams struct {
 	noTxs       bool              // Flag whether an empty block without any transaction is expected
 	// CHANGE(taiko): The base fee per gas for the next block, used by the legacy Taiko blocks.
 	baseFeePerGas *big.Int
+	// CHANGE(taiko): taikoPreselection marks a transaction-pool preselection
+	// run, which only simulates its target block and may use the caller's
+	// parent beacon root for any target fork.
+	taikoPreselection bool
 
 	forceOverrides    bool // Flag whether we should overwrite extraData and transactions
 	overrideExtraData []byte
@@ -310,16 +314,15 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 		header.ExcessBlobGas = &excessBlobGas
 		header.ParentBeaconRoot = genParams.beaconRoot
 	}
-	// CHANGE(taiko): Unzen blocks carry the canonical zero parent beacon root.
-	// It must be in the header before makeEnv so the EIP-4788 system call below
-	// runs while building, as it does when the block is imported. A caller-supplied
-	// non-zero root cannot survive the engine round trip on Taiko, so it is
-	// rejected rather than committed, as the reference client does.
+	// CHANGE(taiko): Taiko Unzen blocks carry their parent beacon root in the
+	// header before makeEnv, so the EIP-4788 system call below runs while
+	// building, as it does when the block is imported.
 	if miner.chainConfig.Taiko && miner.chainConfig.IsUnzen(header.Time) {
-		if genParams.beaconRoot != nil && *genParams.beaconRoot != (common.Hash{}) {
-			return nil, fmt.Errorf("non-zero parent beacon root %v is unsupported on Taiko", *genParams.beaconRoot)
+		root, err := taikoParentBeaconRoot(miner.chainConfig, header.Time, genParams)
+		if err != nil {
+			return nil, err
 		}
-		header.ParentBeaconRoot = new(common.Hash)
+		header.ParentBeaconRoot = root
 	}
 	// Apply EIP-7843.
 	if miner.chainConfig.IsAmsterdam(header.Number, header.Time) {

@@ -81,11 +81,12 @@ func newTxListWitnessChain(t *testing.T, cfg witnessChainConfig) (*core.BlockCha
 				GasFeeCap: gen.BaseFee(), Gas: 100000, To: &dst, Value: big.NewInt(int64(j + 1)),
 			}), signer, key)
 			if j == 0 {
-				// CHANGE(taiko): mark the block's first tx as the anchor during
-				// generation so GenerateChain's fee accounting matches the Taiko
-				// block-import path (which marks index 0 as anchor and skips
-				// base-fee redirection); otherwise InsertChain rejects the block
-				// with an invalid merkle root.
+				// CHANGE(taiko): mark the block's first tx, a private copy not yet
+				// shared with the chain, as the anchor during generation so
+				// GenerateChain's fee accounting matches the Taiko block-import path
+				// (which executes index 0 as the anchor and skips base-fee
+				// redirection); otherwise InsertChain rejects the block with an
+				// invalid merkle root.
 				if err := tx.MarkAsAnchor(); err != nil {
 					t.Fatalf("mark anchor: %v", err)
 				}

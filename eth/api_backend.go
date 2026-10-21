@@ -71,6 +71,10 @@ func (b *EthAPIBackend) HeaderByNumber(ctx context.Context, number rpc.BlockNumb
 	if number == rpc.PendingBlockNumber {
 		block, _, _ := b.eth.miner.Pending()
 		if block == nil {
+			// CHANGE(taiko): an Etna pending block is unavailable by design.
+			if b.taikoEtnaPendingUnavailable() {
+				return nil, nil
+			}
 			return nil, errors.New("pending block is not available")
 		}
 		return block.Header(), nil
@@ -128,6 +132,10 @@ func (b *EthAPIBackend) BlockByNumber(ctx context.Context, number rpc.BlockNumbe
 	if number == rpc.PendingBlockNumber {
 		block, _, _ := b.eth.miner.Pending()
 		if block == nil {
+			// CHANGE(taiko): an Etna pending block is unavailable by design.
+			if b.taikoEtnaPendingUnavailable() {
+				return nil, nil
+			}
 			return nil, errors.New("pending block is not available")
 		}
 		return block, nil
