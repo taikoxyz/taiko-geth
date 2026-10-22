@@ -218,6 +218,15 @@ func newUnzenTestGenesis(config *params.ChainConfig) *core.Genesis {
 // shutdown under repeated runs.
 func newUnzenTestWorker(t *testing.T, gspec *core.Genesis) (*Miner, *testWorkerBackend) {
 	t.Helper()
+	return newUnzenTestWorkerWithConfig(t, gspec, testConfig)
+}
+
+// newUnzenTestWorkerWithConfig is newUnzenTestWorker with a caller-chosen miner
+// config. Note that testConfig.GasCeil equals params.GenesisGasLimit, so with it
+// CalcGasLimit returns the genesis gas limit unchanged; a test that needs the
+// sealing gas limit to differ from the protocol one must pass its own ceiling.
+func newUnzenTestWorkerWithConfig(t *testing.T, gspec *core.Genesis, config Config) (*Miner, *testWorkerBackend) {
+	t.Helper()
 	db := rawdb.NewMemoryDatabase()
 	eng := taiko.New(gspec.Config, db)
 	chain, err := core.NewBlockChain(db, gspec, eng, &core.BlockChainConfig{ArchiveMode: true})
@@ -226,7 +235,7 @@ func newUnzenTestWorker(t *testing.T, gspec *core.Genesis) (*Miner, *testWorkerB
 	}
 	t.Cleanup(chain.Stop)
 	backend := &testWorkerBackend{db: db, chain: chain, genesis: gspec}
-	return New(backend, testConfig, eng), backend
+	return New(backend, config, eng), backend
 }
 
 // beaconRootsSlot returns the storage slot in which the EIP-4788 contract
@@ -390,5 +399,121 @@ func TestSealBlockWith_UnzenSealedRootMatchesImport(t *testing.T) {
 	want := common.BigToHash(new(big.Int).SetUint64(timestamp))
 	if got := statedb.GetState(params.BeaconRootsAddress, beaconRootsSlot(timestamp)); got != want {
 		t.Fatalf("imported state lacks the EIP-4788 write: slot = %v, want timestamp %v", got, want)
+	}
+}
+
+var (
+	// gasLimitProbeAddress holds gasLimitProbeCode in the gas-limit tests below.
+	gasLimitProbeAddress = common.HexToAddress("0x000000000000000000000000000000000000c0de")
+	// gasLimitProbeCode is GASLIMIT, PUSH0, SSTORE, STOP: it records the gas
+	// limit the EVM reports into storage slot 0, which puts the value the
+	// GASLIMIT opcode returned into the state root.
+	gasLimitProbeCode = []byte{0x45, 0x5f, 0x55, 0x00}
+)
+
+// TestSetBlockGasLimit_PinsHeaderAndEVMContext covers the invariant both callers
+// rely on: the protocol gas limit has to reach the EVM block context as well as
+// the header, because prepareWork built the context from the miner's own target.
+func TestSetBlockGasLimit_PinsHeaderAndEVMContext(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	w, b := newUnzenTestWorker(t, newUnzenTestGenesis(config))
+
+	parent := b.chain.CurrentBlock()
+	env, err := w.prepareWork(context.Background(), unzenGenerateParams(parent), false)
+	if err != nil {
+		t.Fatalf("prepareWork: %v", err)
+	}
+	t.Cleanup(env.discard)
+
+	const protocolGasLimit = 12_345_678
+	if env.header.GasLimit == protocolGasLimit {
+		t.Fatalf("test is vacuous: prepareWork already produced gas limit %d", protocolGasLimit)
+	}
+
+	setBlockGasLimit(env, protocolGasLimit)
+
+	if env.header.GasLimit != protocolGasLimit {
+		t.Errorf("header gas limit = %d, want %d", env.header.GasLimit, protocolGasLimit)
+	}
+	if env.evm.Context.GasLimit != protocolGasLimit {
+		t.Errorf("EVM block context gas limit = %d, want %d", env.evm.Context.GasLimit, protocolGasLimit)
+	}
+}
+
+// TestSealBlockWith_GasLimitOpcodeMatchesImport pins the end-to-end half of the
+// same invariant: a block carrying a transaction whose result depends on
+// GASLIMIT must re-execute to the state root it was sealed with, so the node
+// can import the payload it just built.
+func TestSealBlockWith_GasLimitOpcodeMatchesImport(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	gspec := newUnzenTestGenesis(config)
+	gspec.Alloc[gasLimitProbeAddress] = types.Account{Code: gasLimitProbeCode, Balance: common.Big0}
+
+	// A ceiling above the protocol gas limit, as a node left on the default
+	// miner config runs with. testConfig's own ceiling would cancel the drift.
+	minerConfig := testConfig
+	minerConfig.GasCeil = 60_000_000
+	w, b := newUnzenTestWorkerWithConfig(t, gspec, minerConfig)
+
+	parent := b.chain.CurrentBlock()
+	timestamp := parent.Time + 1
+	baseFee := big.NewInt(params.InitialBaseFee)
+	taikoL2Address := core.TaikoTreasuryAddress(config.ChainID)
+	protocolGasLimit := parent.GasLimit
+
+	if sealingTarget := core.CalcGasLimit(parent.GasLimit, minerConfig.GasCeil); sealingTarget == protocolGasLimit {
+		t.Fatalf("test is vacuous: prepareWork and the protocol agree on gas limit %d", sealingTarget)
+	}
+
+	anchorTx := types.MustSignNewTx(goldenTouchTestKey(t), types.LatestSigner(config), &types.DynamicFeeTx{
+		ChainID:   config.ChainID,
+		Nonce:     0,
+		GasTipCap: common.Big0,
+		GasFeeCap: baseFee,
+		Gas:       taiko.AnchorGasLimit,
+		To:        &taikoL2Address,
+		Data:      taiko.AnchorSelector,
+	})
+	probeTx := types.MustSignNewTx(testBankKey, types.LatestSigner(config), &types.DynamicFeeTx{
+		ChainID:   config.ChainID,
+		Nonce:     0,
+		GasTipCap: common.Big0,
+		GasFeeCap: new(big.Int).Mul(baseFee, big.NewInt(1000)),
+		Gas:       200_000,
+		To:        &gasLimitProbeAddress,
+	})
+	txList, err := rlp.EncodeToBytes(types.Transactions{anchorTx, probeTx})
+	if err != nil {
+		t.Fatalf("encode tx list: %v", err)
+	}
+
+	block, err := w.sealBlockWith(parent, timestamp, 0, &engine.BlockMetadata{
+		Beneficiary: testUserAddress,
+		GasLimit:    protocolGasLimit,
+		Timestamp:   timestamp,
+		TxList:      txList,
+		ExtraData:   []byte{},
+	}, baseFee, nil)
+	if err != nil {
+		t.Fatalf("sealBlockWith: %v", err)
+	}
+	if got := len(block.Transactions()); got != 2 {
+		t.Fatalf("sealed %d transactions, want the anchor and the probe: the probe was dropped", got)
+	}
+	if block.GasLimit() != protocolGasLimit {
+		t.Fatalf("sealed header gas limit = %d, want %d", block.GasLimit(), protocolGasLimit)
+	}
+
+	// Re-execution of the node's own payload, as engine_newPayload performs it.
+	if n, err := b.chain.InsertChain(types.Blocks{block}); err != nil {
+		t.Fatalf("importing the sealed block failed (inserted %d): %v", n, err)
+	}
+	statedb, err := b.chain.StateAt(block.Root())
+	if err != nil {
+		t.Fatalf("StateAt(sealed root): %v", err)
+	}
+	want := common.BigToHash(new(big.Int).SetUint64(protocolGasLimit))
+	if got := statedb.GetState(gasLimitProbeAddress, common.Hash{}); got != want {
+		t.Fatalf("GASLIMIT recorded on import = %v, want the header gas limit %v", got.Big(), want.Big())
 	}
 }
