@@ -127,7 +127,7 @@ func (w *Miner) buildTransactionsLists(
 		env.tcount = 0
 		env.txs = []*types.Transaction{}
 		env.gasPool = core.NewGasPool(blockMaxGasLimit - accumulateGasUsed(pruningResult.ReceiptsPruned))
-		env.header.GasLimit = blockMaxGasLimit
+		setBlockGasLimit(env, blockMaxGasLimit)
 
 		result, err := w.commitL2Transactions(
 			env,
@@ -251,7 +251,7 @@ func (w *Miner) sealBlockWith(
 		return nil, err
 	}
 
-	env.header.GasLimit = blkMeta.GasLimit
+	setBlockGasLimit(env, blkMeta.GasLimit)
 
 	// Commit transactions.
 	gasLimit := env.header.GasLimit
@@ -581,6 +581,18 @@ func pruneTransactions(
 }
 
 // accumulateGasUsed sums up the gas used from the receipts.
+// setBlockGasLimit pins the block gas limit the protocol dictates on both the
+// header and the EVM block context.
+//
+// prepareWork derives a gas limit from the miner's own target and builds the
+// block context from it, so overriding only the header would leave GASLIMIT
+// reading that target while the importer reads the header. Keeping the two in
+// step is what makes a sealed block re-executable.
+func setBlockGasLimit(env *environment, gasLimit uint64) {
+	env.header.GasLimit = gasLimit
+	env.evm.Context.GasLimit = gasLimit
+}
+
 func accumulateGasUsed(receipts []*types.Receipt) uint64 {
 	var gasUsed uint64
 	for _, receipt := range receipts {
