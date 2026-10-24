@@ -150,6 +150,17 @@ var taikoParityGolden = map[string][]parityGolden{
 			Statuses:    []uint64{1, 1},
 		},
 	},
+	"G4x-unzen-truncate-midtx": {
+		{
+			Hash:        common.HexToHash("0xe5458e07f4042b6a17356664a06d3024fa9c993da16ca80f355af96270419752"),
+			Root:        common.HexToHash("0x83e0b13c2d541c7c00cc0824682f6e8a21d788a6dec0272561bf79899954facc"),
+			ReceiptHash: common.HexToHash("0x7f5967ed929e86b813af03afe9c1274ccabf171771890af58f2b4b3e594bd647"),
+			GasUsed:     42160,
+			Difficulty:  486000,
+			TxCount:     2,
+			Statuses:    []uint64{1, 1},
+		},
+	},
 }
 
 var (
@@ -285,6 +296,11 @@ const (
 	// intrinsic zk gas of the trailing transfer no longer does.
 	parityZkHeavyGas        = 57_760
 	parityZkHeavyIterations = 2
+
+	// parityZkHeavyMidTxIterations makes the G4x heavy transaction loop far
+	// past the block's zk gas budget, so it crosses vm.BlockZkGasLimit on a
+	// precompile charge while its opcodes are executing.
+	parityZkHeavyMidTxIterations = 4
 )
 
 func mustParityKey(hex string) *ecdsa.PrivateKey {
@@ -480,14 +496,29 @@ func parityUnzenTxs(config *params.ChainConfig) []*types.Transaction {
 // parityG4Txs returns the zk-gas-heavy transaction and the trailing transfer
 // that no longer fits the block's zk gas budget.
 func parityG4Txs(config *params.ChainConfig) []*types.Transaction {
-	calldata := concatParityCode(
-		common.LeftPadBytes(big.NewInt(parityZkHeavyGas).Bytes(), 32),
-		common.LeftPadBytes(big.NewInt(parityZkHeavyIterations).Bytes(), 32),
-	)
 	return []*types.Transaction{
-		parityTx(config, 0, &parityZkHeavyAddress, 0, 500_000, calldata),
+		parityTx(config, 0, &parityZkHeavyAddress, 0, 500_000, parityZkHeavyCalldata(parityZkHeavyIterations)),
 		parityTx(config, 1, &parityRecipient, 1000, params.TxGas, nil),
 	}
+}
+
+// parityG4xTxs returns a transfer, a zk-gas-heavy transaction that crosses the
+// block's zk gas budget during execution, and a trailing transfer.
+func parityG4xTxs(config *params.ChainConfig) []*types.Transaction {
+	return []*types.Transaction{
+		parityTx(config, 0, &parityRecipient, 1000, params.TxGas, nil),
+		parityTx(config, 1, &parityZkHeavyAddress, 0, 500_000, parityZkHeavyCalldata(parityZkHeavyMidTxIterations)),
+		parityTx(config, 2, &parityRecipient, 1000, params.TxGas, nil),
+	}
+}
+
+// parityZkHeavyCalldata asks parityZkHeavyCode for the given number of point
+// evaluation calls, each forwarding parityZkHeavyGas.
+func parityZkHeavyCalldata(iterations int64) []byte {
+	return concatParityCode(
+		common.LeftPadBytes(big.NewInt(parityZkHeavyGas).Bytes(), 32),
+		common.LeftPadBytes(big.NewInt(iterations).Bytes(), 32),
+	)
 }
 
 // parityUnzenScenario is the Unzen setup shared by the G3, G3n and G4
@@ -552,6 +583,53 @@ func parityG4Scenario() *parityScenario {
 	return sc
 }
 
+// parityG4xScenario truncates inside the interpreter instead of at an
+// intrinsic charge: the heavy transaction's intrinsic zk gas still fits, but
+// its point evaluation loop crosses vm.BlockZkGasLimit while executing. Sealing
+// drops it and the trailing transfer, and it must leave no state behind.
+func parityG4xScenario() *parityScenario {
+	sc := parityUnzenScenario("G4x-unzen-truncate-midtx", true)
+	sc.blocks = []parityBlock{{extra: parityShastaExtra, txs: parityG4xTxs(sc.config), dropped: 2}}
+	sc.check = func(t *testing.T, chain *core.BlockChain, blocks []*types.Block) {
+		block, transfer := blocks[0], sc.blocks[0].txs[0]
+
+		pointEvaluation := common.BytesToAddress([]byte{0x0a})
+		perCall := uint64(parityZkHeavyGas) * uint64(vm.UnzenZkGasSchedule.PrecompileMultiplier(pointEvaluation))
+		if loop := parityZkHeavyMidTxIterations * perCall; loop <= vm.BlockZkGasLimit {
+			t.Fatalf("test is vacuous: the heavy loop charges %d zk gas, within the %d budget", loop, vm.BlockZkGasLimit)
+		}
+		if txs := block.Transactions(); len(txs) != 2 || txs[1].Hash() != transfer.Hash() {
+			t.Fatalf("G4x sealed %d transactions, want exactly [anchor, transfer]", len(txs))
+		}
+		// The anchor calls a STOP contract and the transfer pays an EOA, so
+		// each is charged only its intrinsic zk gas: none of the heavy
+		// transaction's zk gas is in the header.
+		zkGas := block.Difficulty().Uint64()
+		if want := 2 * vm.TxIntrinsicZkGas; zkGas != want {
+			t.Fatalf("G4x block zk gas = %d, want %d: the truncated heavy transaction was counted", zkGas, want)
+		}
+		if zkGas+vm.TxIntrinsicZkGas > vm.BlockZkGasLimit {
+			t.Fatalf("the heavy transaction's intrinsic zk gas did not fit, so it was not truncated during execution")
+		}
+
+		// The heavy transaction's nonce increment and gas payment were rolled
+		// back with it; only the leading transfer touched the bank.
+		statedb := parityState(t, chain, block)
+		if got := statedb.GetNonce(parityBankAddress); got != 1 {
+			t.Fatalf("bank nonce = %d, want 1: the truncated heavy transaction left its nonce increment", got)
+		}
+		gasPrice := new(big.Int).Add(block.BaseFee(), transfer.EffectiveGasTipValue(block.BaseFee()))
+		spent := new(big.Int).Add(big.NewInt(1000), new(big.Int).Mul(gasPrice, new(big.Int).SetUint64(params.TxGas)))
+		if got, want := statedb.GetBalance(parityBankAddress).ToBig(), new(big.Int).Sub(parityBankFunds, spent); got.Cmp(want) != 0 {
+			t.Fatalf("bank balance = %v, want %v: the truncated heavy transaction was charged", got, want)
+		}
+		if got := statedb.GetBalance(parityRecipient).Uint64(); got != 1000 {
+			t.Fatalf("recipient balance = %d, want 1000: the trailing transfer was executed", got)
+		}
+	}
+	return sc
+}
+
 func parityScenarios() []*parityScenario {
 	legacy, ontake, pacaya, shasta := parityLegacyConfig(), parityOntakeConfig(), parityPacayaConfig(), parityShastaConfig()
 	return []*parityScenario{
@@ -604,6 +682,7 @@ func parityScenarios() []*parityScenario {
 		parityG3Scenario(),
 		parityG3nScenario(),
 		parityG4Scenario(),
+		parityG4xScenario(),
 	}
 }
 
@@ -895,11 +974,30 @@ func parityOversizedSignatureTx(config *params.ChainConfig) *types.Transaction {
 	})
 }
 
-// TestImport_UnzenBodyPastTruncationRejected re-imports the G4 block with the
-// truncated trailing transfer appended to its body. Import must reject it, and
-// must return instead of hanging.
+// TestImport_UnzenBodyPastTruncationRejected re-imports a truncated block with
+// the first dropped transaction appended back to its body. Import must reject
+// it, and must return instead of hanging, whether the re-added transaction
+// crosses the zk gas budget at its intrinsic charge (G4's trailing transfer)
+// or while executing (G4x's heavy transaction).
 func TestImport_UnzenBodyPastTruncationRejected(t *testing.T) {
-	sc := parityG4Scenario()
+	for _, tt := range []struct {
+		sc    *parityScenario
+		readd int // index, among the block's listed transactions, of the one re-added
+	}{
+		{parityG4Scenario(), 1},
+		{parityG4xScenario(), 1},
+	} {
+		t.Run(tt.sc.name, func(t *testing.T) {
+			checkParityBodyPastTruncationRejected(t, tt.sc, tt.sc.blocks[0].txs[tt.readd])
+		})
+	}
+}
+
+// checkParityBodyPastTruncationRejected seals the scenario's single block,
+// imports it on a fresh node with readd appended to the body, and requires a
+// prompt rejection; the block as sealed must then import on that node.
+func checkParityBodyPastTruncationRejected(t *testing.T, sc *parityScenario, readd *types.Transaction) {
+	t.Helper()
 	w, b := newUnzenTestWorker(t, sc.genesis)
 	s := nextParitySeal(t, b.chain, sc)
 	spec := sc.blocks[0]
@@ -907,13 +1005,17 @@ func TestImport_UnzenBodyPastTruncationRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("sealBlockWith: %v", err)
 	}
-	if len(block.Transactions()) != 2 {
-		t.Fatalf("G4 sealed %d transactions, want 2: the block was not truncated", len(block.Transactions()))
+	if got, want := len(block.Transactions()), 1+len(spec.txs)-spec.dropped; got != want || spec.dropped == 0 {
+		t.Fatalf("sealed %d transactions, want %d: the block was not truncated", got, want)
+	}
+	for _, tx := range block.Transactions() {
+		if tx.Hash() == readd.Hash() {
+			t.Fatalf("transaction %v to re-add was not dropped by sealing", readd.Hash())
+		}
 	}
 
-	trailing := spec.txs[len(spec.txs)-1]
 	body := append(types.Transactions{}, block.Transactions()...)
-	body = append(body, trailing)
+	body = append(body, readd)
 	header := block.Header()
 	header.TxHash = types.DeriveSha(body, trie.NewStackTrie(nil))
 	tampered := types.NewBlockWithHeader(header).WithBody(types.Body{Transactions: body, Withdrawals: block.Withdrawals()})
