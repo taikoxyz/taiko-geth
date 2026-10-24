@@ -134,7 +134,9 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 	// cannot see table changes made by ExtraEips. The same goes for verkle, which
 	// the generator gets no lane for at all. Those configs run the table
 	// loop, as do tracing and the differential test via forceTableLoop.
-	if evm.forceTableLoop || evm.chainRules.IsEIP4762 || len(evm.Config.ExtraEips) > 0 || evm.Config.Tracer != nil {
+	//
+	// CHANGE(taiko): zk gas hooks live only in the traced loop.
+	if evm.forceTableLoop || evm.chainRules.IsEIP4762 || len(evm.Config.ExtraEips) > 0 || evm.Config.Tracer != nil || evm.zkGasTracker != nil {
 		return evm.execTraced(scope)
 	}
 	return evm.execUntraced(scope)
@@ -296,7 +298,22 @@ func (evm *EVM) execTraced(scope *ScopeContext) (ret []byte, err error) {
 					return nil, err
 				}
 			}
-			dynamicCost, err = contract.chargeDynamicGas(operation.dynamicGas, evm, stack, mem, memorySize)
+			// CHANGE(taiko): the body of chargeDynamicGas, run inline because it
+			// wraps every gas-function error as ErrOutOfGas. gasErr keeps the
+			// raw gas-function error (or ErrOutOfGas when the charge itself
+			// fails) for the zk-gas classifier below, while err holds exactly
+			// what chargeDynamicGas would return. Keep the two in sync.
+			var gasErr error
+			dynamicCost, gasErr = operation.dynamicGas(evm, contract, stack, mem, memorySize)
+			if gasErr != nil {
+				err = fmt.Errorf("%w: %v", ErrOutOfGas, gasErr)
+			} else if dynamicCost.StateGas == 0 {
+				if !contract.Gas.ChargeExecutionOnly(dynamicCost.ExecutionGas) {
+					gasErr, err = ErrOutOfGas, ErrOutOfGas
+				}
+			} else if !contract.Gas.charge(dynamicCost) {
+				gasErr, err = ErrOutOfGas, ErrOutOfGas
+			}
 			// cost is explicitly set so that the capture state defer method can get the proper cost
 			execCost, stateCost = execCost+dynamicCost.ExecutionGas, dynamicCost.StateGas
 			if err != nil {
@@ -307,13 +324,13 @@ func (evm *EVM) execTraced(scope *ScopeContext) (ret []byte, err error) {
 				// of them into one error.
 				if evm.zkGasTracker != nil && evm.zkGasErr == nil {
 					switch {
-					case errors.Is(err, ErrOutOfGas):
+					case errors.Is(gasErr, ErrOutOfGas):
 						evm.zkGasTracker.Begin(evm.depth, byte(op), gasBefore)
 						if zkErr := evm.zkGasTracker.FinishAndCharge(evm.depth, zkGasDynamicOOGGasAfter(evm, op, stack, mem, memorySize, memoryLastGasCost, gasBefore, gasAfterStatic)); zkErr != nil {
 							evm.setZkGasErr()
 							return nil, ErrZkGasLimitExceeded
 						}
-					case errors.Is(err, ErrWriteProtection):
+					case errors.Is(gasErr, ErrWriteProtection):
 						// Write-protection failures occur before go-ethereum
 						// reaches opcode execution. REVM has already deducted
 						// the instruction-table static gas at that point, so
@@ -323,7 +340,7 @@ func (evm *EVM) execTraced(scope *ScopeContext) (ret []byte, err error) {
 							evm.setZkGasErr()
 							return nil, ErrZkGasLimitExceeded
 						}
-					case errors.Is(err, ErrGasUintOverflow):
+					case errors.Is(gasErr, ErrGasUintOverflow):
 						// Memory costs beyond go-ethereum's uint64 cap halt
 						// REVM around the affected opcode's in-body charges
 						// (initcode, topic+data, per-word, or memory
@@ -336,7 +353,7 @@ func (evm *EVM) execTraced(scope *ScopeContext) (ret []byte, err error) {
 								return nil, ErrZkGasLimitExceeded
 							}
 						}
-					case errors.Is(err, errSStoreSentry), errors.Is(err, ErrMaxInitCodeSizeExceeded):
+					case errors.Is(gasErr, errSStoreSentry), errors.Is(gasErr, ErrMaxInitCodeSizeExceeded):
 						// The SSTORE reentrancy sentry and the EIP-3860
 						// initcode size limit halt REVM inside the instruction
 						// body before any in-body charge, leaving only the

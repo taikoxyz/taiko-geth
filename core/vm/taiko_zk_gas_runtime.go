@@ -719,6 +719,12 @@ func zkGasMemorySizeOverflowGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Mem
 // Static LOG/CREATE write-protection values are derived from observed Rust
 // reference EVM inspector callbacks, not from a direct source-level contract.
 func zkGasStepGasAfter(op OpCode, err error, gasBefore, gasAfter uint64) uint64 {
+	// Currently unreachable: go-ethereum runs the static-context CREATE/CREATE2
+	// check in the gas functions, so opCreate/opCreate2 never return
+	// ErrWriteProtection. That failure is metered by the interpreter's
+	// dynamic-gas ErrWriteProtection case, which charges the same (REVM's
+	// CREATE-family static gas is 0). Kept in case the check moves back into
+	// the instruction body.
 	if err == ErrWriteProtection && (op == CREATE || op == CREATE2) {
 		return gasBefore
 	}
