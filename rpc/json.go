@@ -130,7 +130,9 @@ func (msg *jsonrpcMessage) response(result interface{}) *jsonrpcMessage {
 	// Call MarshalJSON directly for types that implement it. This avoids the
 	// expensive validation/compaction pass that json.Marshal performs on
 	// encoder output.
-	if m, ok := result.(json.Marshaler); ok {
+	// CHANGE(taiko): leave nil pointers to json.Marshal, which encodes them as
+	// null. Taiko lookup RPCs return (nil, nil) on a miss.
+	if m, ok := result.(json.Marshaler); ok && !isNilPointer(m) {
 		enc, err = m.MarshalJSON()
 	} else {
 		enc, err = json.Marshal(result)
