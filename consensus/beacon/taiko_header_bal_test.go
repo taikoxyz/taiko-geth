@@ -122,7 +122,8 @@ func TestBeaconHeaderBALForkBoundary(t *testing.T) {
 			if amsterdam {
 				candidate := types.CopyHeader(header)
 				candidate.BlockAccessListHash = nil
-				if err := verify(roundTrip(candidate)); err == nil || !strings.Contains(err.Error(), "missing block access list hash") {
+				// A nil BAL before a slot does not decode from RLP, so verify it directly.
+				if err := verify(candidate); err == nil || !strings.Contains(err.Error(), "missing block access list hash") {
 					t.Fatalf("expected Amsterdam nil-BAL rejection, got %v", err)
 				}
 				return

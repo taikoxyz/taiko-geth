@@ -101,8 +101,7 @@ type Header struct {
 	RequestsHash *common.Hash `json:"requestsHash" rlp:"optional"`
 
 	// BlockAccessListHash was added by EIP-7928 and is ignored in legacy headers.
-	// CHANGE(taiko): A nil value uses an empty-string placeholder when SlotNumber is present.
-	BlockAccessListHash *common.Hash `json:"blockAccessListHash" rlp:"optional,nilString"`
+	BlockAccessListHash *common.Hash `json:"blockAccessListHash" rlp:"optional"`
 
 	// SlotNumber was added by EIP-7843 and is ignored in legacy headers.
 	SlotNumber *uint64 `json:"slotNumber" rlp:"optional"`
