@@ -1758,7 +1758,10 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		err          error
 		root         common.Hash
 		hasStateHook = bc.logger != nil && bc.logger.OnStateUpdate != nil
-		rules        = bc.chainConfig.Rules(block.Number(), block.Difficulty().Sign() == 0, block.Time())
+		// CHANGE(taiko): Unzen stores zk gas in the difficulty, so derive the merge
+		// flag from the chain config; otherwise the state is committed without
+		// Cancun rules (no storage-wipe guard, hashed keys in pathdb history).
+		rules = bc.chainConfig.Rules(block.Number(), bc.chainConfig.IsPostMergeHeader(block.Difficulty()), block.Time())
 	)
 	if hasStateHook {
 		r, update, err := statedb.CommitWithUpdate(rules, block.NumberU64())

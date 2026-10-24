@@ -156,7 +156,10 @@ func (eth *Ethereum) hashState(ctx context.Context, block *types.Block, base *st
 			return nil, nil, fmt.Errorf("processing block %d failed: %v", current.NumberU64(), err)
 		}
 		// Finalize the state so any modifications are written to the trie
-		rules := eth.blockchain.Config().Rules(current.Number(), current.Difficulty().Sign() == 0, current.Time())
+		// CHANGE(taiko): Unzen stores zk gas in the difficulty, so derive the merge
+		// flag from the chain config to commit under the block's real fork rules.
+		config := eth.blockchain.Config()
+		rules := config.Rules(current.Number(), config.IsPostMergeHeader(current.Difficulty()), current.Time())
 		root, err := statedb.Commit(rules, current.NumberU64())
 		if err != nil {
 			return nil, nil, fmt.Errorf("stateAtBlock commit failed, number %d root %v: %w",

@@ -60,6 +60,14 @@ func NetworkIDToChainConfigOrDefault(networkID *big.Int) *ChainConfig {
 	return AllEthashProtocolChanges
 }
 
+// IsPostMergeHeader reports whether a header with the given difficulty is past
+// the merge, for deriving its fork rules. Upstream treats a non-zero difficulty
+// as pre-merge, but every Taiko block is post-merge and Unzen stores the block
+// zk gas in the difficulty field, so on Taiko the difficulty is not consulted.
+func (c *ChainConfig) IsPostMergeHeader(difficulty *big.Int) bool {
+	return c.Taiko || difficulty.Sign() == 0
+}
+
 var TaikoChainConfig = &ChainConfig{
 	ChainID:                 TaikoInternalNetworkID, // Use Internal Devnet network ID by default.
 	HomesteadBlock:          common.Big0,

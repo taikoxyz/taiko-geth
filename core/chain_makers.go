@@ -446,7 +446,9 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		block := AssembleBlock(cm, b.header, statedb, &body, b.receipts, b.bal)
 
 		// Write state changes to db
-		rules := config.Rules(b.header.Number, b.header.Difficulty.Sign() == 0, b.header.Time)
+		// CHANGE(taiko): Unzen stores zk gas in the difficulty, so derive the merge
+		// flag from the chain config to commit under the block's real fork rules.
+		rules := config.Rules(b.header.Number, config.IsPostMergeHeader(b.header.Difficulty), b.header.Time)
 		root, err := statedb.Commit(rules, b.header.Number.Uint64())
 		if err != nil {
 			panic(fmt.Sprintf("state write error: %v", err))
