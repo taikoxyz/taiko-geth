@@ -278,7 +278,8 @@ func PostExecution(ctx context.Context, config *params.ChainConfig, number *big.
 	rules := config.Rules(number, true, time) // IsMerge is always true
 
 	// Withdrawals are applied before the system calls
-	if rules.IsShanghai {
+	// CHANGE(taiko): Taiko credits withdrawals in its consensus engine's Finalize (raw wei).
+	if rules.IsShanghai && !config.Taiko {
 		ProcessWithdrawals(withdrawals, evm, blockAccessIndex, blockAccessList)
 	}
 	// Read requests if Prague is enabled.
