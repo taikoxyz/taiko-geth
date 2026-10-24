@@ -157,6 +157,7 @@ func TestTimestampCompatError(t *testing.T) {
 		"mismatching Shanghai fork timestamp in database (have timestamp 0, want timestamp 1681338455, rewindto timestamp 0)")
 }
 
+// CHANGE(taiko): Unzen config JSON and activation tests.
 func TestTaikoUnzenConfigJSONAndActivation(t *testing.T) {
 	var cfg ChainConfig
 	err := json.Unmarshal([]byte(`{"chainId":167000,"taiko":true,"unzenTime":42}`), &cfg)
@@ -174,6 +175,7 @@ func TestTaikoUnzenConfigJSONAndActivation(t *testing.T) {
 	require.NotContains(t, string(out), oldTypoKey)
 }
 
+// CHANGE(taiko): pin the Taiko network IDs.
 func TestTaikoNetworkIDsArePinned(t *testing.T) {
 	// Network IDs are part of consensus and must not silently drift if
 	// params/taiko_config.go is edited. Genesis-hash tests do not depend on

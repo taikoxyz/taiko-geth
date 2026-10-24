@@ -330,6 +330,7 @@ func (miner *Miner) prepareWork(ctx context.Context, genParams *generateParams, 
 	}
 	// Set baseFee and GasLimit if we are on an EIP-1559 chain
 	if miner.chainConfig.IsLondon(header.Number) {
+		// CHANGE(taiko): use the base fee from the Taiko payload attributes when given.
 		if miner.chainConfig.Taiko && genParams.baseFeePerGas != nil {
 			header.BaseFee = genParams.baseFeePerGas
 		} else {

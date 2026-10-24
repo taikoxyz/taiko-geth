@@ -86,7 +86,7 @@ type PayloadAttributes struct {
 // JSON type overrides for PayloadAttributes.
 type payloadAttributesMarshaling struct {
 	Timestamp      hexutil.Uint64
-	BaseFeePerGas  *hexutil.Big
+	BaseFeePerGas  *hexutil.Big // CHANGE(taiko): hex-encode the Taiko base fee attribute.
 	SlotNumber     *hexutil.Uint64
 	TargetGasLimit *hexutil.Uint64
 }

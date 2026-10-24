@@ -74,6 +74,7 @@ func Test_SplitTagsFlag(t *testing.T) {
 	}
 }
 
+// CHANGE(taiko): --taiko with a Taiko network ID selects that network's genesis.
 func TestSetEthConfigUsesNetworkIDForTaikoGenesis(t *testing.T) {
 	t.Parallel()
 

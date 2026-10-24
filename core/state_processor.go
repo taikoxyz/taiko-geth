@@ -625,6 +625,7 @@ func processRequestsSystemCall(requests *[][]byte, rules params.Rules, evm *vm.E
 			defer tracer.OnSystemCallEnd()
 		}
 	}
+	// CHANGE(taiko): keep the system call's zk gas out of the per-transaction meter.
 	if evm.Config.ZkGasMeter != nil {
 		evm.Config.ZkGasMeter.ResetTransaction()
 		evm.ResetZkGasErr()
