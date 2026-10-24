@@ -2349,3 +2349,118 @@ func TestUnzenZkGas_CreateOversizedInitcodeChargesNothingOnDynamicRoute(t *testi
 		})
 	}
 }
+
+// TestUnzenZkGas_TracerDoesNotChangeZkGas pins that attaching a tracer leaves
+// the zk gas unchanged: each case runs the same code once without and once
+// with an opcode tracer, and both runs must commit the same non-zero block zk
+// gas. An interpreter may take a different dispatch path when no tracer is
+// attached; zk gas must be metered on both.
+func TestUnzenZkGas_TracerDoesNotChangeZkGas(t *testing.T) {
+	innerAddr := common.HexToAddress("0x2000000000000000000000000000000000000000")
+	sstoreCode := common.Hex2Bytes("600160005500") // PUSH1 1 PUSH1 0 SSTORE STOP
+	noopTracer := func() *tracing.Hooks {
+		return &tracing.Hooks{OnOpcode: func(uint64, byte, uint64, uint64, tracing.OpContext, []byte, int, error) {}}
+	}
+
+	for _, tt := range []struct {
+		name    string
+		code    []byte
+		extra   map[common.Address][]byte
+		wantErr error // of the outer frame; inner-frame failures are swallowed
+	}{
+		// PUSH1 1 PUSH1 2 ADD POP STOP.
+		{"arith", common.Hex2Bytes("60016002015000"), nil, nil},
+		// SSTORE in a STATICCALL frame: write protection.
+		{"sstore-static", spawnBoundaryCallCodeWithGas(STATICCALL, innerAddr, 0xffff), map[common.Address][]byte{innerAddr: sstoreCode}, nil},
+		// The child frame holds 2300 gas at the SSTORE: the EIP-2200 sentry.
+		{"sstore-sentry", spawnBoundaryCallCodeWithGas(CALL, innerAddr, 2306), map[common.Address][]byte{innerAddr: sstoreCode}, nil},
+		// PUSH1 0x21 PUSH8 2^64-1 MSTORE STOP: the memory size overflows.
+		{"mstore-overflow", common.Hex2Bytes("602167ffffffffffffffff5200"), nil, ErrGasUintOverflow},
+		{"precompile-twice", zkGasSha256CallCode(2), nil, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			plain, plainErr := runZkGasTracerCase(t, &UnzenZkGasSchedule, tt.code, tt.extra, nil)
+			traced, tracedErr := runZkGasTracerCase(t, &UnzenZkGasSchedule, tt.code, tt.extra, noopTracer())
+			if !errors.Is(plainErr, tt.wantErr) || !errors.Is(tracedErr, tt.wantErr) {
+				t.Fatalf("call error without tracer = %v, with tracer = %v, want %v", plainErr, tracedErr, tt.wantErr)
+			}
+			if plain == 0 {
+				t.Fatal("no zk gas metered: the case exercises nothing")
+			}
+			if plain != traced {
+				t.Fatalf("block zk gas without tracer = %d, with tracer = %d", plain, traced)
+			}
+		})
+	}
+
+	// A repeated precompile call, which a result cache could serve, is
+	// charged exactly like the first one. The schedule meters only sha256,
+	// so the totals are the precompile charges alone.
+	t.Run("precompile-twice-charges-each-call", func(t *testing.T) {
+		sha256Addr := common.BytesToAddress([]byte{0x02})
+		sha256Only := &ZkGasSchedule{
+			BlockLimit:            BlockZkGasLimit,
+			PrecompileMultipliers: map[common.Address]uint16{sha256Addr: UnzenZkGasSchedule.PrecompileMultiplier(sha256Addr)},
+		}
+		for _, tracer := range []*tracing.Hooks{nil, noopTracer()} {
+			once, err := runZkGasTracerCase(t, sha256Only, zkGasSha256CallCode(1), nil, tracer)
+			if err != nil {
+				t.Fatalf("single sha256 call: %v", err)
+			}
+			twice, err := runZkGasTracerCase(t, sha256Only, zkGasSha256CallCode(2), nil, tracer)
+			if err != nil {
+				t.Fatalf("repeated sha256 call: %v", err)
+			}
+			if once == 0 || twice != 2*once {
+				t.Fatalf("sha256 zk gas: twice = %d, want 2 x %d (tracer attached: %v)", twice, once, tracer != nil)
+			}
+		}
+	})
+}
+
+// zkGasSha256CallCode stores the word 1 at memory 0 and STATICCALLs sha256 on
+// it n times, writing the digest to memory 0x20, then stops.
+func zkGasSha256CallCode(n int) []byte {
+	code := common.Hex2Bytes("6001600052") // PUSH1 1 PUSH1 0 MSTORE
+	for range n {
+		// PUSH1 0x20 (retSize) PUSH1 0x20 (retOffset) PUSH1 0x20 (argsSize)
+		// PUSH1 0 (argsOffset) PUSH1 2 (sha256) PUSH2 0xffff (gas) STATICCALL POP
+		code = append(code, common.Hex2Bytes("6020602060206000600261fffffa50")...)
+	}
+	return append(code, byte(STOP))
+}
+
+// runZkGasTracerCase executes code at spawnBoundaryOuterAddr on a Taiko Unzen
+// chain with a fresh meter on schedule, under tracer when it is not nil,
+// commits the frame's zk gas as the block executor does after a transaction,
+// and returns the block total and the call error.
+func runZkGasTracerCase(t *testing.T, schedule *ZkGasSchedule, code []byte, extra map[common.Address][]byte, tracer *tracing.Hooks) (uint64, error) {
+	t.Helper()
+
+	config := newTaikoUnzenTestConfig()
+	rules := config.Rules(big.NewInt(1), true, 1)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+	statedb.CreateAccount(spawnBoundaryOuterAddr)
+	statedb.SetCode(spawnBoundaryOuterAddr, code, tracing.CodeChangeUnspecified)
+	for addr, contractCode := range extra {
+		statedb.CreateAccount(addr)
+		statedb.SetCode(addr, contractCode, tracing.CodeChangeUnspecified)
+	}
+	statedb.Finalise(true)
+
+	meter := NewZkGasMeter(schedule)
+	evm := NewEVM(BlockContext{
+		CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+		Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+		BlockNumber: big.NewInt(1),
+		Time:        1,
+		Random:      &common.Hash{},
+	}, statedb, config, Config{ZkGasMeter: meter, Tracer: tracer})
+	statedb.Prepare(rules, common.Address{}, common.Address{}, &spawnBoundaryOuterAddr, ActivePrecompiles(rules), nil)
+
+	_, _, callErr := evm.Call(common.Address{}, spawnBoundaryOuterAddr, nil, 200_000, new(uint256.Int))
+	if err := meter.CommitTransaction(); err != nil {
+		t.Fatalf("CommitTransaction: %v", err)
+	}
+	return meter.BlockZkGasUsed(), callErr
+}
