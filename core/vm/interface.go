@@ -53,6 +53,9 @@ type StateDB interface {
 	GetStateAndCommittedState(common.Address, common.Hash) (common.Hash, common.Hash)
 	GetState(common.Address, common.Hash) common.Hash
 	SetState(common.Address, common.Hash, common.Hash) common.Hash
+	// CHANGE(taiko): GetStorageRoot backs the Taiko-only EIP-7610 storage
+	// collision check in create.
+	GetStorageRoot(addr common.Address) common.Hash
 
 	GetTransientState(addr common.Address, key common.Hash) common.Hash
 	SetTransientState(addr common.Address, key, value common.Hash)

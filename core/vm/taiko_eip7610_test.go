@@ -69,3 +69,61 @@ func TestTaikoCreateRejectsAddressWithStorage(t *testing.T) {
 		}
 	}
 }
+
+// storageRootReadRecorder counts GetStorageRoot calls so a test can prove
+// whether create consulted the storage root at all.
+type storageRootReadRecorder struct {
+	*state.StateDB
+	reads int
+}
+
+func (r *storageRootReadRecorder) GetStorageRoot(addr common.Address) common.Hash {
+	r.reads++
+	return r.StateDB.GetStorageRoot(addr)
+}
+
+// TestCreateStorageCollisionIsTaikoOnly pins the gate on the storage rule:
+// on a non-Taiko chain, CREATE onto an address with storage succeeds and never
+// reads the storage root, as upstream does. On a Taiko chain the same CREATE
+// reads it and fails with ErrContractAddressCollision.
+func TestCreateStorageCollisionIsTaikoOnly(t *testing.T) {
+	caller := common.HexToAddress("0x000000000000000000000000000000000000ca11")
+	target := crypto.CreateAddress(caller, 0)
+
+	for _, tt := range []struct {
+		name      string
+		config    *params.ChainConfig
+		wantErr   error
+		wantReads int
+	}{
+		{name: "non-taiko", config: params.MergedTestChainConfig, wantErr: nil, wantReads: 0},
+		{name: "taiko", config: newTaikoUnzenTestConfig(), wantErr: ErrContractAddressCollision, wantReads: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			inner, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
+			inner.SetBalance(caller, uint256.NewInt(params.Ether), 0)
+			inner.SetState(target, common.BigToHash(big.NewInt(1)), common.BigToHash(big.NewInt(1)))
+			inner.IntermediateRoot(params.Rules{IsEIP158: false})
+			statedb := &storageRootReadRecorder{StateDB: inner}
+
+			evm := NewEVM(BlockContext{
+				CanTransfer: func(StateDB, common.Address, *uint256.Int) bool { return true },
+				Transfer:    func(StateDB, common.Address, common.Address, *uint256.Int, *params.Rules) {},
+				BlockNumber: big.NewInt(1),
+				Time:        1,
+				Random:      &common.Hash{},
+			}, statedb, tt.config, Config{})
+
+			_, addr, _, err := evm.Create(caller, []byte{byte(STOP)}, NewGasBudget(100_000, 0), new(uint256.Int))
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Create err = %v, want %v", err, tt.wantErr)
+			}
+			if tt.wantErr == nil && addr != target {
+				t.Fatalf("Create addr = %v, want %v", addr, target)
+			}
+			if statedb.reads != tt.wantReads {
+				t.Fatalf("GetStorageRoot calls = %d, want %d", statedb.reads, tt.wantReads)
+			}
+		})
+	}
+}

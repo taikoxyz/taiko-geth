@@ -771,9 +771,12 @@ func (evm *EVM) create(caller common.Address, code []byte, gas GasBudget, value 
 	// Account is regarded as existent if either of these conditions is met:
 	// - the nonce is non-zero
 	// - the code is non-empty
+	// CHANGE(taiko): on Taiko chains, the storage is non-empty (EIP-7610, kept
+	// from the v1.17.2 base).
 	contractHash := evm.StateDB.GetCodeHash(address)
 	if evm.StateDB.GetNonce(address) != 0 ||
-		(contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) { // non-empty code
+		(contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) || // non-empty code
+		taikoStorageCollision(evm, address) { // CHANGE(taiko): non-empty storage
 		halt := gas.ExitHalt()
 		if evm.Config.Tracer.HasGasHook() {
 			evm.Config.Tracer.EmitGasChange(gas.AsTracing(), halt.AsTracing(), tracing.GasChangeCallFailedExecution)
