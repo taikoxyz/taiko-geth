@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/internal/testrand"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
 )
@@ -68,7 +69,7 @@ func TestUseAfterTerminate(t *testing.T) {
 
 func TestVerklePrefetcher(t *testing.T) {
 	disk := rawdb.NewMemoryDatabase()
-	db := triedb.NewDatabase(disk, triedb.VerkleDefaults)
+	db := triedb.NewDatabase(disk, triedb.UBTDefaults)
 	sdb := NewDatabase(db, nil)
 
 	state, err := New(types.EmptyRootHash, sdb)
@@ -83,21 +84,20 @@ func TestVerklePrefetcher(t *testing.T) {
 	state.SetBalance(addr, uint256.NewInt(42), tracing.BalanceChangeUnspecified) // Change the account trie
 	state.SetCode(addr, []byte("hello"), tracing.CodeChangeUnspecified)          // Change an external metadata
 	state.SetState(addr, skey, sval)                                             // Change the storage trie
-	root, _ := state.Commit(0, true, false)
+	root, _ := state.Commit(params.Rules{IsEIP158: true}, 0)
 
 	state, _ = New(root, sdb)
-	sRoot := state.GetStorageRoot(addr)
 	fetcher := newTriePrefetcher(sdb, root, "", false)
 
 	// Read account
 	fetcher.prefetch(common.Hash{}, root, common.Address{}, []common.Address{addr}, nil, false)
 
 	// Read storage slot
-	fetcher.prefetch(crypto.Keccak256Hash(addr.Bytes()), sRoot, addr, nil, []common.Hash{skey}, false)
+	fetcher.prefetch(crypto.Keccak256Hash(addr.Bytes()), common.Hash{}, addr, nil, []common.Hash{skey}, false)
 
 	fetcher.terminate(false)
 	accountTrie := fetcher.trie(common.Hash{}, root)
-	storageTrie := fetcher.trie(crypto.Keccak256Hash(addr.Bytes()), sRoot)
+	storageTrie := fetcher.trie(crypto.Keccak256Hash(addr.Bytes()), common.Hash{})
 
 	rootA := accountTrie.Hash()
 	rootB := storageTrie.Hash()

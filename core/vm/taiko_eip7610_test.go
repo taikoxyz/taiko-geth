@@ -42,8 +42,9 @@ func TestTaikoCreateRejectsAddressWithStorage(t *testing.T) {
 			statedb.SetState(target, common.BigToHash(big.NewInt(1)), common.BigToHash(big.NewInt(1)))
 		}
 		// Hash the pending storage into the account's storage root, keeping
-		// the empty (nonce 0, no code, no balance) target account.
-		statedb.IntermediateRoot(false)
+		// the empty (nonce 0, no code, no balance) target account: EIP-158
+		// empty-account deletion is deliberately off here.
+		statedb.IntermediateRoot(params.Rules{IsEIP158: false})
 		if statedb.GetNonce(caller) != 0 || statedb.GetNonce(target) != 0 || len(statedb.GetCode(target)) != 0 {
 			t.Fatal("caller and target must start with nonce 0 and the target without code")
 		}
@@ -56,7 +57,7 @@ func TestTaikoCreateRejectsAddressWithStorage(t *testing.T) {
 			Random:      &common.Hash{},
 		}, statedb, config, Config{})
 
-		_, addr, _, err := evm.Create(caller, []byte{byte(STOP)}, 100_000, new(uint256.Int))
+		_, addr, _, err := evm.Create(caller, []byte{byte(STOP)}, NewGasBudget(100_000, 0), new(uint256.Int))
 		if withStorage {
 			if !errors.Is(err, ErrContractAddressCollision) {
 				t.Fatalf("Create onto an address with storage: err = %v, want %v", err, ErrContractAddressCollision)

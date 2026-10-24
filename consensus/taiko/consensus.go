@@ -395,7 +395,8 @@ func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHe
 
 	// Finalize block
 	t.Finalize(chain, header, state, body)
-	header.Root = state.IntermediateRoot(true)
+	// Taiko blocks are always post-merge; the rules carry EIP-158 empty-account deletion.
+	header.Root = state.IntermediateRoot(t.chainConfig.Rules(header.Number, true, header.Time))
 	return types.NewBlock(header, body, receipts, trie.NewStackTrie(nil)), nil
 }
 

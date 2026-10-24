@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"sync"
 	"time"
 
@@ -105,7 +106,7 @@ func payloadVersion(config *params.ChainConfig, time uint64) engine.PayloadVersi
 	switch config.LatestFork(time) {
 	case forks.Amsterdam:
 		return engine.PayloadV4
-	case forks.BPO5, forks.BPO4, forks.BPO3, forks.BPO2, forks.BPO1, forks.Osaka, forks.Prague, forks.Cancun:
+	case forks.Bogota, forks.BPO5, forks.BPO4, forks.BPO3, forks.BPO2, forks.BPO1, forks.Osaka, forks.Prague, forks.Cancun:
 		return engine.PayloadV3
 	case forks.Paris, forks.Shanghai:
 		return engine.PayloadV2
@@ -178,9 +179,10 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal, timestamp u
 	c.feeRecipientLock.Lock()
 	feeRecipient := c.feeRecipient
 	c.feeRecipientLock.Unlock()
+	header := c.eth.BlockChain().CurrentBlock()
 
 	// Reset to CurrentBlock in case of the chain was rewound
-	if header := c.eth.BlockChain().CurrentBlock(); c.curForkchoiceState.HeadBlockHash != header.Hash() {
+	if c.curForkchoiceState.HeadBlockHash != header.Hash() {
 		finalizedHash := c.finalizedBlockHash(header.Number.Uint64())
 		c.setCurrentState(header.Hash(), *finalizedHash)
 	}
@@ -208,14 +210,14 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal, timestamp u
 		Random:                random,
 		BeaconRoot:            &common.Hash{},
 	}
-	if c.eth.BlockChain().Config().LatestFork(timestamp) == forks.Amsterdam {
+	if c.eth.BlockChain().Config().IsAmsterdam(new(big.Int).Add(header.Number, big.NewInt(1)), timestamp) {
 		slotNumber := uint64(0)
 		attribute.SlotNumber = &slotNumber
 	}
 
 	// Create a server span for forkchoiceUpdated with payload attributes,
 	// simulating an incoming engine API request from a real consensus client.
-	fcCtx, fcSpanEnd := telemetry.StartServerSpan(context.Background(), tracer, telemetry.RPCInfo{
+	fcCtx, fcSpanEnd := telemetry.StartCallServerSpan(context.Background(), tracer, telemetry.RPCInfo{
 		System:  "jsonrpc",
 		Service: "engine",
 		Method:  "forkchoiceUpdatedV" + fmt.Sprintf("%d", version),
@@ -237,7 +239,7 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal, timestamp u
 
 	// Create a server span for getPayload, simulating the consensus client
 	// coming back to retrieve the built payload.
-	_, gpSpanEnd := telemetry.StartServerSpan(context.Background(), tracer, telemetry.RPCInfo{
+	_, gpSpanEnd := telemetry.StartCallServerSpan(context.Background(), tracer, telemetry.RPCInfo{
 		System:  "jsonrpc",
 		Service: "engine",
 		Method:  "getPayloadV" + fmt.Sprintf("%d", version),
@@ -286,7 +288,7 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal, timestamp u
 
 	// Create a server span for newPayload, simulating the consensus client
 	// sending the execution payload for validation.
-	npCtx, npSpanEnd := telemetry.StartServerSpan(context.Background(), tracer, telemetry.RPCInfo{
+	npCtx, npSpanEnd := telemetry.StartCallServerSpan(context.Background(), tracer, telemetry.RPCInfo{
 		System:  "jsonrpc",
 		Service: "engine",
 		Method:  "newPayloadV" + fmt.Sprintf("%d", version),
@@ -302,7 +304,7 @@ func (c *SimulatedBeacon) sealBlock(withdrawals []*types.Withdrawal, timestamp u
 
 	// Create a server span for the final forkchoiceUpdated (no payload attributes),
 	// which sets the new block as the canonical chain head.
-	fcuCtx, fcuSpanEnd := telemetry.StartServerSpan(context.Background(), tracer, telemetry.RPCInfo{
+	fcuCtx, fcuSpanEnd := telemetry.StartCallServerSpan(context.Background(), tracer, telemetry.RPCInfo{
 		System:  "jsonrpc",
 		Service: "engine",
 		Method:  "forkchoiceUpdatedV" + fmt.Sprintf("%d", version),

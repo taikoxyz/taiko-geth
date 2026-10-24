@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/txpool"
+	"github.com/ethereum/go-ethereum/core/txpool/txorder"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -133,8 +134,8 @@ func (w *Miner) buildTransactionsLists(
 			env,
 			pruningResult.TxsPruned,
 			pruningResult.ReceiptsPruned,
-			newTransactionsByPriceAndNonce(signer, maps.Clone(localTxs), baseFee),
-			newTransactionsByPriceAndNonce(signer, maps.Clone(remoteTxs), baseFee),
+			txorder.NewTransactionsByPriceAndNonce(signer, maps.Clone(localTxs), baseFee),
+			txorder.NewTransactionsByPriceAndNonce(signer, maps.Clone(remoteTxs), baseFee),
 			maxBytesPerTxList,
 			minTip,
 		)
@@ -286,7 +287,7 @@ func (w *Miner) sealBlockWith(
 		}
 
 		env.state.Prepare(rules, sender, blkMeta.Beneficiary, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
-		env.state.SetTxContext(tx.Hash(), env.tcount)
+		env.state.SetTxContext(tx.Hash(), env.tcount, uint32(env.tcount+1))
 
 		// CHANGE(taiko): reset in-flight zk gas before each transaction.
 		if zkGasMeter != nil {
@@ -338,7 +339,13 @@ func (w *Miner) sealBlockWith(
 		env.header.Difficulty = new(big.Int).SetUint64(zkGasMeter.BlockZkGasUsed())
 	}
 
-	block, err := w.engine.FinalizeAndAssemble(
+	// Block assembly is no longer part of the consensus.Engine interface; the
+	// Taiko engine keeps FinalizeAndAssemble for its anchor and Unzen checks.
+	taikoEngine, ok := w.engine.(*taiko.Taiko)
+	if !ok {
+		return nil, errors.New("sealBlockWith requires the Taiko consensus engine")
+	}
+	block, err := taikoEngine.FinalizeAndAssemble(
 		ctx,
 		w.chain,
 		env.header,
@@ -396,8 +403,8 @@ func (w *Miner) commitL2Transactions(
 	env *environment,
 	presetTxs []*types.Transaction,
 	presetReceipts []*types.Receipt,
-	txsLocal *transactionsByPriceAndNonce,
-	txsRemote *transactionsByPriceAndNonce,
+	txsLocal *txorder.TransactionsByPriceAndNonce,
+	txsRemote *txorder.TransactionsByPriceAndNonce,
 	maxBytesPerTxList uint64,
 	minTip uint64,
 ) (*txsPruningResult, error) {
@@ -417,7 +424,7 @@ func (w *Miner) commitL2Transactions(
 loop:
 	for {
 		// If we don't have enough gas for any further transactions then we're done.
-		if env.gasPool.Gas() < params.TxGas {
+		if env.gasPool.Available(false) < params.TxGas {
 			log.Trace("Not enough gas for further transactions", "have", env.gasPool, "want", params.TxGas)
 			break
 		}
@@ -459,7 +466,7 @@ loop:
 			continue
 		}
 		// Start executing the transaction
-		env.state.SetTxContext(tx.Hash(), env.tcount)
+		env.state.SetTxContext(tx.Hash(), env.tcount, uint32(env.tcount+1))
 
 		err := w.commitTransaction(context.Background(), env, tx)
 		switch {

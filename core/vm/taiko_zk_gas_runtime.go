@@ -311,7 +311,7 @@ func zkGasCallShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, 
 		return 0
 	}
 	gas := gasBefore - staticGas
-	if op == CALL && evm.readOnly && !stack.Back(2).IsZero() {
+	if op == CALL && evm.readOnly && !stack.back(2).IsZero() {
 		return gas
 	}
 	inOffset, inSize, outOffset, outSize := 3, 4, 5, 6
@@ -321,7 +321,7 @@ func zkGasCallShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, 
 	currentMemorySize := uint64(mem.Len())
 	memoryLastGasCost := mem.lastGasCost
 	for _, memRange := range [2][2]int{{inOffset, inSize}, {outOffset, outSize}} {
-		memSize, overflow := calcMemSize64(stack.Back(memRange[0]), stack.Back(memRange[1]))
+		memSize, overflow := calcMemSize64(stack.back(memRange[0]), stack.back(memRange[1]))
 		if overflow {
 			return gas
 		}
@@ -380,13 +380,13 @@ func zkGasPreMemoryCost(evm *EVM, op OpCode, stack *Stack, gasBefore, gasAfterSt
 	case op == MLOAD || op == MSTORE || op == MSTORE8 || op == RETURN || op == REVERT:
 		return 0, gasAfterStatic, true
 	case op == KECCAK256:
-		cost, ok := zkGasWordCost(stack.Back(1), params.Keccak256WordGas)
+		cost, ok := zkGasWordCost(stack.back(1), params.Keccak256WordGas)
 		return cost, gasAfterStatic, ok
 	case op == CALLDATACOPY || op == CODECOPY || op == MCOPY || op == RETURNDATACOPY:
-		cost, ok := zkGasWordCost(stack.Back(2), params.CopyGas)
+		cost, ok := zkGasWordCost(stack.back(2), params.CopyGas)
 		return cost, gasAfterStatic, ok
 	case op == EXTCODECOPY:
-		cost, ok := zkGasWordCost(stack.Back(3), params.CopyGas)
+		cost, ok := zkGasWordCost(stack.back(3), params.CopyGas)
 		return cost, gasAfterStatic, ok
 	case op >= LOG0 && op <= LOG4:
 		cost, ok := zkGasLogPreMemoryCost(op, stack)
@@ -437,11 +437,11 @@ func zkGasMemoryExpansionCost(currentMemorySize, memoryLastGasCost, memorySize u
 }
 
 func zkGasCallMemorySizes(stack *Stack, inOffset, inLen, outOffset, outLen int) (uint64, uint64, bool) {
-	inputSize, overflow := calcMemSize64(stack.Back(inOffset), stack.Back(inLen))
+	inputSize, overflow := calcMemSize64(stack.back(inOffset), stack.back(inLen))
 	if overflow {
 		return 0, 0, false
 	}
-	outputSize, overflow := calcMemSize64(stack.Back(outOffset), stack.Back(outLen))
+	outputSize, overflow := calcMemSize64(stack.back(outOffset), stack.back(outLen))
 	if overflow {
 		return 0, 0, false
 	}
@@ -473,7 +473,7 @@ func zkGasWordCost(value *uint256.Int, perWord uint64) (uint64, bool) {
 }
 
 func zkGasLogPreMemoryCost(op OpCode, stack *Stack) (uint64, bool) {
-	requestedSize, overflow := stack.Back(1).Uint64WithOverflow()
+	requestedSize, overflow := stack.back(1).Uint64WithOverflow()
 	if overflow {
 		return 0, false
 	}
@@ -497,7 +497,7 @@ func zkGasCreatePreMemoryCost(evm *EVM, stack *Stack) (uint64, bool) {
 	if !evm.chainRules.IsShanghai {
 		return 0, true
 	}
-	return zkGasWordCost(stack.Back(2), params.InitCodeWordGas)
+	return zkGasWordCost(stack.back(2), params.InitCodeWordGas)
 }
 
 // CHANGE(taiko): zkGasCreateBodyGasAfter reconstructs REVM's in-body
@@ -511,7 +511,7 @@ func zkGasCreateBodyGasAfter(evm *EVM, stack *Stack, mem *Memory, gasBefore uint
 	if evm.readOnly {
 		return gasBefore, false
 	}
-	size, overflow := stack.Back(2).Uint64WithOverflow()
+	size, overflow := stack.back(2).Uint64WithOverflow()
 	if overflow {
 		return gasBefore, false
 	}
@@ -531,7 +531,7 @@ func zkGasCreateBodyGasAfter(evm *EVM, stack *Stack, mem *Memory, gasBefore uint
 		return 0, false
 	}
 	gasAfterInitcode := gasBefore - initcodeCost
-	memSize, overflow := calcMemSize64(stack.Back(1), stack.Back(2))
+	memSize, overflow := calcMemSize64(stack.back(1), stack.back(2))
 	if overflow {
 		return gasAfterInitcode, false
 	}
@@ -591,7 +591,7 @@ func zkGasLogShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, g
 		return 0
 	}
 	gasAfterStatic := gasBefore - staticGas
-	size, overflow := stack.Back(1).Uint64WithOverflow()
+	size, overflow := stack.back(1).Uint64WithOverflow()
 	if overflow {
 		return gasAfterStatic
 	}
@@ -607,7 +607,7 @@ func zkGasLogShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, g
 	if size == 0 {
 		return gasAfterBody
 	}
-	memSize, overflow := calcMemSize64(stack.Back(0), stack.Back(1))
+	memSize, overflow := calcMemSize64(stack.back(0), stack.back(1))
 	if overflow {
 		return gasAfterBody
 	}
@@ -644,12 +644,12 @@ func zkGasCopyShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, 
 	case EXTCODECOPY:
 		lenIndex = 3
 	}
-	size, overflow := stack.Back(lenIndex).Uint64WithOverflow()
+	size, overflow := stack.back(lenIndex).Uint64WithOverflow()
 	if overflow {
 		return gasAfterStatic
 	}
 	if op == RETURNDATACOPY {
-		dataOffset, overflow := stack.Back(1).Uint64WithOverflow()
+		dataOffset, overflow := stack.back(1).Uint64WithOverflow()
 		if overflow {
 			dataOffset = ^uint64(0)
 		}
@@ -658,7 +658,7 @@ func zkGasCopyShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, 
 			return gasAfterStatic
 		}
 	}
-	copyCost, ok := zkGasWordCost(stack.Back(lenIndex), perWordGas)
+	copyCost, ok := zkGasWordCost(stack.back(lenIndex), perWordGas)
 	if !ok || gasAfterStatic < copyCost {
 		return 0
 	}
@@ -667,12 +667,12 @@ func zkGasCopyShortfallGasAfter(evm *EVM, op OpCode, stack *Stack, mem *Memory, 
 	if op == EXTCODECOPY {
 		memOffsetIndex = 1
 	}
-	memSize, overflow := calcMemSize64(stack.Back(memOffsetIndex), stack.Back(lenIndex))
+	memSize, overflow := calcMemSize64(stack.back(memOffsetIndex), stack.back(lenIndex))
 	if overflow {
 		return gasAfterCopy
 	}
 	if op == MCOPY {
-		srcSize, srcOverflow := calcMemSize64(stack.Back(1), stack.Back(lenIndex))
+		srcSize, srcOverflow := calcMemSize64(stack.back(1), stack.back(lenIndex))
 		if srcOverflow {
 			return gasAfterCopy
 		}

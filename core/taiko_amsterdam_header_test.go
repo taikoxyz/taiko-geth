@@ -28,9 +28,6 @@ import (
 // generated without a BAL commitment by the existing execution code.
 func TestAmsterdamGenesisRawDBReadback(t *testing.T) {
 	config := *params.MergedTestChainConfig
-	schedule := *config.BlobScheduleConfig
-	schedule.Amsterdam = schedule.Osaka
-	config.BlobScheduleConfig = &schedule
 	config.AmsterdamTime = new(uint64)
 	genesis := &Genesis{Config: &config}
 	db := rawdb.NewMemoryDatabase()

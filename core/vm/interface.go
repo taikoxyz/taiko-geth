@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
@@ -52,7 +53,6 @@ type StateDB interface {
 	GetStateAndCommittedState(common.Address, common.Hash) (common.Hash, common.Hash)
 	GetState(common.Address, common.Hash) common.Hash
 	SetState(common.Address, common.Hash, common.Hash) common.Hash
-	GetStorageRoot(addr common.Address) common.Hash
 
 	GetTransientState(addr common.Address, key common.Hash) common.Hash
 	SetTransientState(addr common.Address, key, value common.Hash)
@@ -64,6 +64,9 @@ type StateDB interface {
 	// Notably this also returns true for self-destructed accounts within the current transaction.
 	Exist(common.Address) bool
 
+	// Touch accesses the state without returning anything.
+	Touch(common.Address)
+
 	// IsNewContract reports whether the contract at the given address was deployed
 	// during the current transaction.
 	IsNewContract(addr common.Address) bool
@@ -74,9 +77,11 @@ type StateDB interface {
 
 	AddressInAccessList(addr common.Address) bool
 	SlotInAccessList(addr common.Address, slot common.Hash) (addressOk bool, slotOk bool)
+
 	// AddAddressToAccessList adds the given address to the access list. This operation is safe to perform
 	// even if the feature/fork is not active yet
 	AddAddressToAccessList(addr common.Address)
+
 	// AddSlotToAccessList adds the given (address,slot) to the access list. This operation is safe to perform
 	// even if the feature/fork is not active yet
 	AddSlotToAccessList(addr common.Address, slot common.Hash)
@@ -87,7 +92,6 @@ type StateDB interface {
 	Snapshot() int
 
 	AddLog(*types.Log)
-	EmitLogsForBurnAccounts()
 	AddPreimage(common.Hash, []byte)
 
 	Witness() *stateless.Witness
@@ -95,5 +99,6 @@ type StateDB interface {
 	AccessEvents() *state.AccessEvents
 
 	// Finalise must be invoked at the end of a transaction
-	Finalise(bool)
+	Finalise(rules params.Rules) *bal.ConstructionBlockAccessList
+	SetTxContext(thash common.Hash, ti int, blockAccessIndex uint32)
 }

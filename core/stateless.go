@@ -38,7 +38,7 @@ import (
 // need the other side to explicitly check.
 //
 // This method is a bit of a sore thumb here, but:
-//   - It cannot be placed in core/stateless, because state.New prodces a circular dep
+//   - It cannot be placed in core/stateless, because state.New produces a circular dep
 //   - It cannot be placed outside of core, because it needs to construct a dud headerchain
 //
 // TODO(karalabe): Would be nice to resolve both issues above somehow and move it.
@@ -68,7 +68,7 @@ func ExecuteStateless(ctx context.Context, config *params.ChainConfig, vmconfig 
 	validator := NewBlockValidator(config, nil) // No chain, we only validate the state, not the block
 
 	// Run the stateless blocks processing and self-validate certain fields
-	res, err := processor.Process(ctx, block, db, vmconfig)
+	res, err := processor.Process(ctx, block, db, nil, nil, vmconfig, nil)
 	if err != nil {
 		return common.Hash{}, common.Hash{}, err
 	}
@@ -77,6 +77,6 @@ func ExecuteStateless(ctx context.Context, config *params.ChainConfig, vmconfig 
 	}
 	// Almost everything validated, but receipt and state root needs to be returned
 	receiptRoot := types.DeriveSha(res.Receipts, trie.NewStackTrie(nil))
-	stateRoot := db.IntermediateRoot(config.IsEIP158(block.Number()))
+	stateRoot := db.IntermediateRoot(config.Rules(block.Number(), block.Difficulty().Sign() == 0, block.Time()))
 	return stateRoot, receiptRoot, nil
 }

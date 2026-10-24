@@ -33,7 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/filtermaps"
-	"github.com/ethereum/go-ethereum/core/history"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/pruner"
 	"github.com/ethereum/go-ethereum/core/txpool"
@@ -44,6 +43,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/eth/fetcher"
 	"github.com/ethereum/go-ethereum/eth/gasprice"
 	"github.com/ethereum/go-ethereum/eth/protocols/eth"
 	"github.com/ethereum/go-ethereum/eth/protocols/snap"
@@ -95,6 +95,7 @@ type Ethereum struct {
 	config         *ethconfig.Config
 	txPool         *txpool.TxPool
 	blobTxPool     *blobpool.BlobPool
+	blobCache      *blobpool.Cache
 	localTxTracker *locals.TxTracker
 	blockchain     *core.BlockChain
 
@@ -105,12 +106,18 @@ type Ethereum struct {
 	// DB interfaces
 	chainDb ethdb.Database // Block chain database
 
-	eventMux       *event.TypeMux
 	engine         consensus.Engine
 	accountManager *accounts.Manager
 
 	filterMaps      *filtermaps.FilterMaps
 	closeFilterMaps chan chan struct{}
+
+	// Chain event subscriptions driving updateFilterMapsHeads. The
+	// subscriptions are registered and consumed in Start.
+	fmHeadEventCh  chan core.ChainEvent
+	fmHeadSub      event.Subscription
+	fmBlockProcCh  chan bool
+	fmBlockProcSub event.Subscription
 
 	APIBackend *EthAPIBackend
 
@@ -134,8 +141,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if !config.SyncMode.IsValid() {
 		return nil, fmt.Errorf("invalid sync mode %d", config.SyncMode)
 	}
-	if !config.HistoryMode.IsValid() {
-		return nil, fmt.Errorf("invalid history mode %d", config.HistoryMode)
+	if !config.HistoryMode.Mode.IsValid() {
+		return nil, fmt.Errorf("invalid history mode %d", config.HistoryMode.Mode)
 	}
 	if config.Miner.GasPrice == nil || config.Miner.GasPrice.Sign() <= 0 {
 		log.Warn("Sanitizing invalid miner gas price", "provided", config.Miner.GasPrice, "updated", ethconfig.Defaults.Miner.GasPrice)
@@ -194,7 +201,6 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	eth := &Ethereum{
 		config:          config,
 		chainDb:         chainDb,
-		eventMux:        stack.EventMux(),
 		accountManager:  stack.AccountManager(),
 		engine:          engine,
 		networkID:       networkID,
@@ -202,6 +208,8 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		p2pServer:       stack.Server(),
 		discmix:         enode.NewFairMix(discmixTimeout),
 		shutdownTracker: shutdowncheck.NewShutdownTracker(chainDb),
+		fmHeadEventCh:   make(chan core.ChainEvent, 10),
+		fmBlockProcCh:   make(chan bool, 10),
 	}
 	bcVersion := rawdb.ReadDatabaseVersion(chainDb)
 	var dbVer = "<nil>"
@@ -221,7 +229,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			rawdb.WriteDatabaseVersion(chainDb, core.BlockChainVersion)
 		}
 	}
-	histPolicy, err := history.NewPolicy(config.HistoryMode, genesisHash)
+	histPolicy, err := config.HistoryMode.Resolve(genesisHash)
 	if err != nil {
 		return nil, err
 	}
@@ -229,6 +237,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		options = &core.BlockChainConfig{
 			TrieCleanLimit:          config.TrieCleanCache,
 			NoPrefetch:              config.NoPrefetch,
+			NoPrecompileCache:       config.NoPrecompileCache,
 			TrieDirtyLimit:          config.TrieDirtyCache,
 			ArchiveMode:             config.NoPruning,
 			TrieTimeLimit:           config.TrieTimeout,
@@ -237,6 +246,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			StateHistory:            config.StateHistory,
 			TrienodeHistory:         config.TrienodeHistory,
 			NodeFullValueCheckpoint: config.NodeFullValueCheckpoint,
+			BinTrieGroupDepth:       config.BinTrieGroupDepth,
 			StateScheme:             scheme,
 			HistoryPolicy:           histPolicy,
 			TxLookupLimit:           int64(min(config.TransactionHistory, math.MaxInt64)),
@@ -248,7 +258,6 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			// - DATADIR/triedb/merkle.journal
 			// - DATADIR/triedb/verkle.journal
 			TrieJournalDirectory: stack.ResolvePath("triedb"),
-			StateSizeTracking:    config.EnableStateSizeTracking,
 			SlowBlockThreshold:   config.SlowBlockThreshold,
 
 			StatelessSelfValidation: config.StatelessSelfValidation,
@@ -271,14 +280,17 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if config.OverrideOsaka != nil {
 		overrides.OverrideOsaka = config.OverrideOsaka
 	}
+	if config.OverrideAmsterdam != nil {
+		overrides.OverrideAmsterdam = config.OverrideAmsterdam
+	}
 	if config.OverrideBPO1 != nil {
 		overrides.OverrideBPO1 = config.OverrideBPO1
 	}
 	if config.OverrideBPO2 != nil {
 		overrides.OverrideBPO2 = config.OverrideBPO2
 	}
-	if config.OverrideVerkle != nil {
-		overrides.OverrideVerkle = config.OverrideVerkle
+	if config.OverrideUBT != nil {
+		overrides.OverrideUBT = config.OverrideUBT
 	}
 	options.Overrides = &overrides
 
@@ -322,6 +334,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Only after txpool.New has run the pool's Init: the cache reads the pool's
+	// lookup and store, which Init builds without holding the pool lock.
+	eth.blobCache = blobpool.NewCache(eth.blobTxPool)
 
 	if !config.TxPool.NoLocals {
 		rejournal := config.TxPool.Rejournal
@@ -336,15 +351,17 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	// Permit the downloader to use the trie cache allowance during fast sync
 	cacheLimit := options.TrieCleanLimit + options.TrieDirtyLimit + options.SnapshotLimit
 	if eth.handler, err = newHandler(&handlerConfig{
-		NodeID:         eth.p2pServer.Self().ID(),
-		Database:       chainDb,
-		Chain:          eth.blockchain,
-		TxPool:         eth.txPool,
-		Network:        networkID,
-		Sync:           config.SyncMode,
-		BloomCache:     uint64(cacheLimit),
-		EventMux:       eth.eventMux,
-		RequiredBlocks: config.RequiredBlocks,
+		NodeID:           eth.p2pServer.Self().ID(),
+		Database:         chainDb,
+		Chain:            eth.blockchain,
+		TxPool:           eth.txPool,
+		BlobPool:         eth.blobTxPool,
+		Network:          networkID,
+		Sync:             config.SyncMode,
+		BloomCache:       uint64(cacheLimit),
+		RequiredBlocks:   config.RequiredBlocks,
+		SnapV2:           config.SnapV2,
+		FetchProbability: config.BlobPool.FetchProbability,
 	}); err != nil {
 		return nil, err
 	}
@@ -404,7 +421,7 @@ func (s *Ethereum) APIs() []rpc.API {
 			Service:   NewMinerAPI(s),
 		}, {
 			Namespace: "eth",
-			Service:   downloader.NewDownloaderAPI(s.handler.downloader, s.blockchain, s.eventMux),
+			Service:   downloader.NewDownloaderAPI(s.handler.downloader, s.blockchain),
 		}, {
 			Namespace: "admin",
 			Service:   NewAdminAPI(s),
@@ -428,6 +445,8 @@ func (s *Ethereum) AccountManager() *accounts.Manager  { return s.accountManager
 func (s *Ethereum) BlockChain() *core.BlockChain       { return s.blockchain }
 func (s *Ethereum) TxPool() *txpool.TxPool             { return s.txPool }
 func (s *Ethereum) BlobTxPool() *blobpool.BlobPool     { return s.blobTxPool }
+func (s *Ethereum) BlobFetcher() *fetcher.BlobFetcher  { return s.handler.blobFetcher }
+func (s *Ethereum) BlobCache() *blobpool.Cache         { return s.blobCache }
 func (s *Ethereum) Engine() consensus.Engine           { return s.engine }
 func (s *Ethereum) ChainDb() ethdb.Database            { return s.chainDb }
 func (s *Ethereum) IsListening() bool                  { return true } // Always listening
@@ -435,13 +454,18 @@ func (s *Ethereum) Downloader() *downloader.Downloader { return s.handler.downlo
 func (s *Ethereum) Synced() bool                       { return s.handler.synced.Load() }
 func (s *Ethereum) SetSynced()                         { s.handler.enableSyncedFeatures() }
 func (s *Ethereum) ArchiveMode() bool                  { return s.config.NoPruning }
+func (s *Ethereum) EngineMaxReorgDepth() uint64        { return s.config.EngineMaxReorgDepth }
 
-// Protocols returns all the currently configured
-// network protocols to start.
+// Protocols returns all the currently configured network protocols to start.
 func (s *Ethereum) Protocols() []p2p.Protocol {
 	protos := eth.MakeProtocols((*ethHandler)(s.handler), s.networkID, s.discmix)
 	if s.config.SnapshotCache > 0 {
-		protos = append(protos, snap.MakeProtocols((*snapHandler)(s.handler))...)
+		// SNAP/2 drops the trie node requests SNAP/1 healing needs, and peers
+		// negotiate the highest shared version, so a node syncing via SNAP/1
+		// must not advertise it. Every other node serves both versions.
+		dl := s.handler.downloader
+		advertiseV2 := dl.SnapSyncVersion() == snap.SNAP2 || dl.ConfigSyncMode() != ethconfig.SnapSync
+		protos = append(protos, snap.MakeProtocols((*snapHandler)(s.handler), advertiseV2)...)
 	}
 	return protos
 }
@@ -459,8 +483,12 @@ func (s *Ethereum) Start() error {
 	// Start the networking layer
 	s.handler.Start(s.p2pServer.MaxPeers)
 
-	// Start the connection manager
-	s.dropper.Start(s.p2pServer, func() bool { return !s.Synced() })
+	// Start the connection manager with inclusion-based peer protection.
+	s.dropper.Start(s.p2pServer, func() bool { return !s.Synced() }, s.handler.txTracker.GetAllPeerStats)
+
+	// Subscribe to chain events for the filterMaps head updater.
+	s.fmHeadSub = s.blockchain.SubscribeChainEvent(s.fmHeadEventCh)
+	s.fmBlockProcSub = s.blockchain.SubscribeBlockProcessingEvent(s.fmBlockProcCh)
 
 	// start log indexer
 	s.filterMaps.Start()
@@ -476,13 +504,11 @@ func (s *Ethereum) newChainView(head *types.Header) *filtermaps.ChainView {
 }
 
 func (s *Ethereum) updateFilterMapsHeads() {
-	headEventCh := make(chan core.ChainEvent, 10)
-	blockProcCh := make(chan bool, 10)
-	sub := s.blockchain.SubscribeChainEvent(headEventCh)
-	sub2 := s.blockchain.SubscribeBlockProcessingEvent(blockProcCh)
+	headEventCh := s.fmHeadEventCh
+	blockProcCh := s.fmBlockProcCh
 	defer func() {
-		sub.Unsubscribe()
-		sub2.Unsubscribe()
+		s.fmHeadSub.Unsubscribe()
+		s.fmBlockProcSub.Unsubscribe()
 		for {
 			select {
 			case <-headEventCh:
@@ -584,6 +610,7 @@ func (s *Ethereum) Stop() error {
 	// Stop all the peer-related stuff first.
 	s.discmix.Close()
 	s.dropper.Stop()
+	s.handler.txTracker.Stop()
 	s.handler.Stop()
 
 	// Then stop everything else.
@@ -591,6 +618,7 @@ func (s *Ethereum) Stop() error {
 	s.closeFilterMaps <- ch
 	<-ch
 	s.filterMaps.Stop()
+	s.blobCache.Stop()
 	s.txPool.Close()
 	s.blockchain.Stop()
 	s.engine.Close()
@@ -599,7 +627,6 @@ func (s *Ethereum) Stop() error {
 	s.shutdownTracker.Stop()
 
 	s.chainDb.Close()
-	s.eventMux.Stop()
 
 	return nil
 }

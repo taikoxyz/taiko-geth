@@ -742,7 +742,7 @@ func (s paritySeal) seal(t *testing.T, w *Miner, txs types.Transactions, extra [
 
 func parityState(t *testing.T, chain *core.BlockChain, block *types.Block) *state.StateDB {
 	t.Helper()
-	statedb, err := chain.StateAt(block.Root())
+	statedb, err := chain.StateAt(block.Root(), block.Number(), block.Time())
 	if err != nil {
 		t.Fatalf("StateAt(%v): %v", block.Root(), err)
 	}

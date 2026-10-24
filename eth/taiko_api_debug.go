@@ -6,6 +6,7 @@ package eth
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -115,7 +116,6 @@ var recoverableNonAnchorTxErrors = []error{
 	core.ErrNonceMax,
 	core.ErrInsufficientFunds,
 	core.ErrInsufficientFundsForTransfer,
-	core.ErrInsufficientBalanceWitness,
 	core.ErrGasUintOverflow,
 	core.ErrIntrinsicGas,
 	core.ErrFloorDataGas,
@@ -162,7 +162,7 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	if parent == nil {
 		return nil, nil, fmt.Errorf("parent of block %d not found", header.Number)
 	}
-	statedb, err := bc.StateAt(parent.Root)
+	statedb, err := bc.StateAt(parent.Root, parent.Number, parent.Time)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to open state at parent root %s: %w", parent.Root, err)
 	}
@@ -206,12 +206,12 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	// the opcode itself records the resolved ancestor headers in the witness, and
 	// the cross-client stateless executor serves BLOCKHASH from those headers.
 	beaconRoot := block.BeaconRoot()
-	pragueActive := config.IsPrague(block.Number(), block.Time()) || config.IsVerkle(block.Number(), block.Time())
+	pragueActive := config.IsPrague(block.Number(), block.Time()) || config.IsUBT(block.Number(), block.Time())
 	if beaconRoot != nil {
-		core.ProcessBeaconBlockRoot(*beaconRoot, evm)
+		core.ProcessBeaconBlockRoot(*beaconRoot, evm, nil)
 	}
 	if pragueActive {
-		core.ProcessParentBlockHash(block.ParentHash(), evm)
+		core.ProcessParentBlockHash(block.ParentHash(), evm, nil)
 	}
 
 	gasPool := core.NewGasPool(header.GasLimit)
@@ -255,7 +255,7 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 		}
 
 		statedb.Prepare(rules, sender, header.Coinbase, tx.To(), vm.ActivePrecompiles(rules), tx.AccessList())
-		statedb.SetTxContext(tx.Hash(), len(committed))
+		statedb.SetTxContext(tx.Hash(), len(committed), uint32(len(committed)+1))
 		if zkGasMeter != nil {
 			zkGasMeter.ResetTransaction()
 			evm.ResetZkGasErr()
@@ -287,7 +287,7 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 
 		snap := statedb.Snapshot()
 		gpSnap := gasPool.Snapshot()
-		if _, err := core.ApplyTransactionWithEVM(msg, gasPool, statedb, header.Number, header.Hash(), header.Time, tx, evm); err != nil {
+		if _, _, err := core.ApplyTransactionWithEVM(context.Background(), msg, gasPool, statedb, header.Number, header.Hash(), header.Time, tx, evm); err != nil {
 			statedb.RevertToSnapshot(snap)
 			gasPool.Set(gpSnap)
 			if isFirst {
@@ -345,12 +345,12 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 	if beaconRoot != nil || pragueActive {
 		statedb.GetBalance(params.SystemAddress)
 	}
-	statedb.IntermediateRoot(true)
+	statedb.IntermediateRoot(rules)
 
 	// CHANGE(taiko): post-process the collected witness into the cross-client
 	// legacy witness format (storage-trie root nodes, extension-split reveals,
 	// created bytecode, and existence-filtered keys).
-	if err := alignWitnessForWireFormat(bc, parent.Root, statedb, witness, storageWrites); err != nil {
+	if err := alignWitnessForWireFormat(bc, parent, statedb, witness, storageWrites); err != nil {
 		return nil, nil, err
 	}
 
@@ -379,8 +379,9 @@ func buildTxListWitness(bc *core.BlockChain, block *types.Block, txs types.Trans
 //     without its child revealed. Deletions need no equivalent: collapsing a
 //     branch resolves the surviving sibling through the witness-tracking trie
 //     reader already.
-func alignWitnessForWireFormat(bc *core.BlockChain, parentRoot common.Hash, statedb *state.StateDB, witness *stateless.Witness, storageWrites map[common.Address]map[common.Hash]struct{}) error {
-	preState, err := bc.StateAt(parentRoot)
+func alignWitnessForWireFormat(bc *core.BlockChain, parent *types.Header, statedb *state.StateDB, witness *stateless.Witness, storageWrites map[common.Address]map[common.Hash]struct{}) error {
+	parentRoot := parent.Root
+	preState, err := bc.StateAt(parentRoot, parent.Number, parent.Time)
 	if err != nil {
 		return fmt.Errorf("failed to open pre-state at %s: %w", parentRoot, err)
 	}

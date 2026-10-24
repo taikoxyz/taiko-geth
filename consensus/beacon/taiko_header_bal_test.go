@@ -60,9 +60,6 @@ func TestBeaconHeaderBALForkBoundary(t *testing.T) {
 			amsterdam := strings.HasPrefix(fork, "amsterdam")
 			if amsterdam {
 				config.AmsterdamTime = new(uint64)
-				schedule := *config.BlobScheduleConfig
-				schedule.Amsterdam = schedule.Osaka
-				config.BlobScheduleConfig = &schedule
 			}
 			parent := &types.Header{
 				Number: big.NewInt(0), Time: 1, Difficulty: new(big.Int),

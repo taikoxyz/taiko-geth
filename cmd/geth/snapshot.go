@@ -21,10 +21,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"runtime"
 	"slices"
+	"syscall"
 	"time"
 
+	pebbleimpl "github.com/cockroachdb/pebble"
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -33,6 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb/pebble"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
@@ -77,6 +85,33 @@ geth snapshot verify-state <state-root>
 will traverse the whole accounts and storages set based on the specified
 snapshot and recalculate the root hash of state for verification.
 In other words, this command does the snapshot to trie conversion.
+`,
+			},
+			{
+				Name:      "generate-trie",
+				Usage:     "Benchmark triedb.GenerateTrie against a hard-linked checkpoint of the chaindata",
+				ArgsUsage: "[<root>]",
+				Action:    benchGenerateTrie,
+				Flags: slices.Concat(utils.NetworkFlags, utils.DatabaseFlags, []cli.Flag{
+					&cli.StringFlag{
+						Name:  "checkpoint",
+						Usage: "Directory for the pebble checkpoint (default: <chaindata-parent>/.gentrie-bench-<ts>)",
+					},
+					&cli.BoolFlag{
+						Name:  "keep",
+						Usage: "Keep the checkpoint directory after the run (debugging)",
+					},
+					&cli.BoolFlag{
+						Name:  "pprof",
+						Usage: "Serve pprof profiles on localhost:6060 (block + mutex profiles enabled)",
+					},
+				}),
+				Description: `
+geth snapshot generate-trie [<root>]
+
+Runs triedb.GenerateTrie against a hard-linked pebble checkpoint of the
+chaindata. Checkpoint is removed on exit unless --keep is set. Defaults 
+to the snapshot root if <root> is not given.
 `,
 			},
 			{
@@ -270,6 +305,157 @@ func verifyState(ctx *cli.Context) error {
 	}
 }
 
+// benchGenerateTrie runs triedb.GenerateTrie against a hard-linked checkpoint
+// of the chaindata so the source datadir is never written to.
+func benchGenerateTrie(ctx *cli.Context) error {
+	stack, _ := makeConfigNode(ctx)
+	defer stack.Close()
+
+	if ctx.Bool("pprof") {
+		runtime.SetBlockProfileRate(1)
+		runtime.SetMutexProfileFraction(1)
+		go func() {
+			log.Info("pprof listening", "addr", ":6060")
+			if err := http.ListenAndServe(":6060", nil); err != nil {
+				log.Warn("pprof server stopped", "err", err)
+			}
+		}()
+	}
+
+	// Resolve source chaindata path (handles network-specific subdirs).
+	srcDir := stack.ResolvePath("chaindata")
+	if fi, err := os.Stat(srcDir); err != nil {
+		return fmt.Errorf("chaindata not found at %s: %w", srcDir, err)
+	} else if !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory", srcDir)
+	}
+
+	// Default to snapshot root, not head: that's what GenerateTrie actually
+	// reconstructs from flat state. On a fully-synced node they match.
+	var root common.Hash
+	if ctx.NArg() == 1 {
+		r, err := parseRoot(ctx.Args().First())
+		if err != nil {
+			return fmt.Errorf("parse root: %w", err)
+		}
+		root = r
+	} else {
+		chaindb := utils.MakeChainDatabase(ctx, stack, true)
+		snapRoot := rawdb.ReadSnapshotRoot(chaindb)
+		head := rawdb.ReadHeadBlock(chaindb)
+		chaindb.Close()
+		switch {
+		case snapRoot != (common.Hash{}):
+			root = snapRoot
+			log.Info("using snapshot root", "root", root)
+		case head != nil:
+			root = head.Root()
+			log.Info("using head block root", "number", head.Number(), "root", root)
+		default:
+			return errors.New("no snapshot or head block found; pass <root> explicitly")
+		}
+	}
+
+	// Default checkpoint sits next to chaindata so hard links work.
+	ckpt := ctx.String("checkpoint")
+	if ckpt == "" {
+		ts := time.Now().Format("20060102-150405")
+		ckpt = filepath.Join(filepath.Dir(srcDir), fmt.Sprintf(".gentrie-bench-%s", ts))
+	}
+	if _, err := os.Stat(ckpt); err == nil {
+		return fmt.Errorf("checkpoint dir %s already exists; remove it or pass --checkpoint to a fresh path", ckpt)
+	}
+
+	log.Info("creating pebble checkpoint", "src", srcDir, "dst", ckpt)
+	checkpointStart := time.Now()
+	if err := makeCheckpoint(srcDir, ckpt); err != nil {
+		return fmt.Errorf("checkpoint failed: %w", err)
+	}
+	log.Info("checkpoint created", "elapsed", time.Since(checkpointStart))
+
+	// Clean up the checkpoint on exit, including Ctrl-C.
+	keep := ctx.Bool("keep")
+	cleanup := func() {
+		if keep {
+			log.Info("keeping checkpoint", "path", ckpt)
+			return
+		}
+		log.Info("removing checkpoint", "path", ckpt)
+		if err := os.RemoveAll(ckpt); err != nil {
+			log.Error("failed to remove checkpoint", "err", err)
+		}
+	}
+	defer cleanup()
+
+	cancelCh := make(chan struct{})
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigCh)
+	go func() {
+		<-sigCh
+		log.Warn("interrupt received; cancelling GenerateTrie")
+		close(cancelCh)
+	}()
+
+	// Open the checkpoint writable. Reuse source ancient. Checkpoint only
+	// hard-links the pebble SSTs (not the freezer), and GenerateTrie never
+	// writes to ancient, so sharing it is safe.
+	srcAncient := stack.ResolveAncient("chaindata", "")
+	kv, err := pebble.New(ckpt, 4096, 1024, "gentrie-bench", false)
+	if err != nil {
+		return fmt.Errorf("open checkpoint: %w", err)
+	}
+	chaindb, err := rawdb.Open(kv, rawdb.OpenOptions{
+		Ancient:          srcAncient,
+		MetricsNamespace: "gentrie-bench",
+	})
+	if err != nil {
+		kv.Close()
+		return fmt.Errorf("rawdb.Open checkpoint: %w", err)
+	}
+	defer chaindb.Close()
+
+	// Pick up the trie scheme already in use (path or hash).
+	triedbInst := utils.MakeTrieDatabase(ctx, stack, chaindb, false, true, false)
+	scheme := triedbInst.Scheme()
+	triedbInst.Close()
+
+	log.Info("running GenerateTrie", "scheme", scheme, "root", root)
+	runStart := time.Now()
+	stats, err := triedb.GenerateTrie(chaindb, scheme, root, cancelCh)
+	elapsed := time.Since(runStart)
+
+	status := "root matched"
+	if err != nil {
+		status = fmt.Sprintf("failed (%s)", err)
+		log.Error("GenerateTrie failed", "elapsed", elapsed, "err", err)
+	}
+
+	fmt.Printf("\n=== generate-trie benchmark ===\n")
+	fmt.Printf("scheme:    %s\n", scheme)
+	fmt.Printf("root:      %s\n", root.Hex())
+	fmt.Printf("status:    %s\n", status)
+	fmt.Printf("accounts:  %d (%d updated)\n", stats.Scanned, stats.Updated)
+	fmt.Printf("wall time: %s\n", elapsed)
+	return err
+}
+
+// makeCheckpoint opens srcDir as a pebble database and writes a hard-linked
+// checkpoint to dstDir. Source is closed on return.
+//
+// Opens read-write so pebble can finalize its startup (WAL replay, fresh
+// OPTIONS file) before checkpointing. Read-only mode skips that step, and
+// Checkpoint then fails trying to hard-link the missing OPTIONS file. The
+// read-write open does no more than a normal geth startup would.
+func makeCheckpoint(srcDir, dstDir string) error {
+	db, err := pebbleimpl.Open(srcDir, &pebbleimpl.Options{})
+	if err != nil {
+		return fmt.Errorf("open source pebble: %w", err)
+	}
+	defer db.Close()
+	return db.Checkpoint(dstDir)
+}
+
 // checkDanglingStorage iterates the snap storage data, and verifies that all
 // storage also has corresponding account data.
 func checkDanglingStorage(ctx *cli.Context) error {
@@ -311,11 +497,11 @@ func lookupAccount(accountHash common.Hash, tr *trie.Trie) (*types.StateAccount,
 	return &acc, nil
 }
 
-func traverseStorage(id *trie.ID, db *triedb.Database, report bool, detail bool) error {
+func traverseStorage(id *trie.ID, db *triedb.Database, report bool, detail bool) (int, error) {
 	tr, err := trie.NewStateTrie(id, db)
 	if err != nil {
 		log.Error("Failed to open storage trie", "account", id.Owner, "root", id.Root, "err", err)
-		return err
+		return 0, err
 	}
 	var (
 		slots      int
@@ -326,7 +512,7 @@ func traverseStorage(id *trie.ID, db *triedb.Database, report bool, detail bool)
 	it, err := tr.NodeIterator(nil)
 	if err != nil {
 		log.Error("Failed to open storage iterator", "account", id.Owner, "root", id.Root, "err", err)
-		return err
+		return 0, err
 	}
 	logger := log.Debug
 	if report {
@@ -345,14 +531,14 @@ func traverseStorage(id *trie.ID, db *triedb.Database, report bool, detail bool)
 		}
 		if iter.Err != nil {
 			log.Error("Failed to traverse storage trie", "root", id.Root, "err", iter.Err)
-			return iter.Err
+			return 0, iter.Err
 		}
 		logger("Storage is complete", "account", id.Owner, "slots", slots, "elapsed", common.PrettyDuration(time.Since(start)))
 	} else {
 		reader, err := db.NodeReader(id.StateRoot)
 		if err != nil {
 			log.Error("Failed to open state reader", "err", err)
-			return err
+			return 0, err
 		}
 		var (
 			buffer = make([]byte, 32)
@@ -368,14 +554,14 @@ func traverseStorage(id *trie.ID, db *triedb.Database, report bool, detail bool)
 				blob, _ := reader.Node(id.Owner, it.Path(), node)
 				if len(blob) == 0 {
 					log.Error("Missing trie node(storage)", "hash", node)
-					return errors.New("missing storage")
+					return 0, errors.New("missing storage")
 				}
 				hasher.Reset()
 				hasher.Write(blob)
 				hasher.Read(buffer)
 				if !bytes.Equal(buffer, node.Bytes()) {
 					log.Error("Invalid trie node(storage)", "hash", node.Hex(), "value", blob)
-					return errors.New("invalid storage node")
+					return 0, errors.New("invalid storage node")
 				}
 			}
 			if it.Leaf() {
@@ -388,11 +574,11 @@ func traverseStorage(id *trie.ID, db *triedb.Database, report bool, detail bool)
 		}
 		if err := it.Error(); err != nil {
 			log.Error("Failed to traverse storage trie", "root", id.Root, "err", err)
-			return err
+			return 0, err
 		}
 		logger("Storage is complete", "account", id.Owner, "nodes", nodes, "slots", slots, "elapsed", common.PrettyDuration(time.Since(start)))
 	}
-	return nil
+	return slots, nil
 }
 
 // traverseState is a helper function used for pruning verification.
@@ -454,7 +640,8 @@ func traverseState(ctx *cli.Context) error {
 			log.Info("Account has no storage", "hash", accountHash)
 			return nil
 		}
-		return traverseStorage(trie.StorageTrieID(root, accountHash, acc.Root), triedb, true, false)
+		_, err = traverseStorage(trie.StorageTrieID(root, accountHash, acc.Root), triedb, true, false)
+		return err
 	}
 	t, err := trie.NewStateTrie(trie.StateTrieID(root), triedb)
 	if err != nil {
@@ -482,10 +669,11 @@ func traverseState(ctx *cli.Context) error {
 			return err
 		}
 		if acc.Root != types.EmptyRootHash {
-			err := traverseStorage(trie.StorageTrieID(root, common.BytesToHash(accIter.Key), acc.Root), triedb, false, false)
+			nSlots, err := traverseStorage(trie.StorageTrieID(root, common.BytesToHash(accIter.Key), acc.Root), triedb, false, false)
 			if err != nil {
 				return err
 			}
+			slots += nSlots
 		}
 		if !bytes.Equal(acc.CodeHash, types.EmptyCodeHash.Bytes()) {
 			if !rawdb.HasCode(chaindb, common.BytesToHash(acc.CodeHash)) {
@@ -567,7 +755,8 @@ func traverseRawState(ctx *cli.Context) error {
 			log.Info("Account has no storage", "hash", accountHash)
 			return nil
 		}
-		return traverseStorage(trie.StorageTrieID(root, accountHash, acc.Root), triedb, true, true)
+		_, err = traverseStorage(trie.StorageTrieID(root, accountHash, acc.Root), triedb, true, true)
+		return err
 	}
 	t, err := trie.NewStateTrie(trie.StateTrieID(root), triedb)
 	if err != nil {
@@ -624,10 +813,11 @@ func traverseRawState(ctx *cli.Context) error {
 				return errors.New("invalid account")
 			}
 			if acc.Root != types.EmptyRootHash {
-				err := traverseStorage(trie.StorageTrieID(root, common.BytesToHash(accIter.LeafKey()), acc.Root), triedb, false, true)
+				nSlots, err := traverseStorage(trie.StorageTrieID(root, common.BytesToHash(accIter.LeafKey()), acc.Root), triedb, false, true)
 				if err != nil {
 					return err
 				}
+				slots += nSlots
 			}
 			if !bytes.Equal(acc.CodeHash, types.EmptyCodeHash.Bytes()) {
 				if !rawdb.HasCode(chaindb, common.BytesToHash(acc.CodeHash)) {
@@ -717,6 +907,7 @@ func dumpState(ctx *cli.Context) error {
 			for stIt.Next() {
 				da.Storage[stIt.Hash()] = common.Bytes2Hex(stIt.Slot())
 			}
+			stIt.Release()
 		}
 		enc.Encode(da)
 		accounts++

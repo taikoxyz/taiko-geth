@@ -1,6 +1,7 @@
 package core
 
 import (
+	"context"
 	"math/big"
 	"testing"
 
@@ -51,8 +52,8 @@ func TestUnzenZkGas_StickyError_ApplyTransactionRevertsAndPropagates(t *testing.
 	statedb.SetCode(contractAddr, contractCode, tracing.CodeChangeUnspecified)
 	statedb.CreateAccount(senderAddr)
 	statedb.AddBalance(senderAddr, uint256.NewInt(1_000_000_000_000_000_000), tracing.BalanceChangeUnspecified)
-	statedb.Finalise(true)
-	preStateRoot := statedb.IntermediateRoot(true)
+	statedb.Finalise(params.Rules{IsEIP158: true})
+	preStateRoot := statedb.IntermediateRoot(params.Rules{IsEIP158: true})
 
 	meter := vm.NewZkGasMeter(stickyExecutorSchedule())
 	cfg := vm.Config{ZkGasMeter: meter}
@@ -72,21 +73,20 @@ func TestUnzenZkGas_StickyError_ApplyTransactionRevertsAndPropagates(t *testing.
 
 	tx := types.NewTransaction(0, contractAddr, new(big.Int), 200_000, big.NewInt(1), nil)
 	msg := &Message{
-		From:                  senderAddr,
-		To:                    &contractAddr,
-		Nonce:                 0,
-		Value:                 new(big.Int),
-		GasLimit:              200_000,
-		GasPrice:              big.NewInt(1),
-		GasFeeCap:             big.NewInt(1),
-		GasTipCap:             big.NewInt(1),
-		Data:                  nil,
-		SkipNonceChecks:       true,
-		SkipTransactionChecks: true,
+		From:      senderAddr,
+		To:        &contractAddr,
+		Nonce:     0,
+		Value:     new(uint256.Int),
+		GasLimit:  200_000,
+		GasPrice:  uint256.NewInt(1),
+		GasFeeCap: uint256.NewInt(1),
+		GasTipCap: uint256.NewInt(1),
+		Data:      nil,
 	}
+	msg.SkipNonceCheck().SkipEOACheck().SkipGasLimitCapCheck()
 
 	gp := NewGasPool(10_000_000)
-	receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, big.NewInt(1), common.Hash{}, 1, tx, evm)
+	receipt, _, err := ApplyTransactionWithEVM(context.Background(), msg, gp, statedb, big.NewInt(1), common.Hash{}, 1, tx, evm)
 	if err != vm.ErrZkGasLimitExceeded {
 		t.Fatalf("ApplyTransactionWithEVM err = %v, want vm.ErrZkGasLimitExceeded", err)
 	}
@@ -95,7 +95,7 @@ func TestUnzenZkGas_StickyError_ApplyTransactionRevertsAndPropagates(t *testing.
 	}
 
 	// Statedb must have been reverted: intermediate root matches the pre-tx root.
-	postStateRoot := statedb.IntermediateRoot(true)
+	postStateRoot := statedb.IntermediateRoot(params.Rules{IsEIP158: true})
 	if preStateRoot != postStateRoot {
 		t.Fatalf("statedb not reverted: pre=%x post=%x", preStateRoot, postStateRoot)
 	}
@@ -113,7 +113,7 @@ func TestUnzenZkGas_StickyError_DoesNotPoisonSystemCallAfterTruncation(t *testin
 	statedb.AddBalance(senderAddr, uint256.NewInt(1_000_000_000_000_000_000), tracing.BalanceChangeUnspecified)
 	statedb.CreateAccount(params.WithdrawalQueueAddress)
 	statedb.SetCode(params.WithdrawalQueueAddress, params.WithdrawalQueueCode, tracing.CodeChangeUnspecified)
-	statedb.Finalise(true)
+	statedb.Finalise(params.Rules{IsEIP158: true})
 
 	meter := vm.NewZkGasMeter(stickyExecutorSchedule())
 	evm := vm.NewEVM(vm.BlockContext{
@@ -130,19 +130,18 @@ func TestUnzenZkGas_StickyError_DoesNotPoisonSystemCallAfterTruncation(t *testin
 
 	tx := types.NewTransaction(0, contractAddr, new(big.Int), 200_000, big.NewInt(1), nil)
 	msg := &Message{
-		From:                  senderAddr,
-		To:                    &contractAddr,
-		Nonce:                 0,
-		Value:                 new(big.Int),
-		GasLimit:              200_000,
-		GasPrice:              big.NewInt(1),
-		GasFeeCap:             big.NewInt(1),
-		GasTipCap:             big.NewInt(1),
-		SkipNonceChecks:       true,
-		SkipTransactionChecks: true,
+		From:      senderAddr,
+		To:        &contractAddr,
+		Nonce:     0,
+		Value:     new(uint256.Int),
+		GasLimit:  200_000,
+		GasPrice:  uint256.NewInt(1),
+		GasFeeCap: uint256.NewInt(1),
+		GasTipCap: uint256.NewInt(1),
 	}
+	msg.SkipNonceCheck().SkipEOACheck().SkipGasLimitCapCheck()
 
-	if _, err := ApplyTransactionWithEVM(msg, NewGasPool(10_000_000), statedb, big.NewInt(1), common.Hash{}, 1, tx, evm); err != vm.ErrZkGasLimitExceeded {
+	if _, _, err := ApplyTransactionWithEVM(context.Background(), msg, NewGasPool(10_000_000), statedb, big.NewInt(1), common.Hash{}, 1, tx, evm); err != vm.ErrZkGasLimitExceeded {
 		t.Fatalf("ApplyTransactionWithEVM err = %v, want vm.ErrZkGasLimitExceeded", err)
 	}
 
@@ -151,7 +150,7 @@ func TestUnzenZkGas_StickyError_DoesNotPoisonSystemCallAfterTruncation(t *testin
 	// the same EVM instance.
 	meter.ResetTransaction()
 	var requests [][]byte
-	if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
+	if err := ProcessWithdrawalQueue(&requests, evm.GetRules(), evm, 0, nil); err != nil {
 		t.Fatalf("ProcessWithdrawalQueue after zk-gas truncation returned error: %v", err)
 	}
 }

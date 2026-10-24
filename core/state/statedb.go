@@ -18,6 +18,7 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"maps"
@@ -28,10 +29,10 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -127,6 +128,12 @@ type StateDB struct {
 	accessList   *accessList
 	accessEvents *AccessEvents
 
+	// Per-transaction state access footprint for EIP-7928
+	stateAccessList *bal.ConstructionBlockAccessList
+
+	// Block access index (0 for pre-execution, 1..n for transactions, n+1 for post-execution)
+	blockAccessIndex uint32
+
 	// Transient storage
 	transientStorage transientStorage
 
@@ -191,7 +198,7 @@ func NewWithReader(root common.Hash, db Database, reader Reader) (*StateDB, erro
 		accessList:           newAccessList(),
 		transientStorage:     newTransientStorage(),
 	}
-	if db.TrieDB().IsVerkle() {
+	if db.Type().Is(TypeUBT) {
 		sdb.accessEvents = NewAccessEvents()
 	}
 	return sdb, nil
@@ -284,6 +291,14 @@ func (s *StateDB) AddPreimage(hash common.Hash, preimage []byte) {
 	}
 }
 
+// AddPreimages adopts the SHA3 preimages recorded by another state, e.g. the
+// ephemeral per-transaction states of parallel block execution. Unlike
+// AddPreimage the slices are taken as-is instead of copied, so the caller must
+// not retain or mutate them.
+func (s *StateDB) AddPreimages(preimages map[common.Hash][]byte) {
+	maps.Copy(s.preimages, preimages)
+}
+
 // Preimages returns a list of SHA3 preimages that have been submitted.
 func (s *StateDB) Preimages() map[common.Hash][]byte {
 	return s.preimages
@@ -318,6 +333,11 @@ func (s *StateDB) Empty(addr common.Address) bool {
 	return so == nil || so.empty()
 }
 
+// Touch accesses the specific account without returning anything.
+func (s *StateDB) Touch(addr common.Address) {
+	s.getStateObject(addr)
+}
+
 // GetBalance retrieves the balance from the given address or 0 if object not found
 func (s *StateDB) GetBalance(addr common.Address) *uint256.Int {
 	stateObject := s.getStateObject(addr)
@@ -339,6 +359,9 @@ func (s *StateDB) GetNonce(addr common.Address) uint64 {
 
 // GetStorageRoot retrieves the storage root from the given address or empty
 // if object not found.
+//
+// Note: the storage root returned corresponds to the trie since last Intermediate
+// operation, some recent in-memory changes are excluded.
 func (s *StateDB) GetStorageRoot(addr common.Address) common.Hash {
 	stateObject := s.getStateObject(addr)
 	if stateObject != nil {
@@ -577,6 +600,10 @@ func (s *StateDB) deleteStateObject(addr common.Address) {
 // getStateObject retrieves a state object given by the address, returning nil if
 // the object is not found or was deleted in this execution context.
 func (s *StateDB) getStateObject(addr common.Address) *stateObject {
+	// Record state access regardless of whether the account exists.
+	if s.stateAccessList != nil {
+		s.stateAccessList.AccountRead(addr)
+	}
 	// Prefer live objects if any is available
 	if obj := s.stateObjects[addr]; obj != nil {
 		return obj
@@ -600,30 +627,16 @@ func (s *StateDB) getStateObject(addr common.Address) *stateObject {
 	}
 	s.AccountReads += time.Since(start)
 
-	// Short circuit if the account is not found
-	if acct == nil {
-		// CHANGE(taiko): when building an execution witness, prefetch the absent
-		// account's trie path so its account-trie exclusion proof enters the
-		// witness. Execution can read an absent account — e.g. an EIP-4788 /
-		// EIP-2935 system call to a system contract that is not deployed on the
-		// chain, or a plain CALL to an empty address. Its key preimage is already
-		// recorded above, but without the exclusion-proof nodes a cross-client
-		// stateless executor cannot resolve the account from the sparse trie
-		// ("state trie unresolved"). go-geth's own stateless re-execution tolerates
-		// the gap, so this is invisible to a state-root self-consistency check.
-		// Gated on witness collection, so normal execution is unaffected.
-		if s.witness != nil && s.prefetcher != nil {
-			if err = s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, []common.Address{addr}, nil, true); err != nil {
-				log.Error("Failed to prefetch absent account for witness", "addr", addr, "err", err)
-			}
-		}
-		return nil
-	}
-	// Schedule the resolved account for prefetching if it's enabled.
+	// Schedule the account path for prefetching if it's enabled. Even if the
+	// account is absent, the trie path proves its non-existence for witnesses.
 	if s.prefetcher != nil {
 		if err = s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, []common.Address{addr}, nil, true); err != nil {
 			log.Error("Failed to prefetch account", "addr", addr, "err", err)
 		}
+	}
+	// Short circuit if the account is not found
+	if acct == nil {
+		return nil
 	}
 	// Insert into the live set
 	obj := newObject(s, addr, acct)
@@ -699,6 +712,7 @@ func (s *StateDB) Copy() *StateDB {
 		refund:               s.refund,
 		thash:                s.thash,
 		txIndex:              s.txIndex,
+		blockAccessIndex:     s.blockAccessIndex,
 		logs:                 make(map[common.Hash][]*types.Log, len(s.logs)),
 		logSize:              s.logSize,
 		preimages:            maps.Clone(s.preimages),
@@ -743,6 +757,9 @@ func (s *StateDB) Copy() *StateDB {
 		}
 		state.logs[hash] = cpy
 	}
+	if s.stateAccessList != nil {
+		state.stateAccessList = s.stateAccessList.Copy()
+	}
 	return state
 }
 
@@ -761,60 +778,32 @@ func (s *StateDB) GetRefund() uint64 {
 	return s.refund
 }
 
-type removedAccountWithBalance struct {
-	address common.Address
-	balance *uint256.Int
-}
-
-// EmitLogsForBurnAccounts emits the eth burn logs for accounts scheduled for
-// removal which still have positive balance. The purpose of this function is
-// to handle a corner case of EIP-7708 where a self-destructed account might
-// still receive funds between sending/burning its previous balance and actual
-// removal. In this case the burning of these remaining balances still need to
-// be logged.
-// Specification EIP-7708: https://eips.ethereum.org/EIPS/eip-7708
-//
-// This function should only be invoked at the transaction boundary, specifically
-// before the Finalise.
-func (s *StateDB) EmitLogsForBurnAccounts() {
-	var list []removedAccountWithBalance
-	for addr := range s.journal.dirties {
-		if obj, exist := s.stateObjects[addr]; exist && obj.selfDestructed && !obj.Balance().IsZero() {
-			list = append(list, removedAccountWithBalance{
-				address: obj.address,
-				balance: obj.Balance(),
-			})
-		}
-	}
-	if list != nil {
-		sort.Slice(list, func(i, j int) bool {
-			return list[i].address.Cmp(list[j].address) < 0
-		})
-	}
-	for _, acct := range list {
-		s.AddLog(types.EthBurnLog(acct.address, acct.balance))
-	}
-}
-
 // Finalise finalises the state by removing the destructed objects and clears
 // the journal as well as the refunds. Finalise, however, will not push any updates
 // into the tries just yet. Only IntermediateRoot or Commit will do that.
-func (s *StateDB) Finalise(deleteEmptyObjects bool) {
-	addressesToPrefetch := make([]common.Address, 0, len(s.journal.dirties))
-	for addr := range s.journal.dirties {
+func (s *StateDB) Finalise(rules params.Rules) *bal.ConstructionBlockAccessList {
+	if rules.IsAmsterdam {
+		return s.finaliseAmsterdam(rules)
+	}
+	addressesToPrefetch := make([]common.Address, 0, len(s.journal.mutations))
+	for addr := range s.journal.mutations {
 		obj, exist := s.stateObjects[addr]
 		if !exist {
-			// ripeMD is 'touched' at block 1714175, in tx 0x1237f737031e40bcde4a8b7e717b2d15e3ecadfe49bb1bbc71ee9deb09c6fcf2
-			// That tx goes out of gas, and although the notion of 'touched' does not exist there, the
-			// touch-event will still be recorded in the journal. Since ripeMD is a special snowflake,
-			// it will persist in the journal even though the journal is reverted. In this special circumstance,
-			// it may exist in `s.journal.dirties` but not in `s.stateObjects`.
-			// Thus, we can safely ignore it here
+			// RIPEMD160 (0x03) gets an extra dirty marker for a historical
+			// mainnet consensus exception (at block 1714175, in tx
+			// 0x1237f737031e40bcde4a8b7e717b2d15e3ecadfe49bb1bbc71ee9deb09c6fcf2)
+			// around empty-account touch/revert handling.
+			//
+			// That marker survives journal revert, so the account may remain in
+			// s.journal.mutations even though its state object was rolled
+			// back and no longer exists. In that case there is nothing to
+			// finalise or delete, so ignore it here.
 			continue
 		}
-		if obj.selfDestructed || (deleteEmptyObjects && obj.empty()) {
+		if obj.selfDestructed || (rules.IsEIP158 && obj.empty()) {
 			delete(s.stateObjects, obj.address)
 			s.markDelete(addr)
+
 			// We need to maintain account deletions explicitly (will remain
 			// set indefinitely). Note only the first occurred self-destruct
 			// event is tracked.
@@ -825,6 +814,104 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 			obj.finalise()
 			s.markUpdate(addr)
 		}
+		addressesToPrefetch = append(addressesToPrefetch, addr) // Copy needed for closure
+	}
+	if s.prefetcher != nil && len(addressesToPrefetch) > 0 {
+		if err := s.prefetcher.prefetch(common.Hash{}, s.originalRoot, common.Address{}, addressesToPrefetch, nil, false); err != nil {
+			log.Error("Failed to prefetch addresses", "addresses", len(addressesToPrefetch), "err", err)
+		}
+	}
+	// Invalidate journal because reverting across transactions is not allowed.
+	s.clearInternal()
+
+	return nil
+}
+
+func (s *StateDB) recordAccessListChanges(addr common.Address, state *journalMutationState) {
+	// No list means we are outside a transaction scope (e.g, PostExecution
+	// without a preceding Prepare), skip BAL recording.
+	if s.stateAccessList == nil {
+		return
+	}
+	var (
+		balance = uint256.NewInt(0)
+		nonce   uint64
+	)
+	obj := s.stateObjects[addr] // nil when the account was removed
+	if obj != nil {
+		balance, nonce = obj.Balance(), obj.Nonce()
+	}
+	if state.balanceSet && balance.Cmp(state.balance) != 0 {
+		s.stateAccessList.BalanceChange(s.blockAccessIndex, addr, balance)
+	}
+	if state.nonceSet && nonce != state.nonce {
+		s.stateAccessList.NonceChange(addr, s.blockAccessIndex, nonce)
+	}
+	if state.codeSet {
+		var code []byte
+		if obj != nil {
+			code = obj.Code()
+		}
+		if !bytes.Equal(code, state.code) {
+			s.stateAccessList.CodeChange(addr, s.blockAccessIndex, code)
+		}
+	}
+}
+
+// finaliseAmsterdam is the Amsterdam-and-later variant of Finalise.
+func (s *StateDB) finaliseAmsterdam(rules params.Rules) *bal.ConstructionBlockAccessList {
+	addressesToPrefetch := make([]common.Address, 0, len(s.journal.mutations))
+	for addr, state := range s.journal.mutations {
+		obj, exist := s.stateObjects[addr]
+		if !exist {
+			// RIPEMD160 (0x03) gets an extra dirty marker for a historical
+			// mainnet consensus exception (at block 1714175, in tx
+			// 0x1237f737031e40bcde4a8b7e717b2d15e3ecadfe49bb1bbc71ee9deb09c6fcf2)
+			// around empty-account touch/revert handling.
+			//
+			// That marker survives journal revert, so the account may remain in
+			// s.journal.mutations even though its state object was rolled
+			// back and no longer exists. In that case there is nothing to
+			// finalise or delete, so ignore it here.
+			continue
+		}
+		switch {
+		case obj.selfDestructed:
+			// EIP-8246: accounts marked for self-destruction, instead of
+			// being deleted, are modified as follows:
+			// - nonce is reset to 0,
+			// - balance is unchanged,
+			// - code is cleared,
+			// - all storage is cleared
+			if !obj.Balance().IsZero() {
+				o := newObject(s, obj.address, obj.origin)
+				o.setBalance(new(uint256.Int).Set(obj.Balance()))
+				s.setStateObject(o)
+				s.markUpdate(addr)
+			} else {
+				delete(s.stateObjects, obj.address)
+				s.markDelete(addr)
+				if _, ok := s.stateObjectsDestruct[obj.address]; !ok {
+					s.stateObjectsDestruct[obj.address] = obj
+				}
+			}
+
+		case rules.IsEIP158 && obj.empty():
+			// EIP-161: a touched, empty account is removed.
+			delete(s.stateObjects, obj.address)
+			s.markDelete(addr)
+			if _, ok := s.stateObjectsDestruct[obj.address]; !ok {
+				s.stateObjectsDestruct[obj.address] = obj
+			}
+
+		default:
+			obj.finalise()
+			s.markUpdate(addr)
+		}
+		// Aggregate the resulting account metadata change
+		// into the block-level access list.
+		s.recordAccessListChanges(addr, state)
+
 		// At this point, also ship the address off to the precacher. The precacher
 		// will start loading tries, and when the change is eventually committed,
 		// the commit-phase will be a lot faster
@@ -836,15 +923,17 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 		}
 	}
 	// Invalidate journal because reverting across transactions is not allowed.
-	s.clearJournalAndRefund()
+	bal := s.stateAccessList
+	s.clearInternal()
+	return bal
 }
 
 // IntermediateRoot computes the current root hash of the state trie.
 // It is called in between transactions to get the root hash that
 // goes into transaction receipts.
-func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
+func (s *StateDB) IntermediateRoot(rules params.Rules) common.Hash {
 	// Finalise all the dirty storage states and write them into the tries
-	s.Finalise(deleteEmptyObjects)
+	s.Finalise(rules)
 
 	// Initialize the trie if it's not constructed yet. If the prefetch
 	// is enabled, the trie constructed below will be replaced by the
@@ -876,7 +965,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 		start   = time.Now()
 		workers errgroup.Group
 	)
-	if s.db.TrieDB().IsVerkle() {
+	if s.db.Type().Is(TypeUBT) {
 		// Bypass per-account updateTrie() for binary trie. In binary trie mode
 		// there is only one unified trie (OpenStorageTrie returns self), so the
 		// per-account trie setup in updateTrie() (getPrefetchedTrie, getTrie,
@@ -899,10 +988,12 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 					if err := s.trie.UpdateStorage(addr, key[:], common.TrimLeftZeroes(value[:])); err != nil {
 						s.setError(err)
 					}
+					s.StorageUpdated.Add(1)
 				} else {
 					if err := s.trie.DeleteStorage(addr, key[:]); err != nil {
 						s.setError(err)
 					}
+					s.StorageDeleted.Add(1)
 				}
 			}
 		}
@@ -938,9 +1029,9 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 		}
 	}
 	// If witness building is enabled, gather all the read-only accesses.
-	// Skip witness collection in Verkle mode, they will be gathered
-	// together at the end.
-	if s.witness != nil && !s.db.TrieDB().IsVerkle() {
+	// Skip witness collection in Unified-binary-trie mode, they will be
+	// gathered together at the end.
+	if s.witness != nil && s.db.Type().Is(TypeMPT) {
 		// Pull in anything that has been accessed before destruction
 		for _, obj := range s.stateObjectsDestruct {
 			// Skip any objects that haven't touched their storage
@@ -981,7 +1072,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	// only a single trie is used for state hashing. Replacing a non-nil verkle tree
 	// here could result in losing uncommitted changes from storage.
 	start = time.Now()
-	if s.prefetcher != nil && !s.db.TrieDB().IsVerkle() {
+	if s.prefetcher != nil && s.db.Type().Is(TypeMPT) {
 		if trie := s.prefetcher.trie(common.Hash{}, s.originalRoot); trie == nil {
 			log.Error("Failed to retrieve account pre-fetcher trie")
 		} else {
@@ -1047,115 +1138,68 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 // SetTxContext sets the current transaction hash and index which are
 // used when the EVM emits new state logs. It should be invoked before
 // transaction execution.
-func (s *StateDB) SetTxContext(thash common.Hash, ti int) {
+func (s *StateDB) SetTxContext(thash common.Hash, ti int, blockAccessIndex uint32) {
 	s.thash = thash
 	s.txIndex = ti
+	s.blockAccessIndex = blockAccessIndex
 }
 
-func (s *StateDB) clearJournalAndRefund() {
+func (s *StateDB) clearInternal() {
 	s.journal.reset()
 	s.refund = 0
+
+	// The access list built during this scope has been handed off to the caller,
+	// which merges it into the block-level list by adopting the account objects
+	// rather than copying them.
+	//
+	// Dereferencing the accessList explicitly, avoiding any following mutations
+	// affecting the external BAL.
+	s.stateAccessList = nil
 }
 
-// fastDeleteStorage is the function that efficiently deletes the storage trie
-// of a specific account. It leverages the associated state snapshot for fast
-// storage iteration and constructs trie node deletion markers by creating
-// stack trie with iterated slots.
-func (s *StateDB) fastDeleteStorage(snaps *snapshot.Tree, addrHash common.Hash, root common.Hash) (map[common.Hash][]byte, map[common.Hash][]byte, *trienode.NodeSet, error) {
-	iter, err := snaps.StorageIterator(s.originalRoot, addrHash, common.Hash{})
+// deleteStorage is designed to delete the storage trie of a designated account.
+func (s *StateDB) deleteStorage(addrHash common.Hash, root common.Hash) (map[common.Hash]common.Hash, map[common.Hash]common.Hash, *trienode.NodeSet, error) {
+	var (
+		nodes          = trienode.NewNodeSet(addrHash)     // the set for trie node mutations (value is nil)
+		storages       = make(map[common.Hash]common.Hash) // the set for storage mutations (value is nil)
+		storageOrigins = make(map[common.Hash]common.Hash) // the set for tracking the original value of slot
+	)
+	iteratee, err := s.db.Iteratee(s.originalRoot)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	defer iter.Release()
+	it, err := iteratee.NewStorageIterator(addrHash, common.Hash{})
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer it.Release()
 
-	var (
-		nodes          = trienode.NewNodeSet(addrHash) // the set for trie node mutations (value is nil)
-		storages       = make(map[common.Hash][]byte)  // the set for storage mutations (value is nil)
-		storageOrigins = make(map[common.Hash][]byte)  // the set for tracking the original value of slot
-	)
 	stack := trie.NewStackTrie(func(path []byte, hash common.Hash, blob []byte) {
 		nodes.AddNode(path, trienode.NewDeletedWithPrev(blob))
 	})
-	for iter.Next() {
-		slot := common.CopyBytes(iter.Slot())
-		if err := iter.Error(); err != nil { // error might occur after Slot function
+	for it.Next() {
+		slot := it.Slot()
+		// Error might occur after Slot function
+		if err := it.Error(); err != nil {
 			return nil, nil, nil, err
 		}
-		key := iter.Hash()
-		storages[key] = nil
+		if slot == (common.Hash{}) {
+			return nil, nil, nil, fmt.Errorf("unexpected empty storage slot, addr: %x, slot: %x", addrHash, it.Hash())
+		}
+		key := it.Hash()
+		storages[key] = common.Hash{}
 		storageOrigins[key] = slot
 
-		if err := stack.Update(key.Bytes(), slot); err != nil {
+		if err := stack.Update(key.Bytes(), encodeSlot(slot)); err != nil {
 			return nil, nil, nil, err
 		}
 	}
-	if err := iter.Error(); err != nil { // error might occur during iteration
+	// Error might occur during iteration
+	if err := it.Error(); err != nil {
 		return nil, nil, nil, err
 	}
 	if stack.Hash() != root {
 		return nil, nil, nil, fmt.Errorf("snapshot is not matched, exp %x, got %x", root, stack.Hash())
-	}
-	return storages, storageOrigins, nodes, nil
-}
-
-// slowDeleteStorage serves as a less-efficient alternative to "fastDeleteStorage,"
-// employed when the associated state snapshot is not available. It iterates the
-// storage slots along with all internal trie nodes via trie directly.
-func (s *StateDB) slowDeleteStorage(addr common.Address, addrHash common.Hash, root common.Hash) (map[common.Hash][]byte, map[common.Hash][]byte, *trienode.NodeSet, error) {
-	tr, err := s.db.OpenStorageTrie(s.originalRoot, addr, root, s.trie)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to open storage trie, err: %w", err)
-	}
-	it, err := tr.NodeIterator(nil)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to open storage iterator, err: %w", err)
-	}
-	var (
-		nodes          = trienode.NewNodeSet(addrHash) // the set for trie node mutations (value is nil)
-		storages       = make(map[common.Hash][]byte)  // the set for storage mutations (value is nil)
-		storageOrigins = make(map[common.Hash][]byte)  // the set for tracking the original value of slot
-	)
-	for it.Next(true) {
-		if it.Leaf() {
-			key := common.BytesToHash(it.LeafKey())
-			storages[key] = nil
-			storageOrigins[key] = common.CopyBytes(it.LeafBlob())
-			continue
-		}
-		if it.Hash() == (common.Hash{}) {
-			continue
-		}
-		nodes.AddNode(it.Path(), trienode.NewDeletedWithPrev(it.NodeBlob()))
-	}
-	if err := it.Error(); err != nil {
-		return nil, nil, nil, err
-	}
-	return storages, storageOrigins, nodes, nil
-}
-
-// deleteStorage is designed to delete the storage trie of a designated account.
-// The function will make an attempt to utilize an efficient strategy if the
-// associated state snapshot is reachable; otherwise, it will resort to a less
-// efficient approach.
-func (s *StateDB) deleteStorage(addr common.Address, addrHash common.Hash, root common.Hash) (map[common.Hash][]byte, map[common.Hash][]byte, *trienode.NodeSet, error) {
-	var (
-		err            error
-		nodes          *trienode.NodeSet      // the set for trie node mutations (value is nil)
-		storages       map[common.Hash][]byte // the set for storage mutations (value is nil)
-		storageOrigins map[common.Hash][]byte // the set for tracking the original value of slot
-	)
-	// The fast approach can be failed if the snapshot is not fully
-	// generated, or it's internally corrupted. Fallback to the slow
-	// one just in case.
-	snaps := s.db.Snapshot()
-	if snaps != nil {
-		storages, storageOrigins, nodes, err = s.fastDeleteStorage(snaps, addrHash, root)
-	}
-	if snaps == nil || err != nil {
-		storages, storageOrigins, nodes, err = s.slowDeleteStorage(addr, addrHash, root)
-	}
-	if err != nil {
-		return nil, nil, nil, err
 	}
 	return storages, storageOrigins, nodes, nil
 }
@@ -1178,10 +1222,10 @@ func (s *StateDB) deleteStorage(addr common.Address, addrHash common.Hash, root 
 // with their values be tracked as original value.
 // In case (d), **original** account along with its storages should be deleted,
 // with their values be tracked as original value.
-func (s *StateDB) handleDestruction(noStorageWiping bool) (map[common.Hash]*accountDelete, []*trienode.NodeSet, error) {
+func (s *StateDB) handleDestruction(rules params.Rules) (map[common.Hash]*AccountDelete, []*trienode.NodeSet, error) {
 	var (
 		nodes   []*trienode.NodeSet
-		deletes = make(map[common.Hash]*accountDelete)
+		deletes = make(map[common.Hash]*AccountDelete)
 	)
 	for addr, prevObj := range s.stateObjectsDestruct {
 		prev := prevObj.origin
@@ -1195,27 +1239,27 @@ func (s *StateDB) handleDestruction(noStorageWiping bool) (map[common.Hash]*acco
 			continue
 		}
 		// The account was existent, it can be either case (c) or (d).
-		addrHash := crypto.Keccak256Hash(addr.Bytes())
-		op := &accountDelete{
-			address: addr,
-			origin:  types.SlimAccountRLP(*prev),
+		addrHash := prevObj.addrHash()
+		op := &AccountDelete{
+			Address: addr,
+			Origin:  prev,
 		}
 		deletes[addrHash] = op
 
 		// Short circuit if the origin storage was empty.
-		if prev.Root == types.EmptyRootHash || s.db.TrieDB().IsVerkle() {
+		if prev.Root == types.EmptyRootHash || s.db.Type().Is(TypeUBT) {
 			continue
 		}
-		if noStorageWiping {
+		if rules.IsCancun {
 			return nil, nil, fmt.Errorf("unexpected storage wiping, %x", addr)
 		}
 		// Remove storage slots belonging to the account.
-		storages, storagesOrigin, set, err := s.deleteStorage(addr, addrHash, prev.Root)
+		storages, storagesOrigin, set, err := s.deleteStorage(addrHash, prev.Root)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to delete storage, err: %w", err)
 		}
-		op.storages = storages
-		op.storagesOrigin = storagesOrigin
+		op.Storages = storages
+		op.StoragesOrigin = storagesOrigin
 
 		// Aggregate the associated trie node changes.
 		nodes = append(nodes, set)
@@ -1230,13 +1274,13 @@ func (s *StateDB) GetTrie() Trie {
 
 // commit gathers the state mutations accumulated along with the associated
 // trie changes, resetting all internal flags with the new state as the base.
-func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNumber uint64) (*stateUpdate, error) {
+func (s *StateDB) commit(rules params.Rules, blockNumber uint64) (*StateUpdate, error) {
 	// Short circuit in case any database failure occurred earlier.
 	if s.dbErr != nil {
 		return nil, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
 	}
 	// Finalize any pending changes and merge everything into the tries
-	s.IntermediateRoot(deleteEmptyObjects)
+	root := s.IntermediateRoot(rules)
 
 	// Short circuit if any error occurs within the IntermediateRoot.
 	if s.dbErr != nil {
@@ -1251,7 +1295,7 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 
 		lock    sync.Mutex                                               // protect two maps below
 		nodes   = trienode.NewMergedNodeSet()                            // aggregated trie nodes
-		updates = make(map[common.Hash]*accountUpdate, len(s.mutations)) // aggregated account updates
+		updates = make(map[common.Hash]*AccountUpdate, len(s.mutations)) // aggregated account updates
 
 		// merge aggregates the dirty trie nodes into the global set.
 		//
@@ -1284,7 +1328,7 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 	// the same block, account deletions must be processed first. This ensures
 	// that the storage trie nodes deleted during destruction and recreated
 	// during subsequent resurrection can be combined correctly.
-	deletes, delNodes, err := s.handleDestruction(noStorageWiping)
+	deletes, delNodes, err := s.handleDestruction(rules)
 	if err != nil {
 		return nil, err
 	}
@@ -1298,7 +1342,6 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 	// writes to run in parallel with the computations.
 	var (
 		start   = time.Now()
-		root    common.Hash
 		workers errgroup.Group
 	)
 	// Schedule the account trie first since that will be the biggest, so give
@@ -1312,9 +1355,7 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 	// code didn't anticipate for.
 	workers.Go(func() error {
 		// Write the account trie changes, measuring the amount of wasted time
-		newroot, set := s.trie.Commit(true)
-		root = newroot
-
+		_, set := s.trie.Commit(true)
 		if err := merge(set); err != nil {
 			return err
 		}
@@ -1382,13 +1423,17 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 	origin := s.originalRoot
 	s.originalRoot = root
 
-	return newStateUpdate(noStorageWiping, origin, root, blockNumber, deletes, updates, nodes), nil
+	typ := StorageKeyHashed
+	if rules.IsCancun {
+		typ = StorageKeyPlain
+	}
+	return NewStateUpdate(typ, origin, root, blockNumber, deletes, updates, nodes), nil
 }
 
 // commitAndFlush is a wrapper of commit which also commits the state mutations
 // to the configured data stores.
-func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool, noStorageWiping bool, deriveCodeFields bool) (*stateUpdate, error) {
-	ret, err := s.commit(deleteEmptyObjects, noStorageWiping, block)
+func (s *StateDB) commitAndFlush(rules params.Rules, block uint64, deriveCodeFields bool) (*StateUpdate, error) {
+	ret, err := s.commit(rules, block)
 	if err != nil {
 		return nil, err
 	}
@@ -1405,7 +1450,7 @@ func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool, noStorag
 
 	// The reader update must be performed as the final step, otherwise,
 	// the new state would not be visible before db.commit.
-	s.reader, _ = s.db.Reader(s.originalRoot)
+	s.reader, err = s.db.Reader(s.originalRoot)
 	return ret, err
 }
 
@@ -1419,26 +1464,24 @@ func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool, noStorag
 // The associated block number of the state transition is also provided
 // for more chain context.
 //
-// noStorageWiping is a flag indicating whether storage wiping is permitted.
-// Since self-destruction was deprecated with the Cancun fork and there are
-// no empty accounts left that could be deleted by EIP-158, storage wiping
-// should not occur.
-func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool, noStorageWiping bool) (common.Hash, error) {
-	ret, err := s.commitAndFlush(block, deleteEmptyObjects, noStorageWiping, false)
+// Whether empty accounts are deleted and whether storage wiping is permitted
+// both follow from the fork rules this state was created with.
+func (s *StateDB) Commit(rules params.Rules, block uint64) (common.Hash, error) {
+	ret, err := s.commitAndFlush(rules, block, false)
 	if err != nil {
 		return common.Hash{}, err
 	}
-	return ret.root, nil
+	return ret.Root, nil
 }
 
 // CommitWithUpdate writes the state mutations and returns the state update for
 // external processing (e.g., live tracing hooks or size tracker).
-func (s *StateDB) CommitWithUpdate(block uint64, deleteEmptyObjects bool, noStorageWiping bool) (common.Hash, *stateUpdate, error) {
-	ret, err := s.commitAndFlush(block, deleteEmptyObjects, noStorageWiping, true)
+func (s *StateDB) CommitWithUpdate(rules params.Rules, block uint64) (common.Hash, *StateUpdate, error) {
+	ret, err := s.commitAndFlush(rules, block, true)
 	if err != nil {
 		return common.Hash{}, nil, err
 	}
-	return ret.root, ret, nil
+	return ret.Root, ret, nil
 }
 
 // Prepare handles the preparatory steps for executing a state transition with.
@@ -1483,6 +1526,10 @@ func (s *StateDB) Prepare(rules params.Rules, sender, coinbase common.Address, d
 	}
 	// Reset transient storage at the beginning of transaction execution
 	s.transientStorage = newTransientStorage()
+
+	if rules.IsAmsterdam {
+		s.stateAccessList = bal.NewConstructionBlockAccessList()
+	}
 }
 
 // AddAddressToAccessList adds the given address to the access list

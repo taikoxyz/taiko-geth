@@ -123,7 +123,7 @@ func TestApplyTransaction_SealerZkGasExhaustionSurface(t *testing.T) {
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	statedb.SetBalance(sender, uint256.NewInt(1_000_000_000_000_000_000), 0)
 	statedb.SetCode(callee, []byte{0x60, 0x01, 0x60, 0x01, 0x01, 0x00}, tracing.CodeChangeGenesis) // PUSH1 1 PUSH1 1 ADD STOP
-	statedb.Finalise(true)
+	statedb.Finalise(params.Rules{IsEIP158: true})
 
 	schedule := &vm.ZkGasSchedule{BlockLimit: 0}
 	for i := range schedule.OpcodeMultipliers {
@@ -156,7 +156,7 @@ func TestApplyTransaction_SealerZkGasExhaustionSurface(t *testing.T) {
 
 	gp := core.NewGasPool(30_000_000)
 	header := &types.Header{Number: big.NewInt(1), Time: 1, BaseFee: big.NewInt(1_000_000_000), GasLimit: 30_000_000}
-	receipt, err := core.ApplyTransaction(evm, gp, statedb, header, tx)
+	receipt, _, err := core.ApplyTransaction(context.Background(), evm, gp, statedb, header, tx)
 
 	if !errors.Is(err, vm.ErrZkGasLimitExceeded) {
 		t.Fatalf("expected ErrZkGasLimitExceeded, got err=%v receipt=%+v", err, receipt)
@@ -392,7 +392,7 @@ func TestSealBlockWith_UnzenSealedRootMatchesImport(t *testing.T) {
 	if n, err := b.chain.InsertChain(types.Blocks{block}); err != nil {
 		t.Fatalf("importing the sealed block failed (inserted %d): %v", n, err)
 	}
-	statedb, err := b.chain.StateAt(block.Root())
+	statedb, err := b.chain.StateAt(block.Root(), block.Number(), block.Time())
 	if err != nil {
 		t.Fatalf("StateAt(sealed root): %v", err)
 	}
@@ -508,7 +508,7 @@ func TestSealBlockWith_GasLimitOpcodeMatchesImport(t *testing.T) {
 	if n, err := b.chain.InsertChain(types.Blocks{block}); err != nil {
 		t.Fatalf("importing the sealed block failed (inserted %d): %v", n, err)
 	}
-	statedb, err := b.chain.StateAt(block.Root())
+	statedb, err := b.chain.StateAt(block.Root(), block.Number(), block.Time())
 	if err != nil {
 		t.Fatalf("StateAt(sealed root): %v", err)
 	}

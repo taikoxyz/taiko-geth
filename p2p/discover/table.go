@@ -290,28 +290,33 @@ func (tab *Table) refresh() <-chan struct{} {
 // preferLive is true and the table contains any verified nodes, the result will not
 // contain unverified nodes. However, if there are no verified nodes at all, the result
 // will contain unverified nodes.
-func (tab *Table) findnodeByID(target enode.ID, nresults int, preferLive bool) *nodesByDistance {
+func (tab *Table) findnodeByID(target enode.ID, nresults int, preferLive bool) (nodes nodesByDistance) {
+	nodes.target = target
 	tab.mutex.Lock()
 	defer tab.mutex.Unlock()
 
 	// Scan all buckets. There might be a better way to do this, but there aren't that many
 	// buckets, so this solution should be fine. The worst-case complexity of this loop
 	// is O(tab.len() * nresults).
-	nodes := &nodesByDistance{target: target}
-	liveNodes := &nodesByDistance{target: target}
-	for _, b := range &tab.buckets {
-		for _, n := range b.entries {
-			nodes.push(n.Node, nresults)
-			if preferLive && n.isValidatedLive {
-				liveNodes.push(n.Node, nresults)
+	if preferLive {
+		for _, b := range &tab.buckets {
+			for _, n := range b.entries {
+				if n.isValidatedLive {
+					nodes.push(n.Node, nresults)
+				}
 			}
+		}
+		if len(nodes.entries) > 0 {
+			return
 		}
 	}
 
-	if preferLive && len(liveNodes.entries) > 0 {
-		return liveNodes
+	for _, b := range &tab.buckets {
+		for _, n := range b.entries {
+			nodes.push(n.Node, nresults)
+		}
 	}
-	return nodes
+	return
 }
 
 // appendBucketNodes adds nodes at the given distance to the result slice.
@@ -753,6 +758,41 @@ func (tab *Table) deleteNode(n *enode.Node) {
 
 // waitForNodes blocks until the table contains at least n nodes.
 func (tab *Table) waitForNodes(ctx context.Context, n int) error {
+	// Wrap ctx so the forwarder goroutine exits when waitForNodes returns,
+	// regardless of whether the caller's ctx is canceled.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Set up a notification channel that gets unblocked when there was any activity on
+	// the table. Ultimately this reads from the table's nodeFeed, but can't use the feed
+	// directly on the same goroutine that takes Table.mutex, it would deadlock.
+	var notify chan struct{}
+	var notifyErr error
+	initsub := func() event.Subscription {
+		notify = make(chan struct{}, 1)
+		newnode := make(chan *enode.Node, 1)
+		sub := tab.nodeFeed.Subscribe(newnode)
+		go func() {
+			defer close(notify)
+			for {
+				select {
+				case <-newnode:
+					select {
+					case notify <- struct{}{}:
+					default:
+					}
+				case <-ctx.Done():
+					notifyErr = ctx.Err()
+					return
+				case <-tab.closeReq:
+					notifyErr = errClosed
+					return
+				}
+			}
+		}()
+		return sub
+	}
+
 	getlength := func() (count int) {
 		for _, b := range &tab.buckets {
 			count += len(b.entries)
@@ -760,28 +800,24 @@ func (tab *Table) waitForNodes(ctx context.Context, n int) error {
 		return count
 	}
 
-	var ch chan *enode.Node
 	for {
 		tab.mutex.Lock()
 		if getlength() >= n {
 			tab.mutex.Unlock()
 			return nil
 		}
-		if ch == nil {
-			// Init subscription.
-			ch = make(chan *enode.Node)
-			sub := tab.nodeFeed.Subscribe(ch)
+		if notify == nil {
+			// Lazily init the subscription. Do this while holding the
+			// lock so we don't miss any events that change the node count.
+			sub := initsub()
 			defer sub.Unsubscribe()
 		}
 		tab.mutex.Unlock()
 
-		// Wait for a node add event.
-		select {
-		case <-ch:
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-tab.closeReq:
-			return errClosed
+		// Wait for table event.
+		if _, ok := <-notify; !ok {
+			break
 		}
 	}
+	return notifyErr
 }
