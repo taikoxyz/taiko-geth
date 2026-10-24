@@ -49,8 +49,8 @@ type txListWitnessOptions struct {
 // not the first decoded one — takes the first-position fatality role below.
 // It errors only on a malformed top-level list.
 func decodeTxListWitnessTxs(txListRLP []byte) (types.Transactions, error) {
-	var txs types.Transactions
-	if err := rlp.DecodeBytes(txListRLP, &txs); err != nil {
+	txs, err := types.DecodeTaikoTxList(txListRLP)
+	if err != nil {
 		return nil, fmt.Errorf("failed to decode tx list: %w", err)
 	}
 	recovered := make(types.Transactions, 0, len(txs))

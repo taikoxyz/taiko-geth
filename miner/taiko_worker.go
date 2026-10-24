@@ -217,9 +217,11 @@ func (w *Miner) sealBlockWith(
 	baseFeePerGas *big.Int,
 	withdrawals types.Withdrawals,
 ) (*types.Block, error) {
-	// Decode transactions bytes.
-	var txs types.Transactions
-	if err := rlp.DecodeBytes(blkMeta.TxList, &txs); err != nil {
+	// Decode transactions bytes. A transaction whose chain ID or signature
+	// value exceeds 256 bits keeps its position and is skipped at sender
+	// recovery below.
+	txs, err := types.DecodeTaikoTxList(blkMeta.TxList)
+	if err != nil {
 		return nil, fmt.Errorf("failed to decode txList: %w", err)
 	}
 
