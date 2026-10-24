@@ -58,6 +58,8 @@ type Taiko struct {
 
 var _ = new(Taiko)
 
+var _ consensus.AssemblyPreparer = (*Taiko)(nil)
+
 func New(chainConfig *params.ChainConfig, chainDB ethdb.Database) *Taiko {
 	taikoL2AddressPrefix := strings.TrimPrefix(chainConfig.ChainID.String(), "0")
 
@@ -329,7 +331,7 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	// parentBeaconRoot is deliberately not stamped here: it has to be on the
 	// header before the block executes, so the EIP-4788 system call runs and its
 	// writes land in the state root. On import it comes from the verified block
-	// header; on the build paths prepareWork sets it and FinalizeAndAssemble
+	// header; on the build paths prepareWork sets it and PrepareAssembly
 	// rejects a missing one.
 	if t.chainConfig.IsUnzen(header.Time) {
 		emptyRequests := types.EmptyRequestsHash
@@ -350,12 +352,10 @@ func (t *Taiko) Finalize(chain consensus.ChainHeaderReader, header *types.Header
 	}
 }
 
-// FinalizeAndAssemble runs any post-transaction state modifications (e.g. block
-// rewards) and assembles the final block.
-//
-// Note: The block header and state database might be updated to reflect any
-// consensus rules that happen at finalization (e.g. block rewards).
-func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
+// PrepareAssembly implements consensus.AssemblyPreparer. Every build path runs
+// it right before Finalize: it normalizes the body and rejects a block that
+// Taiko must not assemble.
+func (t *Taiko) PrepareAssembly(chain consensus.ChainHeaderReader, header *types.Header, body *types.Body) error {
 	if body.Withdrawals == nil {
 		body.Withdrawals = make([]*types.Withdrawal, 0)
 	}
@@ -364,33 +364,46 @@ func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHe
 	if len(body.Transactions) != 0 { // Transactions list might be empty when building empty payload.
 		isAnchor, err := t.ValidateAnchorTx(body.Transactions[0], header)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		if !isAnchor {
-			return nil, ErrAnchorTxNotFound
+			return ErrAnchorTxNotFound
 		}
 	}
 
 	if t.chainConfig.IsUnzen(header.Time) {
 		// The parent beacon root must already be on the header, set before
 		// execution so the EIP-4788 system call ran and its writes are inside the
-		// state root committed below. Backfilling a missing root at this point
-		// would instead dress a build path that skipped that system call up as a
-		// canonical-looking header over a wrong state root, which every importer
-		// rejects once the EIP-4788 contract has code. The root's value is not
-		// checked here: prepareWork rejects a non-zero root before building and
-		// header verification rejects one on import, while eth_simulateV1 has to
-		// keep a caller's beaconRoot block override, as the reference client does.
+		// state root the block commits to. Backfilling a missing root at this
+		// point would instead dress a build path that skipped that system call up
+		// as a canonical-looking header over a wrong state root, which every
+		// importer rejects once the EIP-4788 contract has code. The root's value
+		// is not checked here: prepareWork rejects a non-zero root before building
+		// and header verification rejects one on import, while eth_simulateV1 has
+		// to keep a caller's beaconRoot block override, as the reference client
+		// does.
 		if header.ParentBeaconRoot == nil {
-			return nil, fmt.Errorf("parent beacon root missing: have nil, want %v", common.Hash{})
+			return fmt.Errorf("parent beacon root missing: have nil, want %v", common.Hash{})
 		}
 
-		// CHANGE(taiko): Unzen blocks must not contain blob transactions.
+		// Unzen blocks must not contain blob transactions.
 		for i, tx := range body.Transactions {
 			if tx.Type() == types.BlobTxType {
-				return nil, fmt.Errorf("blob transaction at index %d not allowed in Unzen block", i)
+				return fmt.Errorf("blob transaction at index %d not allowed in Unzen block", i)
 			}
 		}
+	}
+	return nil
+}
+
+// FinalizeAndAssemble runs any post-transaction state modifications (e.g. block
+// rewards) and assembles the final block.
+//
+// Note: The block header and state database might be updated to reflect any
+// consensus rules that happen at finalization (e.g. block rewards).
+func (t *Taiko) FinalizeAndAssemble(ctx context.Context, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt) (*types.Block, error) {
+	if err := t.PrepareAssembly(chain, header, body); err != nil {
+		return nil, err
 	}
 
 	// Finalize block

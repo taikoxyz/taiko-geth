@@ -434,6 +434,11 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 				body.Withdrawals = make([]*types.Withdrawal, 0)
 			}
 		}
+		// CHANGE(taiko): run the engine's block-assembly checks (anchor tx, Unzen
+		// parent beacon root and blob txs) before finalizing.
+		if err := consensus.PrepareAssembly(b.engine, cm, b.header, &body); err != nil {
+			panic(err)
+		}
 		// Apply the consensus-specific post-transaction changes
 		b.engine.Finalize(cm, b.header, statedb, &body)
 

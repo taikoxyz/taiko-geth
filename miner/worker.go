@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
@@ -235,6 +236,12 @@ func (miner *Miner) generateWork(ctx context.Context, genParam *generateParams, 
 		work.header.RequestsHash = &reqHash
 	}
 	work.bal.Merge(bal)
+
+	// CHANGE(taiko): run the engine's block-assembly checks (anchor tx, Unzen
+	// parent beacon root and blob txs) before finalizing.
+	if err := consensus.PrepareAssembly(miner.engine, miner.chain, work.header, &body); err != nil {
+		return &newPayloadResult{err: err}
+	}
 
 	// Apply the consensus-specific post-transaction changes
 	miner.engine.Finalize(miner.chain, work.header, work.state, &body)

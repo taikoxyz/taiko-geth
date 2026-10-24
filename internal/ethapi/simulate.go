@@ -507,6 +507,12 @@ func (sim *simulator) processBlock(ctx context.Context, block *simBlock, header,
 	blockAccessList.Merge(bal)
 	chainHeadReader := &simChainHeadReader{ctx, sim.b}
 
+	// CHANGE(taiko): run the engine's block-assembly checks (anchor tx, Unzen
+	// parent beacon root and blob txs) before finalizing.
+	if err := consensus.PrepareAssembly(sim.b.Engine(), chainHeadReader, header, blockBody); err != nil {
+		return nil, nil, nil, err
+	}
+
 	// Apply the consensus-specific post-transaction changes
 	sim.b.Engine().Finalize(chainHeadReader, header, sim.state, blockBody)
 
