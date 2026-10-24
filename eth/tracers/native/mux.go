@@ -34,8 +34,9 @@ func init() {
 // muxTracer is a go implementation of the Tracer interface which
 // runs multiple tracers in one go.
 type muxTracer struct {
-	names   []string
-	tracers []*tracers.Tracer
+	names    []string
+	tracers  []*tracers.Tracer
+	entryGas []tracing.Gas // per-frame entry budget, to derive the V1 gasUsed on exit
 }
 
 // newMuxTracerFromConfig returns a new mux tracer.
@@ -63,65 +64,74 @@ func newMuxTracerFromConfig(ctx *tracers.Context, cfg json.RawMessage, chainConf
 //
 // The names parameter associates a label with each tracer, used as keys in
 // the aggregated JSON result returned by GetResult.
+//
+// For hooks that have both a V1 and V2 form (OnCodeChange / OnCodeChangeV2,
+// OnNonceChange / OnNonceChangeV2, OnGasChange / OnGasChangeV2, OnEnter /
+// OnEnterV2, OnExit / OnExitV2, OnOpcode / OnOpcodeV2, OnFault / OnFaultV2,
+// OnSystemCallStart / OnSystemCallStartV2), the mux exposes only the V2
+// variant upward. The fanout then prefers each child's V2 hook and falls
+// back to V1 if only V1 is set, mirroring the precedence already used in
+// core/state_processor.go.
 func NewMuxTracer(names []string, objects []*tracers.Tracer) (*tracers.Tracer, error) {
 	t := &muxTracer{names: names, tracers: objects}
 	return &tracers.Tracer{
 		Hooks: &tracing.Hooks{
-			OnTxStart:       t.OnTxStart,
-			OnTxEnd:         t.OnTxEnd,
-			OnEnter:         t.OnEnter,
-			OnExit:          t.OnExit,
-			OnOpcode:        t.OnOpcode,
-			OnFault:         t.OnFault,
-			OnGasChange:     t.OnGasChange,
-			OnBalanceChange: t.OnBalanceChange,
-			OnNonceChange:   t.OnNonceChange,
-			OnCodeChange:    t.OnCodeChange,
-			OnStorageChange: t.OnStorageChange,
-			OnLog:           t.OnLog,
+			OnTxStart:           t.OnTxStart,
+			OnTxEnd:             t.OnTxEnd,
+			OnEnterV2:           t.OnEnterV2,
+			OnExitV2:            t.OnExitV2,
+			OnOpcodeV2:          t.OnOpcodeV2,
+			OnFaultV2:           t.OnFaultV2,
+			OnGasChangeV2:       t.OnGasChangeV2,
+			OnBalanceChange:     t.OnBalanceChange,
+			OnNonceChangeV2:     t.OnNonceChangeV2,
+			OnCodeChangeV2:      t.OnCodeChangeV2,
+			OnStorageChange:     t.OnStorageChange,
+			OnLog:               t.OnLog,
+			OnSystemCallStartV2: t.OnSystemCallStart,
+			OnSystemCallEnd:     t.OnSystemCallEnd,
 		},
 		GetResult: t.GetResult,
 		Stop:      t.Stop,
 	}, nil
 }
 
-func (t *muxTracer) OnOpcode(pc uint64, op byte, gas, cost uint64, scope tracing.OpContext, rData []byte, depth int, err error) {
+func (t *muxTracer) OnOpcodeV2(pc uint64, op byte, gas, cost tracing.Gas, scope tracing.OpContext, rData []byte, depth int, err error) {
 	for _, t := range t.tracers {
-		if t.OnOpcode != nil {
-			t.OnOpcode(pc, op, gas, cost, scope, rData, depth, err)
+		t.EmitOpcode(pc, op, gas, cost, scope, rData, depth, err)
+	}
+}
+
+func (t *muxTracer) OnFaultV2(pc uint64, op byte, gas, cost tracing.Gas, scope tracing.OpContext, depth int, err error) {
+	for _, t := range t.tracers {
+		t.EmitFault(pc, op, gas, cost, scope, depth, err)
+	}
+}
+
+func (t *muxTracer) OnGasChangeV2(old, new tracing.Gas, reason tracing.GasChangeReason) {
+	for _, t := range t.tracers {
+		if t.OnGasChangeV2 != nil {
+			t.OnGasChangeV2(old, new, reason)
+		} else if t.OnGasChange != nil {
+			t.OnGasChange(old.Execution, new.Execution, reason)
 		}
 	}
 }
 
-func (t *muxTracer) OnFault(pc uint64, op byte, gas, cost uint64, scope tracing.OpContext, depth int, err error) {
+func (t *muxTracer) OnEnterV2(depth int, typ byte, from common.Address, to common.Address, input []byte, gas tracing.Gas, value *big.Int) {
+	t.entryGas = append(t.entryGas, gas)
 	for _, t := range t.tracers {
-		if t.OnFault != nil {
-			t.OnFault(pc, op, gas, cost, scope, depth, err)
-		}
+		t.EmitEnter(depth, typ, from, to, input, gas, value)
 	}
 }
 
-func (t *muxTracer) OnGasChange(old, new uint64, reason tracing.GasChangeReason) {
-	for _, t := range t.tracers {
-		if t.OnGasChange != nil {
-			t.OnGasChange(old, new, reason)
-		}
+func (t *muxTracer) OnExitV2(depth int, output []byte, gasLeft tracing.Gas, err error, reverted bool) {
+	var entry tracing.Gas
+	if n := len(t.entryGas); n > 0 {
+		entry, t.entryGas = t.entryGas[n-1], t.entryGas[:n-1]
 	}
-}
-
-func (t *muxTracer) OnEnter(depth int, typ byte, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
 	for _, t := range t.tracers {
-		if t.OnEnter != nil {
-			t.OnEnter(depth, typ, from, to, input, gas, value)
-		}
-	}
-}
-
-func (t *muxTracer) OnExit(depth int, output []byte, gasUsed uint64, err error, reverted bool) {
-	for _, t := range t.tracers {
-		if t.OnExit != nil {
-			t.OnExit(depth, output, gasUsed, err, reverted)
-		}
+		t.EmitExit(depth, output, entry, gasLeft, err, reverted)
 	}
 }
 
@@ -149,18 +159,12 @@ func (t *muxTracer) OnBalanceChange(a common.Address, prev, new *big.Int, reason
 	}
 }
 
-func (t *muxTracer) OnNonceChange(a common.Address, prev, new uint64) {
+func (t *muxTracer) OnNonceChangeV2(a common.Address, prev, new uint64, reason tracing.NonceChangeReason) {
 	for _, t := range t.tracers {
-		if t.OnNonceChange != nil {
+		if t.OnNonceChangeV2 != nil {
+			t.OnNonceChangeV2(a, prev, new, reason)
+		} else if t.OnNonceChange != nil {
 			t.OnNonceChange(a, prev, new)
-		}
-	}
-}
-
-func (t *muxTracer) OnCodeChange(a common.Address, prevCodeHash common.Hash, prev []byte, codeHash common.Hash, code []byte) {
-	for _, t := range t.tracers {
-		if t.OnCodeChange != nil {
-			t.OnCodeChange(a, prevCodeHash, prev, codeHash, code)
 		}
 	}
 }
@@ -169,6 +173,8 @@ func (t *muxTracer) OnCodeChangeV2(a common.Address, prevCodeHash common.Hash, p
 	for _, t := range t.tracers {
 		if t.OnCodeChangeV2 != nil {
 			t.OnCodeChangeV2(a, prevCodeHash, prev, codeHash, code, reason)
+		} else if t.OnCodeChange != nil {
+			t.OnCodeChange(a, prevCodeHash, prev, codeHash, code)
 		}
 	}
 }
@@ -185,6 +191,24 @@ func (t *muxTracer) OnLog(log *types.Log) {
 	for _, t := range t.tracers {
 		if t.OnLog != nil {
 			t.OnLog(log)
+		}
+	}
+}
+
+func (t *muxTracer) OnSystemCallStart(vm *tracing.VMContext) {
+	for _, t := range t.tracers {
+		if t.OnSystemCallStartV2 != nil {
+			t.OnSystemCallStartV2(vm)
+		} else if t.OnSystemCallStart != nil {
+			t.OnSystemCallStart()
+		}
+	}
+}
+
+func (t *muxTracer) OnSystemCallEnd() {
+	for _, t := range t.tracers {
+		if t.OnSystemCallEnd != nil {
+			t.OnSystemCallEnd()
 		}
 	}
 }

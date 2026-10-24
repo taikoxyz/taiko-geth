@@ -35,7 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
-	"github.com/holiman/uint256"
+	"github.com/ethereum/go-ethereum/params"
 )
 
 func initMatcher(st *testMatcher) {
@@ -57,6 +57,11 @@ func initMatcher(st *testMatcher) {
 	// Broken tests:
 	// EOF is not part of cancun
 	st.skipLoad(`^stEOF/`)
+
+	st.skipLoad(`RevertInCreateInInit`)
+	st.skipLoad(`InitCollisionParis`)
+	st.skipLoad(`dynamicAccountOverwriteEmpty_Paris`)
+	st.skipLoad(`create2collisionStorageParis`)
 }
 
 func TestState(t *testing.T) {
@@ -105,7 +110,7 @@ func execStateTest(t *testing.T, st *testMatcher, test *StateTest) {
 		// one.
 		executionMask := 0xf
 		if testing.Short() {
-			executionMask = (1 << (rand.Int63() & 4))
+			executionMask = 1 << rand.Intn(4)
 		}
 		t.Run(key+"/hash/trie", func(t *testing.T) {
 			if executionMask&0x1 == 0 {
@@ -127,7 +132,7 @@ func execStateTest(t *testing.T, st *testMatcher, test *StateTest) {
 				var result error
 				test.Run(subtest, vmconfig, true, rawdb.HashScheme, func(err error, state *StateTestState) {
 					if state.Snapshots != nil && state.StateDB != nil {
-						if _, err := state.Snapshots.Journal(state.StateDB.IntermediateRoot(false)); err != nil {
+						if _, err := state.Snapshots.Journal(state.StateDB.IntermediateRoot(params.Rules{})); err != nil {
 							result = err
 							return
 						}
@@ -157,7 +162,7 @@ func execStateTest(t *testing.T, st *testMatcher, test *StateTest) {
 				var result error
 				test.Run(subtest, vmconfig, true, rawdb.PathScheme, func(err error, state *StateTestState) {
 					if state.TrieDB != nil && state.StateDB != nil {
-						if err := state.TrieDB.Journal(state.StateDB.IntermediateRoot(false)); err != nil {
+						if err := state.TrieDB.Journal(state.StateDB.IntermediateRoot(params.Rules{})); err != nil {
 							result = err
 							return
 						}
@@ -301,7 +306,7 @@ func runBenchmark(b *testing.B, t *StateTest) {
 			evm.SetTxContext(txContext)
 
 			// Create "contract" for sender to cache code analysis.
-			sender := vm.NewContract(msg.From, msg.From, nil, 0, nil)
+			sender := vm.NewContract(msg.From, msg.From, nil, vm.GasBudget{}, nil)
 
 			var (
 				gasUsed uint64
@@ -315,8 +320,10 @@ func runBenchmark(b *testing.B, t *StateTest) {
 				b.StartTimer()
 				start := time.Now()
 
+				initialGas := vm.NewGasBudget(msg.GasLimit, 0)
+
 				// Execute the message.
-				_, leftOverGas, err := evm.Call(sender.Address(), *msg.To, msg.Data, msg.GasLimit, uint256.MustFromBig(msg.Value))
+				_, result, err := evm.Call(sender.Address(), *msg.To, msg.Data, initialGas, msg.Value)
 				if err != nil {
 					b.Error(err)
 					return
@@ -325,7 +332,7 @@ func runBenchmark(b *testing.B, t *StateTest) {
 				b.StopTimer()
 				elapsed += uint64(time.Since(start))
 				refund += state.StateDB.GetRefund()
-				gasUsed += msg.GasLimit - leftOverGas
+				gasUsed += result.Used(initialGas)
 
 				state.StateDB.RevertToSnapshot(snapshot)
 			}

@@ -77,10 +77,12 @@ var (
 	trienodeHistoryDataBytesMeter  = metrics.NewRegisteredMeter("pathdb/history/trienode/bytes/data", nil)
 	trienodeHistoryIndexBytesMeter = metrics.NewRegisteredMeter("pathdb/history/trienode/bytes/index", nil)
 
-	stateIndexHistoryTimer      = metrics.NewRegisteredResettingTimer("pathdb/history/state/index/time", nil)
-	stateUnindexHistoryTimer    = metrics.NewRegisteredResettingTimer("pathdb/history/state/unindex/time", nil)
-	trienodeIndexHistoryTimer   = metrics.NewRegisteredResettingTimer("pathdb/history/trienode/index/time", nil)
-	trienodeUnindexHistoryTimer = metrics.NewRegisteredResettingTimer("pathdb/history/trienode/unindex/time", nil)
+	stateIndexHistoryTimer         = metrics.NewRegisteredResettingTimer("pathdb/history/state/index/time", nil)
+	stateUnindexHistoryTimer       = metrics.NewRegisteredResettingTimer("pathdb/history/state/unindex/time", nil)
+	statePruneHistoryIndexTimer    = metrics.NewRegisteredResettingTimer("pathdb/history/state/prune/time", nil)
+	trienodeIndexHistoryTimer      = metrics.NewRegisteredResettingTimer("pathdb/history/trienode/index/time", nil)
+	trienodeUnindexHistoryTimer    = metrics.NewRegisteredResettingTimer("pathdb/history/trienode/unindex/time", nil)
+	trienodePruneHistoryIndexTimer = metrics.NewRegisteredResettingTimer("pathdb/history/trienode/prune/time", nil)
 
 	lookupAddLayerTimer    = metrics.NewRegisteredResettingTimer("pathdb/lookup/add/time", nil)
 	lookupRemoveLayerTimer = metrics.NewRegisteredResettingTimer("pathdb/lookup/remove/time", nil)
@@ -112,5 +114,5 @@ var (
 	storageTrieReadCounter = metrics.NewRegisteredCounter("pathdb/generation/duration/storage/trieread", nil)
 	storageSnapReadCounter = metrics.NewRegisteredCounter("pathdb/generation/duration/storage/snapread", nil)
 	storageWriteCounter    = metrics.NewRegisteredCounter("pathdb/generation/duration/storage/write", nil)
-	storageCleanCounter    = metrics.NewRegisteredCounter("state/snapshot/generation/duration/storage/clean", nil)
+	storageCleanCounter    = metrics.NewRegisteredCounter("pathdb/generation/duration/storage/clean", nil)
 )

@@ -105,9 +105,12 @@ func TestReceiptList(t *testing.T) {
 		canonBody, _ := rlp.EncodeToBytes(blockBody)
 
 		// convert from storage encoding to network encoding
-		network, err := blockReceiptsToNetwork(canonDB, canonBody)
+		network, incomplete, err := blockReceiptsToNetwork(canonDB, canonBody, receiptQueryParams{})
 		if err != nil {
 			t.Fatalf("test[%d]: blockReceiptsToNetwork error: %v", i, err)
+		}
+		if incomplete {
+			t.Fatalf("test[%d]: blockReceiptsToNetwork returned incomplete == true", i)
 		}
 
 		// parse as Receipts response list from network encoding
@@ -132,5 +135,28 @@ func TestReceiptList(t *testing.T) {
 		if responseHash != test.root {
 			t.Fatalf("test[%d]: wrong root hash from ReceiptList\nhave: %v\nwant: %v", i, responseHash, test.root)
 		}
+	}
+}
+
+// TestReceiptListInvalidTrailing checks that an undecodable receipt changes the
+// derived root, so it can't sneak into the database via EncodeForStorage.
+func TestReceiptListInvalidTrailing(t *testing.T) {
+	test := receiptsTests[len(receiptsTests)-1]
+	canonDB, _ := rlp.EncodeToBytes(test.input)
+	canonBody, _ := rlp.EncodeToBytes(types.Body{Transactions: test.txs})
+	network, _, err := blockReceiptsToNetwork(canonDB, canonBody, receiptQueryParams{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rl ReceiptList
+	if err := rlp.DecodeBytes(network, &rl); err != nil {
+		t.Fatal(err)
+	}
+	// Append a receipt with txType > 0x7f, which fails to decode.
+	bad, _ := rlp.EncodeToBytes([]any{uint64(128), uint64(1)})
+	rl.items.AppendRaw(bad)
+
+	if hash := types.DeriveSha(rl.Derivable(), trie.NewStackTrie(nil)); hash == test.root {
+		t.Fatal("invalid trailing receipt did not change the derived root")
 	}
 }

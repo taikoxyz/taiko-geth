@@ -51,6 +51,12 @@ type Chain struct {
 	state   map[common.Address]state.DumpAccount // state of head block
 	senders map[common.Address]*senderInfo
 	config  *params.ChainConfig
+
+	txInfo txInfo
+}
+
+type txInfo struct {
+	LargeReceiptBlock *uint64 `json:"tx-largereceipt"`
 }
 
 // NewChain takes the given chain.rlp file, and decodes and returns
@@ -74,12 +80,20 @@ func NewChain(dir string) (*Chain, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	var txInfo txInfo
+	err = common.LoadJSON(filepath.Join(dir, "txinfo.json"), &txInfo)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Chain{
 		genesis: gen,
 		blocks:  blocks,
 		state:   state,
 		senders: accounts,
 		config:  gen.Config,
+		txInfo:  txInfo,
 	}, nil
 }
 
@@ -217,7 +231,7 @@ func (c *Chain) GetHeaders(req *eth.GetBlockHeadersPacket) ([]*types.Header, err
 	}
 	if req.Reverse {
 		for i := 1; i < int(req.Amount); i++ {
-			blockNumber -= (1 - req.Skip)
+			blockNumber -= (1 + req.Skip)
 			headers[i] = c.blocks[blockNumber].Header()
 		}
 		return headers, nil
@@ -321,7 +335,7 @@ func readAccounts(file string) (map[common.Address]*senderInfo, error) {
 	for addr, acc := range keys {
 		pk, err := crypto.HexToECDSA(common.Bytes2Hex(acc.Key))
 		if err != nil {
-			return nil, fmt.Errorf("unable to read private key for %s: %v", err, addr)
+			return nil, fmt.Errorf("unable to read private key for %s: %v", addr, err)
 		}
 		accounts[addr] = &senderInfo{Key: pk, Nonce: 0}
 	}

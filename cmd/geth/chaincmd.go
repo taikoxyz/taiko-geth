@@ -62,9 +62,10 @@ var (
 		Flags: slices.Concat([]cli.Flag{
 			utils.CachePreimagesFlag,
 			utils.OverrideOsaka,
+			utils.OverrideAmsterdam,
 			utils.OverrideBPO1,
 			utils.OverrideBPO2,
-			utils.OverrideVerkle,
+			utils.OverrideUBT,
 		}, utils.DatabaseFlags),
 		Description: `
 The init command initializes a new genesis block and definition for the network.
@@ -97,26 +98,11 @@ if one is set.  Otherwise it prints the genesis from the datadir.`,
 			utils.CacheGCFlag,
 			utils.CacheSnapshotFlag,
 			utils.CacheNoPrefetchFlag,
+			utils.CacheNoPrecompileFlag,
 			utils.CachePreimagesFlag,
 			utils.NoCompactionFlag,
 			utils.LogSlowBlockFlag,
-			utils.MetricsEnabledFlag,
-			utils.MetricsEnabledExpensiveFlag,
-			utils.MetricsHTTPFlag,
-			utils.MetricsPortFlag,
-			utils.MetricsEnableInfluxDBFlag,
-			utils.MetricsEnableInfluxDBV2Flag,
-			utils.MetricsInfluxDBEndpointFlag,
-			utils.MetricsInfluxDBDatabaseFlag,
-			utils.MetricsInfluxDBUsernameFlag,
-			utils.MetricsInfluxDBPasswordFlag,
-			utils.MetricsInfluxDBTagsFlag,
-			utils.MetricsInfluxDBIntervalFlag,
-			utils.MetricsInfluxDBTokenFlag,
-			utils.MetricsInfluxDBBucketFlag,
-			utils.MetricsInfluxDBOrganizationFlag,
-			utils.StateSizeTrackingFlag,
-			utils.TxLookupLimitFlag,
+			utils.StateSizeTrackingFlag, // deprecated
 			utils.VMTraceFlag,
 			utils.VMTraceJsonConfigFlag,
 			utils.TransactionHistoryFlag,
@@ -126,7 +112,7 @@ if one is set.  Otherwise it prints the genesis from the datadir.`,
 			utils.StateHistoryFlag,
 			utils.TrienodeHistoryFlag,
 			utils.TrienodeHistoryFullValueCheckpointFlag,
-		}, utils.DatabaseFlags, debug.Flags),
+		}, utils.DatabaseFlags, utils.MetricsFlags, debug.Flags),
 		Before: func(ctx *cli.Context) error {
 			flags.MigrateGlobalFlags(ctx)
 			return debug.Setup(ctx)
@@ -157,7 +143,7 @@ be gzipped.`,
 		Name:      "import-history",
 		Usage:     "Import an Era archive",
 		ArgsUsage: "<dir>",
-		Flags:     slices.Concat([]cli.Flag{utils.TxLookupLimitFlag, utils.TransactionHistoryFlag, utils.EraFormatFlag}, utils.DatabaseFlags, utils.NetworkFlags),
+		Flags:     slices.Concat([]cli.Flag{utils.TransactionHistoryFlag, utils.EraFormatFlag}, utils.DatabaseFlags, utils.NetworkFlags),
 		Description: `
 The import-history command will import blocks and their corresponding receipts
 from Era archives.
@@ -219,8 +205,23 @@ blockchain database up to a specified point, while preserving block headers. Thi
 helps reduce storage requirements for nodes that don't need full historical data.
 
 The --history.chain flag is required to specify the pruning target:
+  - all:        not valid for pruning; history is restored with 'geth import-history'.
   - postmerge:  Prune up to the merge block. The node will keep the merge block and everything thereafter.
-  - postprague: Prune up to the Prague (Pectra) upgrade block. The node will keep the prague block and everything thereafter.`,
+  - postprague: Prune up to the Prague (Pectra) upgrade block. The node will keep the prague block and everything thereafter.
+  - postosaka:  Prune up to the Osaka upgrade block. The node will keep the osaka block and everything thereafter.
+  - <block number>:<block hash>:
+                Prune up to a block of your choosing, e.g.
+                "25182208:0x6f7c16414e091d817bdbb0e1d0a17f74cd2b42d1a734d9864a7cd37a32514aad".
+
+Take the pair from a node that still has the history in question, and prefer a block
+that is well behind any reorg risk: a number alone is not enough, since the canonical
+chain need not include the block you have in mind. The pair is checked against the
+canonical chain in this database before anything is removed, so a wrong hash fails
+rather than pruning the wrong range. Headers and the canonical hash table are kept even
+below the pruning point, so the check keeps working on a re-run.
+
+Re-running the command with a higher target prunes further; a target below the current
+database tail cannot be undone except by importing history back.`,
 	}
 
 	downloadEraCommand = &cli.Command{
@@ -289,6 +290,10 @@ func initGenesis(ctx *cli.Context) error {
 		v := ctx.Uint64(utils.OverrideOsaka.Name)
 		overrides.OverrideOsaka = &v
 	}
+	if ctx.IsSet(utils.OverrideAmsterdam.Name) {
+		v := ctx.Uint64(utils.OverrideAmsterdam.Name)
+		overrides.OverrideAmsterdam = &v
+	}
 	if ctx.IsSet(utils.OverrideBPO1.Name) {
 		v := ctx.Uint64(utils.OverrideBPO1.Name)
 		overrides.OverrideBPO1 = &v
@@ -297,15 +302,15 @@ func initGenesis(ctx *cli.Context) error {
 		v := ctx.Uint64(utils.OverrideBPO2.Name)
 		overrides.OverrideBPO2 = &v
 	}
-	if ctx.IsSet(utils.OverrideVerkle.Name) {
-		v := ctx.Uint64(utils.OverrideVerkle.Name)
-		overrides.OverrideVerkle = &v
+	if ctx.IsSet(utils.OverrideUBT.Name) {
+		v := ctx.Uint64(utils.OverrideUBT.Name)
+		overrides.OverrideUBT = &v
 	}
 
 	chaindb := utils.MakeChainDatabase(ctx, stack, false)
 	defer chaindb.Close()
 
-	triedb := utils.MakeTrieDatabase(ctx, stack, chaindb, ctx.Bool(utils.CachePreimagesFlag.Name), false, genesis.IsVerkle())
+	triedb := utils.MakeTrieDatabase(ctx, stack, chaindb, ctx.Bool(utils.CachePreimagesFlag.Name), false, genesis.IsUBT())
 	defer triedb.Close()
 
 	_, hash, compatErr, err := core.SetupGenesisBlockWithOverride(chaindb, triedb, genesis, &overrides, nil)
@@ -325,7 +330,7 @@ func dumpGenesis(ctx *cli.Context) error {
 	var genesis *core.Genesis
 	if utils.IsNetworkPreset(ctx) {
 		genesis = utils.MakeGenesis(ctx)
-	} else if ctx.IsSet(utils.DeveloperFlag.Name) && !ctx.IsSet(utils.DataDirFlag.Name) {
+	} else if ctx.Bool(utils.DeveloperFlag.Name) && !ctx.IsSet(utils.DataDirFlag.Name) {
 		genesis = core.DeveloperGenesisBlock(11_500_000, nil)
 	}
 
@@ -499,8 +504,6 @@ func importHistory(ctx *cli.Context) error {
 			network = "mainnet"
 		case ctx.Bool(utils.SepoliaFlag.Name):
 			network = "sepolia"
-		case ctx.Bool(utils.HoleskyFlag.Name):
-			network = "holesky"
 		case ctx.Bool(utils.HoodiFlag.Name):
 			network = "hoodi"
 		}
@@ -528,15 +531,15 @@ func importHistory(ctx *cli.Context) error {
 
 	var (
 		format = ctx.String(utils.EraFormatFlag.Name)
-		from   func(era.ReadAtSeekCloser) (era.Era, error)
+		from   func(f era.ReadAtSeekCloser) (era.Era, error)
 	)
 	switch format {
 	case "era1", "era":
 		from = onedb.From
-	case "erae":
+	case "ere":
 		from = execdb.From
 	default:
-		return fmt.Errorf("unknown --era.format %q (expected 'era1' or 'erae')", format)
+		return fmt.Errorf("unknown --era.format %q (expected 'era1' or 'ere')", format)
 	}
 	if err := utils.ImportHistory(chain, dir, network, from); err != nil {
 		return err
@@ -582,11 +585,11 @@ func exportHistory(ctx *cli.Context) error {
 	case "era1", "era":
 		newBuilder = func(w io.Writer) era.Builder { return onedb.NewBuilder(w) }
 		filename = func(network string, epoch int, root common.Hash) string { return onedb.Filename(network, epoch, root) }
-	case "erae":
+	case "ere":
 		newBuilder = func(w io.Writer) era.Builder { return execdb.NewBuilder(w) }
 		filename = func(network string, epoch int, root common.Hash) string { return execdb.Filename(network, epoch, root) }
 	default:
-		return fmt.Errorf("unknown archive format %q (use 'era1' or 'erae')", format)
+		return fmt.Errorf("unknown archive format %q (use 'era1' or 'ere')", format)
 	}
 	if err := utils.ExportHistory(chain, dir, uint64(first), uint64(last), newBuilder, filename); err != nil {
 		utils.Fatalf("Export error: %v\n", err)
@@ -713,10 +716,11 @@ func pruneHistory(ctx *cli.Context) error {
 	if !ctx.IsSet(utils.ChainHistoryFlag.Name) {
 		return errors.New("--history.chain flag is required")
 	}
-	var mode history.HistoryMode
-	if err := mode.UnmarshalText([]byte(ctx.String(utils.ChainHistoryFlag.Name))); err != nil {
+	var retention history.HistoryPolicy
+	if err := retention.UnmarshalText([]byte(ctx.String(utils.ChainHistoryFlag.Name))); err != nil {
 		return err
 	}
+	mode := retention.Mode
 	if mode == history.KeepAll {
 		return errors.New("--history.chain=all is not valid for pruning. To restore history, use 'geth import-history'")
 	}
@@ -730,8 +734,7 @@ func pruneHistory(ctx *cli.Context) error {
 	defer chain.Stop()
 
 	// Determine the prune point based on the history mode.
-	genesisHash := chain.Genesis().Hash()
-	policy, err := history.NewPolicy(mode, genesisHash)
+	policy, err := retention.Resolve(chain.Genesis().Hash())
 	if err != nil {
 		return err
 	}
@@ -744,7 +747,7 @@ func pruneHistory(ctx *cli.Context) error {
 	)
 
 	// Check the current freezer tail to see if pruning is needed/possible.
-	freezerTail, _ := chaindb.Tail()
+	freezerTail, _ := chaindb.Tail(rawdb.ChainFreezerBlockDataGroup)
 	if freezerTail > 0 {
 		if freezerTail == targetBlock {
 			log.Info("Database already pruned to target block", "tail", freezerTail)
@@ -776,7 +779,7 @@ func pruneHistory(ctx *cli.Context) error {
 	log.Info("Starting history pruning", "head", currentHeader.Number, "target", targetBlock, "targetHash", targetBlockHash.Hex())
 	start := time.Now()
 	rawdb.PruneTransactionIndex(chaindb, targetBlock)
-	if _, err := chaindb.TruncateTail(targetBlock); err != nil {
+	if _, err := chaindb.TruncateTail(rawdb.ChainFreezerBlockDataGroup, targetBlock); err != nil {
 		return fmt.Errorf("failed to truncate ancient data: %v", err)
 	}
 	log.Info("History pruning completed", "tail", targetBlock, "elapsed", common.PrettyDuration(time.Since(start)))
@@ -794,8 +797,8 @@ func downloadEra(ctx *cli.Context) error {
 	var network = "mainnet"
 	if utils.IsNetworkPreset(ctx) {
 		switch {
-		case ctx.IsSet(utils.MainnetFlag.Name):
-		case ctx.IsSet(utils.SepoliaFlag.Name):
+		case ctx.Bool(utils.MainnetFlag.Name):
+		case ctx.Bool(utils.SepoliaFlag.Name):
 			network = "sepolia"
 		default:
 			return errors.New("unsupported network, no known era1 checksums")
@@ -822,7 +825,7 @@ func downloadEra(ctx *cli.Context) error {
 		return err
 	}
 	switch {
-	case ctx.IsSet(eraAllFlag.Name):
+	case ctx.Bool(eraAllFlag.Name):
 		return l.DownloadAll(dir)
 
 	case ctx.IsSet(eraBlockFlag.Name):

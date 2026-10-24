@@ -61,7 +61,7 @@ func (tx *DynamicFeeTx) copy() TxData {
 		V:          new(big.Int),
 		R:          new(big.Int),
 		S:          new(big.Int),
-		isAnchor:   tx.isAnchor,
+		isAnchor:   tx.isAnchor, // CHANGE(taiko): keep the anchor flag on copies.
 	}
 	copy(cpy.AccessList, tx.AccessList)
 	if tx.Value != nil {

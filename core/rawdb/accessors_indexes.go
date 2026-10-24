@@ -563,7 +563,7 @@ func DeleteBlockLvPointers(db ethdb.KeyValueStore, blocks common.Range[uint64], 
 }
 
 // FilterMapsRange is a storage representation of the block range covered by the
-// filter maps structure and the corresponting log value index range.
+// filter maps structure and the corresponding log value index range.
 type FilterMapsRange struct {
 	Version                      uint32
 	HeadIndexed                  bool
@@ -571,6 +571,7 @@ type FilterMapsRange struct {
 	BlocksFirst, BlocksAfterLast uint64
 	MapsFirst, MapsAfterLast     uint32
 	TailPartialEpoch             uint32
+	LocalBase                    bool `rlp:"optional"` // log value indices not anchored to genesis
 }
 
 // ReadFilterMapsRange retrieves the filter maps range data. Note that if the

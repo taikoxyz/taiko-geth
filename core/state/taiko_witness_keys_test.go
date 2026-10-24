@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 )
 
@@ -22,7 +23,7 @@ func TestWitnessCapturesUnhashedKeys(t *testing.T) {
 	seed.SetBalance(addr, uint256.NewInt(1), tracing.BalanceChangeUnspecified)
 	seed.SetState(addr, slot, common.HexToHash("0x1"))
 	seed.SetCode(addr, []byte{0x00}, tracing.CodeChangeUnspecified)
-	root, _ := seed.Commit(1, true, false)
+	root, _ := seed.Commit(params.Rules{IsEIP158: true}, 1)
 
 	// Re-open at that root with a witness attached and read the account + slot.
 	sdb, _ := New(root, db)

@@ -68,7 +68,7 @@ func NewWitness(context *types.Header, chain HeaderReader, enableStats bool) (*W
 		Headers: headers,
 		Codes:   make(map[string]struct{}),
 		State:   make(map[string]struct{}),
-		Keys:    make(map[string]struct{}),
+		Keys:    make(map[string]struct{}), // CHANGE(taiko): collect touched account and storage keys.
 		chain:   chain,
 	}
 	if enableStats {

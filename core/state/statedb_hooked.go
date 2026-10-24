@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/stateless"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -32,6 +33,9 @@ import (
 
 // hookedStateDB represents a statedb which emits calls to tracing-hooks
 // on state operations.
+//
+// Note, NewTracerView unwraps it to suspend access list recording for tracer
+// reads; any other wrapper of StateDB must be handled there as well.
 type hookedStateDB struct {
 	inner *StateDB
 	hooks *tracing.Hooks
@@ -98,6 +102,8 @@ func (s *hookedStateDB) GetState(addr common.Address, hash common.Hash) common.H
 	return s.inner.GetState(addr, hash)
 }
 
+// CHANGE(taiko): GetStorageRoot is part of vm.StateDB again, for the Taiko-only
+// EIP-7610 storage collision check.
 func (s *hookedStateDB) GetStorageRoot(addr common.Address) common.Hash {
 	return s.inner.GetStorageRoot(addr)
 }
@@ -116,6 +122,10 @@ func (s *hookedStateDB) HasSelfDestructed(addr common.Address) bool {
 
 func (s *hookedStateDB) Exist(addr common.Address) bool {
 	return s.inner.Exist(addr)
+}
+
+func (s *hookedStateDB) Touch(addr common.Address) {
+	s.inner.Touch(addr)
 }
 
 func (s *hookedStateDB) Empty(addr common.Address) bool {
@@ -229,22 +239,17 @@ func (s *hookedStateDB) AddLog(log *types.Log) {
 	}
 }
 
-func (s *hookedStateDB) EmitLogsForBurnAccounts() {
-	s.inner.EmitLogsForBurnAccounts()
-}
-
-func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
+func (s *hookedStateDB) Finalise(rules params.Rules) *bal.ConstructionBlockAccessList {
 	if s.hooks.OnBalanceChange == nil && s.hooks.OnNonceChangeV2 == nil && s.hooks.OnNonceChange == nil && s.hooks.OnCodeChangeV2 == nil && s.hooks.OnCodeChange == nil {
 		// Short circuit if no relevant hooks are set.
-		s.inner.Finalise(deleteEmptyObjects)
-		return
+		return s.inner.Finalise(rules)
 	}
 
 	// Collect all self-destructed addresses first, then sort them to ensure
 	// that state change hooks will be invoked in deterministic
 	// order when the accounts are deleted below
 	var selfDestructedAddrs []common.Address
-	for addr := range s.inner.journal.dirties {
+	for addr := range s.inner.journal.mutations {
 		obj := s.inner.stateObjects[addr]
 		if obj == nil || !obj.selfDestructed {
 			// Not self-destructed, keep searching.
@@ -256,18 +261,24 @@ func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
 		return bytes.Compare(selfDestructedAddrs[i][:], selfDestructedAddrs[j][:]) < 0
 	})
 
+	// EIP-8246 (Amsterdam) removes the SELFDESTRUCT burn: a self-destructed
+	// account that retains a non-zero balance is preserved as a balance-only
+	// account rather than removed, so its balance is no longer burnt.
+	burnsBalance := !rules.IsAmsterdam
+
 	for _, addr := range selfDestructedAddrs {
 		obj := s.inner.stateObjects[addr]
 		// Bingo: state object was self-destructed, call relevant hooks.
 
-		// If ether was sent to account post-selfdestruct, record as burnt.
-		if s.hooks.OnBalanceChange != nil {
+		if burnsBalance && s.hooks.OnBalanceChange != nil {
 			if bal := obj.Balance(); bal.Sign() != 0 {
 				s.hooks.OnBalanceChange(addr, bal.ToBig(), new(big.Int), tracing.BalanceDecreaseSelfdestructBurn)
 			}
 		}
 
 		// Nonce is set to reset on self-destruct.
+		//
+		// TODO(rjl) shall we emit the nonce change if the pre-tx nonce was zero?
 		if s.hooks.OnNonceChangeV2 != nil {
 			s.hooks.OnNonceChangeV2(addr, obj.Nonce(), 0, tracing.NonceChangeSelfdestruct)
 		} else if s.hooks.OnNonceChange != nil {
@@ -286,6 +297,9 @@ func (s *hookedStateDB) Finalise(deleteEmptyObjects bool) {
 			s.hooks.OnCodeChange(addr, prevCodeHash, s.inner.GetCode(addr), types.EmptyCodeHash, nil)
 		}
 	}
+	return s.inner.Finalise(rules)
+}
 
-	s.inner.Finalise(deleteEmptyObjects)
+func (s *hookedStateDB) SetTxContext(thash common.Hash, ti int, blockAccessIndex uint32) {
+	s.inner.SetTxContext(thash, ti, blockAccessIndex)
 }

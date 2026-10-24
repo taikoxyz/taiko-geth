@@ -48,8 +48,8 @@ func (r *balHeaderReader) GetHeaderByHash(hash common.Hash) *types.Header {
 }
 
 // CHANGE(taiko): Extending the shared header schema for L1 must not let Beacon
-// import a BAL commitment before Amsterdam. Existing partial Amsterdam rules
-// continue to accept nil BAL before a present slot.
+// import a BAL commitment before Amsterdam. Amsterdam headers must carry one,
+// as upstream's L1 rules require.
 func TestBeaconHeaderBALForkBoundary(t *testing.T) {
 	for _, fork := range []string{"prague", "osaka", "amsterdam_slot_zero", "amsterdam_slot_one"} {
 		t.Run(fork, func(t *testing.T) {
@@ -60,9 +60,6 @@ func TestBeaconHeaderBALForkBoundary(t *testing.T) {
 			amsterdam := strings.HasPrefix(fork, "amsterdam")
 			if amsterdam {
 				config.AmsterdamTime = new(uint64)
-				schedule := *config.BlobScheduleConfig
-				schedule.Amsterdam = schedule.Osaka
-				config.BlobScheduleConfig = &schedule
 			}
 			parent := &types.Header{
 				Number: big.NewInt(0), Time: 1, Difficulty: new(big.Int),
@@ -79,6 +76,7 @@ func TestBeaconHeaderBALForkBoundary(t *testing.T) {
 			header.Time = 2
 			header.GasUsed = 0
 			if amsterdam {
+				header.BlockAccessListHash = &types.EmptyBlockAccessListHash
 				header.SlotNumber = new(uint64)
 				if fork == "amsterdam_slot_one" {
 					*header.SlotNumber = 1
@@ -119,9 +117,15 @@ func TestBeaconHeaderBALForkBoundary(t *testing.T) {
 				return &decoded
 			}
 			if err := verify(roundTrip(header)); err != nil {
-				t.Fatalf("otherwise valid nil-BAL baseline rejected: %v", err)
+				t.Fatalf("otherwise valid baseline rejected: %v", err)
 			}
 			if amsterdam {
+				candidate := types.CopyHeader(header)
+				candidate.BlockAccessListHash = nil
+				// A nil BAL before a slot does not decode from RLP, so verify it directly.
+				if err := verify(candidate); err == nil || !strings.Contains(err.Error(), "missing block access list hash") {
+					t.Fatalf("expected Amsterdam nil-BAL rejection, got %v", err)
+				}
 				return
 			}
 			for _, tc := range []struct {
@@ -138,7 +142,7 @@ func TestBeaconHeaderBALForkBoundary(t *testing.T) {
 					if decoded.SlotNumber != nil {
 						t.Fatal("pre-Amsterdam candidate must have nil slot")
 					}
-					if err := verify(decoded); err == nil || !strings.Contains(err.Error(), "blockAccessListHash") {
+					if err := verify(decoded); err == nil || !strings.Contains(err.Error(), "invalid block access list hash") {
 						t.Fatalf("expected pre-Amsterdam BAL rejection, got %v", err)
 					}
 				})

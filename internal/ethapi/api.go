@@ -146,6 +146,11 @@ func (api *EthereumAPI) BlobBaseFee(ctx context.Context) *hexutil.Big {
 	return (*hexutil.Big)(api.b.BlobBaseFee(ctx))
 }
 
+// BaseFee returns the base fee for the next block.
+func (api *EthereumAPI) BaseFee(ctx context.Context) *hexutil.Big {
+	return (*hexutil.Big)(api.b.BaseFee(ctx))
+}
+
 // Syncing returns false in case the node is currently not syncing with the network. It can be up-to-date or has not
 // yet received the latest block headers from its peers. In case it is synchronizing:
 // - startingBlock: block number this node started to synchronize from
@@ -177,9 +182,13 @@ func (api *EthereumAPI) Syncing(ctx context.Context) (interface{}, error) {
 		"healedBytecodeBytes":    hexutil.Uint64(progress.HealedBytecodeBytes),
 		"healingTrienodes":       hexutil.Uint64(progress.HealingTrienodes),
 		"healingBytecode":        hexutil.Uint64(progress.HealingBytecode),
+		"syncedAccessLists":      hexutil.Uint64(progress.SyncedAccessLists),
+		"totalAccessLists":       hexutil.Uint64(progress.TotalAccessLists),
+		"trieGenProgress":        hexutil.Uint64(progress.TrieGenProgress),
 		"txIndexFinishedBlocks":  hexutil.Uint64(progress.TxIndexFinishedBlocks),
 		"txIndexRemainingBlocks": hexutil.Uint64(progress.TxIndexRemainingBlocks),
 		"stateIndexRemaining":    hexutil.Uint64(progress.StateIndexRemaining),
+		"trienodeIndexRemaining": hexutil.Uint64(progress.TrienodeIndexRemaining),
 	}, nil
 }
 
@@ -322,11 +331,21 @@ func (api *BlockChainAPI) BlockNumber() hexutil.Uint64 {
 	return hexutil.Uint64(header.Number.Uint64())
 }
 
+// blockNrOrHashOrLatest resolves an optional block selector, defaulting to the
+// latest block when the parameter was omitted by the caller (nil).
+func blockNrOrHashOrLatest(blockNrOrHash *rpc.BlockNumberOrHash) rpc.BlockNumberOrHash {
+	if blockNrOrHash != nil {
+		return *blockNrOrHash
+	}
+	return rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
+}
+
 // GetBalance returns the amount of wei for the given address in the state of the
 // given block number. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta
-// block numbers are also allowed.
-func (api *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Big, error) {
-	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+// block numbers are also allowed. When the block parameter is omitted, it
+// defaults to the latest block.
+func (api *BlockChainAPI) GetBalance(ctx context.Context, address common.Address, blockNrOrHash *rpc.BlockNumberOrHash) (*hexutil.Big, error) {
+	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHashOrLatest(blockNrOrHash))
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -365,7 +384,8 @@ func (n *proofList) Delete(key []byte) error {
 }
 
 // GetProof returns the Merkle-proof for a given account and optionally some storage keys.
-func (api *BlockChainAPI) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNrOrHash rpc.BlockNumberOrHash) (*AccountResult, error) {
+// When the block parameter is omitted, it defaults to the latest block.
+func (api *BlockChainAPI) GetProof(ctx context.Context, address common.Address, storageKeys []string, blockNrOrHash *rpc.BlockNumberOrHash) (*AccountResult, error) {
 	if len(storageKeys) > maxGetProofKeys {
 		return nil, &invalidParamsError{fmt.Sprintf("too many storage keys requested (max %d, got %d)", maxGetProofKeys, len(storageKeys))}
 	}
@@ -382,7 +402,7 @@ func (api *BlockChainAPI) GetProof(ctx context.Context, address common.Address, 
 			return nil, &invalidParamsError{fmt.Sprintf("%v: %q", err, hexKey)}
 		}
 	}
-	statedb, header, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	statedb, header, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHashOrLatest(blockNrOrHash))
 	if statedb == nil || err != nil {
 		return nil, err
 	}
@@ -467,23 +487,27 @@ func decodeStorageKey(s string) (h common.Hash, inputLength int, err error) {
 }
 
 // GetHeaderByNumber returns the requested canonical block header.
-//   - When number is -1 the chain pending header is returned.
 //   - When number is -2 the chain latest header is returned.
 //   - When number is -3 the chain finalized header is returned.
 //   - When number is -4 the chain safe header is returned.
+//
+// Per the specification, the result is null for the pending tag and for a
+// safe or finalized tag that cannot be resolved to a block.
 func (api *BlockChainAPI) GetHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (map[string]interface{}, error) {
-	header, err := api.b.HeaderByNumber(ctx, number)
-	if header != nil && err == nil {
-		response := RPCMarshalHeader(header)
-		if number == rpc.PendingBlockNumber {
-			// Pending header need to nil out a few fields
-			for _, field := range []string{"hash", "nonce", "miner"} {
-				response[field] = nil
-			}
-		}
-		return response, err
+	if number == rpc.PendingBlockNumber {
+		return nil, nil
 	}
-	return nil, err
+	header, err := api.b.HeaderByNumber(ctx, number)
+	if err != nil {
+		if number == rpc.SafeBlockNumber || number == rpc.FinalizedBlockNumber {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if header == nil {
+		return nil, nil
+	}
+	return RPCMarshalHeader(header), nil
 }
 
 // GetHeaderByHash returns the requested header by hash.
@@ -578,8 +602,9 @@ func (api *BlockChainAPI) GetUncleCountByBlockHash(ctx context.Context, blockHas
 }
 
 // GetCode returns the code stored at the given address in the state for the given block number.
-func (api *BlockChainAPI) GetCode(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (hexutil.Bytes, error) {
-	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+// When the block parameter is omitted, it defaults to the latest block.
+func (api *BlockChainAPI) GetCode(ctx context.Context, address common.Address, blockNrOrHash *rpc.BlockNumberOrHash) (hexutil.Bytes, error) {
+	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHashOrLatest(blockNrOrHash))
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -589,9 +614,10 @@ func (api *BlockChainAPI) GetCode(ctx context.Context, address common.Address, b
 
 // GetStorageAt returns the storage from the state at the given address, key and
 // block number. The rpc.LatestBlockNumber and rpc.PendingBlockNumber meta block
-// numbers are also allowed.
-func (api *BlockChainAPI) GetStorageAt(ctx context.Context, address common.Address, hexKey string, blockNrOrHash rpc.BlockNumberOrHash) (hexutil.Bytes, error) {
-	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+// numbers are also allowed. When the block parameter is omitted, it defaults to
+// the latest block.
+func (api *BlockChainAPI) GetStorageAt(ctx context.Context, address common.Address, hexKey string, blockNrOrHash *rpc.BlockNumberOrHash) (hexutil.Bytes, error) {
+	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHashOrLatest(blockNrOrHash))
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -604,8 +630,9 @@ func (api *BlockChainAPI) GetStorageAt(ctx context.Context, address common.Addre
 }
 
 // GetStorageValues returns multiple storage slot values for multiple accounts
-// at the given block.
-func (api *BlockChainAPI) GetStorageValues(ctx context.Context, requests map[common.Address][]common.Hash, blockNrOrHash rpc.BlockNumberOrHash) (map[common.Address][]hexutil.Bytes, error) {
+// at the given block. When the block parameter is omitted, it defaults to the
+// latest block.
+func (api *BlockChainAPI) GetStorageValues(ctx context.Context, requests map[common.Address][]common.Hash, blockNrOrHash *rpc.BlockNumberOrHash) (map[common.Address][]hexutil.Bytes, error) {
 	// Count total slots requested.
 	var totalSlots int
 	for _, keys := range requests {
@@ -618,7 +645,7 @@ func (api *BlockChainAPI) GetStorageValues(ctx context.Context, requests map[com
 		return nil, &invalidParamsError{message: "empty request"}
 	}
 
-	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHashOrLatest(blockNrOrHash))
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -733,6 +760,10 @@ func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.S
 		if err := blockOverrides.Apply(&blockCtx); err != nil {
 			return nil, err
 		}
+		// Override the header so callers that compute gas price from 1559 fee
+		// fields see the overridden basefee. Otherwise GASPRICE/effectiveTip
+		// would be derived from the pre-override basefee.
+		header = blockOverrides.MakeHeader(header)
 	}
 	rules := b.ChainConfig().Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time)
 	precompiles := vm.ActivePrecompiledContracts(rules)
@@ -761,10 +792,12 @@ func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.S
 
 func applyMessage(ctx context.Context, b Backend, args TransactionArgs, state *state.StateDB, header *types.Header, timeout time.Duration, gp *core.GasPool, blockContext *vm.BlockContext, vmConfig *vm.Config, precompiles vm.PrecompiledContracts) (*core.ExecutionResult, error) {
 	// Get a new instance of the EVM.
-	if err := args.CallDefaults(gp.Gas(), blockContext.BaseFee, b.ChainConfig().ChainID); err != nil {
+	available := gp.Available(b.ChainConfig().IsAmsterdam(header.Number, header.Time))
+	if err := args.CallDefaults(available, blockContext.BaseFee, b.ChainConfig().ChainID); err != nil {
 		return nil, err
 	}
-	msg := args.ToMessage(header.BaseFee, true)
+	msg := args.ToMessage(header.BaseFee, true).SkipExecutionGasCapCheck()
+
 	// Lower the basefee to 0 to avoid breaking EVM
 	// invariants (basefee < feecap).
 	if msg.GasPrice.Sign() == 0 {
@@ -774,6 +807,7 @@ func applyMessage(ctx context.Context, b Backend, args TransactionArgs, state *s
 		blockContext.BlobBaseFee = new(big.Int)
 	}
 	evm := b.GetEVM(ctx, state, header, vmConfig, blockContext)
+	defer evm.Release()
 	if precompiles != nil {
 		evm.SetPrecompiles(precompiles)
 	}
@@ -824,6 +858,9 @@ func DoCall(ctx context.Context, b Backend, args TransactionArgs, blockNrOrHash 
 // Note, this function doesn't make and changes in the state/blockchain and is
 // useful to execute and retrieve values.
 func (api *BlockChainAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, overrides *override.StateOverride, blockOverrides *override.BlockOverrides) (hexutil.Bytes, error) {
+	if err := args.checkBlobFeeCap(); err != nil {
+		return nil, err
+	}
 	if blockNrOrHash == nil {
 		latest := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 		blockNrOrHash = &latest
@@ -897,6 +934,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNr
 		if err := blockOverrides.Apply(&blockCtx); err != nil {
 			return 0, err
 		}
+		header = blockOverrides.MakeHeader(header)
 	}
 	rules := b.ChainConfig().Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time)
 	precompiles := vm.ActivePrecompiledContracts(rules)
@@ -904,13 +942,17 @@ func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNr
 		return 0, err
 	}
 	// Construct the gas estimator option from the user input
+	var blobBaseFee *big.Int
+	if blockOverrides != nil && blockOverrides.BlobBaseFee != nil {
+		blobBaseFee = blockOverrides.BlobBaseFee.ToInt()
+	}
 	opts := &gasestimator.Options{
-		Config:         b.ChainConfig(),
-		Chain:          NewChainContext(ctx, b),
-		Header:         header,
-		BlockOverrides: blockOverrides,
-		State:          state,
-		ErrorRatio:     estimateGasErrorRatio,
+		Config:      b.ChainConfig(),
+		Chain:       NewChainContext(ctx, b),
+		Header:      header,
+		State:       state,
+		BlobBaseFee: blobBaseFee,
+		ErrorRatio:  estimateGasErrorRatio,
 	}
 	// Set any required transaction default, but make sure the gas cap itself is not messed with
 	// if it was not specified in the original argument list.
@@ -940,6 +982,9 @@ func DoEstimateGas(ctx context.Context, b Backend, args TransactionArgs, blockNr
 // configuration (if non-zero).
 // Note: Required blob gas is not computed in this method.
 func (api *BlockChainAPI) EstimateGas(ctx context.Context, args TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, overrides *override.StateOverride, blockOverrides *override.BlockOverrides) (hexutil.Uint64, error) {
+	if err := args.checkBlobFeeCap(); err != nil {
+		return 0, err
+	}
 	bNrOrHash := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 	if blockNrOrHash != nil {
 		bNrOrHash = *blockNrOrHash
@@ -985,7 +1030,6 @@ func RPCMarshalHeader(head *types.Header) map[string]interface{} {
 	if head.RequestsHash != nil {
 		result["requestsHash"] = head.RequestsHash
 	}
-	// CHANGE(taiko): Preserve the EIP-7928 commitment in RPC header responses.
 	if head.BlockAccessListHash != nil {
 		result["blockAccessListHash"] = head.BlockAccessListHash
 	}
@@ -1210,6 +1254,9 @@ type accessListResult struct {
 // Reexec and BlockNrOrHash can be specified to create the accessList on top of a certain state.
 // StateOverrides can be used to create the accessList while taking into account state changes from previous transactions.
 func (api *BlockChainAPI) CreateAccessList(ctx context.Context, args TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash, stateOverrides *override.StateOverride) (*accessListResult, error) {
+	if err := args.checkBlobFeeCap(); err != nil {
+		return nil, err
+	}
 	bNrOrHash := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 	if blockNrOrHash != nil {
 		bNrOrHash = *blockNrOrHash
@@ -1275,13 +1322,25 @@ func (api *BlockChainAPI) Config(ctx context.Context) (*configResponse, error) {
 		}
 	}
 	var (
-		c = api.b.ChainConfig()
-		t = api.b.CurrentHeader().Time
+		c       = api.b.ChainConfig()
+		t       = api.b.CurrentHeader().Time
+		current = c.LatestFork(t)
+		last    = c.LatestFork(^uint64(0))
 	)
+	// The next scheduled fork is not necessarily the next fork enum value:
+	// optional forks (e.g. BPOs) may be left unconfigured, so skip past them
+	// until the first fork with a configured activation time.
+	var next *uint64
+	for f := current + 1; f <= last; f++ {
+		if ts := c.Timestamp(f); ts != nil {
+			next = ts
+			break
+		}
+	}
 	resp := configResponse{
-		Next:    assemble(c, c.Timestamp(c.LatestFork(t)+1)),
-		Current: assemble(c, c.Timestamp(c.LatestFork(t))),
-		Last:    assemble(c, c.Timestamp(c.LatestFork(^uint64(0)))),
+		Current: assemble(c, c.Timestamp(current)),
+		Next:    assemble(c, next),
+		Last:    assemble(c, c.Timestamp(last)),
 	}
 	// Nil out last if no future-fork is configured.
 	if resp.Next == nil {
@@ -1309,9 +1368,11 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 		}
 	}
 
-	// Ensure any missing fields are filled, extract the recipient and input data
-	if err = args.setFeeDefaults(ctx, b, header); err != nil {
-		return nil, 0, nil, err
+	// Leave fees at zero when all fee fields are omitted so simulation does not require funds for gas.
+	if args.GasPrice != nil || args.MaxFeePerGas != nil || args.MaxPriorityFeePerGas != nil || args.BlobFeeCap != nil {
+		if err = args.setFeeDefaults(ctx, b, header); err != nil {
+			return nil, 0, nil, err
+		}
 	}
 	if args.Nonce == nil {
 		nonce := hexutil.Uint64(db.GetNonce(args.from()))
@@ -1336,12 +1397,6 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 	addressesToExclude := map[common.Address]struct{}{args.from(): {}, to: {}}
 	for _, addr := range precompiles {
 		addressesToExclude[addr] = struct{}{}
-	}
-
-	// Prevent redundant operations if args contain more authorizations than EVM may handle
-	maxAuthorizations := uint64(*args.Gas) / params.CallNewAccountGas
-	if uint64(len(args.AuthorizationList)) > maxAuthorizations {
-		return nil, 0, nil, errors.New("insufficient gas to process all authorizations")
 	}
 
 	for _, auth := range args.AuthorizationList {
@@ -1388,6 +1443,7 @@ func AccessList(ctx context.Context, b Backend, blockNrOrHash rpc.BlockNumberOrH
 			evm.Context.BlobBaseFee = new(big.Int)
 		}
 		res, err := core.ApplyMessage(evm, msg, nil)
+		evm.Release()
 		if err != nil {
 			return nil, 0, nil, fmt.Errorf("failed to apply transaction: %v err: %v", args.ToTransaction(types.LegacyTxType).Hash(), err)
 		}
@@ -1467,10 +1523,12 @@ func (api *TransactionAPI) GetRawTransactionByBlockHashAndIndex(ctx context.Cont
 	return nil
 }
 
-// GetTransactionCount returns the number of transactions the given address has sent for the given block number
-func (api *TransactionAPI) GetTransactionCount(ctx context.Context, address common.Address, blockNrOrHash rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
+// GetTransactionCount returns the number of transactions the given address has sent for the given block number.
+// When the block parameter is omitted, it defaults to the latest block.
+func (api *TransactionAPI) GetTransactionCount(ctx context.Context, address common.Address, blockNrOrHash *rpc.BlockNumberOrHash) (*hexutil.Uint64, error) {
+	bnh := blockNrOrHashOrLatest(blockNrOrHash)
 	// Ask transaction pool for the nonce which includes pending transactions
-	if blockNr, ok := blockNrOrHash.Number(); ok && blockNr == rpc.PendingBlockNumber {
+	if blockNr, ok := bnh.Number(); ok && blockNr == rpc.PendingBlockNumber {
 		nonce, err := api.b.GetPoolNonce(ctx, address)
 		if err != nil {
 			return nil, err
@@ -1478,7 +1536,7 @@ func (api *TransactionAPI) GetTransactionCount(ctx context.Context, address comm
 		return (*hexutil.Uint64)(&nonce), nil
 	}
 	// Resolve block number and use its state to ask for the nonce
-	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, blockNrOrHash)
+	state, _, err := api.b.StateAndHeaderByNumberOrHash(ctx, bnh)
 	if state == nil || err != nil {
 		return nil, err
 	}
@@ -2080,7 +2138,9 @@ func (api *DebugAPI) PrintBlock(ctx context.Context, number uint64) (string, err
 	return spew.Sdump(block), nil
 }
 
-// ChaindbProperty returns leveldb properties of the key-value database.
+// ChaindbProperty returns the internal statistics of the chain's key-value
+// database as human-readable text. The output format depends on the backing
+// engine (Pebble or LevelDB).
 func (api *DebugAPI) ChaindbProperty() (string, error) {
 	return api.b.ChainDb().Stat()
 }
@@ -2122,8 +2182,7 @@ func (api *DebugAPI) SetHead(number hexutil.Uint64) error {
 			return errors.New("not allowed to rewind to a future block")
 		}
 	}
-	api.b.SetHead(uint64(number))
-	return nil
+	return api.b.SetHead(uint64(number))
 }
 
 // NetAPI offers network related RPC methods
