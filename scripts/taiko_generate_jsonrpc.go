@@ -110,13 +110,13 @@ func exprToString(expr ast.Expr) string {
 
 func generateReturnSchema(goType reflect.Type) map[string]interface{} {
 	switch goType.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		return map[string]interface{}{
 			"$ref": "#/definitions/" + goType.String(),
 		}
 	case reflect.Slice:
 		elem := goType.Elem()
-		if elem.Kind() == reflect.Ptr {
+		if elem.Kind() == reflect.Pointer {
 			return map[string]interface{}{
 				"type": "array",
 				"items": map[string]interface{}{
@@ -135,7 +135,7 @@ func generateReturnSchema(goType reflect.Type) map[string]interface{} {
 
 func generateTypeRef(goType reflect.Type) map[string]interface{} {
 	switch goType.Kind() {
-	case reflect.Ptr:
+	case reflect.Pointer:
 		switch goType.String() {
 		case "*miner.PreBuiltTxList":
 			return map[string]interface{}{
@@ -160,7 +160,7 @@ func generateTypeRef(goType reflect.Type) map[string]interface{} {
 		}
 	case reflect.Slice:
 		elem := goType.Elem()
-		if elem.Kind() == reflect.Ptr {
+		if elem.Kind() == reflect.Pointer {
 			return map[string]interface{}{
 				"type": "array",
 				"items": map[string]interface{}{
@@ -200,7 +200,7 @@ func extractMethods(obj interface{}, prefix string, paramMapping map[string][]st
 	methods := make(map[string]Method)
 
 	var recName string
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		recName = "*" + t.Elem().Name()
 	} else {
 		recName = t.Name()
