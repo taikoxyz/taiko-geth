@@ -8,11 +8,11 @@ import (
 	"fmt"
 	"maps"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/consensus/taiko"
 	"github.com/ethereum/go-ethereum/core"
@@ -40,11 +40,46 @@ const (
 	// transaction, which tx-list building does not execute but every derived
 	// block starts with. Mainnet anchor-only blocks use about 1.16M zk gas.
 	txListAnchorZkGasReserve = 2_000_000
-
-	// txListZkUnfitCacheSize bounds how many transactions tx-list building
-	// remembers as too large for any block's zk-gas budget.
-	txListZkUnfitCacheSize = 4096
 )
+
+// txListZkUnfitSet holds the transactions tx-list building found too large
+// for a whole block's zk-gas budget. An entry is kept for as long as its
+// transaction stays in the pool, which also bounds the set by the pool's size.
+// A cache smaller than the pool would not do: a sender holding more such
+// transactions than it fits could cycle evicted ones back in, one re-run per
+// call, each reaching the work limit and stopping selection.
+type txListZkUnfitSet struct {
+	mu     sync.Mutex
+	hashes map[common.Hash]struct{}
+}
+
+func newTxListZkUnfitSet() *txListZkUnfitSet {
+	return &txListZkUnfitSet{hashes: make(map[common.Hash]struct{})}
+}
+
+func (s *txListZkUnfitSet) add(hash common.Hash) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hashes[hash] = struct{}{}
+}
+
+func (s *txListZkUnfitSet) contains(hash common.Hash) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.hashes[hash]
+	return ok
+}
+
+// prune forgets the transactions that have left the pool.
+func (s *txListZkUnfitSet) prune(inPool func(common.Hash) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for hash := range s.hashes {
+		if !inPool(hash) {
+			delete(s.hashes, hash)
+		}
+	}
+}
 
 // txListZkBudget meters the Unzen zk-gas budget across the lists of one
 // tx-list building call. A transaction that overflows the budget is reverted
@@ -55,21 +90,22 @@ const (
 // the gas limits of the rejected transactions reach wasteLimit no further
 // transaction is selected in this call.
 //
-// Remembered transactions do not expire. An expiry would let a sender
-// stagger its overflowing transactions so that one comes due every block,
-// and a single re-run reaches the limit and stops selection.
+// Remembered transactions do not expire while they are in the pool. An
+// expiry would let a sender stagger its overflowing transactions so that one
+// comes due every block, and a single re-run reaches the limit and stops
+// selection.
 type txListZkBudget struct {
 	meter      *vm.ZkGasMeter
-	unfit      *lru.Cache[common.Hash, struct{}] // shared by all calls; may be nil
-	rejected   map[common.Hash]struct{}          // overflowed earlier in this call
-	committed  bool                              // a transaction was committed in this call
-	wastedGas  uint64                            // summed gas limits of rejected transactions
+	unfit      *txListZkUnfitSet        // shared by all calls; may be nil
+	rejected   map[common.Hash]struct{} // overflowed earlier in this call
+	committed  bool                     // a transaction was committed in this call
+	wastedGas  uint64                   // summed gas limits of rejected transactions
 	wasteLimit uint64
 	stopped    bool // wastedGas reached wasteLimit
 }
 
 // newTxListZkBudget attaches a zk-gas meter with the anchor reserve to env.
-func newTxListZkBudget(env *environment, unfit *lru.Cache[common.Hash, struct{}], wasteLimit uint64) (*txListZkBudget, error) {
+func newTxListZkBudget(env *environment, unfit *txListZkUnfitSet, wasteLimit uint64) (*txListZkBudget, error) {
 	meter := vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
 	if err := meter.ReserveBlockZkGas(txListAnchorZkGasReserve); err != nil {
 		return nil, err
@@ -89,7 +125,7 @@ func (b *txListZkBudget) known(hash common.Hash) bool {
 	if _, ok := b.rejected[hash]; ok {
 		return true
 	}
-	return b.unfit != nil && b.unfit.Contains(hash)
+	return b.unfit != nil && b.unfit.contains(hash)
 }
 
 // commit promotes the in-flight zk gas of a successfully executed transaction.
@@ -109,7 +145,7 @@ func (b *txListZkBudget) commit() error {
 func (b *txListZkBudget) reject(tx *types.Transaction) {
 	b.rejected[tx.Hash()] = struct{}{}
 	if b.unfit != nil && !b.committed {
-		b.unfit.Add(tx.Hash(), struct{}{})
+		b.unfit.add(tx.Hash())
 	}
 	b.wastedGas += tx.Gas()
 	if b.wastedGas >= b.wasteLimit {
@@ -213,6 +249,9 @@ func (w *Miner) buildTransactionsLists(
 	// keeps lists that a proposer merges into one block within the budget.
 	var zkBudget *txListZkBudget
 	if w.chainConfig.IsUnzen(env.header.Time) {
+		if w.txListZkUnfit != nil {
+			w.txListZkUnfit.prune(w.txpool.Has)
+		}
 		if zkBudget, err = newTxListZkBudget(env, w.txListZkUnfit, blockMaxGasLimit); err != nil {
 			return nil, err
 		}

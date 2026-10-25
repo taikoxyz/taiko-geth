@@ -274,13 +274,13 @@ func TestBuildTransactionsLists_BoundsZkOverflowWork(t *testing.T) {
 		t.Fatalf("first call: got %d tx lists, want none", len(lists))
 	}
 	for i, tx := range heavy {
-		if got, want := w.txListZkUnfit.Contains(tx.Hash()), i < 3; got != want {
+		if got, want := w.txListZkUnfit.contains(tx.Hash()), i < 3; got != want {
 			t.Fatalf("heavy tx %d remembered = %v, want %v", i, got, want)
 		}
 	}
 	// The next call skips them unrun, so one overflow is left before the users.
 	assertSingleTxList(t, build(), users)
-	if !w.txListZkUnfit.Contains(heavy[3].Hash()) {
+	if !w.txListZkUnfit.contains(heavy[3].Hash()) {
 		t.Fatal("last heavy tx should be remembered after the second call")
 	}
 }
@@ -305,8 +305,70 @@ func TestBuildTransactionsLists_ZkOverflowAfterCommitNotRemembered(t *testing.T)
 		t.Fatalf("BuildTransactionsLists: %v", err)
 	}
 	assertSingleTxList(t, lists, append([]common.Hash{first.Hash()}, users...))
-	if w.txListZkUnfit.Contains(heavy.Hash()) {
+	if w.txListZkUnfit.contains(heavy.Hash()) {
 		t.Fatal("a tx that overflowed after others were committed must not be remembered")
+	}
+}
+
+// TestTxListZkUnfitSet_KeepsEntriesWhileInPool pins that remembered
+// transactions are dropped only once they leave the pool, never to make
+// room: otherwise a sender with more over-budget transactions than the set
+// holds could cycle them back in to be run again.
+func TestTxListZkUnfitSet_KeepsEntriesWhileInPool(t *testing.T) {
+	set := newTxListZkUnfitSet()
+	const n = 10_000
+	for i := range n {
+		set.add(common.BigToHash(big.NewInt(int64(i))))
+	}
+	set.prune(func(common.Hash) bool { return true })
+	for i := range n {
+		if !set.contains(common.BigToHash(big.NewInt(int64(i)))) {
+			t.Fatalf("entry %d dropped while its transaction is still in the pool", i)
+		}
+	}
+	// Transactions with an odd hash have left the pool.
+	set.prune(func(h common.Hash) bool { return h[len(h)-1]%2 == 0 })
+	for i := range n {
+		if got, want := set.contains(common.BigToHash(big.NewInt(int64(i)))), i%2 == 0; got != want {
+			t.Fatalf("entry %d remembered = %v, want %v", i, got, want)
+		}
+	}
+}
+
+// TestBuildTransactionsLists_ForgetsZkUnfitTxOnceItLeavesPool checks that a
+// remembered transaction is forgotten when its sender replaces it, and that
+// the replacement is evaluated normally.
+func TestBuildTransactionsLists_ForgetsZkUnfitTxOnceItLeavesPool(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	gspec, keys := newZkGasTestGenesis(t, config, 1)
+	w, b := newUnzenTxListTestWorker(t, gspec)
+
+	heavy := signTxListTestTx(t, config, keys[0], 0, hashLoopAddress, 10_000_000, 15, nil)
+	addTxListTestTx(t, b, heavy)
+	users := addUserTransfers(t, b, config, 5)
+	build := func() []*PreBuiltTxList {
+		t.Helper()
+		lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
+		if err != nil {
+			t.Fatalf("BuildTransactionsLists: %v", err)
+		}
+		return lists
+	}
+
+	assertSingleTxList(t, build(), users)
+	if !w.txListZkUnfit.contains(heavy.Hash()) {
+		t.Fatal("heavy tx should be remembered")
+	}
+	// Same nonce, a plain transfer with fees bumped past the replacement threshold.
+	replacement := signTxListTestTx(t, config, keys[0], 0, testUserAddress, params.TxGas, 17, nil)
+	addTxListTestTx(t, b, replacement)
+	if b.txPool.Has(heavy.Hash()) {
+		t.Fatal("heavy tx should have been replaced in the pool")
+	}
+
+	assertSingleTxList(t, build(), append([]common.Hash{replacement.Hash()}, users...))
+	if w.txListZkUnfit.contains(heavy.Hash()) {
+		t.Fatal("heavy tx should be forgotten once it left the pool")
 	}
 }
 
