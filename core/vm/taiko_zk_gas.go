@@ -101,6 +101,27 @@ func (m *ZkGasMeter) ResetTransaction() {
 	m.txZkGasUsed = 0
 }
 
+// ReserveBlockZkGas adds amount to the finalized block total without executing
+// anything, holding budget back for a mandatory transaction the caller does not
+// execute. If the block budget cannot cover amount, it returns
+// ErrZkGasLimitExceeded and leaves the meter unchanged.
+func (m *ZkGasMeter) ReserveBlockZkGas(amount uint64) error {
+	next, overflow := safeAdd(m.blockZkGasUsed, amount)
+	if overflow || next > m.schedule.BlockLimit {
+		return ErrZkGasLimitExceeded
+	}
+	m.blockZkGasUsed = next
+	return nil
+}
+
+// RemainingBlockZkGas returns the budget left after the finalized block total.
+func (m *ZkGasMeter) RemainingBlockZkGas() uint64 {
+	if m.blockZkGasUsed >= m.schedule.BlockLimit {
+		return 0
+	}
+	return m.schedule.BlockLimit - m.blockZkGasUsed
+}
+
 // BlockZkGasUsed returns the finalized block total.
 func (m *ZkGasMeter) BlockZkGasUsed() uint64 {
 	return m.blockZkGasUsed

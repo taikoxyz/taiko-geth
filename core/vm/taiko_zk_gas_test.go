@@ -399,3 +399,44 @@ func TestZkGasMeter_SpawnEstimateLookup(t *testing.T) {
 		}
 	}
 }
+
+func TestZkGasMeter_ReserveBlockZkGas(t *testing.T) {
+	m := NewZkGasMeter(testSchedule()) // BlockLimit 1,000,000
+
+	if err := m.ReserveBlockZkGas(400_000); err != nil {
+		t.Fatalf("reserve within budget: %v", err)
+	}
+	if got := m.BlockZkGasUsed(); got != 400_000 {
+		t.Fatalf("BlockZkGasUsed = %d, want 400000", got)
+	}
+	if got := m.RemainingBlockZkGas(); got != 600_000 {
+		t.Fatalf("RemainingBlockZkGas = %d, want 600000", got)
+	}
+
+	// The reservation counts against later charges (CREATE has multiplier 1).
+	if err := m.ChargeOpcode(0xf0, 600_001); err != ErrZkGasLimitExceeded {
+		t.Fatalf("charge past the reserved budget: got %v, want %v", err, ErrZkGasLimitExceeded)
+	}
+	if err := m.ChargeOpcode(0xf0, 600_000); err != nil {
+		t.Fatalf("charge up to the reserved budget: %v", err)
+	}
+	m.ResetTransaction()
+
+	// A reservation the budget cannot cover fails and leaves the meter unchanged.
+	if err := m.ReserveBlockZkGas(600_001); err != ErrZkGasLimitExceeded {
+		t.Fatalf("over-budget reserve: got %v, want %v", err, ErrZkGasLimitExceeded)
+	}
+	if err := m.ReserveBlockZkGas(math.MaxUint64); err != ErrZkGasLimitExceeded {
+		t.Fatalf("overflowing reserve: got %v, want %v", err, ErrZkGasLimitExceeded)
+	}
+	if got := m.BlockZkGasUsed(); got != 400_000 {
+		t.Fatalf("BlockZkGasUsed after failed reserves = %d, want 400000", got)
+	}
+
+	if err := m.ReserveBlockZkGas(600_000); err != nil {
+		t.Fatalf("reserve the exact remainder: %v", err)
+	}
+	if got := m.RemainingBlockZkGas(); got != 0 {
+		t.Fatalf("RemainingBlockZkGas = %d, want 0", got)
+	}
+}

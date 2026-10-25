@@ -26,6 +26,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -76,6 +77,10 @@ type Miner struct {
 	chain       *core.BlockChain
 	pending     *pending
 	pendingMu   sync.Mutex // Lock protects the pending block
+
+	// CHANGE(taiko): transactions that tx-list building found too large for
+	// a whole block's Unzen zk-gas budget, so later calls skip them unrun.
+	txListZkUnfit *lru.Cache[common.Hash, struct{}]
 }
 
 // New creates a new miner with provided config.
@@ -87,6 +92,8 @@ func New(eth Backend, config Config, engine consensus.Engine) *Miner {
 		txpool:      eth.TxPool(),
 		chain:       eth.BlockChain(),
 		pending:     &pending{},
+		// CHANGE(taiko): see txListZkBudget in taiko_worker.go.
+		txListZkUnfit: lru.NewCache[common.Hash, struct{}](txListZkUnfitCacheSize),
 	}
 }
 
