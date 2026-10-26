@@ -113,6 +113,15 @@ func (tracker *TxTracker) TrackAll(txs []*types.Transaction) {
 	localGauge.Update(int64(len(tracker.all)))
 }
 
+// CHANGE(taiko): Has reports whether the transaction is tracked.
+func (tracker *TxTracker) Has(hash common.Hash) bool {
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+
+	_, ok := tracker.all[hash]
+	return ok
+}
+
 // recheck checks and returns any transactions that needs to be resubmitted.
 func (tracker *TxTracker) recheck(journalCheck bool) []*types.Transaction {
 	tracker.mu.Lock()
