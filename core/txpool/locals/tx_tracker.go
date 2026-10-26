@@ -18,6 +18,7 @@
 package locals
 
 import (
+	"errors" // CHANGE(taiko): used by dropRejected.
 	"slices"
 	"sync"
 	"time"
@@ -104,6 +105,12 @@ func (tracker *TxTracker) TrackAll(txs []*types.Transaction) {
 		if tracker.byAddr[addr] == nil {
 			tracker.byAddr[addr] = legacypool.NewSortedMap()
 		}
+		// CHANGE(taiko): Put overwrites the transaction tracked at the same nonce,
+		// so stop tracking the replaced one too. Otherwise it would stay in `all`,
+		// and in every rotated journal, forever.
+		if prev := tracker.byAddr[addr].Get(tx.Nonce()); prev != nil && prev.Hash() != tx.Hash() {
+			delete(tracker.all, prev.Hash())
+		}
 		tracker.byAddr[addr].Put(tx)
 
 		if tracker.journal != nil {
@@ -177,6 +184,44 @@ func (tracker *TxTracker) recheck(journalCheck bool) []*types.Transaction {
 	return resubmits
 }
 
+// CHANGE(taiko): resubmit hands the tracked transactions the pool has forgotten
+// back to it, and stops tracking the ones it rejects for good.
+func (tracker *TxTracker) resubmit(journalCheck bool) {
+	resubmits := tracker.recheck(journalCheck)
+	if len(resubmits) > 0 {
+		errs := tracker.pool.Add(resubmits, false)
+		tracker.dropRejected(resubmits, errs)
+	}
+}
+
+// CHANGE(taiko): dropRejected stops tracking the transactions the pool rejected
+// for a reason that waiting will not change. SendTx used to track every
+// transaction on Taiko networks, rejected or not, so Taiko nodes may still hold
+// such transactions in their journal; without this, they would be resubmitted
+// until the sender's nonce moved past them.
+func (tracker *TxTracker) dropRejected(txs []*types.Transaction, errs []error) {
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+
+	for i, tx := range txs {
+		err := errs[i]
+		if err == nil || IsTemporaryReject(err) || errors.Is(err, txpool.ErrAlreadyKnown) {
+			continue
+		}
+		delete(tracker.all, tx.Hash())
+
+		// Leave the sender's slot alone if a replacement took it meanwhile
+		addr, _ := types.Sender(tracker.signer, tx)
+		if list := tracker.byAddr[addr]; list != nil {
+			if cur := list.Get(tx.Nonce()); cur != nil && cur.Hash() == tx.Hash() {
+				list.Remove(tx.Nonce())
+			}
+		}
+		log.Debug("Dropped rejected local transaction", "hash", tx.Hash(), "err", err)
+	}
+	localGauge.Update(int64(len(tracker.all)))
+}
+
 // Start implements node.Lifecycle interface
 // Start is called after all services have been constructed and the networking
 // layer was also initialized to spawn any goroutines required by the service.
@@ -225,10 +270,8 @@ func (tracker *TxTracker) loop() {
 				rejournal, lastJournal = true, time.Now()
 				log.Debug("Rejournal the transaction tracker")
 			}
-			resubmits := tracker.recheck(rejournal)
-			if len(resubmits) > 0 {
-				tracker.pool.Add(resubmits, false)
-			}
+			// CHANGE(taiko): also drop the transactions the pool rejects for good.
+			tracker.resubmit(rejournal)
 			timer.Reset(recheckInterval)
 		}
 	}

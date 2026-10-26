@@ -206,3 +206,127 @@ func TestJournal(t *testing.T) {
 		t.Fatalf("Unexpected transactions being tracked, got: %d, want: %d", len(allCopy), len(txs))
 	}
 }
+
+func TestTrackerDropsReplacedTransaction(t *testing.T) {
+	env := newTestEnv(t, 10, 0, "")
+	defer env.close()
+
+	txA := env.makeTx(0, big.NewInt(params.GWei))
+	txB := env.makeTx(txA.Nonce(), big.NewInt(2*params.GWei))
+	env.tracker.TrackAll([]*types.Transaction{txA})
+	env.tracker.TrackAll([]*types.Transaction{txB})
+
+	env.tracker.mu.Lock()
+	allCopy := maps.Clone(env.tracker.all)
+	current := env.tracker.byAddr[address].Get(txA.Nonce())
+	env.tracker.mu.Unlock()
+
+	if len(allCopy) != 1 {
+		t.Fatalf("Unexpected transactions being tracked, got: %d, want: %d", len(allCopy), 1)
+	}
+	if _, ok := allCopy[txB.Hash()]; !ok {
+		t.Fatalf("Replacement transaction is not tracked")
+	}
+	if current == nil || current.Hash() != txB.Hash() {
+		t.Fatalf("Unexpected transaction at nonce %d, got: %v, want: %v", txA.Nonce(), current, txB.Hash())
+	}
+
+	// Tracking the replacement again is a no-op
+	env.tracker.TrackAll([]*types.Transaction{txB})
+	env.tracker.mu.Lock()
+	tracked := len(env.tracker.all)
+	env.tracker.mu.Unlock()
+
+	if tracked != 1 {
+		t.Fatalf("Unexpected transactions being tracked, got: %d, want: %d", tracked, 1)
+	}
+
+	// The pool rejecting a stale resubmission of the replaced transaction
+	// leaves the replacement tracked
+	env.tracker.dropRejected([]*types.Transaction{txA}, []error{txpool.ErrReplaceUnderpriced})
+	env.tracker.mu.Lock()
+	tracked = len(env.tracker.all)
+	current = env.tracker.byAddr[address].Get(txA.Nonce())
+	env.tracker.mu.Unlock()
+
+	if tracked != 1 || current == nil || current.Hash() != txB.Hash() {
+		t.Fatalf("Replacement transaction is no longer tracked, tracked: %d, at nonce %d: %v", tracked, txA.Nonce(), current)
+	}
+}
+
+func TestTrackerDropsPermanentlyRejected(t *testing.T) {
+	journalPath := filepath.Join(t.TempDir(), fmt.Sprintf("%d", rand.Int63()))
+	env := newTestEnv(t, 10, 0, journalPath)
+	defer env.close()
+
+	// Set up the journal writer synchronously, so the tracked transactions land
+	// in the journal on disk.
+	if err := env.tracker.journal.setupWriter(); err != nil {
+		t.Fatalf("Failed to setup the journal writer: %v", err)
+	}
+	defer env.tracker.journal.close()
+
+	// A transaction from an unfunded account, as left in the journal by a node
+	// that tracked every transaction SendTx received.
+	unfundedKey, _ := crypto.GenerateKey()
+	unfunded, _ := types.SignTx(types.NewTransaction(0, common.Address{0x00}, big.NewInt(1000), params.TxGas, big.NewInt(params.GWei), nil), signer, unfundedKey)
+	funded := env.makeTxs(1)[0]
+	env.tracker.TrackAll([]*types.Transaction{unfunded, funded})
+
+	env.tracker.resubmit(false)
+
+	if env.tracker.Has(unfunded.Hash()) {
+		t.Fatalf("Rejected transaction is still tracked")
+	}
+	env.tracker.mu.Lock()
+	var left *types.Transaction
+	if list := env.tracker.byAddr[crypto.PubkeyToAddress(unfundedKey.PublicKey)]; list != nil {
+		left = list.Get(unfunded.Nonce())
+	}
+	env.tracker.mu.Unlock()
+
+	if left != nil {
+		t.Fatalf("Rejected transaction is still tracked by its sender")
+	}
+	if !env.tracker.Has(funded.Hash()) {
+		t.Fatalf("Funded transaction is not tracked")
+	}
+	if !env.pool.Has(funded.Hash()) {
+		t.Fatalf("Funded transaction was not resubmitted to the pool")
+	}
+
+	env.tracker.recheck(true) // manually rejournal the tracker
+
+	// Make sure only the funded transaction is journalled
+	trackerB := New(journalPath, time.Minute, gspec.Config, env.pool)
+	trackerB.journal.load(func(transactions []*types.Transaction) []error {
+		trackerB.TrackAll(transactions)
+		return nil
+	})
+
+	trackerB.mu.Lock()
+	allCopy := maps.Clone(trackerB.all)
+	trackerB.mu.Unlock()
+
+	if len(allCopy) != 1 {
+		t.Fatalf("Unexpected transactions being journalled, got: %d, want: %d", len(allCopy), 1)
+	}
+	if _, ok := allCopy[funded.Hash()]; !ok {
+		t.Fatalf("Funded transaction is not journalled")
+	}
+}
+
+func TestTrackerKeepsTemporarilyRejected(t *testing.T) {
+	env := newTestEnv(t, 10, 0, "")
+	defer env.close()
+
+	txs := env.makeTxs(2)
+	env.tracker.TrackAll(txs)
+	env.tracker.dropRejected(txs, []error{legacypool.ErrTxPoolOverflow, txpool.ErrAlreadyKnown})
+
+	for i, tx := range txs {
+		if !env.tracker.Has(tx.Hash()) {
+			t.Fatalf("Transaction %d is not tracked", i)
+		}
+	}
+}
