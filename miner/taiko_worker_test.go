@@ -6,7 +6,10 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"runtime"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/beacon/engine"
 	"github.com/ethereum/go-ethereum/common"
@@ -516,4 +519,89 @@ func TestSealBlockWith_GasLimitOpcodeMatchesImport(t *testing.T) {
 	if got := statedb.GetState(gasLimitProbeAddress, common.Hash{}); got != want {
 		t.Fatalf("GASLIMIT recorded on import = %v, want the header gas limit %v", got.Big(), want.Big())
 	}
+}
+
+// countTriePrefetcherGoroutines counts the running trie prefetcher workers.
+func countTriePrefetcherGoroutines() int {
+	buf := make([]byte, 1<<20)
+	for {
+		n := runtime.Stack(buf, true)
+		if n < len(buf) {
+			return strings.Count(string(buf[:n]), "state.(*subfetcher).loop(")
+		}
+		buf = make([]byte, 2*len(buf))
+	}
+}
+
+// settledTriePrefetcherCount returns the prefetcher worker count once it stops
+// changing, so that workers stopped by earlier tests have finished exiting.
+func settledTriePrefetcherCount() int {
+	n := countTriePrefetcherGoroutines()
+	for deadline := time.Now().Add(2 * time.Second); n > 0 && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+		next := countTriePrefetcherGoroutines()
+		if next == n {
+			break
+		}
+		n = next
+	}
+	return n
+}
+
+// waitForTriePrefetcherGoroutines waits until at most want prefetcher workers
+// are running. Stopped workers exit asynchronously.
+func waitForTriePrefetcherGoroutines(t *testing.T, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		n := countTriePrefetcherGoroutines()
+		if n <= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d trie prefetcher goroutines still running, want at most %d", n, want)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestSealBlockWith_ErrorStopsPrefetcher checks that sealBlockWith stops the
+// prefetcher when it fails after preparing the block. On success computing
+// the state root stops it; the error returns used to leave it running.
+func TestSealBlockWith_ErrorStopsPrefetcher(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	w, b := newUnzenTestWorker(t, newUnzenTestGenesis(config))
+	parent := b.chain.CurrentBlock()
+	baseline := settledTriePrefetcherCount()
+
+	// An anchor with a nonce the golden-touch account has not reached fails,
+	// which aborts sealing after prepareWork.
+	baseFee := big.NewInt(params.InitialBaseFee)
+	taikoL2Address := core.TaikoTreasuryAddress(config.ChainID)
+	anchorTx := types.MustSignNewTx(goldenTouchTestKey(t), types.LatestSigner(config), &types.DynamicFeeTx{
+		ChainID:   config.ChainID,
+		Nonce:     7,
+		GasTipCap: common.Big0,
+		GasFeeCap: baseFee,
+		Gas:       taiko.AnchorGasLimit,
+		To:        &taikoL2Address,
+		Data:      taiko.AnchorSelector,
+	})
+	txList, err := rlp.EncodeToBytes(types.Transactions{anchorTx})
+	if err != nil {
+		t.Fatalf("encode tx list: %v", err)
+	}
+	for range 5 {
+		_, err := w.sealBlockWith(parent, parent.Time+1, 0, &engine.BlockMetadata{
+			Beneficiary: testUserAddress,
+			GasLimit:    parent.GasLimit,
+			Timestamp:   parent.Time + 1,
+			TxList:      txList,
+			ExtraData:   []byte{},
+		}, baseFee, nil)
+		if !errors.Is(err, core.ErrNonceTooHigh) {
+			t.Fatalf("sealBlockWith: got %v, want %v", err, core.ErrNonceTooHigh)
+		}
+	}
+	waitForTriePrefetcherGoroutines(t, baseline)
 }

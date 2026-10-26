@@ -250,6 +250,9 @@ func (w *Miner) sealBlockWith(
 	if err != nil {
 		return nil, err
 	}
+	// Computing the state root stops the prefetcher on success, but not on the
+	// error returns below.
+	defer env.discard()
 
 	setBlockGasLimit(env, blkMeta.GasLimit)
 
