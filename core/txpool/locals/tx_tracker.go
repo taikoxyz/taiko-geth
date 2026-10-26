@@ -43,6 +43,9 @@ var (
 // This is used to track 'locals'.
 // This struct does not care about transaction validity, price-bumps or account limits,
 // but optimistically accepts transactions.
+// CHANGE(taiko): it also drops tracked transactions the pool rejects for a
+// non-temporary reason on resubmission, and tracked transactions replaced by
+// another one with the same nonce.
 type TxTracker struct {
 	all    map[common.Hash]*types.Transaction       // All tracked transactions
 	byAddr map[common.Address]*legacypool.SortedMap // Transactions by address
@@ -185,7 +188,8 @@ func (tracker *TxTracker) recheck(journalCheck bool) []*types.Transaction {
 }
 
 // CHANGE(taiko): resubmit hands the tracked transactions the pool has forgotten
-// back to it, and stops tracking the ones it rejects for good.
+// back to it, and stops tracking each one it rejects for a reason that leaves
+// very little chance it will be accepted later.
 func (tracker *TxTracker) resubmit(journalCheck bool) {
 	resubmits := tracker.recheck(journalCheck)
 	if len(resubmits) > 0 {
@@ -194,15 +198,16 @@ func (tracker *TxTracker) resubmit(journalCheck bool) {
 	}
 }
 
-// CHANGE(taiko): dropRejected stops tracking the transactions the pool rejected
-// for a reason that waiting will not change. SendTx used to track every
-// transaction on Taiko networks, rejected or not, so Taiko nodes may still hold
-// such transactions in their journal; without this, they would be resubmitted
-// until the sender's nonce moved past them.
+// CHANGE(taiko): dropRejected stops tracking each transaction the pool rejected
+// for a reason that leaves very little chance it will be accepted later.
+// SendTx used to track every transaction on Taiko networks, rejected or not, so
+// Taiko nodes may still hold such transactions in their journal; without this,
+// they would be resubmitted until the sender's nonce moved past them.
 func (tracker *TxTracker) dropRejected(txs []*types.Transaction, errs []error) {
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
 
+	tracked := len(tracker.all)
 	for i, tx := range txs {
 		err := errs[i]
 		if err == nil || IsTemporaryReject(err) || errors.Is(err, txpool.ErrAlreadyKnown) {
@@ -215,9 +220,16 @@ func (tracker *TxTracker) dropRejected(txs []*types.Transaction, errs []error) {
 		if list := tracker.byAddr[addr]; list != nil {
 			if cur := list.Get(tx.Nonce()); cur != nil && cur.Hash() == tx.Hash() {
 				list.Remove(tx.Nonce())
+				// Stop rechecking the nonce of a sender with nothing left to track
+				if list.Len() == 0 {
+					delete(tracker.byAddr, addr)
+				}
 			}
 		}
 		log.Debug("Dropped rejected local transaction", "hash", tx.Hash(), "err", err)
+	}
+	if dropped := tracked - len(tracker.all); dropped > 0 {
+		log.Info("Dropped rejected local transactions", "count", dropped)
 	}
 	localGauge.Update(int64(len(tracker.all)))
 }
@@ -270,7 +282,8 @@ func (tracker *TxTracker) loop() {
 				rejournal, lastJournal = true, time.Now()
 				log.Debug("Rejournal the transaction tracker")
 			}
-			// CHANGE(taiko): also drop the transactions the pool rejects for good.
+			// CHANGE(taiko): also stop tracking each transaction the pool rejects for
+			// a reason that leaves very little chance it will be accepted later.
 			tracker.resubmit(rejournal)
 			timer.Reset(recheckInterval)
 		}

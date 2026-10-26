@@ -336,12 +336,13 @@ func (b *EthAPIBackend) SendTx(ctx context.Context, signedTx *types.Transaction)
 	if b.eth.localTxTracker == nil {
 		return err
 	}
-	// CHANGE(taiko): taiko-client flows resubmit the same transaction and rely
-	// on `eth_sendRawTransaction` succeeding when the txpool already knows it,
-	// so on Taiko networks with the local tracker enabled an already-known
-	// transaction counts as accepted. Every other rejection is returned as
-	// upstream does: tracking it would keep a transaction the pool refused
-	// (oversized, unfunded, invalid) in memory and in the journal for good.
+	// CHANGE(taiko): taiko-client's integration tests resubmit identical
+	// transactions and rely on `eth_sendRawTransaction` succeeding when the
+	// txpool already knows them, so on Taiko networks with the local tracker
+	// enabled an already-known transaction counts as accepted. Every other
+	// rejection is handled as upstream does: one that is not temporary is
+	// returned, so the caller learns the pool refused the transaction, and
+	// the transaction is not tracked.
 	if b.ChainConfig().Taiko && errors.Is(err, txpool.ErrAlreadyKnown) {
 		err = nil
 	}

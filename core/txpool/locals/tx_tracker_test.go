@@ -280,13 +280,17 @@ func TestTrackerDropsPermanentlyRejected(t *testing.T) {
 	}
 	env.tracker.mu.Lock()
 	var left *types.Transaction
-	if list := env.tracker.byAddr[crypto.PubkeyToAddress(unfundedKey.PublicKey)]; list != nil {
+	list, senderTracked := env.tracker.byAddr[crypto.PubkeyToAddress(unfundedKey.PublicKey)]
+	if list != nil {
 		left = list.Get(unfunded.Nonce())
 	}
 	env.tracker.mu.Unlock()
 
 	if left != nil {
 		t.Fatalf("Rejected transaction is still tracked by its sender")
+	}
+	if senderTracked {
+		t.Fatalf("Sender with no tracked transactions is still tracked")
 	}
 	if !env.tracker.Has(funded.Hash()) {
 		t.Fatalf("Funded transaction is not tracked")

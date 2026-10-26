@@ -287,7 +287,8 @@ func (a *TaikoAuthAPIBackend) SetL1OriginSignature(blockID *math.HexOrDecimal256
 
 // TxPoolContent retrieves the transaction pool content with the given upper limits.
 //
-// Deprecated: taiko-geth no longer builds tx lists for proposers; alethia-reth serves taikoAuth_txPoolContent and taikoAuth_txPoolContentWithMinTip.
+// Deprecated: proposers fetch tx lists from alethia-reth, which serves taikoAuth_txPoolContent
+// and taikoAuth_txPoolContentWithMinTip; kept for compatibility.
 func (a *TaikoAuthAPIBackend) TxPoolContent(
 	beneficiary common.Address,
 	baseFee *big.Int,
@@ -317,7 +318,8 @@ func (a *TaikoAuthAPIBackend) TxPoolContent(
 
 // TxPoolContentWithMinTip retrieves the transaction pool content with the given upper limits and minimum tip.
 //
-// Deprecated: taiko-geth no longer builds tx lists for proposers; alethia-reth serves taikoAuth_txPoolContent and taikoAuth_txPoolContentWithMinTip.
+// Deprecated: proposers fetch tx lists from alethia-reth, which serves taikoAuth_txPoolContent
+// and taikoAuth_txPoolContentWithMinTip; kept for compatibility.
 func (a *TaikoAuthAPIBackend) TxPoolContentWithMinTip(
 	beneficiary common.Address,
 	baseFee *big.Int,
