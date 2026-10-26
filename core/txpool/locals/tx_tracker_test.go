@@ -207,7 +207,7 @@ func TestJournal(t *testing.T) {
 	}
 }
 
-func TestTrackerDropsReplacedTransaction(t *testing.T) {
+func TestTrackerDropRejectedKeepsReplacement(t *testing.T) {
 	env := newTestEnv(t, 10, 0, "")
 	defer env.close()
 
@@ -216,41 +216,18 @@ func TestTrackerDropsReplacedTransaction(t *testing.T) {
 	env.tracker.TrackAll([]*types.Transaction{txA})
 	env.tracker.TrackAll([]*types.Transaction{txB})
 
-	env.tracker.mu.Lock()
-	allCopy := maps.Clone(env.tracker.all)
-	current := env.tracker.byAddr[address].Get(txA.Nonce())
-	env.tracker.mu.Unlock()
-
-	if len(allCopy) != 1 {
-		t.Fatalf("Unexpected transactions being tracked, got: %d, want: %d", len(allCopy), 1)
-	}
-	if _, ok := allCopy[txB.Hash()]; !ok {
-		t.Fatalf("Replacement transaction is not tracked")
-	}
-	if current == nil || current.Hash() != txB.Hash() {
-		t.Fatalf("Unexpected transaction at nonce %d, got: %v, want: %v", txA.Nonce(), current, txB.Hash())
-	}
-
-	// Tracking the replacement again is a no-op
-	env.tracker.TrackAll([]*types.Transaction{txB})
-	env.tracker.mu.Lock()
-	tracked := len(env.tracker.all)
-	env.tracker.mu.Unlock()
-
-	if tracked != 1 {
-		t.Fatalf("Unexpected transactions being tracked, got: %d, want: %d", tracked, 1)
-	}
-
 	// The pool rejecting a stale resubmission of the replaced transaction
 	// leaves the replacement tracked
 	env.tracker.dropRejected([]*types.Transaction{txA}, []error{txpool.ErrReplaceUnderpriced})
 	env.tracker.mu.Lock()
-	tracked = len(env.tracker.all)
-	current = env.tracker.byAddr[address].Get(txA.Nonce())
+	current := env.tracker.byAddr[address].Get(txA.Nonce())
 	env.tracker.mu.Unlock()
 
-	if tracked != 1 || current == nil || current.Hash() != txB.Hash() {
-		t.Fatalf("Replacement transaction is no longer tracked, tracked: %d, at nonce %d: %v", tracked, txA.Nonce(), current)
+	if env.tracker.Has(txA.Hash()) {
+		t.Fatalf("Rejected transaction is still tracked")
+	}
+	if !env.tracker.Has(txB.Hash()) || current == nil || current.Hash() != txB.Hash() {
+		t.Fatalf("Replacement transaction is no longer tracked, at nonce %d: %v", txA.Nonce(), current)
 	}
 }
 

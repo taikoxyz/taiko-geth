@@ -44,8 +44,7 @@ var (
 // This struct does not care about transaction validity, price-bumps or account limits,
 // but optimistically accepts transactions.
 // CHANGE(taiko): it also drops tracked transactions the pool rejects for a
-// non-temporary reason on resubmission, and tracked transactions replaced by
-// another one with the same nonce.
+// non-temporary reason on resubmission.
 type TxTracker struct {
 	all    map[common.Hash]*types.Transaction       // All tracked transactions
 	byAddr map[common.Address]*legacypool.SortedMap // Transactions by address
@@ -107,12 +106,6 @@ func (tracker *TxTracker) TrackAll(txs []*types.Transaction) {
 		tracker.all[tx.Hash()] = tx
 		if tracker.byAddr[addr] == nil {
 			tracker.byAddr[addr] = legacypool.NewSortedMap()
-		}
-		// CHANGE(taiko): Put overwrites the transaction tracked at the same nonce,
-		// so stop tracking the replaced one too. Otherwise it would stay in `all`,
-		// and in every rotated journal, forever.
-		if prev := tracker.byAddr[addr].Get(tx.Nonce()); prev != nil && prev.Hash() != tx.Hash() {
-			delete(tracker.all, prev.Hash())
 		}
 		tracker.byAddr[addr].Put(tx)
 
