@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"math/big"
+	mrand "math/rand"
 	"runtime"
 	"strings"
 	"testing"
@@ -181,6 +182,169 @@ func TestFitsEmptyTxList(t *testing.T) {
 	}
 }
 
+// TestBuildTransactionsLists_SkipsTxThatDoesNotFitCurrentList checks that a
+// transaction that fits in a list of its own but not after the transactions
+// already selected is left out of that list without cutting it short: tail
+// pruning would otherwise remove it together with every lower-tip
+// transaction behind it. With a second list it goes there.
+func TestBuildTransactionsLists_SkipsTxThatDoesNotFitCurrentList(t *testing.T) {
+	for _, maxLists := range []uint64{1, 2} {
+		config := newUnzenTestChainConfig()
+		gspec := newUnzenTestGenesis(config)
+		gspec.GasLimit = 30_000_000
+		firstKey, largeKey := fundedTestKey(t, gspec), fundedTestKey(t, gspec)
+		w, b := newUnzenTxListTestWorker(t, gspec)
+
+		first := signTxListTestTx(t, config, firstKey, 0, testUserAddress, params.TxGas, 20, nil)
+		addTxListTestTx(t, b, first)
+		// Incompressible calldata just under the limit, ranked right after first.
+		data := make([]byte, txListTestMaxBytes-200)
+		if _, err := rand.Read(data); err != nil {
+			t.Fatalf("rand: %v", err)
+		}
+		large := signTxListTestTx(t, config, largeKey, 0, testUserAddress, 6_000_000, 19, data)
+		if fits, err := fitsEmptyTxList(large, txListTestMaxBytes); err != nil || !fits {
+			t.Fatalf("large tx should fit in a list of its own: fits=%v err=%v", fits, err)
+		}
+		addTxListTestTx(t, b, large)
+		users := addUserTransfers(t, b, config, 5)
+
+		lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, maxLists)
+		if err != nil {
+			t.Fatalf("BuildTransactionsLists: %v", err)
+		}
+		want := [][]common.Hash{append([]common.Hash{first.Hash()}, users...)}
+		if maxLists > 1 {
+			want = append(want, []common.Hash{large.Hash()})
+		}
+		if len(lists) != len(want) {
+			t.Fatalf("maxLists %d: got %d tx lists, want %d", maxLists, len(lists), len(want))
+		}
+		for i := range want {
+			assertSingleTxList(t, lists[i:i+1], want[i])
+			if lists[i].BytesLength > txListTestMaxBytes {
+				t.Fatalf("maxLists %d: tx list %d is %d bytes, over the %d byte limit", maxLists, i, lists[i].BytesLength, txListTestMaxBytes)
+			}
+		}
+	}
+}
+
+// TestTxListFit_ListsStayWithinLimit fills lists through txListFit with a mix
+// of small, compressible and incompressible transactions. A list must never
+// exceed the limit, which is what lets tx-list building skip a transaction
+// instead of pruning everything after it, and it must not stop well short of
+// the limit.
+func TestTxListFit_ListsStayWithinLimit(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	rng := mrand.New(mrand.NewSource(1))
+	var nonce uint64
+	newTx := func() *types.Transaction {
+		var data []byte
+		switch kind := rng.Intn(10); {
+		case kind < 5: // transfer
+		case kind < 7: // short random calldata
+			data = make([]byte, rng.Intn(600))
+			rng.Read(data)
+		case kind < 9: // compressible calldata
+			data = make([]byte, rng.Intn(20_000))
+			for i := range data {
+				data[i] = byte(i % 7)
+			}
+		default: // large random calldata
+			data = make([]byte, 1_000+rng.Intn(60_000))
+			rng.Read(data)
+		}
+		nonce++
+		return signTxListTestTx(t, config, testBankKey, nonce, common.Address{byte(rng.Intn(16))}, 1_000_000, 1, data)
+	}
+
+	for trial := range 10 {
+		var list types.Transactions
+		fit := newTxListFit(list, txListTestMaxBytes)
+		for {
+			tx := newTx()
+			fits, err := fit.fits(list, tx)
+			if err != nil {
+				t.Fatalf("fits: %v", err)
+			}
+			if !fits {
+				if fit.full() {
+					break
+				}
+				continue
+			}
+			list = append(list, tx)
+			fit.add(tx)
+			size, err := compressedTxListSize(list)
+			if err != nil {
+				t.Fatalf("compress: %v", err)
+			}
+			if size > txListTestMaxBytes {
+				t.Fatalf("trial %d: list of %d txs is %d bytes, over the %d byte limit", trial, len(list), size, txListTestMaxBytes)
+			}
+		}
+		size, err := compressedTxListSize(list)
+		if err != nil {
+			t.Fatalf("compress: %v", err)
+		}
+		if size < txListTestMaxBytes-txListTestMaxBytes/32 {
+			t.Fatalf("trial %d: list stopped at %d bytes, more than a 32nd below the %d byte limit", trial, size, txListTestMaxBytes)
+		}
+	}
+}
+
+// TestTxListFit_IncompressibleTxAfterCompressibleList pins the case the
+// estimate's margin is for. Incompressible data appended to a small
+// compressible list compresses to about 3.9 KiB more than its encoded size,
+// since zlib cannot store it raw, so the largest such transaction let in must
+// still leave the list within the limit.
+func TestTxListFit_IncompressibleTxAfterCompressibleList(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	var nonce uint64
+	newTx := func(data []byte) *types.Transaction {
+		nonce++
+		return signTxListTestTx(t, config, testBankKey, nonce, testUserAddress, 1_000_000, 1, data)
+	}
+	var list types.Transactions
+	fit := newTxListFit(list, txListTestMaxBytes)
+	for range 4 {
+		data := make([]byte, 500)
+		for i := range data {
+			data[i] = byte(i * 7 % 13)
+		}
+		tx := newTx(data)
+		if fits, err := fit.fits(list, tx); err != nil || !fits {
+			t.Fatalf("small compressible tx should fit: fits=%v err=%v", fits, err)
+		}
+		list = append(list, tx)
+		fit.add(tx)
+	}
+
+	data := make([]byte, txListTestMaxBytes)
+	if _, err := rand.Read(data); err != nil {
+		t.Fatalf("rand: %v", err)
+	}
+	for n := len(data); n > 0; n -= 256 {
+		tx := newTx(data[:n])
+		fits, err := fit.fits(list, tx)
+		if err != nil {
+			t.Fatalf("fits: %v", err)
+		}
+		if !fits {
+			continue
+		}
+		size, err := compressedTxListSize(append(list, tx))
+		if err != nil {
+			t.Fatalf("compress: %v", err)
+		}
+		if size > txListTestMaxBytes {
+			t.Fatalf("a %d byte incompressible tx was let in, leaving the list at %d bytes, over the %d byte limit", tx.Size(), size, txListTestMaxBytes)
+		}
+		return
+	}
+	t.Fatal("no incompressible tx fit")
+}
+
 // TestBuildTransactionsLists_SkipsTxOverZkGasBudget checks that tx-list
 // building meters Unzen zk gas: a transaction that needs more than the block
 // budget is left out, so the derived block is not cut short before the
@@ -243,11 +407,15 @@ func newZkGasTestGenesis(t *testing.T, config *params.ChainConfig, n int) (*core
 	return gspec, keys
 }
 
+// zkOverflowBudget returns the largest budget w remembers tx overflowing.
+func zkOverflowBudget(w *Miner, tx *types.Transaction) (uint64, bool) {
+	return w.txListZkOverflows.budget(tx.Hash())
+}
+
 // TestBuildTransactionsLists_BoundsZkOverflowWork checks the cap on work spent
 // running transactions that overflow the zk-gas budget, which are reverted and
 // pay nothing: selection stops once their gas limits reach blockMaxGasLimit,
-// and those that overflowed with nothing else committed are not run again by
-// later calls.
+// and those that overflowed are not run again by later calls.
 func TestBuildTransactionsLists_BoundsZkOverflowWork(t *testing.T) {
 	config := newUnzenTestChainConfig()
 	gspec, keys := newZkGasTestGenesis(t, config, 4)
@@ -273,72 +441,142 @@ func TestBuildTransactionsLists_BoundsZkOverflowWork(t *testing.T) {
 	if lists := build(); len(lists) != 0 {
 		t.Fatalf("first call: got %d tx lists, want none", len(lists))
 	}
+	full := vm.BlockZkGasLimit - txListAnchorZkGasReserve
 	for i, tx := range heavy {
-		if got, want := w.txListZkUnfit.contains(tx.Hash()), i < 3; got != want {
+		budget, ok := zkOverflowBudget(w, tx)
+		if got, want := ok, i < 3; got != want {
 			t.Fatalf("heavy tx %d remembered = %v, want %v", i, got, want)
+		}
+		if ok && budget != full {
+			t.Fatalf("heavy tx %d remembered with budget %d, want the whole %d", i, budget, full)
 		}
 	}
 	// The next call skips them unrun, so one overflow is left before the users.
 	assertSingleTxList(t, build(), users)
-	if !w.txListZkUnfit.contains(heavy[3].Hash()) {
+	if _, ok := zkOverflowBudget(w, heavy[3]); !ok {
 		t.Fatal("last heavy tx should be remembered after the second call")
 	}
 }
 
-// TestBuildTransactionsLists_ZkOverflowAfterCommitNotRemembered pins what the
-// cross-call memory covers: a transaction that overflows after others were
-// committed might fit in a block of its own, so it is skipped for this call
-// only.
-func TestBuildTransactionsLists_ZkOverflowAfterCommitNotRemembered(t *testing.T) {
+// TestBuildTransactionsLists_ZkOverflowBehindCommitNotRerun checks that
+// over-budget transactions listed behind a committed one stop selection at
+// most once: they are remembered with the budget they had, so the next call,
+// with the same transaction ahead of them, skips them unrun and lists the
+// lower-tip transactions they kept out.
+func TestBuildTransactionsLists_ZkOverflowBehindCommitNotRerun(t *testing.T) {
 	config := newUnzenTestChainConfig()
-	gspec, keys := newZkGasTestGenesis(t, config, 2)
+	gspec, keys := newZkGasTestGenesis(t, config, 4)
 	w, b := newUnzenTxListTestWorker(t, gspec)
 
 	first := signTxListTestTx(t, config, keys[0], 0, testUserAddress, params.TxGas, 20, nil)
 	addTxListTestTx(t, b, first)
-	heavy := signTxListTestTx(t, config, keys[1], 0, hashLoopAddress, 10_000_000, 15, nil)
-	addTxListTestTx(t, b, heavy)
-	users := addUserTransfers(t, b, config, 5)
-
-	lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
-	if err != nil {
-		t.Fatalf("BuildTransactionsLists: %v", err)
+	var heavy []*types.Transaction
+	for i, key := range keys[1:] {
+		tx := signTxListTestTx(t, config, key, 0, hashLoopAddress, 10_000_000, int64(18-i), nil)
+		addTxListTestTx(t, b, tx)
+		heavy = append(heavy, tx)
 	}
-	assertSingleTxList(t, lists, append([]common.Hash{first.Hash()}, users...))
-	if w.txListZkUnfit.contains(heavy.Hash()) {
-		t.Fatal("a tx that overflowed after others were committed must not be remembered")
+	users := addUserTransfers(t, b, config, 5)
+	build := func() []*PreBuiltTxList {
+		t.Helper()
+		lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
+		if err != nil {
+			t.Fatalf("BuildTransactionsLists: %v", err)
+		}
+		return lists
+	}
+
+	// Their gas limits add up to the 30M cap, so the first call stops after them.
+	assertSingleTxList(t, build(), []common.Hash{first.Hash()})
+	full := vm.BlockZkGasLimit - txListAnchorZkGasReserve
+	for i, tx := range heavy {
+		budget, ok := zkOverflowBudget(w, tx)
+		if !ok || budget >= full {
+			t.Fatalf("heavy tx %d remembered = %v with budget %d, want a budget below %d", i, ok, budget, full)
+		}
+	}
+	for call := 2; call <= 3; call++ {
+		assertSingleTxList(t, build(), append([]common.Hash{first.Hash()}, users...))
 	}
 }
 
-// TestTxListZkUnfitSet_KeepsEntriesWhileInPool pins that remembered
+// TestBuildTransactionsLists_RerunsZkOverflowWithMoreBudget checks that a
+// remembered transaction is run again once more budget is left for it than
+// when it overflowed, here because a lighter transaction replaced the heavy
+// one ahead of it.
+func TestBuildTransactionsLists_RerunsZkOverflowWithMoreBudget(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	gspec, keys := newZkGasTestGenesis(t, config, 2)
+	w, b := newUnzenTxListTestWorker(t, gspec)
+
+	// About 30M zk gas, which fits.
+	first := signTxListTestTx(t, config, keys[0], 0, hashLoopAddress, 1_000_000, 20, nil)
+	addTxListTestTx(t, b, first)
+	heavy := signTxListTestTx(t, config, keys[1], 0, hashLoopAddress, 10_000_000, 15, nil)
+	addTxListTestTx(t, b, heavy)
+	users := addUserTransfers(t, b, config, 5)
+	build := func() []*PreBuiltTxList {
+		t.Helper()
+		lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
+		if err != nil {
+			t.Fatalf("BuildTransactionsLists: %v", err)
+		}
+		return lists
+	}
+
+	assertSingleTxList(t, build(), append([]common.Hash{first.Hash()}, users...))
+	before, ok := zkOverflowBudget(w, heavy)
+	if !ok {
+		t.Fatal("heavy tx should be remembered")
+	}
+	// Same nonce, a plain transfer with fees bumped past the replacement threshold.
+	replacement := signTxListTestTx(t, config, keys[0], 0, testUserAddress, params.TxGas, 23, nil)
+	addTxListTestTx(t, b, replacement)
+
+	assertSingleTxList(t, build(), append([]common.Hash{replacement.Hash()}, users...))
+	after, _ := zkOverflowBudget(w, heavy)
+	if after <= before {
+		t.Fatalf("heavy tx budget %d after the second call, want more than %d: it was not run again", after, before)
+	}
+}
+
+// TestTxListZkOverflowSet_KeepsEntriesWhileInPool pins that remembered
 // transactions are dropped only once they leave the pool, never to make
 // room: otherwise a sender with more over-budget transactions than the set
-// holds could cycle them back in to be run again.
-func TestTxListZkUnfitSet_KeepsEntriesWhileInPool(t *testing.T) {
-	set := newTxListZkUnfitSet()
+// holds could cycle them back in to be run again. It also pins that an entry
+// keeps the largest budget recorded for it.
+func TestTxListZkOverflowSet_KeepsEntriesWhileInPool(t *testing.T) {
+	set := newTxListZkOverflowSet()
 	const n = 10_000
 	for i := range n {
-		set.add(common.BigToHash(big.NewInt(int64(i))))
+		set.record(common.BigToHash(big.NewInt(int64(i))), uint64(i+1))
 	}
 	set.prune(func(common.Hash) bool { return true })
 	for i := range n {
-		if !set.contains(common.BigToHash(big.NewInt(int64(i)))) {
+		if _, ok := set.budget(common.BigToHash(big.NewInt(int64(i)))); !ok {
 			t.Fatalf("entry %d dropped while its transaction is still in the pool", i)
 		}
 	}
 	// Transactions with an odd hash have left the pool.
 	set.prune(func(h common.Hash) bool { return h[len(h)-1]%2 == 0 })
 	for i := range n {
-		if got, want := set.contains(common.BigToHash(big.NewInt(int64(i)))), i%2 == 0; got != want {
-			t.Fatalf("entry %d remembered = %v, want %v", i, got, want)
+		if _, ok := set.budget(common.BigToHash(big.NewInt(int64(i)))); ok != (i%2 == 0) {
+			t.Fatalf("entry %d remembered = %v, want %v", i, ok, i%2 == 0)
 		}
+	}
+
+	hash := common.BigToHash(big.NewInt(0))
+	set.record(hash, 50)
+	set.record(hash, 10)
+	if budget, _ := set.budget(hash); budget != 50 {
+		t.Fatalf("budget = %d, want the largest recorded, 50", budget)
 	}
 }
 
-// TestBuildTransactionsLists_ForgetsZkUnfitTxOnceItLeavesPool checks that a
+// TestBuildTransactionsLists_ForgetsZkOverflowOnceItLeavesPool checks that a
 // remembered transaction is forgotten when its sender replaces it, and that
 // the replacement is evaluated normally.
-func TestBuildTransactionsLists_ForgetsZkUnfitTxOnceItLeavesPool(t *testing.T) {
+func TestBuildTransactionsLists_ForgetsZkOverflowOnceItLeavesPool(t *testing.T) {
 	config := newUnzenTestChainConfig()
 	gspec, keys := newZkGasTestGenesis(t, config, 1)
 	w, b := newUnzenTxListTestWorker(t, gspec)
@@ -356,7 +594,7 @@ func TestBuildTransactionsLists_ForgetsZkUnfitTxOnceItLeavesPool(t *testing.T) {
 	}
 
 	assertSingleTxList(t, build(), users)
-	if !w.txListZkUnfit.contains(heavy.Hash()) {
+	if _, ok := zkOverflowBudget(w, heavy); !ok {
 		t.Fatal("heavy tx should be remembered")
 	}
 	// Same nonce, a plain transfer with fees bumped past the replacement threshold.
@@ -367,7 +605,7 @@ func TestBuildTransactionsLists_ForgetsZkUnfitTxOnceItLeavesPool(t *testing.T) {
 	}
 
 	assertSingleTxList(t, build(), append([]common.Hash{replacement.Hash()}, users...))
-	if w.txListZkUnfit.contains(heavy.Hash()) {
+	if _, ok := zkOverflowBudget(w, heavy); ok {
 		t.Fatal("heavy tx should be forgotten once it left the pool")
 	}
 }

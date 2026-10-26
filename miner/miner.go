@@ -77,9 +77,9 @@ type Miner struct {
 	pending     *pending
 	pendingMu   sync.Mutex // Lock protects the pending block
 
-	// CHANGE(taiko): transactions that tx-list building found too large for
-	// a whole block's Unzen zk-gas budget, so later calls skip them unrun.
-	txListZkUnfit *txListZkUnfitSet
+	// CHANGE(taiko): transactions that overflowed the Unzen zk-gas budget in
+	// tx-list building, so later calls skip them unrun unless more is left.
+	txListZkOverflows *txListZkOverflowSet
 }
 
 // New creates a new miner with provided config.
@@ -92,7 +92,7 @@ func New(eth Backend, config Config, engine consensus.Engine) *Miner {
 		chain:       eth.BlockChain(),
 		pending:     &pending{},
 		// CHANGE(taiko): see txListZkBudget in taiko_worker.go.
-		txListZkUnfit: newTxListZkUnfitSet(),
+		txListZkOverflows: newTxListZkOverflowSet(),
 	}
 }
 

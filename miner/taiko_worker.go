@@ -36,47 +36,56 @@ const (
 	// data, so a transaction further from the limit always fits on its own.
 	txListZlibGuardBytes = 4 * 1024
 
+	// txListItemOverhead bounds the RLP header bytes a transaction adds to a
+	// tx list beyond its own encoded size.
+	txListItemOverhead = 8
+
 	// txListAnchorZkGasReserve is the Unzen zk gas held back for the anchor
 	// transaction, which tx-list building does not execute but every derived
 	// block starts with. Mainnet anchor-only blocks use about 1.16M zk gas.
 	txListAnchorZkGasReserve = 2_000_000
 )
 
-// txListZkUnfitSet holds the transactions tx-list building found too large
-// for a whole block's zk-gas budget. An entry is kept for as long as its
-// transaction stays in the pool, which also bounds the set by the pool's size.
-// A cache smaller than the pool would not do: a sender holding more such
-// transactions than it fits could cycle evicted ones back in, one re-run per
-// call, each reaching the work limit and stopping selection.
-type txListZkUnfitSet struct {
-	mu     sync.Mutex
-	hashes map[common.Hash]struct{}
+// txListZkOverflowSet remembers, across tx-list building calls, the
+// transactions that overflowed the zk-gas budget and the largest budget each
+// one overflowed. An entry is kept for as long as its transaction stays in
+// the pool, which also bounds the set by the pool's size. A cache smaller
+// than the pool would not do: a sender holding more such transactions than it
+// fits could cycle evicted ones back in, one re-run per call, each counting
+// towards the work limit that stops selection.
+type txListZkOverflowSet struct {
+	mu      sync.Mutex
+	budgets map[common.Hash]uint64
 }
 
-func newTxListZkUnfitSet() *txListZkUnfitSet {
-	return &txListZkUnfitSet{hashes: make(map[common.Hash]struct{})}
+func newTxListZkOverflowSet() *txListZkOverflowSet {
+	return &txListZkOverflowSet{budgets: make(map[common.Hash]uint64)}
 }
 
-func (s *txListZkUnfitSet) add(hash common.Hash) {
+// record notes that the transaction overflowed with budget zk gas left.
+func (s *txListZkOverflowSet) record(hash common.Hash, budget uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.hashes[hash] = struct{}{}
+	if budget > s.budgets[hash] {
+		s.budgets[hash] = budget
+	}
 }
 
-func (s *txListZkUnfitSet) contains(hash common.Hash) bool {
+// budget returns the largest budget the transaction is known to overflow.
+func (s *txListZkOverflowSet) budget(hash common.Hash) (uint64, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	_, ok := s.hashes[hash]
-	return ok
+	budget, ok := s.budgets[hash]
+	return budget, ok
 }
 
 // prune forgets the transactions that have left the pool.
-func (s *txListZkUnfitSet) prune(inPool func(common.Hash) bool) {
+func (s *txListZkOverflowSet) prune(inPool func(common.Hash) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for hash := range s.hashes {
+	for hash := range s.budgets {
 		if !inPool(hash) {
-			delete(s.hashes, hash)
+			delete(s.budgets, hash)
 		}
 	}
 }
@@ -84,28 +93,32 @@ func (s *txListZkUnfitSet) prune(inPool func(common.Hash) bool) {
 // txListZkBudget meters the Unzen zk-gas budget across the lists of one
 // tx-list building call. A transaction that overflows the budget is reverted
 // and pays nothing, so the work spent running such transactions is capped:
-// a rejected transaction is not run again in the same call, one that
-// overflows before anything was committed is remembered across calls (with
-// the anchor reserve it fits no block at this state and context), and once
-// the gas limits of the rejected transactions reach wasteLimit no further
-// transaction is selected in this call.
+//   - each overflow is remembered with the budget that was left when it ran,
+//     in this call and across calls, and the transaction is not run again
+//     until it gets more budget than that. Within a call the budget only
+//     shrinks, and across calls a transaction gets more only when less is
+//     committed ahead of it;
+//   - once the gas limits of the rejected transactions reach wasteLimit, no
+//     further transaction is selected in this call.
+//
+// So a call stops only on over-budget transactions it runs at a budget they
+// have not overflowed before. The same transactions stop a later call again
+// only if less is committed ahead of them there than at any earlier overflow.
 //
 // Remembered transactions do not expire while they are in the pool. An
-// expiry would let a sender stagger its overflowing transactions so that one
-// comes due every block, and a single re-run reaches the limit and stops
-// selection.
+// expiry would let a sender stagger its overflowing transactions so that some
+// come due every block and stop selection again.
 type txListZkBudget struct {
 	meter      *vm.ZkGasMeter
-	unfit      *txListZkUnfitSet        // shared by all calls; may be nil
-	rejected   map[common.Hash]struct{} // overflowed earlier in this call
-	committed  bool                     // a transaction was committed in this call
-	wastedGas  uint64                   // summed gas limits of rejected transactions
+	overflows  *txListZkOverflowSet   // shared by all calls; may be nil
+	rejected   map[common.Hash]uint64 // overflowed in this call, with the budget left
+	wastedGas  uint64                 // summed gas limits of rejected transactions
 	wasteLimit uint64
 	stopped    bool // wastedGas reached wasteLimit
 }
 
 // newTxListZkBudget attaches a zk-gas meter with the anchor reserve to env.
-func newTxListZkBudget(env *environment, unfit *txListZkUnfitSet, wasteLimit uint64) (*txListZkBudget, error) {
+func newTxListZkBudget(env *environment, overflows *txListZkOverflowSet, wasteLimit uint64) (*txListZkBudget, error) {
 	meter := vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
 	if err := meter.ReserveBlockZkGas(txListAnchorZkGasReserve); err != nil {
 		return nil, err
@@ -113,44 +126,153 @@ func newTxListZkBudget(env *environment, unfit *txListZkUnfitSet, wasteLimit uin
 	env.evm.SetZkGasMeter(meter)
 	return &txListZkBudget{
 		meter:      meter,
-		unfit:      unfit,
-		rejected:   make(map[common.Hash]struct{}),
+		overflows:  overflows,
+		rejected:   make(map[common.Hash]uint64),
 		wasteLimit: wasteLimit,
 	}, nil
 }
 
-// known reports whether the transaction already overflowed the budget, in
-// this call or, on its own, in an earlier one.
+// known reports whether the transaction is known to overflow the budget left
+// now: it overflowed, in this call or an earlier one, with at least as much.
 func (b *txListZkBudget) known(hash common.Hash) bool {
-	if _, ok := b.rejected[hash]; ok {
+	left := b.meter.RemainingBlockZkGas()
+	if budget, ok := b.rejected[hash]; ok && budget >= left {
 		return true
 	}
-	return b.unfit != nil && b.unfit.contains(hash)
+	if b.overflows == nil {
+		return false
+	}
+	budget, ok := b.overflows.budget(hash)
+	return ok && budget >= left
 }
 
 // commit promotes the in-flight zk gas of a successfully executed transaction.
 // Charging already keeps the total within the budget, so this only fails on
 // arithmetic overflow.
 func (b *txListZkBudget) commit() error {
-	if err := b.meter.CommitTransaction(); err != nil {
-		return err
-	}
-	b.committed = true
-	return nil
+	return b.meter.CommitTransaction()
 }
 
-// reject records that tx overflowed the budget, and stops selection for the
-// rest of the call once the work spent on rejected transactions reaches the
-// limit.
+// reject records that tx overflowed the budget left, and stops selection for
+// the rest of the call once the work spent on rejected transactions reaches
+// the limit. The overflowed transaction's in-flight zk gas must already be
+// discarded.
 func (b *txListZkBudget) reject(tx *types.Transaction) {
-	b.rejected[tx.Hash()] = struct{}{}
-	if b.unfit != nil && !b.committed {
-		b.unfit.add(tx.Hash())
+	budget := b.meter.RemainingBlockZkGas()
+	b.rejected[tx.Hash()] = budget
+	if b.overflows != nil {
+		b.overflows.record(tx.Hash(), budget)
 	}
 	b.wastedGas += tx.Gas()
 	if b.wastedGas >= b.wasteLimit {
 		b.stopped = true
 	}
+}
+
+// txListFit checks, before a transaction is executed, whether it still fits
+// in the tx list being filled. Executing first and trimming the tail
+// afterwards would drop, together with a transaction that does not fit, every
+// transaction selected after it.
+//
+// It tracks the list's compressed size: measured exactly from time to time,
+// and raised by each added transaction's encoded size in between. Appending
+// to a zlib stream can grow it by more than the appended bytes, by a few
+// percent when incompressible data shares a deflate block with compressible
+// data, so a transaction is let in unmeasured only while the estimate stays
+// txListZlibGuardBytes plus an eighth of the bytes added since the last
+// measurement below the limit.
+type txListFit struct {
+	limit    uint64
+	size     uint64 // last measured compressed size, plus the encoded bytes added since
+	added    uint64 // encoded bytes added since size was last measured
+	measured bool   // size is exact
+	next     uint64 // measured size of the list with the last fitting candidate, or 0
+}
+
+// newTxListFit starts tracking a list that already holds txs.
+func newTxListFit(txs types.Transactions, limit uint64) *txListFit {
+	f := &txListFit{limit: limit, measured: len(txs) == 0}
+	for _, tx := range txs {
+		f.size += tx.Size() + txListItemOverhead
+	}
+	f.added = f.size
+	return f
+}
+
+// fits reports whether tx fits in the list after txs.
+func (f *txListFit) fits(txs types.Transactions, tx *types.Transaction) (bool, error) {
+	f.next = 0
+	if f.withinEstimate(tx) {
+		return true, nil
+	}
+	if !f.measured {
+		size, err := compressedTxListSize(txs)
+		if err != nil {
+			return false, err
+		}
+		f.setMeasured(size)
+		if f.withinEstimate(tx) {
+			return true, nil
+		}
+	}
+	// A transaction that needs more than the room left even compressed on its
+	// own is taken not to fit, without compressing the whole list for it.
+	room := f.room()
+	if tx.Size() > room {
+		alone, err := compressedTxListSize(types.Transactions{tx})
+		if err != nil {
+			return false, err
+		}
+		if alone > room {
+			return false, nil
+		}
+	}
+	size, err := compressedTxListSize(append(txs[:len(txs):len(txs)], tx))
+	if err != nil {
+		return false, err
+	}
+	if size > f.limit {
+		return false, nil
+	}
+	f.next = size
+	return true, nil
+}
+
+// withinEstimate reports whether tx fits without measuring the list.
+func (f *txListFit) withinEstimate(tx *types.Transaction) bool {
+	n := tx.Size() + txListItemOverhead
+	return f.size+n+txListZlibGuardBytes+(f.added+n)/8 <= f.limit
+}
+
+// full reports whether the list is too close to the limit to keep looking
+// for transactions that fit: less than a 32nd of the limit is left. After
+// fits returns false the size it checks against is exact.
+func (f *txListFit) full() bool {
+	return f.room() < f.limit/32
+}
+
+func (f *txListFit) room() uint64 {
+	if f.size >= f.limit {
+		return 0
+	}
+	return f.limit - f.size
+}
+
+// add records that tx, which fits returned true for, joined the list.
+func (f *txListFit) add(tx *types.Transaction) {
+	if f.next != 0 {
+		f.setMeasured(f.next)
+		return
+	}
+	n := tx.Size() + txListItemOverhead
+	f.size += n
+	f.added += n
+	f.measured = false
+}
+
+// setMeasured records the list's exact compressed size.
+func (f *txListFit) setMeasured(size uint64) {
+	f.size, f.added, f.measured, f.next = size, 0, true, 0
 }
 
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given conditions
@@ -249,10 +371,10 @@ func (w *Miner) buildTransactionsLists(
 	// keeps lists that a proposer merges into one block within the budget.
 	var zkBudget *txListZkBudget
 	if w.chainConfig.IsUnzen(env.header.Time) {
-		if w.txListZkUnfit != nil {
-			w.txListZkUnfit.prune(w.txpool.Has)
+		if w.txListZkOverflows != nil {
+			w.txListZkOverflows.prune(w.txpool.Has)
 		}
-		if zkBudget, err = newTxListZkBudget(env, w.txListZkUnfit, blockMaxGasLimit); err != nil {
+		if zkBudget, err = newTxListZkBudget(env, w.txListZkOverflows, blockMaxGasLimit); err != nil {
 			return nil, err
 		}
 	}
@@ -563,6 +685,7 @@ func (w *Miner) commitL2Transactions(
 		env.txs = append(env.txs, presetTxs...)
 		env.receipts = append(env.receipts, presetReceipts...)
 	}
+	listFit := newTxListFit(env.txs, maxBytesPerTxList)
 
 loop:
 	for {
@@ -634,6 +757,20 @@ loop:
 			txs.Pop()
 			continue
 		}
+		// For the same reason, check the transaction against the list filled so
+		// far before executing it. Skip it if it does not fit and keep filling,
+		// unless the list is close enough to the limit to be full.
+		if fits, err := listFit.fits(env.txs, tx); err != nil {
+			return nil, err
+		} else if !fits {
+			if listFit.full() {
+				log.Trace("Tx list is full", "size", listFit.size, "maxBytesPerTxList", maxBytesPerTxList)
+				break
+			}
+			log.Trace("Skipping transaction that does not fit in the tx list", "hash", tx.Hash(), "size", tx.Size(), "listSize", listFit.size)
+			txs.Pop()
+			continue
+		}
 		// Start executing the transaction
 		env.state.SetTxContext(tx.Hash(), env.tcount)
 		if zkGasMeter != nil {
@@ -651,8 +788,9 @@ loop:
 		case zkBudget != nil && errors.Is(err, vm.ErrZkGasLimitExceeded):
 			// The transaction needs more zk gas than is left, so a derived block
 			// would be cut right before it. Its state changes are already
-			// reverted; leave it and the sender's later transactions out and
-			// keep filling the list with transactions that may still fit, until
+			// reverted; leave it and the sender's later transactions out,
+			// remember it so it is not run again at this budget, and keep
+			// filling the list with transactions that may still fit, until
 			// rejected transactions have cost a block's worth of gas.
 			log.Trace("Skipping transaction over the zk gas budget", "hash", ltx.Hash, "sender", from, "remaining", zkGasMeter.RemainingBlockZkGas())
 			zkGasMeter.ResetTransaction()
@@ -671,6 +809,7 @@ loop:
 			}
 			// Everything ok, collect the logs and shift in the next transaction from the same account
 			txs.Shift()
+			listFit.add(tx)
 
 			// Check the size of the compressed txList, if it exceeds the maxBytesPerTxList, break the loop.
 			if env.tcount%TxListCompressionCheckInterval == 0 {
@@ -681,6 +820,7 @@ loop:
 				if len(pruningResult.TxsPruned) > 0 {
 					break loop
 				}
+				listFit.setMeasured(uint64(pruningResult.Size))
 			}
 
 		default:
@@ -703,11 +843,21 @@ func fitsEmptyTxList(tx *types.Transaction, maxBytesPerTxList uint64) (bool, err
 	if tx.Size()+txListZlibGuardBytes < maxBytesPerTxList {
 		return true, nil
 	}
-	b, err := encodeAndCompressTxList(types.Transactions{tx})
+	size, err := compressedTxListSize(types.Transactions{tx})
 	if err != nil {
 		return false, err
 	}
-	return uint64(len(b)) <= maxBytesPerTxList, nil
+	return size <= maxBytesPerTxList, nil
+}
+
+// compressedTxListSize returns the size of txs encoded and compressed as a
+// tx list.
+func compressedTxListSize(txs types.Transactions) (uint64, error) {
+	b, err := encodeAndCompressTxList(txs)
+	if err != nil {
+		return 0, err
+	}
+	return uint64(len(b)), nil
 }
 
 // encodeAndCompressTxList encodes and compresses the given transactions list.
