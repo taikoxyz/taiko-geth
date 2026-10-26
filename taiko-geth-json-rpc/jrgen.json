@@ -246,7 +246,7 @@
     },
     "taikoAuth_TxPoolContent": {
       "summary": "RPC method TxPoolContent",
-      "description": "TxPoolContent retrieves the transaction pool content with the given upper limits.",
+      "description": "TxPoolContent retrieves the transaction pool content with the given upper limits.\n\nDeprecated: proposers fetch tx lists from alethia-reth, which serves taikoAuth_txPoolContent\nand taikoAuth_txPoolContentWithMinTip; kept for compatibility.",
       "tags": [
         "taikoAuth_"
       ],
@@ -308,7 +308,7 @@
     },
     "taikoAuth_TxPoolContentWithMinTip": {
       "summary": "RPC method TxPoolContentWithMinTip",
-      "description": "TxPoolContentWithMinTip retrieves the transaction pool content with the given upper limits and minimum tip.",
+      "description": "TxPoolContentWithMinTip retrieves the transaction pool content with the given upper limits and minimum tip.\n\nDeprecated: proposers fetch tx lists from alethia-reth, which serves taikoAuth_txPoolContent\nand taikoAuth_txPoolContentWithMinTip; kept for compatibility.",
       "tags": [
         "taikoAuth_"
       ],
