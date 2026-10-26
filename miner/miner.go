@@ -78,7 +78,7 @@ type Miner struct {
 	pendingMu   sync.Mutex // Lock protects the pending block
 
 	// CHANGE(taiko): transactions that overflowed the Unzen zk-gas budget in
-	// tx-list building, so later calls skip them unrun unless more is left.
+	// tx-list building, so later calls skip them unrun at the same state.
 	txListZkOverflows *txListZkOverflowSet
 }
 

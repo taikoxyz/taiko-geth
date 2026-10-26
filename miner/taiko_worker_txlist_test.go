@@ -407,15 +407,28 @@ func newZkGasTestGenesis(t *testing.T, config *params.ChainConfig, n int) (*core
 	return gspec, keys
 }
 
-// zkOverflowBudget returns the largest budget w remembers tx overflowing.
-func zkOverflowBudget(w *Miner, tx *types.Transaction) (uint64, bool) {
-	return w.txListZkOverflows.budget(tx.Hash())
+// zkOverflowState returns the execution state w remembers tx last
+// overflowing at.
+func zkOverflowState(w *Miner, tx *types.Transaction) (common.Hash, bool) {
+	return w.txListZkOverflows.state(tx.Hash())
+}
+
+// buildOneTxList calls BuildTransactionsLists for one list with the limits
+// the zk-gas tests use.
+func buildOneTxList(t *testing.T, w *Miner) []*PreBuiltTxList {
+	t.Helper()
+	lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
+	if err != nil {
+		t.Fatalf("BuildTransactionsLists: %v", err)
+	}
+	return lists
 }
 
 // TestBuildTransactionsLists_BoundsZkOverflowWork checks the cap on work spent
 // running transactions that overflow the zk-gas budget, which are reverted and
 // pay nothing: selection stops once their gas limits reach blockMaxGasLimit,
-// and those that overflowed are not run again by later calls.
+// and those that overflowed are not run again by later calls at the same
+// state.
 func TestBuildTransactionsLists_BoundsZkOverflowWork(t *testing.T) {
 	config := newUnzenTestChainConfig()
 	gspec, keys := newZkGasTestGenesis(t, config, 4)
@@ -428,41 +441,28 @@ func TestBuildTransactionsLists_BoundsZkOverflowWork(t *testing.T) {
 		heavy = append(heavy, tx)
 	}
 	users := addUserTransfers(t, b, config, 5)
-	build := func() []*PreBuiltTxList {
-		t.Helper()
-		lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
-		if err != nil {
-			t.Fatalf("BuildTransactionsLists: %v", err)
-		}
-		return lists
-	}
 
 	// The first three overflows add up to the 30M gas limit and stop selection.
-	if lists := build(); len(lists) != 0 {
+	if lists := buildOneTxList(t, w); len(lists) != 0 {
 		t.Fatalf("first call: got %d tx lists, want none", len(lists))
 	}
-	full := vm.BlockZkGasLimit - txListAnchorZkGasReserve
 	for i, tx := range heavy {
-		budget, ok := zkOverflowBudget(w, tx)
-		if got, want := ok, i < 3; got != want {
-			t.Fatalf("heavy tx %d remembered = %v, want %v", i, got, want)
-		}
-		if ok && budget != full {
-			t.Fatalf("heavy tx %d remembered with budget %d, want the whole %d", i, budget, full)
+		if _, ok := zkOverflowState(w, tx); ok != (i < 3) {
+			t.Fatalf("heavy tx %d remembered = %v, want %v", i, ok, i < 3)
 		}
 	}
 	// The next call skips them unrun, so one overflow is left before the users.
-	assertSingleTxList(t, build(), users)
-	if _, ok := zkOverflowBudget(w, heavy[3]); !ok {
+	assertSingleTxList(t, buildOneTxList(t, w), users)
+	if _, ok := zkOverflowState(w, heavy[3]); !ok {
 		t.Fatal("last heavy tx should be remembered after the second call")
 	}
 }
 
 // TestBuildTransactionsLists_ZkOverflowBehindCommitNotRerun checks that
 // over-budget transactions listed behind a committed one stop selection at
-// most once: they are remembered with the budget they had, so the next call,
-// with the same transaction ahead of them, skips them unrun and lists the
-// lower-tip transactions they kept out.
+// most once: they are remembered with the state they ran at, so the next
+// call, with the same transaction ahead of them, skips them unrun and lists
+// the lower-tip transactions they kept out.
 func TestBuildTransactionsLists_ZkOverflowBehindCommitNotRerun(t *testing.T) {
 	config := newUnzenTestChainConfig()
 	gspec, keys := newZkGasTestGenesis(t, config, 4)
@@ -477,99 +477,165 @@ func TestBuildTransactionsLists_ZkOverflowBehindCommitNotRerun(t *testing.T) {
 		heavy = append(heavy, tx)
 	}
 	users := addUserTransfers(t, b, config, 5)
-	build := func() []*PreBuiltTxList {
-		t.Helper()
-		lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
-		if err != nil {
-			t.Fatalf("BuildTransactionsLists: %v", err)
-		}
-		return lists
-	}
 
 	// Their gas limits add up to the 30M cap, so the first call stops after them.
-	assertSingleTxList(t, build(), []common.Hash{first.Hash()})
-	full := vm.BlockZkGasLimit - txListAnchorZkGasReserve
+	assertSingleTxList(t, buildOneTxList(t, w), []common.Hash{first.Hash()})
 	for i, tx := range heavy {
-		budget, ok := zkOverflowBudget(w, tx)
-		if !ok || budget >= full {
-			t.Fatalf("heavy tx %d remembered = %v with budget %d, want a budget below %d", i, ok, budget, full)
+		if _, ok := zkOverflowState(w, tx); !ok {
+			t.Fatalf("heavy tx %d should be remembered", i)
 		}
 	}
 	for call := 2; call <= 3; call++ {
-		assertSingleTxList(t, build(), append([]common.Hash{first.Hash()}, users...))
+		assertSingleTxList(t, buildOneTxList(t, w), append([]common.Hash{first.Hash()}, users...))
 	}
 }
 
-// TestBuildTransactionsLists_RerunsZkOverflowWithMoreBudget checks that a
-// remembered transaction is run again once more budget is left for it than
-// when it overflowed, here because a lighter transaction replaced the heavy
-// one ahead of it.
-func TestBuildTransactionsLists_RerunsZkOverflowWithMoreBudget(t *testing.T) {
+// TestBuildTransactionsLists_RerunsZkOverflowThatNowFits checks that a
+// remembered transaction is run again once the state ahead of it changes,
+// here because a transaction ahead makes it cheap, and that a miner that
+// remembers it then builds the same list as one that does not.
+func TestBuildTransactionsLists_RerunsZkOverflowThatNowFits(t *testing.T) {
 	config := newUnzenTestChainConfig()
 	gspec, keys := newZkGasTestGenesis(t, config, 2)
-	w, b := newUnzenTxListTestWorker(t, gspec)
+	// Empty calldata: STOP if slot 0 is set, else hash in a loop like
+	// hashLoopCode. Other calldata: set slot 0.
+	switchAddress := common.HexToAddress("0x000000000000000000000000000000000000c0df")
+	gspec.Alloc[switchAddress] = types.Account{Code: common.FromHex("0x3615600b576001600055005b60005415601457005b6201000060002050601456"), Balance: common.Big0}
+	warm, warmBackend := newUnzenTxListTestWorker(t, gspec)
+	fresh, freshBackend := newUnzenTxListTestWorker(t, gspec)
 
-	// About 30M zk gas, which fits.
-	first := signTxListTestTx(t, config, keys[0], 0, hashLoopAddress, 1_000_000, 20, nil)
-	addTxListTestTx(t, b, first)
-	heavy := signTxListTestTx(t, config, keys[1], 0, hashLoopAddress, 10_000_000, 15, nil)
-	addTxListTestTx(t, b, heavy)
-	users := addUserTransfers(t, b, config, 5)
-	build := func() []*PreBuiltTxList {
-		t.Helper()
-		lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
-		if err != nil {
-			t.Fatalf("BuildTransactionsLists: %v", err)
-		}
-		return lists
+	heavy := signTxListTestTx(t, config, keys[0], 0, switchAddress, 10_000_000, 15, nil)
+	addTxListTestTx(t, warmBackend, heavy)
+	if lists := buildOneTxList(t, warm); len(lists) != 0 {
+		t.Fatalf("first call: got %d tx lists, want none", len(lists))
 	}
-
-	assertSingleTxList(t, build(), append([]common.Hash{first.Hash()}, users...))
-	before, ok := zkOverflowBudget(w, heavy)
-	if !ok {
+	if _, ok := zkOverflowState(warm, heavy); !ok {
 		t.Fatal("heavy tx should be remembered")
 	}
-	// Same nonce, a plain transfer with fees bumped past the replacement threshold.
-	replacement := signTxListTestTx(t, config, keys[0], 0, testUserAddress, params.TxGas, 23, nil)
-	addTxListTestTx(t, b, replacement)
 
-	assertSingleTxList(t, build(), append([]common.Hash{replacement.Hash()}, users...))
-	after, _ := zkOverflowBudget(w, heavy)
-	if after <= before {
-		t.Fatalf("heavy tx budget %d after the second call, want more than %d: it was not run again", after, before)
+	setter := signTxListTestTx(t, config, keys[1], 0, switchAddress, 100_000, 20, []byte{1})
+	addTxListTestTx(t, warmBackend, setter)
+	addTxListTestTx(t, freshBackend, heavy)
+	addTxListTestTx(t, freshBackend, setter)
+
+	want := []common.Hash{setter.Hash(), heavy.Hash()}
+	assertSingleTxList(t, buildOneTxList(t, fresh), want)
+	assertSingleTxList(t, buildOneTxList(t, warm), want)
+	if _, ok := zkOverflowState(warm, heavy); ok {
+		t.Fatal("heavy tx should be forgotten once it fits")
+	}
+}
+
+// TestBuildTransactionsLists_BoundsZkOverflowReruns checks that re-running
+// remembered transactions at a changed state never stops selection, and that
+// the re-runs a call makes stop once their gas limits reach blockMaxGasLimit.
+func TestBuildTransactionsLists_BoundsZkOverflowReruns(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	gspec, keys := newZkGasTestGenesis(t, config, 6)
+	w, b := newUnzenTxListTestWorker(t, gspec)
+
+	var heavy []*types.Transaction
+	for i, key := range keys[:5] {
+		tx := signTxListTestTx(t, config, key, 0, hashLoopAddress, 10_000_000, int64(18-i), nil)
+		addTxListTestTx(t, b, tx)
+		heavy = append(heavy, tx)
+	}
+	users := addUserTransfers(t, b, config, 5)
+
+	// The first three stop the first call; the second call runs the other two.
+	if lists := buildOneTxList(t, w); len(lists) != 0 {
+		t.Fatalf("first call: got %d tx lists, want none", len(lists))
+	}
+	assertSingleTxList(t, buildOneTxList(t, w), users)
+	states := make([]common.Hash, len(heavy))
+	for i, tx := range heavy {
+		state, ok := zkOverflowState(w, tx)
+		if !ok {
+			t.Fatalf("heavy tx %d should be remembered", i)
+		}
+		states[i] = state
+	}
+
+	// A new transaction ahead changes the state all five run at. Re-running
+	// the first three reaches the 30M allowance; the other two are skipped.
+	first := signTxListTestTx(t, config, keys[5], 0, testUserAddress, params.TxGas, 20, nil)
+	addTxListTestTx(t, b, first)
+	assertSingleTxList(t, buildOneTxList(t, w), append([]common.Hash{first.Hash()}, users...))
+	for i, tx := range heavy {
+		state, _ := zkOverflowState(w, tx)
+		if rerun := state != states[i]; rerun != (i < 3) {
+			t.Fatalf("heavy tx %d re-run = %v, want %v", i, rerun, i < 3)
+		}
+	}
+}
+
+// TestNewTxListZkBudget_StateCoversBlockContext checks that the execution
+// state a call starts from covers the parent block and the block context the
+// simulation sets, so a new head or other request parameters lead to re-runs.
+func TestNewTxListZkBudget_StateCoversBlockContext(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	w, b := newUnzenTxListTestWorker(t, newUnzenTestGenesis(config))
+	env, err := w.prepareWork(context.Background(), unzenGenerateParams(b.chain.CurrentBlock()), false)
+	if err != nil {
+		t.Fatalf("prepareWork: %v", err)
+	}
+	defer env.discard()
+	state := func(gasLimit uint64) common.Hash {
+		t.Helper()
+		budget, err := newTxListZkBudget(env, nil, gasLimit)
+		if err != nil {
+			t.Fatalf("newTxListZkBudget: %v", err)
+		}
+		return budget.state
+	}
+
+	base := state(30_000_000)
+	if state(30_000_000) != base {
+		t.Fatal("same context, different state")
+	}
+	if state(31_000_000) == base {
+		t.Fatal("state ignores the block gas limit")
+	}
+	for name, change := range map[string]func(){
+		"parent":   func() { env.header.ParentHash = common.Hash{1} },
+		"coinbase": func() { env.coinbase = common.Address{1} },
+		"base fee": func() { env.header.BaseFee = big.NewInt(params.InitialBaseFee + 1) },
+	} {
+		change()
+		next := state(30_000_000)
+		if next == base {
+			t.Fatalf("state ignores the %s", name)
+		}
+		base = next
 	}
 }
 
 // TestTxListZkOverflowSet_KeepsEntriesWhileInPool pins that remembered
-// transactions are dropped only once they leave the pool, never to make
-// room: otherwise a sender with more over-budget transactions than the set
-// holds could cycle them back in to be run again. It also pins that an entry
-// keeps the largest budget recorded for it.
+// transactions are dropped only once they leave the pool or fit, never to
+// make room: otherwise a sender with more over-budget transactions than the
+// set holds could cycle them back in to be run as new.
 func TestTxListZkOverflowSet_KeepsEntriesWhileInPool(t *testing.T) {
 	set := newTxListZkOverflowSet()
 	const n = 10_000
 	for i := range n {
-		set.record(common.BigToHash(big.NewInt(int64(i))), uint64(i+1))
+		set.record(common.BigToHash(big.NewInt(int64(i))), common.Hash{1})
 	}
 	set.prune(func(common.Hash) bool { return true })
 	for i := range n {
-		if _, ok := set.budget(common.BigToHash(big.NewInt(int64(i)))); !ok {
+		if _, ok := set.state(common.BigToHash(big.NewInt(int64(i)))); !ok {
 			t.Fatalf("entry %d dropped while its transaction is still in the pool", i)
 		}
 	}
 	// Transactions with an odd hash have left the pool.
 	set.prune(func(h common.Hash) bool { return h[len(h)-1]%2 == 0 })
 	for i := range n {
-		if _, ok := set.budget(common.BigToHash(big.NewInt(int64(i)))); ok != (i%2 == 0) {
+		if _, ok := set.state(common.BigToHash(big.NewInt(int64(i)))); ok != (i%2 == 0) {
 			t.Fatalf("entry %d remembered = %v, want %v", i, ok, i%2 == 0)
 		}
 	}
-
-	hash := common.BigToHash(big.NewInt(0))
-	set.record(hash, 50)
-	set.record(hash, 10)
-	if budget, _ := set.budget(hash); budget != 50 {
-		t.Fatalf("budget = %d, want the largest recorded, 50", budget)
+	set.forget(common.BigToHash(big.NewInt(0)))
+	if _, ok := set.state(common.BigToHash(big.NewInt(0))); ok {
+		t.Fatal("forgotten entry still remembered")
 	}
 }
 
@@ -584,17 +650,9 @@ func TestBuildTransactionsLists_ForgetsZkOverflowOnceItLeavesPool(t *testing.T) 
 	heavy := signTxListTestTx(t, config, keys[0], 0, hashLoopAddress, 10_000_000, 15, nil)
 	addTxListTestTx(t, b, heavy)
 	users := addUserTransfers(t, b, config, 5)
-	build := func() []*PreBuiltTxList {
-		t.Helper()
-		lists, err := w.BuildTransactionsLists(testUserAddress, big.NewInt(params.InitialBaseFee), 30_000_000, txListTestMaxBytes, nil, 1)
-		if err != nil {
-			t.Fatalf("BuildTransactionsLists: %v", err)
-		}
-		return lists
-	}
 
-	assertSingleTxList(t, build(), users)
-	if _, ok := zkOverflowBudget(w, heavy); !ok {
+	assertSingleTxList(t, buildOneTxList(t, w), users)
+	if _, ok := zkOverflowState(w, heavy); !ok {
 		t.Fatal("heavy tx should be remembered")
 	}
 	// Same nonce, a plain transfer with fees bumped past the replacement threshold.
@@ -604,8 +662,8 @@ func TestBuildTransactionsLists_ForgetsZkOverflowOnceItLeavesPool(t *testing.T) 
 		t.Fatal("heavy tx should have been replaced in the pool")
 	}
 
-	assertSingleTxList(t, build(), append([]common.Hash{replacement.Hash()}, users...))
-	if _, ok := zkOverflowBudget(w, heavy); ok {
+	assertSingleTxList(t, buildOneTxList(t, w), append([]common.Hash{replacement.Hash()}, users...))
+	if _, ok := zkOverflowState(w, heavy); ok {
 		t.Fatal("heavy tx should be forgotten once it left the pool")
 	}
 }

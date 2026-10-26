@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/zlib"
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"maps"
@@ -19,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -47,124 +49,156 @@ const (
 )
 
 // txListZkOverflowSet remembers, across tx-list building calls, the
-// transactions that overflowed the zk-gas budget and the largest budget each
-// one overflowed. An entry is kept for as long as its transaction stays in
-// the pool, which also bounds the set by the pool's size. A cache smaller
-// than the pool would not do: a sender holding more such transactions than it
-// fits could cycle evicted ones back in, one re-run per call, each counting
-// towards the work limit that stops selection.
+// transactions that overflowed the zk-gas budget and the execution state each
+// one last overflowed at. An entry is kept for as long as its transaction
+// stays in the pool, which also bounds the set by the pool's size. A cache
+// smaller than the pool would not do: a sender holding more such transactions
+// than it fits could cycle evicted ones back in to be run as if new.
 type txListZkOverflowSet struct {
-	mu      sync.Mutex
-	budgets map[common.Hash]uint64
+	mu     sync.Mutex
+	states map[common.Hash]common.Hash // tx hash to txListZkBudget.state at its last overflow
 }
 
 func newTxListZkOverflowSet() *txListZkOverflowSet {
-	return &txListZkOverflowSet{budgets: make(map[common.Hash]uint64)}
+	return &txListZkOverflowSet{states: make(map[common.Hash]common.Hash)}
 }
 
-// record notes that the transaction overflowed with budget zk gas left.
-func (s *txListZkOverflowSet) record(hash common.Hash, budget uint64) {
+// record notes that the transaction overflowed at the given execution state.
+func (s *txListZkOverflowSet) record(hash, state common.Hash) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if budget > s.budgets[hash] {
-		s.budgets[hash] = budget
-	}
+	s.states[hash] = state
 }
 
-// budget returns the largest budget the transaction is known to overflow.
-func (s *txListZkOverflowSet) budget(hash common.Hash) (uint64, bool) {
+// state returns the execution state the transaction last overflowed at.
+func (s *txListZkOverflowSet) state(hash common.Hash) (common.Hash, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	budget, ok := s.budgets[hash]
-	return budget, ok
+	state, ok := s.states[hash]
+	return state, ok
+}
+
+// forget drops the transaction, which no longer overflows.
+func (s *txListZkOverflowSet) forget(hash common.Hash) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.states, hash)
 }
 
 // prune forgets the transactions that have left the pool.
 func (s *txListZkOverflowSet) prune(inPool func(common.Hash) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for hash := range s.budgets {
+	for hash := range s.states {
 		if !inPool(hash) {
-			delete(s.budgets, hash)
+			delete(s.states, hash)
 		}
 	}
 }
 
 // txListZkBudget meters the Unzen zk-gas budget across the lists of one
 // tx-list building call. A transaction that overflows the budget is reverted
-// and pays nothing, so the work spent running such transactions is capped:
-//   - each overflow is remembered with the budget that was left when it ran,
-//     in this call and across calls, and the transaction is not run again
-//     until it gets more budget than that. Within a call the budget only
-//     shrinks, and across calls a transaction gets more only when less is
-//     committed ahead of it;
-//   - once the gas limits of the rejected transactions reach wasteLimit, no
-//     further transaction is selected in this call.
+// and pays nothing, so the work spent running such transactions is capped.
 //
-// So a call stops only on over-budget transactions it runs at a budget they
-// have not overflowed before. The same transactions stop a later call again
-// only if less is committed ahead of them there than at any earlier overflow.
+// Each overflow is remembered, in this call and across calls, with a digest of
+// the execution state it ran at: the parent block, the block context the
+// simulation sets, and the transactions committed ahead of it in this call.
+// How much zk gas a transaction needs depends on that state. Then:
+//   - at the same state the transaction would overflow again, so it is
+//     skipped without being run;
+//   - at another state it may now fit, so it is run again, but only while the
+//     gas limits of re-runs that overflowed again in this call are below
+//     limit. Past that, remembered transactions are skipped for the rest of
+//     the call. Re-runs never stop selection;
+//   - once the gas limits of first-time overflows in this call reach limit,
+//     no further transaction is selected in this call.
+//
+// So a call stops only on transactions not seen to overflow before, and the
+// unpaid work of a call is bounded by twice limit plus two transactions.
+// The simulation's timestamp is left out of the digest: it changes with every
+// call and differs from the derived block's anyway.
 //
 // Remembered transactions do not expire while they are in the pool. An
 // expiry would let a sender stagger its overflowing transactions so that some
-// come due every block and stop selection again.
+// come due as new every block and stop selection again.
 type txListZkBudget struct {
-	meter      *vm.ZkGasMeter
-	overflows  *txListZkOverflowSet   // shared by all calls; may be nil
-	rejected   map[common.Hash]uint64 // overflowed in this call, with the budget left
-	wastedGas  uint64                 // summed gas limits of rejected transactions
-	wasteLimit uint64
-	stopped    bool // wastedGas reached wasteLimit
+	meter     *vm.ZkGasMeter
+	overflows *txListZkOverflowSet // shared by all calls, or this call's own
+	state     common.Hash          // digest of the execution state the next transaction runs at
+	rerun     bool                 // the current transaction overflowed before, at another state
+	wastedGas uint64               // summed gas limits of first-time overflows
+	rerunGas  uint64               // summed gas limits of re-runs that overflowed again
+	limit     uint64
+	stopped   bool // wastedGas reached limit
 }
 
 // newTxListZkBudget attaches a zk-gas meter with the anchor reserve to env.
-func newTxListZkBudget(env *environment, overflows *txListZkOverflowSet, wasteLimit uint64) (*txListZkBudget, error) {
+// The lists of the call are built with blockMaxGasLimit as the block gas limit,
+// which also serves as limit.
+func newTxListZkBudget(env *environment, overflows *txListZkOverflowSet, blockMaxGasLimit uint64) (*txListZkBudget, error) {
 	meter := vm.NewZkGasMeter(&vm.UnzenZkGasSchedule)
 	if err := meter.ReserveBlockZkGas(txListAnchorZkGasReserve); err != nil {
 		return nil, err
 	}
 	env.evm.SetZkGasMeter(meter)
+	if overflows == nil {
+		overflows = newTxListZkOverflowSet()
+	}
+	var baseFee common.Hash
+	if env.header.BaseFee != nil {
+		baseFee = common.BigToHash(env.header.BaseFee)
+	}
 	return &txListZkBudget{
-		meter:      meter,
-		overflows:  overflows,
-		rejected:   make(map[common.Hash]uint64),
-		wasteLimit: wasteLimit,
+		meter:     meter,
+		overflows: overflows,
+		state: crypto.Keccak256Hash(
+			env.header.ParentHash[:],
+			env.coinbase[:],
+			baseFee[:],
+			binary.BigEndian.AppendUint64(nil, blockMaxGasLimit),
+		),
+		limit: blockMaxGasLimit,
 	}, nil
 }
 
-// known reports whether the transaction is known to overflow the budget left
-// now: it overflowed, in this call or an earlier one, with at least as much.
-func (b *txListZkBudget) known(hash common.Hash) bool {
-	left := b.meter.RemainingBlockZkGas()
-	if budget, ok := b.rejected[hash]; ok && budget >= left {
+// admit reports whether the transaction should be run: it has not overflowed
+// at the current execution state, and if it overflowed at another one, this
+// call's allowance for re-running such transactions is not used up.
+func (b *txListZkBudget) admit(hash common.Hash) bool {
+	state, ok := b.overflows.state(hash)
+	b.rerun = ok
+	if !ok {
 		return true
 	}
-	if b.overflows == nil {
-		return false
+	return state != b.state && b.rerunGas < b.limit
+}
+
+// commit promotes the in-flight zk gas of a successfully executed transaction
+// and advances the execution state. Charging already keeps the total within
+// the budget, so this only fails on arithmetic overflow.
+func (b *txListZkBudget) commit(tx *types.Transaction) error {
+	if err := b.meter.CommitTransaction(); err != nil {
+		return err
 	}
-	budget, ok := b.overflows.budget(hash)
-	return ok && budget >= left
+	b.state = crypto.Keccak256Hash(b.state[:], tx.Hash().Bytes())
+	if b.rerun {
+		b.overflows.forget(tx.Hash())
+	}
+	return nil
 }
 
-// commit promotes the in-flight zk gas of a successfully executed transaction.
-// Charging already keeps the total within the budget, so this only fails on
-// arithmetic overflow.
-func (b *txListZkBudget) commit() error {
-	return b.meter.CommitTransaction()
-}
-
-// reject records that tx overflowed the budget left, and stops selection for
-// the rest of the call once the work spent on rejected transactions reaches
-// the limit. The overflowed transaction's in-flight zk gas must already be
-// discarded.
+// reject records that tx overflowed the budget at the current execution
+// state. A first-time overflow counts towards stopping selection for the rest
+// of the call, a re-run towards the re-run allowance. The overflowed
+// transaction's in-flight zk gas must already be discarded.
 func (b *txListZkBudget) reject(tx *types.Transaction) {
-	budget := b.meter.RemainingBlockZkGas()
-	b.rejected[tx.Hash()] = budget
-	if b.overflows != nil {
-		b.overflows.record(tx.Hash(), budget)
+	b.overflows.record(tx.Hash(), b.state)
+	if b.rerun {
+		b.rerunGas += tx.Gas()
+		return
 	}
 	b.wastedGas += tx.Gas()
-	if b.wastedGas >= b.wasteLimit {
+	if b.wastedGas >= b.limit {
 		b.stopped = true
 	}
 }
@@ -741,8 +775,8 @@ loop:
 			txs.Pop()
 			continue
 		}
-		if zkBudget != nil && zkBudget.known(tx.Hash()) {
-			log.Trace("Skipping transaction known to overflow the zk gas budget", "hash", tx.Hash())
+		if zkBudget != nil && !zkBudget.admit(tx.Hash()) {
+			log.Trace("Skipping transaction that overflowed the zk gas budget before", "hash", tx.Hash())
 			txs.Pop()
 			continue
 		}
@@ -789,21 +823,21 @@ loop:
 			// The transaction needs more zk gas than is left, so a derived block
 			// would be cut right before it. Its state changes are already
 			// reverted; leave it and the sender's later transactions out,
-			// remember it so it is not run again at this budget, and keep
+			// remember it so it is not run again at this state, and keep
 			// filling the list with transactions that may still fit, until
-			// rejected transactions have cost a block's worth of gas.
+			// first-time overflows have cost a block's worth of gas.
 			log.Trace("Skipping transaction over the zk gas budget", "hash", ltx.Hash, "sender", from, "remaining", zkGasMeter.RemainingBlockZkGas())
 			zkGasMeter.ResetTransaction()
 			env.evm.ResetZkGasErr()
 			txs.Pop()
 			if zkBudget.reject(tx); zkBudget.stopped {
-				log.Debug("Stopping tx-list selection after zk gas overflows", "wastedGas", zkBudget.wastedGas, "limit", zkBudget.wasteLimit)
+				log.Debug("Stopping tx-list selection after zk gas overflows", "wastedGas", zkBudget.wastedGas, "limit", zkBudget.limit)
 				break loop
 			}
 
 		case errors.Is(err, nil):
 			if zkBudget != nil {
-				if err := zkBudget.commit(); err != nil {
+				if err := zkBudget.commit(tx); err != nil {
 					return nil, err
 				}
 			}
