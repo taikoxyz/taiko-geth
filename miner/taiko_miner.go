@@ -29,6 +29,8 @@ func (miner *Miner) SealBlockWith(
 }
 
 // BuildTransactionsLists builds multiple transactions lists which satisfy all the given limits.
+//
+// taiko-geth no longer builds tx lists for proposers; alethia-reth serves taikoAuth_txPoolContent and taikoAuth_txPoolContentWithMinTip.
 func (miner *Miner) BuildTransactionsLists(
 	beneficiary common.Address,
 	baseFee *big.Int,
@@ -50,6 +52,8 @@ func (miner *Miner) BuildTransactionsLists(
 
 // BuildTransactionsListsWithMinTip builds multiple transactions lists which satisfy all
 // the given limits and minimum tip.
+//
+// taiko-geth no longer builds tx lists for proposers; alethia-reth serves taikoAuth_txPoolContent and taikoAuth_txPoolContentWithMinTip.
 func (miner *Miner) BuildTransactionsListsWithMinTip(
 	beneficiary common.Address,
 	baseFee *big.Int,
