@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.9.0](https://github.com/taikoxyz/taiko-geth/compare/v2.8.0...v2.9.0) (2026-10-26)
+
+
+### Features
+
+* **eth:** return txpool rejections from SendTx and deprecate taikoAuth_txPoolContent ([#618](https://github.com/taikoxyz/taiko-geth/issues/618)) ([6cfe6e0](https://github.com/taikoxyz/taiko-geth/commit/6cfe6e01062a1dfc00650bc6fe51ff3a0e30f6e4))
+
 ## [2.8.0](https://github.com/taikoxyz/taiko-geth/compare/v2.7.0...v2.8.0) (2026-10-22)
 
 
