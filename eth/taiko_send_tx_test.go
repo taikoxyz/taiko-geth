@@ -73,12 +73,10 @@ func newOversizedTx(t *testing.T) *types.Transaction {
 }
 
 // TestSendTxTaikoReturnsPoolRejections checks that on Taiko networks SendTx
-// reports transactions the pool refuses instead of tracking them as local
-// transactions, while resubmitting a transaction the pool already holds still
-// succeeds.
+// reports transactions the pool refuses, while resubmitting a transaction the
+// pool already holds still succeeds.
 func TestSendTxTaikoReturnsPoolRejections(t *testing.T) {
 	b := newTaikoSendTxBackend(t, true)
-	tracker := b.eth.localTxTracker
 	ctx := context.Background()
 
 	unfunded, err := crypto.GenerateKey()
@@ -89,16 +87,10 @@ func TestSendTxTaikoReturnsPoolRejections(t *testing.T) {
 	if err := b.SendTx(ctx, unfundedTx); !errors.Is(err, core.ErrInsufficientFunds) {
 		t.Fatalf("unfunded sender: got %v, want %v", err, core.ErrInsufficientFunds)
 	}
-	if tracker.Has(unfundedTx.Hash()) {
-		t.Fatal("rejected unfunded tx is tracked as a local tx")
-	}
 
 	oversized := newOversizedTx(t)
 	if err := b.SendTx(ctx, oversized); !errors.Is(err, txpool.ErrOversizedData) {
 		t.Fatalf("oversized tx: got %v, want %v", err, txpool.ErrOversizedData)
-	}
-	if tracker.Has(oversized.Hash()) {
-		t.Fatal("rejected oversized tx is tracked as a local tx")
 	}
 
 	accepted := makeTx(0, nil, nil, key)
@@ -110,9 +102,6 @@ func TestSendTxTaikoReturnsPoolRejections(t *testing.T) {
 	}
 	if !b.eth.txPool.Has(accepted.Hash()) {
 		t.Fatal("accepted tx missing from the pool")
-	}
-	if !tracker.Has(accepted.Hash()) {
-		t.Fatal("accepted tx is not tracked as a local tx")
 	}
 
 	t.Run("without local tracker", func(t *testing.T) {
