@@ -7,6 +7,11 @@ on:
       - master
   workflow_dispatch:
 
+# Free runner capacity by cancelling superseded PR runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
     name: Lint
@@ -25,7 +30,8 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: 1.25
+        # Go 1.27.2 export data is unreadable by x/tools v0.49.0 (gencodec, rlpgen).
+        go-version: 1.27.1
         cache: false
 
     - name: Run linters
@@ -46,7 +52,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.27'
           cache: false
 
       - name: Build
@@ -64,7 +70,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.27'
           cache: false
 
       - name: Install cross toolchain
@@ -82,8 +88,9 @@ jobs:
     strategy:
       matrix:
         go:
+          - '1.27'
+          - '1.26'
           - '1.25'
-          - '1.24'
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,3 +104,44 @@ jobs:
 
       - name: Run tests
         run: go run build/ci.go test -p 8
+
+  windows:
+    name: Windows ${{ matrix.arch }}
+    needs: lint
+    runs-on: [self-hosted, windows, x64]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            mingw: 'C:\msys64\mingw64'
+            test: true
+          - arch: '386'
+            mingw: 'C:\msys64\mingw32'
+            test: false
+    env:
+      GETH_MINGW: ${{ matrix.mingw }}
+      GETH_CC: ${{ matrix.mingw }}\bin\gcc.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: false
+
+      - name: Build
+        shell: cmd
+        run: |
+          set PATH=%GETH_MINGW%\bin;%PATH%
+          go run build/ci.go install -arch ${{ matrix.arch }} -cc %GETH_CC%
+
+      - name: Run tests
+        if: matrix.test
+        shell: cmd
+        run: |
+          set PATH=%GETH_MINGW%\bin;%PATH%
+          go run build/ci.go test -arch ${{ matrix.arch }} -cc %GETH_CC% -short -p 8

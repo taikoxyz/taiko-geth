@@ -315,3 +315,65 @@ func TestVerifyHeaderUnzenCanonicalFields(t *testing.T) {
 		assert.ErrorContains(t, err, "invalid excess blob gas")
 	})
 }
+
+// TestPrepareAssembly pins the checks every build path runs before Finalize:
+// the miner, eth_simulateV1 and chain generation reach them through
+// consensus.PrepareAssembly, block sealing through FinalizeAndAssemble.
+func TestPrepareAssembly(t *testing.T) {
+	anchor, nonAnchor := txs[0], txs[1]
+	blobTx := types.NewTx(&types.BlobTx{})
+
+	tests := []struct {
+		name             string
+		unzen            bool
+		nilBeaconRoot    bool
+		txs              []*types.Transaction
+		wantErr          error
+		wantErrSubstring string
+	}{
+		{name: "empty body"},
+		{name: "anchor first", txs: []*types.Transaction{anchor, nonAnchor}},
+		{name: "first tx not an anchor", txs: []*types.Transaction{nonAnchor}, wantErr: taiko.ErrAnchorTxNotFound},
+		{name: "unzen without parent beacon root", unzen: true, nilBeaconRoot: true, wantErrSubstring: "parent beacon root missing"},
+		{name: "unzen blob tx", unzen: true, txs: []*types.Transaction{anchor, blobTx}, wantErrSubstring: "blob transaction at index 1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := *params.TestChainConfig
+			cfg.Taiko = true
+			if tt.unzen {
+				unzenTime := uint64(0)
+				cfg.UnzenTime = &unzenTime
+			}
+			engine := taiko.New(&cfg, rawdb.NewMemoryDatabase())
+
+			header := &types.Header{
+				Number:  common.Big1,
+				Time:    100,
+				BaseFee: anchor.GasFeeCap(),
+			}
+			if tt.unzen && !tt.nilBeaconRoot {
+				header.ParentBeaconRoot = &common.Hash{}
+			}
+			body := &types.Body{Transactions: tt.txs}
+
+			err := consensus.PrepareAssembly(engine, nil, header, body)
+			switch {
+			case tt.wantErr != nil:
+				assert.ErrorIs(t, err, tt.wantErr)
+			case tt.wantErrSubstring != "":
+				assert.ErrorContains(t, err, tt.wantErrSubstring)
+			default:
+				assert.NoError(t, err)
+				assert.NotNil(t, body.Withdrawals, "nil withdrawals should be normalized to an empty list")
+			}
+		})
+	}
+
+	t.Run("engine without assembly checks", func(t *testing.T) {
+		body := &types.Body{Transactions: []*types.Transaction{nonAnchor}}
+		err := consensus.PrepareAssembly(ethash.NewFaker(), nil, &types.Header{Number: common.Big1}, body)
+		assert.NoError(t, err)
+		assert.Nil(t, body.Withdrawals, "an engine without assembly checks should leave the body untouched")
+	})
+}

@@ -349,7 +349,7 @@ func TestBuildTxListWitnessIncludesAbsentSystemContractExclusionProof(t *testing
 
 	// The system contracts must actually be absent, otherwise this would test the
 	// inclusion path instead of the absent-account exclusion path.
-	statedb, err := bc.StateAt(parent.Root)
+	statedb, err := bc.StateAt(parent.Root, parent.Number, parent.Time)
 	if err != nil {
 		t.Fatalf("state at parent: %v", err)
 	}

@@ -6,6 +6,7 @@
 package core
 
 import (
+	"context"
 	"errors"
 	"math"
 	"math/big"
@@ -69,11 +70,11 @@ func TestApplyTransactionWithEVM_ZkGasExhausted_RevertsAndReturnsError(t *testin
 	statedb.SetBalance(sender, uint256.MustFromBig(initialBalance), 0)
 	statedb.SetNonce(sender, initialNonce, 0)
 	statedb.SetCode(callee, calleeCode, tracing.CodeChangeGenesis)
-	statedb.Finalise(true)
-	stateRootBefore := statedb.IntermediateRoot(true)
+	statedb.Finalise(params.Rules{IsEIP158: true})
+	stateRootBefore := statedb.IntermediateRoot(params.Rules{IsEIP158: true})
 
 	gp := NewGasPool(30_000_000)
-	gpBefore := gp.Gas()
+	gpBefore := gp.Available(false)
 
 	tx, err := types.SignTx(
 		types.NewTransaction(initialNonce, callee, big.NewInt(0), 100_000, big.NewInt(1_000_000_000), nil),
@@ -104,8 +105,8 @@ func TestApplyTransactionWithEVM_ZkGasExhausted_RevertsAndReturnsError(t *testin
 	vmConfig := vm.Config{ZkGasMeter: vm.NewZkGasMeter(unzenTestScheduleExhausting())}
 	evm := vm.NewEVM(blockCtx, statedb, chainConfig, vmConfig)
 
-	receipt, applyErr := ApplyTransactionWithEVM(
-		msg, gp, statedb, big.NewInt(1), common.Hash{}, 1, tx, evm,
+	receipt, _, applyErr := ApplyTransactionWithEVM(
+		context.Background(), msg, gp, statedb, big.NewInt(1), common.Hash{}, 1, tx, evm,
 	)
 
 	if !errors.Is(applyErr, vm.ErrZkGasLimitExceeded) {
@@ -120,11 +121,11 @@ func TestApplyTransactionWithEVM_ZkGasExhausted_RevertsAndReturnsError(t *testin
 	if got := statedb.GetBalance(sender).ToBig(); got.Cmp(initialBalance) != 0 {
 		t.Fatalf("sender balance changed: got %s want %s", got, initialBalance)
 	}
-	if got := gp.Gas(); got != gpBefore {
+	if got := gp.Available(false); got != gpBefore {
 		t.Fatalf("gas pool changed: got %d want %d", got, gpBefore)
 	}
-	statedb.Finalise(true)
-	if got := statedb.IntermediateRoot(true); got != stateRootBefore {
+	statedb.Finalise(params.Rules{IsEIP158: true})
+	if got := statedb.IntermediateRoot(params.Rules{IsEIP158: true}); got != stateRootBefore {
 		t.Fatalf("state root changed: got %s want %s", got.Hex(), stateRootBefore.Hex())
 	}
 }
@@ -165,7 +166,7 @@ func TestApplyTransactionWithEVM_UnzenCommitThenTruncate(t *testing.T) {
 	statedb.SetBalance(addr1, uint256.MustFromBig(initialBalance), 0)
 	statedb.SetBalance(addr2, uint256.MustFromBig(initialBalance), 0)
 	deployExhaustingContract(t, statedb, heavyContract)
-	statedb.Finalise(true)
+	statedb.Finalise(params.Rules{IsEIP158: true})
 
 	signer := types.LatestSigner(chainConfig)
 	txA, err := types.SignTx(types.NewTransaction(0, addr2, big.NewInt(1), params.TxGas, big.NewInt(1_000_000_000), nil), signer, key1)
@@ -204,7 +205,7 @@ func TestApplyTransactionWithEVM_UnzenCommitThenTruncate(t *testing.T) {
 	// Apply txA — must succeed.
 	msgA, _ := TransactionToMessage(txA, signer, blockCtx.BaseFee)
 	meter.ResetTransaction()
-	receiptA, err := ApplyTransactionWithEVM(msgA, gp, statedb, blockCtx.BlockNumber, common.Hash{}, blockCtx.Time, txA, evm)
+	receiptA, _, err := ApplyTransactionWithEVM(context.Background(), msgA, gp, statedb, blockCtx.BlockNumber, common.Hash{}, blockCtx.Time, txA, evm)
 	if err != nil {
 		t.Fatalf("txA unexpectedly failed: %v", err)
 	}
@@ -218,13 +219,13 @@ func TestApplyTransactionWithEVM_UnzenCommitThenTruncate(t *testing.T) {
 	// be a txB-origin mutation that the snapshot/revert path failed to undo.
 	preNonce2 := statedb.GetNonce(addr2)
 	preBalance2 := new(big.Int).Set(statedb.GetBalance(addr2).ToBig())
-	postTxARoot := statedb.IntermediateRoot(true)
-	postTxAGp := gp.Gas()
+	postTxARoot := statedb.IntermediateRoot(params.Rules{IsEIP158: true})
+	postTxAGp := gp.Available(false)
 
 	// Apply txB — must return ErrZkGasLimitExceeded and leave addr2 untouched.
 	msgB, _ := TransactionToMessage(txB, signer, blockCtx.BaseFee)
 	meter.ResetTransaction()
-	receiptB, errB := ApplyTransactionWithEVM(msgB, gp, statedb, blockCtx.BlockNumber, common.Hash{}, blockCtx.Time, txB, evm)
+	receiptB, _, errB := ApplyTransactionWithEVM(context.Background(), msgB, gp, statedb, blockCtx.BlockNumber, common.Hash{}, blockCtx.Time, txB, evm)
 	if !errors.Is(errB, vm.ErrZkGasLimitExceeded) {
 		t.Fatalf("txB expected ErrZkGasLimitExceeded, got err=%v receipt=%+v", errB, receiptB)
 	}
@@ -237,11 +238,11 @@ func TestApplyTransactionWithEVM_UnzenCommitThenTruncate(t *testing.T) {
 	if got := statedb.GetBalance(addr2).ToBig(); got.Cmp(preBalance2) != 0 {
 		t.Fatalf("addr2 balance mutated after exhausted tx: got %s want %s", got, preBalance2)
 	}
-	statedb.Finalise(true)
-	if got := statedb.IntermediateRoot(true); got != postTxARoot {
+	statedb.Finalise(params.Rules{IsEIP158: true})
+	if got := statedb.IntermediateRoot(params.Rules{IsEIP158: true}); got != postTxARoot {
 		t.Fatalf("state root changed after exhausted tx: got %s want %s", got.Hex(), postTxARoot.Hex())
 	}
-	if got := gp.Gas(); got != postTxAGp {
+	if got := gp.Available(false); got != postTxAGp {
 		t.Fatalf("gas pool changed after exhausted tx: got %d want %d", got, postTxAGp)
 	}
 }
@@ -268,7 +269,7 @@ func TestApplyTransactionWithEVM_Unzen_IncludesTxIntrinsicInBlockZkGas(t *testin
 
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	statedb.SetBalance(sender, uint256.MustFromBig(initialBalance), 0)
-	statedb.Finalise(true)
+	statedb.Finalise(params.Rules{IsEIP158: true})
 
 	tx, err := types.SignTx(
 		types.NewTransaction(0, recipient, big.NewInt(1), params.TxGas, big.NewInt(1_000_000_000), nil),
@@ -301,7 +302,7 @@ func TestApplyTransactionWithEVM_Unzen_IncludesTxIntrinsicInBlockZkGas(t *testin
 	vmConfig := vm.Config{ZkGasMeter: meter}
 	evm := vm.NewEVM(blockCtx, statedb, chainConfig, vmConfig)
 
-	receipt, err := ApplyTransactionWithEVM(msg, gp, statedb, blockCtx.BlockNumber, common.Hash{}, blockCtx.Time, tx, evm)
+	receipt, _, err := ApplyTransactionWithEVM(context.Background(), msg, gp, statedb, blockCtx.BlockNumber, common.Hash{}, blockCtx.Time, tx, evm)
 	if err != nil {
 		t.Fatalf("ApplyTransactionWithEVM: %v", err)
 	}
@@ -357,14 +358,14 @@ func TestTaikoSkipsRequestQueueSystemCalls(t *testing.T) {
 			statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 			statedb.SetCode(params.WithdrawalQueueAddress, queueCode, tracing.CodeChangeGenesis)
 			statedb.SetCode(params.ConsolidationQueueAddress, queueCode, tracing.CodeChangeGenesis)
-			statedb.Finalise(true)
+			statedb.Finalise(params.Rules{IsEIP158: true})
 
 			evm := vm.NewEVM(taikoSystemCallTestBlockContext(), statedb, config, vm.Config{})
 			requests := [][]byte{}
-			if err := ProcessWithdrawalQueue(&requests, evm); err != nil {
+			if err := ProcessWithdrawalQueue(&requests, evm.GetRules(), evm, 0, nil); err != nil {
 				t.Fatalf("ProcessWithdrawalQueue: %v", err)
 			}
-			if err := ProcessConsolidationQueue(&requests, evm); err != nil {
+			if err := ProcessConsolidationQueue(&requests, evm.GetRules(), evm, 0, nil); err != nil {
 				t.Fatalf("ProcessConsolidationQueue: %v", err)
 			}
 			if len(requests) != tt.wantRequests {
@@ -397,14 +398,14 @@ func TestTaikoSystemCallGasLimitMatchesReference(t *testing.T) {
 			statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 			statedb.SetCode(params.BeaconRootsAddress, gasProbe, tracing.CodeChangeGenesis)
 			statedb.SetCode(params.HistoryStorageAddress, gasProbe, tracing.CodeChangeGenesis)
-			statedb.Finalise(true)
+			statedb.Finalise(params.Rules{IsEIP158: true})
 
 			evm := vm.NewEVM(taikoSystemCallTestBlockContext(), statedb, config, vm.Config{})
-			ProcessBeaconBlockRoot(common.Hash{}, evm)
+			ProcessBeaconBlockRoot(common.Hash{}, evm, nil)
 			if got := statedb.GetState(params.BeaconRootsAddress, common.Hash{}).Big().Uint64(); got != tt.want {
 				t.Fatalf("beacon-root system call observed gas = %d, want %d", got, tt.want)
 			}
-			ProcessParentBlockHash(common.Hash{}, evm)
+			ProcessParentBlockHash(common.Hash{}, evm, nil)
 			if got := statedb.GetState(params.HistoryStorageAddress, common.Hash{}).Big().Uint64(); got != tt.want {
 				t.Fatalf("parent-hash system call observed gas = %d, want %d", got, tt.want)
 			}

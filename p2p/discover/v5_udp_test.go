@@ -90,7 +90,7 @@ func startLocalhostV5(t *testing.T, cfg Config) *UDPv5 {
 	}
 	realaddr := socket.LocalAddr().(*net.UDPAddr)
 	ln.SetStaticIP(realaddr.IP)
-	ln.Set(enr.UDP(realaddr.Port))
+	ln.SetFallbackUDP(realaddr.Port)
 	udp, err := ListenV5(socket, ln, cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -937,6 +937,7 @@ func newUDPV5Test(t *testing.T) *udpV5Test {
 		PrivateKey:   test.localkey,
 		Log:          testlog.Logger(t, log.LvlTrace),
 		ValidSchemes: enode.ValidSchemesForTesting,
+		PingInterval: 1000 * time.Hour,
 	})
 	test.udp.codec = &testCodec{test: test, id: ln.ID()}
 	test.table = test.udp.tab

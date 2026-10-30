@@ -84,6 +84,8 @@ func main() {
 	fmt.Printf("Fetched block %d (%#x)\n", block.NumberU64(), block.Hash())
 
 	// Fetch the execution witness via the debug namespace.
+	// CHANGE(taiko): debug_executionWitness returns the cross-client wire shape,
+	// so decode it back into an ExtWitness.
 	var rpcWitness stateless.ExecutionWitness
 	err = client.Client().CallContext(ctx, &rpcWitness, "debug_executionWitness", rpc.BlockNumber(block.NumberU64()))
 	if err != nil {
@@ -125,6 +127,7 @@ func main() {
 		case "hex":
 			data = []byte(hexutil.Encode(rlpBytes))
 		case "json":
+			// CHANGE(taiko): extWitness is already a pointer after ToExtWitness.
 			data, err = marshalJSONPayload(chainID, block, extWitness)
 			if err != nil {
 				fatal("failed to JSON-encode payload: %v", err)

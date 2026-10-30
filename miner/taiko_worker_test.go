@@ -126,7 +126,7 @@ func TestApplyTransaction_SealerZkGasExhaustionSurface(t *testing.T) {
 	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabaseForTesting())
 	statedb.SetBalance(sender, uint256.NewInt(1_000_000_000_000_000_000), 0)
 	statedb.SetCode(callee, []byte{0x60, 0x01, 0x60, 0x01, 0x01, 0x00}, tracing.CodeChangeGenesis) // PUSH1 1 PUSH1 1 ADD STOP
-	statedb.Finalise(true)
+	statedb.Finalise(params.Rules{IsEIP158: true})
 
 	schedule := &vm.ZkGasSchedule{BlockLimit: 0}
 	for i := range schedule.OpcodeMultipliers {
@@ -159,7 +159,7 @@ func TestApplyTransaction_SealerZkGasExhaustionSurface(t *testing.T) {
 
 	gp := core.NewGasPool(30_000_000)
 	header := &types.Header{Number: big.NewInt(1), Time: 1, BaseFee: big.NewInt(1_000_000_000), GasLimit: 30_000_000}
-	receipt, err := core.ApplyTransaction(evm, gp, statedb, header, tx)
+	receipt, _, err := core.ApplyTransaction(context.Background(), evm, gp, statedb, header, tx)
 
 	if !errors.Is(err, vm.ErrZkGasLimitExceeded) {
 		t.Fatalf("expected ErrZkGasLimitExceeded, got err=%v receipt=%+v", err, receipt)
@@ -395,7 +395,7 @@ func TestSealBlockWith_UnzenSealedRootMatchesImport(t *testing.T) {
 	if n, err := b.chain.InsertChain(types.Blocks{block}); err != nil {
 		t.Fatalf("importing the sealed block failed (inserted %d): %v", n, err)
 	}
-	statedb, err := b.chain.StateAt(block.Root())
+	statedb, err := b.chain.StateAt(block.Root(), block.Number(), block.Time())
 	if err != nil {
 		t.Fatalf("StateAt(sealed root): %v", err)
 	}
@@ -511,13 +511,91 @@ func TestSealBlockWith_GasLimitOpcodeMatchesImport(t *testing.T) {
 	if n, err := b.chain.InsertChain(types.Blocks{block}); err != nil {
 		t.Fatalf("importing the sealed block failed (inserted %d): %v", n, err)
 	}
-	statedb, err := b.chain.StateAt(block.Root())
+	statedb, err := b.chain.StateAt(block.Root(), block.Number(), block.Time())
 	if err != nil {
 		t.Fatalf("StateAt(sealed root): %v", err)
 	}
 	want := common.BigToHash(new(big.Int).SetUint64(protocolGasLimit))
 	if got := statedb.GetState(gasLimitProbeAddress, common.Hash{}); got != want {
 		t.Fatalf("GASLIMIT recorded on import = %v, want the header gas limit %v", got.Big(), want.Big())
+	}
+}
+
+// TestInsertChain_UnzenCommitsWithPostMergeRules imports an Unzen block, whose
+// header difficulty carries its non-zero zk gas, and pins that the state is
+// committed under Cancun rules all the same. The rules decide the storage-key
+// encoding of the committed state update, which pathdb persists as state
+// history, so the live tracer's storage keys show which rules were used: raw
+// slot keys under Cancun, hashed ones otherwise.
+func TestInsertChain_UnzenCommitsWithPostMergeRules(t *testing.T) {
+	config := newUnzenTestChainConfig()
+	gspec := newUnzenTestGenesis(config)
+	w, b := newUnzenTestWorker(t, gspec)
+
+	parent := b.chain.CurrentBlock()
+	timestamp := parent.Time + 1
+	baseFee := big.NewInt(params.InitialBaseFee)
+	taikoL2Address := core.TaikoTreasuryAddress(config.ChainID)
+
+	anchorTx := types.MustSignNewTx(goldenTouchTestKey(t), types.LatestSigner(config), &types.DynamicFeeTx{
+		ChainID:   config.ChainID,
+		Nonce:     0,
+		GasTipCap: common.Big0,
+		GasFeeCap: baseFee,
+		Gas:       taiko.AnchorGasLimit,
+		To:        &taikoL2Address,
+		Data:      taiko.AnchorSelector,
+	})
+	txList, err := rlp.EncodeToBytes(types.Transactions{anchorTx})
+	if err != nil {
+		t.Fatalf("encode tx list: %v", err)
+	}
+	block, err := w.sealBlockWith(parent, timestamp, 0, &engine.BlockMetadata{
+		Beneficiary: testUserAddress,
+		GasLimit:    parent.GasLimit,
+		Timestamp:   timestamp,
+		TxList:      txList,
+		ExtraData:   []byte{},
+	}, baseFee, nil)
+	if err != nil {
+		t.Fatalf("sealBlockWith: %v", err)
+	}
+	if block.Difficulty().Sign() == 0 {
+		t.Fatal("test is vacuous: the sealed Unzen block has zero difficulty")
+	}
+
+	// A separate importing node on the path scheme, with a live tracer that
+	// records the state update committed for the block (genesis reports one too).
+	var updates []*tracing.StateUpdate
+	hooks := &tracing.Hooks{
+		OnStateUpdate: func(update *tracing.StateUpdate) {
+			if update.BlockNumber == block.NumberU64() {
+				updates = append(updates, update)
+			}
+		},
+	}
+	db := rawdb.NewMemoryDatabase()
+	importer, err := core.NewBlockChain(db, gspec, taiko.New(config, db), &core.BlockChainConfig{
+		StateScheme: rawdb.PathScheme,
+		VmConfig:    vm.Config{Tracer: hooks},
+	})
+	if err != nil {
+		t.Fatalf("core.NewBlockChain failed: %v", err)
+	}
+	defer importer.Stop()
+
+	if n, err := importer.InsertChain(types.Blocks{block}); err != nil {
+		t.Fatalf("importing the sealed block failed (inserted %d): %v", n, err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("got %d state updates for block %d, want 1", len(updates), block.NumberU64())
+	}
+	// The beacon-roots system call writes the block timestamp into this slot.
+	slot := beaconRootsSlot(timestamp)
+	changes := updates[0].StorageChanges[params.BeaconRootsAddress]
+	if _, ok := changes[slot]; !ok {
+		_, hashed := changes[crypto.Keccak256Hash(slot.Bytes())]
+		t.Fatalf("beacon-roots slot %v not committed under its raw key (hashed key present: %v): state committed without Cancun rules", slot, hashed)
 	}
 }
 

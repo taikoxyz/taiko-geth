@@ -133,7 +133,16 @@ func TestHeaderBALRLPRoundTrip(t *testing.T) {
 				t.Fatalf("RLP mismatch: got %x, want %x", encoded, wantRLP)
 			}
 			var decoded Header
-			if err := rlp.DecodeBytes(wantRLP, &decoded); err != nil {
+			err = rlp.DecodeBytes(wantRLP, &decoded)
+			// No valid header has a nil BAL before a slot number. Its 0x80
+			// placeholder is not a hash, so decoding rejects it, as upstream does.
+			if !tc.bal && tc.slot {
+				if err == nil {
+					t.Fatal("nil BAL placeholder before a slot was accepted")
+				}
+				return
+			}
+			if err != nil {
 				t.Fatal(err)
 			}
 			if (decoded.BlockAccessListHash != nil) != tc.bal || (decoded.SlotNumber != nil) != tc.slot {
@@ -309,24 +318,13 @@ func TestHeaderBALMalformedRLP(t *testing.T) {
 	}
 }
 
-// CHANGE(taiko): A nil BAL before a present slot is an empty-string placeholder.
-// A redundant trailing nil BAL is accepted as absence and normalizes to omission.
+// CHANGE(taiko): A trailing 0x80 at the BAL position is not a hash, so the
+// header is rejected, as upstream does.
 func TestHeaderBALAbsentRLPTail(t *testing.T) {
 	encoded := common.FromHex("f90260" + headerBALLegacyBody + headerBALPragueTail + "80")
 	var header Header
-	if err := rlp.DecodeBytes(encoded, &header); err != nil {
-		t.Fatal(err)
-	}
-	if header.BlockAccessListHash != nil || header.SlotNumber != nil {
-		t.Fatal("nil tail was populated")
-	}
-	canonical := common.FromHex("f9025f" + headerBALLegacyBody + headerBALPragueTail)
-	actual, err := rlp.EncodeToBytes(&header)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(actual, canonical) {
-		t.Fatalf("absent tail did not normalize: got %x", actual)
+	if err := rlp.DecodeBytes(encoded, &header); err == nil {
+		t.Fatal("trailing empty BAL placeholder was accepted")
 	}
 }
 

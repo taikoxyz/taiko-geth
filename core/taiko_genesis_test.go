@@ -1,9 +1,12 @@
 package core
 
 import (
+	"fmt"
 	"math/big"
+	"os"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -118,5 +121,30 @@ func TestTaikoGenesisBlock_ConfigIsIsolatedPerCall(t *testing.T) {
 	}
 	if got := *hoodi.Config.UnzenTime; got != HoodiUnzenTime {
 		t.Fatalf("Hoodi UnzenTime = %d, want %d", got, HoodiUnzenTime)
+	}
+}
+
+// TestTaikoGenesisHashesUnchanged pins the genesis block hash of every Taiko
+// network as computed on the go-ethereum v1.17.2 base. A node whose genesis
+// hash changes no longer recognises its own chain. With TAIKO_PRINT_PARITY=1
+// it prints the observed hashes instead of comparing them.
+func TestTaikoGenesisHashesUnchanged(t *testing.T) {
+	printMode := os.Getenv("TAIKO_PRINT_PARITY") == "1"
+	for _, tt := range []struct {
+		id   *big.Int
+		want common.Hash
+	}{
+		{params.TaikoMainnetNetworkID, common.HexToHash("0x90bc60466882de9637e269e87abab53c9108cf9113188bc4f80bcfcb10e489b9")},
+		{params.TaikoHoodiNetworkID, common.HexToHash("0x8e3d16acf3ecc1fbe80309b04e010b90c9ccb3da14e98536cfe66bb93407d228")},
+		{params.TaikoInternalNetworkID, common.HexToHash("0x0ab9db72570aa79341b50c888abaf2e64395d5ce31d3753b738b7e5abec132c4")},
+	} {
+		got := TaikoGenesisBlock(tt.id.Uint64()).ToBlock().Hash()
+		if printMode {
+			fmt.Printf("%d: common.HexToHash(%q),\n", tt.id, got.Hex())
+			continue
+		}
+		if got != tt.want {
+			t.Fatalf("network %d genesis = %v, want %v", tt.id, got, tt.want)
+		}
 	}
 }

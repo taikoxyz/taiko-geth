@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/internal/flags"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/urfave/cli/v2"
 
 	// Force-load the tracer engines to trigger registration
@@ -115,7 +116,7 @@ var (
 		Name:     "trace.noreturndata",
 		Aliases:  []string{"noreturndata"},
 		Value:    true,
-		Usage:    "enable return data output",
+		Usage:    "disable return data output",
 		Category: traceCategory,
 	}
 
@@ -340,7 +341,8 @@ func collectFiles(path string) []string {
 
 // dump returns a state dump for the most current trie.
 func dump(s *state.StateDB) *state.Dump {
-	root := s.IntermediateRoot(false)
+	// A dump is not a state transition: report accounts exactly as they are.
+	root := s.IntermediateRoot(params.Rules{})
 	cpy, _ := state.New(root, s.Database())
 	dump := cpy.RawDump(nil)
 	return &dump

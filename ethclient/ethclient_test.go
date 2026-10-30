@@ -67,10 +67,9 @@ var (
 
 var genesis = &core.Genesis{
 	Config: params.AllDevChainProtocolChanges,
-	Alloc: types.GenesisAlloc{
-		testAddr:           {Balance: testBalance},
-		revertContractAddr: {Code: revertCode},
-	},
+	// The config activates every fork from genesis, so the system contracts it
+	// calls into have to be deployed for the chain to be valid.
+	Alloc:     genesisAlloc(),
 	ExtraData: []byte("test genesis"),
 	Timestamp: 9000,
 	BaseFee:   big.NewInt(params.InitialBaseFee),
@@ -861,6 +860,12 @@ func TestSimulateV1(t *testing.T) {
 	if results[0].Calls[0].Error != nil {
 		t.Errorf("expected no error, got %v", results[0].Calls[0].Error)
 	}
+	if results[0].Calls[0].MaxUsedGas == 0 {
+		t.Error("expected maxUsedGas to be set")
+	}
+	if results[0].Calls[0].MaxUsedGas < results[0].Calls[0].GasUsed {
+		t.Errorf("expected maxUsedGas >= gasUsed, got %d < %d", results[0].Calls[0].MaxUsedGas, results[0].Calls[0].GasUsed)
+	}
 }
 
 func TestSimulateV1WithBlockOverrides(t *testing.T) {
@@ -1043,4 +1048,13 @@ func TestSimulateV1WithBlockNumberOrHash(t *testing.T) {
 	if len(results) != 1 {
 		t.Fatalf("expected 1 block result, got %d", len(results))
 	}
+}
+
+// genesisAlloc funds the test accounts on top of the system contracts every
+// enabled fork calls into.
+func genesisAlloc() types.GenesisAlloc {
+	alloc := core.SystemContractAllocs()
+	alloc[testAddr] = types.Account{Balance: testBalance}
+	alloc[revertContractAddr] = types.Account{Code: revertCode}
+	return alloc
 }
