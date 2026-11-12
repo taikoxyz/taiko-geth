@@ -4,15 +4,10 @@ on:
   pull_request:
     branches: [taiko]
     paths:
-      - "core/vm/**"
-      - "core/state_processor.go"
-      - "core/block_validator.go"
-      - "core/evm.go"
-      - "consensus/taiko/**"
+      - "core/**"
+      - "miner/**"
       - "params/**"
-      - "miner/taiko_worker.go"
-      - "miner/worker.go"
-      - "miner/taiko_zk_gas_vectors_test.go"
+      - "consensus/**"
       - "go.mod"
       - "go.sum"
       - "zk-gas-vectors.ref"
@@ -20,15 +15,10 @@ on:
   push:
     branches: [taiko]
     paths:
-      - "core/vm/**"
-      - "core/state_processor.go"
-      - "core/block_validator.go"
-      - "core/evm.go"
-      - "consensus/taiko/**"
+      - "core/**"
+      - "miner/**"
       - "params/**"
-      - "miner/taiko_worker.go"
-      - "miner/worker.go"
-      - "miner/taiko_zk_gas_vectors_test.go"
+      - "consensus/**"
       - "go.mod"
       - "go.sum"
       - "zk-gas-vectors.ref"
@@ -36,6 +26,10 @@ on:
 
 permissions:
   contents: read
+
+env:
+  # Without the corpus directory the runners fail instead of skipping.
+  ZK_GAS_VECTORS_REQUIRED: "1"
 
 concurrency:
   group: zk-gas-vectors-${{ github.ref }}
@@ -86,9 +80,19 @@ jobs:
         with:
           go-version: '1.24'
 
-      # ZK_GAS_VECTORS_KNOWN_DIVERGENT is for local investigation only and is never set here.
+      - name: Run the zk gas runner unit tests
+        run: go test ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas(Harness|Block)Vectors$' -count=1
+
+      # Assert mode only. Each step runs exactly one corpus test and fails unless it passed, so a
+      # filter that matches nothing cannot go green.
       - name: Run the harness vectors
-        run: go test ./core/vm -run '^TestZkGas' -count=1
+        run: |
+          set -o pipefail
+          go test ./core/vm -run '^TestZkGasHarnessVectors$' -count=1 -v | tee "$RUNNER_TEMP/harness.log"
+          grep -q '^--- PASS: TestZkGasHarnessVectors ' "$RUNNER_TEMP/harness.log"
 
       - name: Run the block vectors
-        run: go test ./miner -run '^TestZkGas' -count=1
+        run: |
+          set -o pipefail
+          go test ./miner -run '^TestZkGasBlockVectors$' -count=1 -v | tee "$RUNNER_TEMP/block.log"
+          grep -q '^--- PASS: TestZkGasBlockVectors ' "$RUNNER_TEMP/block.log"
