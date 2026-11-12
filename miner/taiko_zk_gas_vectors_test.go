@@ -248,15 +248,33 @@ func loadZkGasVectors[T any](dir, layer string) ([]T, error) {
 	return vectors, nil
 }
 
-// zkGasKnownDivergent returns the vector ids listed in ZK_GAS_VECTORS_KNOWN_DIVERGENT.
-func zkGasKnownDivergent() map[string]bool {
+// zkGasCorpusDir returns ZK_GAS_VECTORS_DIR, read through lookup. An empty dir with a nil error
+// means the corpus test skips; with ZK_GAS_VECTORS_REQUIRED=1 an unset directory is an error
+// instead, so that a run that must check the corpus cannot pass without it.
+func zkGasCorpusDir(lookup func(string) (string, bool)) (string, error) {
+	if dir, _ := lookup("ZK_GAS_VECTORS_DIR"); dir != "" {
+		return dir, nil
+	}
+	if required, _ := lookup("ZK_GAS_VECTORS_REQUIRED"); required == "1" {
+		return "", errors.New("ZK_GAS_VECTORS_REQUIRED=1 but ZK_GAS_VECTORS_DIR is not set")
+	}
+	return "", nil
+}
+
+// zkGasKnownDivergent returns the vector ids listed in ZK_GAS_VECTORS_KNOWN_DIVERGENT, read
+// through lookup. The variable is for local investigation only and is an error when CI is set.
+func zkGasKnownDivergent(lookup func(string) (string, bool)) (map[string]bool, error) {
+	list, set := lookup("ZK_GAS_VECTORS_KNOWN_DIVERGENT")
+	if _, ci := lookup("CI"); set && ci {
+		return nil, errors.New("ZK_GAS_VECTORS_KNOWN_DIVERGENT is refused because CI is set: it is for local investigation only")
+	}
 	ids := make(map[string]bool)
-	for _, id := range strings.Split(os.Getenv("ZK_GAS_VECTORS_KNOWN_DIVERGENT"), ",") {
+	for _, id := range strings.Split(list, ",") {
 		if id = strings.TrimSpace(id); id != "" {
 			ids[id] = true
 		}
 	}
-	return ids
+	return ids, nil
 }
 
 // writeZkVectorFile writes one vector file into <dir>/cases.
@@ -397,20 +415,32 @@ func importZkBlock(chain *core.BlockChain, parent *types.Header, block *types.Bl
 	return nil
 }
 
-// zkImportVerdict maps an import result to its verdict. A rejection counts only when execution
-// failed for a zk gas reason: a tx exceeding the block zk gas limit, a body extending past the zk
-// gas truncation point, or a header difficulty that is not the block zk gas.
-func zkImportVerdict(err error) string {
-	switch {
-	case err == nil:
+// zkGasLimitRejection reports whether an import failed because a tx exceeded the block zk gas
+// limit or the body extends past the zk gas truncation point.
+func zkGasLimitRejection(err error) bool {
+	return errors.Is(err, vm.ErrZkGasLimitExceeded) ||
+		strings.Contains(err.Error(), "Unzen block body extends past zk gas truncation point")
+}
+
+// zkGasDifficultyRejection reports whether an import failed because the header difficulty is not
+// the block zk gas.
+func zkGasDifficultyRejection(err error) bool {
+	return strings.Contains(err.Error(), "zk gas difficulty mismatch")
+}
+
+// zkImportVerdict maps an import result to its verdict. A rejection counts only when one of
+// reasons matches the error: the built block and the extended block accept any zk gas reason,
+// the block with a wrong difficulty only the difficulty mismatch.
+func zkImportVerdict(err error, reasons ...func(error) bool) string {
+	if err == nil {
 		return zkBlockAccept
-	case errors.Is(err, vm.ErrZkGasLimitExceeded),
-		strings.Contains(err.Error(), "Unzen block body extends past zk gas truncation point"),
-		strings.Contains(err.Error(), "zk gas difficulty mismatch"):
-		return zkBlockReject
-	default:
-		return zkBlockNotZkRejection + err.Error()
 	}
+	for _, reason := range reasons {
+		if reason(err) {
+			return zkBlockReject
+		}
+	}
+	return zkBlockNotZkRejection + err.Error()
 }
 
 // runZkBlockVector seals the vector's block, seals each prefix of its tx list that ends at an
@@ -466,7 +496,7 @@ func runZkBlockVector(t *testing.T, v zkBlockVector) zkBlockExpected {
 		got.CumulativeZkGas = append(got.CumulativeZkGas, hexutil.Uint64(prefix.Difficulty().Uint64()))
 	}
 
-	got.ImportBuilt = zkImportVerdict(importZkBlock(chain, genesis, block))
+	got.ImportBuilt = zkImportVerdict(importZkBlock(chain, genesis, block), zkGasLimitRejection, zkGasDifficultyRejection)
 	if at := v.Expected.TruncatedAt; at != nil {
 		if *at < 0 || *at >= len(txs) {
 			t.Fatalf("truncated_at %d is not an input index", *at)
@@ -478,12 +508,12 @@ func runZkBlockVector(t *testing.T, v zkBlockVector) zkBlockExpected {
 		// NewBlock recomputes the tx root (and, given no receipts, resets the receipt root, which
 		// only the post-execution checks read); the difficulty stays that of the built block.
 		extended := types.NewBlock(block.Header(), body, nil, trie.NewStackTrie(nil))
-		verdict := zkImportVerdict(importZkBlock(chain, genesis, extended))
+		verdict := zkImportVerdict(importZkBlock(chain, genesis, extended), zkGasLimitRejection, zkGasDifficultyRejection)
 		got.ImportExtended = &verdict
 	}
 	header := block.Header()
 	header.Difficulty = new(big.Int).Add(header.Difficulty, common.Big1)
-	got.ImportWrongDifficulty = zkImportVerdict(importZkBlock(chain, genesis, block.WithSeal(header)))
+	got.ImportWrongDifficulty = zkImportVerdict(importZkBlock(chain, genesis, block.WithSeal(header)), zkGasDifficultyRejection)
 	return got
 }
 
@@ -660,19 +690,26 @@ func signZkBlockTxs(t *testing.T, in zkBlockInput) []hexutil.Bytes {
 
 // TestZkGasBlockTruncatedVectorRejectsExtendedBlock checks the runner on a block that truncates:
 // two txs that each run a loop for 10,000,000 gas do not both fit the block zk gas limit, so
-// building stops at the second one and the transfer after it (the sentinel) is left out too. It
-// asserts only what the runner must report, not reference values.
+// building stops at the second one and the transfer after it (the sentinel) is left out too. The
+// sentinel comes from a second funded signer, so it stays valid without the dropped tx. It asserts
+// only what the runner must report, not reference values.
 func TestZkGasBlockTruncatedVectorRejectsExtendedBlock(t *testing.T) {
 	v := inlineTransferVector(t)
 	loop := common.HexToAddress("0x000000000000000000000000000000000000100c")
 	v.Input.Alloc[loop] = zkVectorAccount{Code: hexutil.MustDecode("0x5b600056")} // JUMPDEST, PUSH1 0, JUMP
+	sentinelSigner := zkTxSigner(2)
+	sentinelAccount, err := sentinelSigner.address()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v.Input.Alloc[sentinelAccount] = v.Input.Alloc[common.HexToAddress("0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf")]
 	transfer := v.Input.Txs[1]
 	burn := transfer
 	burn.To, burn.Gas, burn.Value = &loop, 10_000_000, hexutil.U256{}
 	burn2 := burn
 	burn2.Nonce = 1
 	sentinel := transfer
-	sentinel.Nonce = 2
+	sentinel.Signer = sentinelSigner
 	v.Input.Txs = []zkBlockTx{v.Input.Txs[0], burn, burn2, sentinel}
 	truncatedAt := 2
 	v.Expected = &zkBlockExpected{RawTxs: signZkBlockTxs(t, v.Input), TruncatedAt: &truncatedAt}
@@ -700,16 +737,74 @@ func TestZkGasBlockVectorLoaderRejectsEmptyLayer(t *testing.T) {
 	}
 }
 
+func TestZkGasBlockImportVerdictReasons(t *testing.T) {
+	limit := fmt.Errorf("execution: %w", vm.ErrZkGasLimitExceeded)
+	difficulty := errors.New("execution: zk gas difficulty mismatch: header has 2, recomputed 1")
+	other := errors.New("execution: invalid gas used")
+	tests := []struct {
+		name    string
+		err     error
+		reasons []func(error) bool
+		want    string
+	}{
+		{"accepted", nil, nil, zkBlockAccept},
+		{"limit, any zk reason", limit, []func(error) bool{zkGasLimitRejection, zkGasDifficultyRejection}, zkBlockReject},
+		{"difficulty, any zk reason", difficulty, []func(error) bool{zkGasLimitRejection, zkGasDifficultyRejection}, zkBlockReject},
+		{"difficulty, difficulty only", difficulty, []func(error) bool{zkGasDifficultyRejection}, zkBlockReject},
+		{"limit, difficulty only", limit, []func(error) bool{zkGasDifficultyRejection}, zkBlockNotZkRejection + limit.Error()},
+		{"other, any zk reason", other, []func(error) bool{zkGasLimitRejection, zkGasDifficultyRejection}, zkBlockNotZkRejection + other.Error()},
+	}
+	for _, tt := range tests {
+		if got := zkImportVerdict(tt.err, tt.reasons...); got != tt.want {
+			t.Errorf("%s: verdict %q, want %q", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestZkGasCorpusEnvironment(t *testing.T) {
+	env := func(vars map[string]string) func(string) (string, bool) {
+		return func(key string) (string, bool) {
+			value, ok := vars[key]
+			return value, ok
+		}
+	}
+	if dir, err := zkGasCorpusDir(env(nil)); dir != "" || err != nil {
+		t.Errorf("unset corpus: dir %q, error %v; want a skip", dir, err)
+	}
+	if dir, err := zkGasCorpusDir(env(map[string]string{"ZK_GAS_VECTORS_DIR": "/vectors", "ZK_GAS_VECTORS_REQUIRED": "1"})); dir != "/vectors" || err != nil {
+		t.Errorf("set corpus: dir %q, error %v", dir, err)
+	}
+	if _, err := zkGasCorpusDir(env(map[string]string{"ZK_GAS_VECTORS_REQUIRED": "1"})); err == nil {
+		t.Error("ZK_GAS_VECTORS_REQUIRED=1 without ZK_GAS_VECTORS_DIR accepted")
+	}
+	ids, err := zkGasKnownDivergent(env(map[string]string{"ZK_GAS_VECTORS_KNOWN_DIVERGENT": " a, b ,"}))
+	if err != nil || len(ids) != 2 || !ids["a"] || !ids["b"] {
+		t.Errorf("known divergent ids %v, error %v", ids, err)
+	}
+	if _, err := zkGasKnownDivergent(env(map[string]string{"CI": "true"})); err != nil {
+		t.Errorf("CI without known divergent ids refused: %v", err)
+	}
+	if _, err := zkGasKnownDivergent(env(map[string]string{"CI": "true", "ZK_GAS_VECTORS_KNOWN_DIVERGENT": "a"})); err == nil {
+		t.Error("ZK_GAS_VECTORS_KNOWN_DIVERGENT accepted with CI set")
+	}
+}
+
 func TestZkGasBlockVectors(t *testing.T) {
-	dir := os.Getenv("ZK_GAS_VECTORS_DIR")
+	dir, err := zkGasCorpusDir(os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if dir == "" {
 		t.Skip("ZK_GAS_VECTORS_DIR is not set")
+	}
+	known, err := zkGasKnownDivergent(os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
 	}
 	vectors, err := loadZkGasVectors[zkBlockVector](dir, "block")
 	if err != nil {
 		t.Fatal(err)
 	}
-	known := zkGasKnownDivergent()
 	var failed []string
 	for _, v := range vectors {
 		ok := t.Run(v.ID, func(t *testing.T) {
