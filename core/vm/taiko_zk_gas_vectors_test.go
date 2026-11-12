@@ -172,15 +172,33 @@ func loadZkGasVectors[T any](dir, layer string) ([]T, error) {
 	return vectors, nil
 }
 
-// zkGasKnownDivergent returns the vector ids listed in ZK_GAS_VECTORS_KNOWN_DIVERGENT.
-func zkGasKnownDivergent() map[string]bool {
+// zkGasCorpusDir returns ZK_GAS_VECTORS_DIR, read through lookup. An empty dir with a nil error
+// means the corpus test skips; with ZK_GAS_VECTORS_REQUIRED=1 an unset directory is an error
+// instead, so that a run that must check the corpus cannot pass without it.
+func zkGasCorpusDir(lookup func(string) (string, bool)) (string, error) {
+	if dir, _ := lookup("ZK_GAS_VECTORS_DIR"); dir != "" {
+		return dir, nil
+	}
+	if required, _ := lookup("ZK_GAS_VECTORS_REQUIRED"); required == "1" {
+		return "", errors.New("ZK_GAS_VECTORS_REQUIRED=1 but ZK_GAS_VECTORS_DIR is not set")
+	}
+	return "", nil
+}
+
+// zkGasKnownDivergent returns the vector ids listed in ZK_GAS_VECTORS_KNOWN_DIVERGENT, read
+// through lookup. The variable is for local investigation only and is an error when CI is set.
+func zkGasKnownDivergent(lookup func(string) (string, bool)) (map[string]bool, error) {
+	list, set := lookup("ZK_GAS_VECTORS_KNOWN_DIVERGENT")
+	if _, ci := lookup("CI"); set && ci {
+		return nil, errors.New("ZK_GAS_VECTORS_KNOWN_DIVERGENT is refused because CI is set: it is for local investigation only")
+	}
 	ids := make(map[string]bool)
-	for _, id := range strings.Split(os.Getenv("ZK_GAS_VECTORS_KNOWN_DIVERGENT"), ",") {
+	for _, id := range strings.Split(list, ",") {
 		if id = strings.TrimSpace(id); id != "" {
 			ids[id] = true
 		}
 	}
-	return ids
+	return ids, nil
 }
 
 // newZkHarnessState returns a state holding exactly the alloc accounts, committed and reopened
@@ -257,18 +275,35 @@ func runZkHarnessVector(t *testing.T, in zkHarnessInput) zkHarnessExpected {
 	}
 
 	_, _, err := evm.Call(in.Caller, in.To, nil, uint64(in.FrameGas), new(uint256.Int))
-	var status string
-	switch {
-	case err == nil:
-		status = zkHarnessSuccess
-	case errors.Is(err, ErrExecutionReverted):
-		status = zkHarnessRevert
-	case errors.Is(err, ErrZkGasLimitExceeded) || evm.zkGasErr != nil:
+	status, err := zkHarnessStatus(err, evm.zkGasErr)
+	if err != nil {
+		t.Fatalf("runner error: %v", err)
+	}
+	if status == zkHarnessZkLimit {
 		return zkHarnessExpected{Status: zkHarnessZkLimit}
-	default:
-		status = zkHarnessHalt
 	}
 	return zkHarnessExpected{FrameZkGas: new(big.Int).SetUint64(meter.TxZkGasUsed()), Status: status}
+}
+
+// zkHarnessStatus maps the error EVM.Call returned to a harness status. Like block processing and
+// block building, which abort a tx only when the error it returns is ErrZkGasLimitExceeded, the
+// status is zk_limit exactly when callErr is that error. A returned zk gas limit error without the
+// sticky one recorded by the meter (stickyErr), or the reverse, is a runner error.
+func zkHarnessStatus(callErr, stickyErr error) (string, error) {
+	limit := errors.Is(callErr, ErrZkGasLimitExceeded)
+	if limit != (stickyErr != nil) {
+		return "", fmt.Errorf("EVM.Call returned %v but the sticky zk gas error is %v", callErr, stickyErr)
+	}
+	switch {
+	case callErr == nil:
+		return zkHarnessSuccess, nil
+	case errors.Is(callErr, ErrExecutionReverted):
+		return zkHarnessRevert, nil
+	case limit:
+		return zkHarnessZkLimit, nil
+	default:
+		return zkHarnessHalt, nil
+	}
 }
 
 // compareZkHarness reports whether got matches want. For zk_limit only the status is compared,
@@ -428,16 +463,74 @@ func TestZkGasVectorLoaderRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestZkGasHarnessStatusRejectsStickyMismatch(t *testing.T) {
+	limit := fmt.Errorf("frame: %w", ErrZkGasLimitExceeded)
+	tests := []struct {
+		name              string
+		callErr, sticky   error
+		want              string
+		wantRunnerFailure bool
+	}{
+		{"success", nil, nil, zkHarnessSuccess, false},
+		{"revert", ErrExecutionReverted, nil, zkHarnessRevert, false},
+		{"halt", ErrOutOfGas, nil, zkHarnessHalt, false},
+		{"zk_limit", limit, ErrZkGasLimitExceeded, zkHarnessZkLimit, false},
+		{"sticky error, call succeeded", nil, ErrZkGasLimitExceeded, "", true},
+		{"sticky error, call halted", ErrOutOfGas, ErrZkGasLimitExceeded, "", true},
+		{"returned limit error, no sticky error", limit, nil, "", true},
+	}
+	for _, tt := range tests {
+		got, err := zkHarnessStatus(tt.callErr, tt.sticky)
+		if (err != nil) != tt.wantRunnerFailure || got != tt.want {
+			t.Errorf("%s: got status %q, error %v", tt.name, got, err)
+		}
+	}
+}
+
+func TestZkGasCorpusEnvironment(t *testing.T) {
+	env := func(vars map[string]string) func(string) (string, bool) {
+		return func(key string) (string, bool) {
+			value, ok := vars[key]
+			return value, ok
+		}
+	}
+	if dir, err := zkGasCorpusDir(env(nil)); dir != "" || err != nil {
+		t.Errorf("unset corpus: dir %q, error %v; want a skip", dir, err)
+	}
+	if dir, err := zkGasCorpusDir(env(map[string]string{"ZK_GAS_VECTORS_DIR": "/vectors", "ZK_GAS_VECTORS_REQUIRED": "1"})); dir != "/vectors" || err != nil {
+		t.Errorf("set corpus: dir %q, error %v", dir, err)
+	}
+	if _, err := zkGasCorpusDir(env(map[string]string{"ZK_GAS_VECTORS_REQUIRED": "1"})); err == nil {
+		t.Error("ZK_GAS_VECTORS_REQUIRED=1 without ZK_GAS_VECTORS_DIR accepted")
+	}
+	ids, err := zkGasKnownDivergent(env(map[string]string{"ZK_GAS_VECTORS_KNOWN_DIVERGENT": " a, b ,"}))
+	if err != nil || len(ids) != 2 || !ids["a"] || !ids["b"] {
+		t.Errorf("known divergent ids %v, error %v", ids, err)
+	}
+	if _, err := zkGasKnownDivergent(env(map[string]string{"CI": "true"})); err != nil {
+		t.Errorf("CI without known divergent ids refused: %v", err)
+	}
+	if _, err := zkGasKnownDivergent(env(map[string]string{"CI": "true", "ZK_GAS_VECTORS_KNOWN_DIVERGENT": "a"})); err == nil {
+		t.Error("ZK_GAS_VECTORS_KNOWN_DIVERGENT accepted with CI set")
+	}
+}
+
 func TestZkGasHarnessVectors(t *testing.T) {
-	dir := os.Getenv("ZK_GAS_VECTORS_DIR")
+	dir, err := zkGasCorpusDir(os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if dir == "" {
 		t.Skip("ZK_GAS_VECTORS_DIR is not set")
+	}
+	known, err := zkGasKnownDivergent(os.LookupEnv)
+	if err != nil {
+		t.Fatal(err)
 	}
 	vectors, err := loadZkGasVectors[zkHarnessVector](dir, "harness")
 	if err != nil {
 		t.Fatal(err)
 	}
-	known := zkGasKnownDivergent()
 	var failed []string
 	for _, v := range vectors {
 		ok := t.Run(v.ID, func(t *testing.T) {
