@@ -449,6 +449,17 @@ func zkImportVerdict(err error, reasons ...func(error) bool) string {
 // It fails the test when the vector is malformed or sealing fails.
 func runZkBlockVector(t *testing.T, v zkBlockVector) zkBlockExpected {
 	t.Helper()
+	return runZkBlockVectorSealedBy(t, v, sealZkBlock)
+}
+
+// zkBlockSealer seals block 1 of env on top of parent from txs, as sealZkBlock does.
+type zkBlockSealer func(t *testing.T, miner *Miner, parent *types.Header, env zkBlockEnv, txs types.Transactions) *types.Block
+
+// runZkBlockVectorSealedBy is runZkBlockVector with seal sealing the vector's block from all its
+// txs; the prefixes are still sealed by sealZkBlock. The trace tests use it to trace exactly the
+// block build.
+func runZkBlockVectorSealedBy(t *testing.T, v zkBlockVector, seal zkBlockSealer) zkBlockExpected {
+	t.Helper()
 	if v.Expected == nil {
 		t.Fatal("vector has no expected values to read the signed txs from")
 	}
@@ -467,7 +478,7 @@ func runZkBlockVector(t *testing.T, v zkBlockVector) zkBlockExpected {
 
 	miner, chain := newZkBlockMiner(t, in)
 	genesis := chain.Genesis().Header()
-	block := sealZkBlock(t, miner, genesis, in.Env, txs)
+	block := seal(t, miner, genesis, in.Env, txs)
 
 	got := zkBlockExpected{
 		TruncatedAt: v.Expected.TruncatedAt,

@@ -81,10 +81,10 @@ jobs:
           go-version: '1.24'
 
       - name: Run the zk gas runner unit tests
-        run: go test ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas(Harness|Block)Vectors$' -count=1
+        run: go test ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas(Harness|Block)(Vectors|Traces)$' -count=1
 
-      # Assert mode only. Each step runs exactly one corpus test and fails unless it passed, so a
-      # filter that matches nothing cannot go green.
+      # Assert mode only. Each step runs exactly the named corpus tests and fails unless each of them
+      # passed, so a filter that matches nothing cannot go green.
       - name: Run the harness vectors
         run: |
           set -o pipefail
@@ -96,3 +96,24 @@ jobs:
           set -o pipefail
           go test ./miner -run '^TestZkGasBlockVectors$' -count=1 -v | tee "$RUNNER_TEMP/block.log"
           grep -q '^--- PASS: TestZkGasBlockVectors ' "$RUNNER_TEMP/block.log"
+
+      # The zkgastrace build tag compiles in the zk gas trace exporter. In that build the result
+      # comparison runs again untraced, and the trace tests run every vector traced: the traced run
+      # must reproduce the expected values, and its trace must equal the committed alethia-reth trace
+      # event by event.
+      - name: Run the zk gas runner unit tests with the trace exporter
+        run: go test -tags zkgastrace ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas(Harness|Block)(Vectors|Traces)$' -count=1
+
+      - name: Run the harness vectors and traces with the trace exporter
+        run: |
+          set -o pipefail
+          go test -tags zkgastrace ./core/vm -run '^TestZkGasHarness(Vectors|Traces)$' -count=1 -v | tee "$RUNNER_TEMP/harness-trace.log"
+          grep -q '^--- PASS: TestZkGasHarnessVectors ' "$RUNNER_TEMP/harness-trace.log"
+          grep -q '^--- PASS: TestZkGasHarnessTraces ' "$RUNNER_TEMP/harness-trace.log"
+
+      - name: Run the block vectors and traces with the trace exporter
+        run: |
+          set -o pipefail
+          go test -tags zkgastrace ./miner -run '^TestZkGasBlock(Vectors|Traces)$' -count=1 -v | tee "$RUNNER_TEMP/block-trace.log"
+          grep -q '^--- PASS: TestZkGasBlockVectors ' "$RUNNER_TEMP/block-trace.log"
+          grep -q '^--- PASS: TestZkGasBlockTraces ' "$RUNNER_TEMP/block-trace.log"

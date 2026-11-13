@@ -214,7 +214,11 @@ func (t *ZkGasStepTracker) ChargePendingSpawn(depth int) error {
 	if !step.spawned || !IsSpawnOpcode(OpCode(step.opcode)) {
 		return nil
 	}
-	if err := t.meter.ChargeOpcode(step.opcode, t.meter.SpawnEstimate(step.opcode)); err != nil {
+	err := t.meter.ChargeOpcode(step.opcode, t.meter.SpawnEstimate(step.opcode))
+	if zkGasTraceEnabled {
+		zkGasTraceSpawnCharged(t.meter, depth, step, err)
+	}
+	if err != nil {
 		return err
 	}
 	t.pending[depth] = nil
@@ -236,7 +240,11 @@ func (t *ZkGasStepTracker) FinishAndCharge(depth int, gasAfter uint64) error {
 	if IsSpawnOpcode(OpCode(step.opcode)) && step.spawned {
 		rawGas = t.meter.SpawnEstimate(step.opcode)
 	}
-	return t.meter.ChargeOpcode(step.opcode, rawGas)
+	err := t.meter.ChargeOpcode(step.opcode, rawGas)
+	if zkGasTraceEnabled {
+		zkGasTraceStepCharged(t.meter, depth, step, gasAfter, rawGas, err)
+	}
+	return err
 }
 
 // CHANGE(taiko): ensureDepth grows the pending-step slice so the requested depth is addressable.
