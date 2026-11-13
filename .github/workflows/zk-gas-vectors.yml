@@ -73,6 +73,7 @@ jobs:
         run: |
           dir="$GITHUB_WORKSPACE/taiko-mono/testdata/zk_gas_vectors"
           test -d "$dir/cases"
+          test -f "$dir/meter-vectors.json"
           echo "ZK_GAS_VECTORS_DIR=$dir" >> "$GITHUB_ENV"
 
       - name: Set up Go
@@ -81,10 +82,17 @@ jobs:
           go-version: '1.24'
 
       - name: Run the zk gas runner unit tests
-        run: go test ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas(Harness|Block)(Vectors|Traces)$' -count=1
+        run: go test ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas((Harness|Block)(Vectors|Traces)|MeterVectors)$' -count=1
 
       # Assert mode only. Each step runs exactly the named corpus tests and fails unless each of them
       # passed, so a filter that matches nothing cannot go green.
+      # CHANGE(taiko): Require Lean-generated meter vectors in both build modes.
+      - name: Run the meter vectors
+        run: |
+          set -o pipefail
+          go test ./core/vm -run '^TestZkGasMeterVectors$' -count=1 -v | tee "$RUNNER_TEMP/meter.log"
+          grep -q '^--- PASS: TestZkGasMeterVectors ' "$RUNNER_TEMP/meter.log"
+
       - name: Run the harness vectors
         run: |
           set -o pipefail
@@ -102,7 +110,13 @@ jobs:
       # must reproduce the expected values, and its trace must equal the committed alethia-reth trace
       # event by event.
       - name: Run the zk gas runner unit tests with the trace exporter
-        run: go test -tags zkgastrace ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas(Harness|Block)(Vectors|Traces)$' -count=1
+        run: go test -tags zkgastrace ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas((Harness|Block)(Vectors|Traces)|MeterVectors)$' -count=1
+
+      - name: Run the meter vectors with the trace exporter
+        run: |
+          set -o pipefail
+          go test -tags zkgastrace ./core/vm -run '^TestZkGasMeterVectors$' -count=1 -v | tee "$RUNNER_TEMP/meter-trace.log"
+          grep -q '^--- PASS: TestZkGasMeterVectors ' "$RUNNER_TEMP/meter-trace.log"
 
       - name: Run the harness vectors and traces with the trace exporter
         run: |
