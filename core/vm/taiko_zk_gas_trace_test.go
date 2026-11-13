@@ -20,7 +20,7 @@ import (
 	"github.com/holiman/uint256"
 )
 
-// zkTraceFixture is a harness trace in trace schema v1: three steps of smoke.harness.add, then
+// zkTraceFixture is a harness trace in trace schema v1: two steps of smoke.harness.add, then
 // the STATICCALL step and the point evaluation run of precompile.point_evaluation.bad_input, and
 // a frame_end. It is not one coherent run; the comparison tests only need its lines.
 const zkTraceFixture = `{"e":"step","d":1,"pc":0,"op":96,"gas":"0x186a0","static":false,"sl":0,"stack":[],"mem":"0x0","facts":{},"gas_after":"0x1869d","spawn":false,"zk":"0x1b","ok":true,"charged":true}
@@ -222,6 +222,35 @@ func TestZkGasTraceCompareSkipsOnlyTheEmptyCodeStop(t *testing.T) {
 		c.mutate(&want[stop])
 		if err := CompareZkGasTrace(want, geth); err == nil || !strings.HasPrefix(err.Error(), "zk gas mismatch at event 4") {
 			t.Errorf("reference STOP with %s: reported as %v", c.name, err)
+		}
+	}
+	// Only right after a CREATE or CREATE2 of empty initcode: after a CALL-family spawn step, or
+	// a CREATE or CREATE2 whose initcode size is not 0, a reference STOP the geth trace lacks stays
+	// compared. A CREATE2 of empty initcode is skipped like a CREATE.
+	parents := []struct {
+		name   string
+		mutate func(e *ZkGasTraceEvent)
+		skip   bool
+	}{
+		{"CALL", func(e *ZkGasTraceEvent) { e.Op, e.StackLen, e.Stack = byte(CALL), 7, make([]uint256.Int, 7) }, false},
+		{"DELEGATECALL", func(e *ZkGasTraceEvent) { e.Op, e.StackLen, e.Stack = byte(DELEGATECALL), 6, make([]uint256.Int, 6) }, false},
+		{"CREATE of size 0x20", func(e *ZkGasTraceEvent) { e.Stack[2].SetUint64(0x20) }, false},
+		{"CREATE2 of size 0x20", func(e *ZkGasTraceEvent) {
+			e.Op, e.StackLen, e.Stack = byte(CREATE2), 4, make([]uint256.Int, 4)
+			e.Stack[2].SetUint64(0x20)
+		}, false},
+		{"CREATE2 of size 0", func(e *ZkGasTraceEvent) { e.Op, e.StackLen, e.Stack = byte(CREATE2), 4, make([]uint256.Int, 4) }, true},
+	}
+	for _, c := range parents {
+		want := cloneZkTrace(ref)
+		c.mutate(&want[stop-1])
+		got := slices.Delete(cloneZkTrace(want), stop, stop+1)
+		err := CompareZkGasTrace(want, got)
+		if c.skip && err != nil {
+			t.Errorf("the STOP after a %s was compared: %v", c.name, err)
+		}
+		if !c.skip && (err == nil || !strings.HasPrefix(err.Error(), "zk gas mismatch at event 4")) {
+			t.Errorf("the STOP after a %s: reported as %v", c.name, err)
 		}
 	}
 	// Not right after a spawn step: the CREATE did not spawn.

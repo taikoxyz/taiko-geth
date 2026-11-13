@@ -453,12 +453,13 @@ func ReadZkGasTraceFile(dir, id string) ([]ZkGasTraceEvent, error) {
 //     before or after charging its intrinsic zk gas, which is then discarded. So a tx whose tx_end
 //     is skipped and whose only other event is an accepted intrinsic charge is reduced to its lone
 //     tx_end. A refused charge or a step inside a skipped tx is still compared.
-//   - On the reference only, while comparing: a frame opened on empty code (a CREATE with empty
-//     initcode) runs one STOP step in revm, while geth's interpreter returns before its first step.
-//     A reference step with op STOP at pc 0, zk 0x0 and gas_after equal to gas, right after a spawn
-//     step one depth up, is skipped when the geth trace has no step of that depth at that position.
-//     STOP has static gas 0 and multiplier 0, so that step can never change zk gas or the limit
-//     check. A geth step the reference lacks is never skipped.
+//   - On the reference only, while comparing: a frame opened on empty code (a CREATE or CREATE2
+//     with empty initcode) runs one STOP step in revm, while geth's interpreter returns before its
+//     first step. A reference step with op STOP at pc 0, zk 0x0 and gas_after equal to gas, right
+//     after a CREATE or CREATE2 step one depth up that spawned with initcode size 0, is skipped
+//     when the geth trace has no step of that depth at that position. STOP has static gas 0 and
+//     multiplier 0, so that step can never change zk gas or the limit check. A geth step the
+//     reference lacks is never skipped.
 func CompareZkGasTrace(want, got []ZkGasTraceEvent) error {
 	wantN, wantAt := normalizeZkGasTrace(want)
 	gotN, gotAt := normalizeZkGasTrace(got)
@@ -493,9 +494,10 @@ func CompareZkGasTrace(want, got []ZkGasTraceEvent) error {
 }
 
 // zkTraceEmptyCodeStop reports whether reference event events[i] is the STOP step a frame opened
-// on empty code runs: right after a spawn step one depth up, at pc 0 with an empty stack and no
-// memory, using no gas and charged 0 zk gas. STOP has static gas 0 and multiplier 0, so this step
-// can never change a zk gas total or the limit check (see CompareZkGasTrace).
+// on empty code runs: right after a CREATE or CREATE2 step one depth up that spawned with initcode
+// size 0, at pc 0 with an empty stack and no memory, using no gas and charged 0 zk gas. STOP has
+// static gas 0 and multiplier 0, so this step can never change a zk gas total or the limit check
+// (see CompareZkGasTrace).
 func zkTraceEmptyCodeStop(events []ZkGasTraceEvent, i int) bool {
 	if i <= 0 || i >= len(events) {
 		return false
@@ -503,7 +505,15 @@ func zkTraceEmptyCodeStop(events []ZkGasTraceEvent, i int) bool {
 	e, parent := events[i], events[i-1]
 	return e.Kind == zkTraceStep && OpCode(e.Op) == STOP && e.PC == 0 && e.Zk == 0 && e.GasAfter == e.Gas &&
 		e.StackLen == 0 && e.Mem == 0 && e.Charged && e.Ok && !e.Spawn &&
-		parent.Kind == zkTraceStep && parent.Spawn && parent.Depth == e.Depth-1
+		parent.Kind == zkTraceStep && parent.Spawn && parent.Depth == e.Depth-1 && zkTraceEmptyInitcode(parent)
+}
+
+// zkTraceEmptyInitcode reports whether step e is a CREATE or CREATE2 whose initcode size is 0. The
+// trace's stack is top first, so the size, the third operand of both opcodes (value, offset, size
+// and, for CREATE2, salt), is Stack[2].
+func zkTraceEmptyInitcode(e ZkGasTraceEvent) bool {
+	op := OpCode(e.Op)
+	return (op == CREATE || op == CREATE2) && len(e.Stack) > 2 && e.Stack[2].IsZero()
 }
 
 // zkTraceEventDifference classifies how a differs from b: "" when they match.
