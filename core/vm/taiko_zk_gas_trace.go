@@ -448,38 +448,62 @@ func ReadZkGasTraceFile(dir, id string) ([]ZkGasTraceEvent, error) {
 // event that one trace has and the other lacks, with the next event equal again, is reported as
 // such rather than as a difference between two unrelated events.
 //
-// One normalization applies to both traces first: a skipped tx carries no zk gas, and a client
-// may reject it either before or after charging its intrinsic zk gas, which is then discarded.
-// So a tx whose tx_end is skipped and whose only other event is an accepted intrinsic charge is
-// reduced to its lone tx_end. Nothing else is normalized: a refused charge or a step inside a
-// skipped tx is still compared.
+// Two normalizations apply, and nothing else is normalized:
+//   - On both traces first: a skipped tx carries no zk gas, and a client may reject it either
+//     before or after charging its intrinsic zk gas, which is then discarded. So a tx whose tx_end
+//     is skipped and whose only other event is an accepted intrinsic charge is reduced to its lone
+//     tx_end. A refused charge or a step inside a skipped tx is still compared.
+//   - On the reference only, while comparing: a frame opened on empty code (a CREATE with empty
+//     initcode) runs one STOP step in revm, while geth's interpreter returns before its first step.
+//     A reference step with op STOP at pc 0, zk 0x0 and gas_after equal to gas, right after a spawn
+//     step one depth up, is skipped when the geth trace has no step of that depth at that position.
+//     STOP has static gas 0 and multiplier 0, so that step can never change zk gas or the limit
+//     check. A geth step the reference lacks is never skipped.
 func CompareZkGasTrace(want, got []ZkGasTraceEvent) error {
 	wantN, wantAt := normalizeZkGasTrace(want)
 	gotN, gotAt := normalizeZkGasTrace(got)
-	for i := 0; i < max(len(wantN), len(gotN)); i++ {
-		// The event's index in each trace as given.
-		at := fmt.Sprintf("event %d", wantAt[i])
-		if wantAt[i] != gotAt[i] {
-			at += fmt.Sprintf(" (geth event %d)", gotAt[i])
-		}
-		switch {
-		case i >= len(gotN):
-			return fmt.Errorf("zk gas mismatch at %s: reference %s, geth trace ends (%d reference events, %d geth events)", at, wantN[i], len(want), len(got))
-		case i >= len(wantN):
-			return fmt.Errorf("zk gas mismatch at %s: reference trace ends, geth %s (%d reference events, %d geth events)", at, gotN[i], len(want), len(got))
-		}
-		label := zkTraceEventDifference(wantN[i], gotN[i])
-		switch {
-		case label == "":
+	w, g := 0, 0
+	for w < len(wantN) || g < len(gotN) {
+		if w < len(wantN) && g < len(gotN) && zkTraceEventDifference(wantN[w], gotN[g]) == "" {
+			w, g = w+1, g+1
 			continue
-		case i+1 < len(wantN) && zkTraceEventDifference(wantN[i+1], gotN[i]) == "":
-			return fmt.Errorf("zk gas mismatch at %s: the reference has an event the geth trace lacks: %s", at, wantN[i])
-		case i+1 < len(gotN) && zkTraceEventDifference(wantN[i], gotN[i+1]) == "":
-			return fmt.Errorf("zk gas mismatch at %s: the geth trace has an event the reference lacks: %s", at, gotN[i])
 		}
-		return fmt.Errorf("%s at %s: reference %s, geth %s", label, at, wantN[i], gotN[i])
+		if zkTraceEmptyCodeStop(wantN, w) && (g >= len(gotN) || gotN[g].Kind != zkTraceStep || gotN[g].Depth != wantN[w].Depth) {
+			w++
+			continue
+		}
+		// The event's index in each trace as given.
+		at := fmt.Sprintf("event %d", wantAt[w])
+		if wantAt[w] != gotAt[g] {
+			at += fmt.Sprintf(" (geth event %d)", gotAt[g])
+		}
+		switch {
+		case g >= len(gotN):
+			return fmt.Errorf("zk gas mismatch at %s: reference %s, geth trace ends (%d reference events, %d geth events)", at, wantN[w], len(want), len(got))
+		case w >= len(wantN):
+			return fmt.Errorf("zk gas mismatch at %s: reference trace ends, geth %s (%d reference events, %d geth events)", at, gotN[g], len(want), len(got))
+		case w+1 < len(wantN) && zkTraceEventDifference(wantN[w+1], gotN[g]) == "":
+			return fmt.Errorf("zk gas mismatch at %s: the reference has an event the geth trace lacks: %s", at, wantN[w])
+		case g+1 < len(gotN) && zkTraceEventDifference(wantN[w], gotN[g+1]) == "":
+			return fmt.Errorf("zk gas mismatch at %s: the geth trace has an event the reference lacks: %s", at, gotN[g])
+		}
+		return fmt.Errorf("%s at %s: reference %s, geth %s", zkTraceEventDifference(wantN[w], gotN[g]), at, wantN[w], gotN[g])
 	}
 	return nil
+}
+
+// zkTraceEmptyCodeStop reports whether reference event events[i] is the STOP step a frame opened
+// on empty code runs: right after a spawn step one depth up, at pc 0 with an empty stack and no
+// memory, using no gas and charged 0 zk gas. STOP has static gas 0 and multiplier 0, so this step
+// can never change a zk gas total or the limit check (see CompareZkGasTrace).
+func zkTraceEmptyCodeStop(events []ZkGasTraceEvent, i int) bool {
+	if i <= 0 || i >= len(events) {
+		return false
+	}
+	e, parent := events[i], events[i-1]
+	return e.Kind == zkTraceStep && OpCode(e.Op) == STOP && e.PC == 0 && e.Zk == 0 && e.GasAfter == e.Gas &&
+		e.StackLen == 0 && e.Mem == 0 && e.Charged && e.Ok && !e.Spawn &&
+		parent.Kind == zkTraceStep && parent.Spawn && parent.Depth == e.Depth-1
 }
 
 // zkTraceEventDifference classifies how a differs from b: "" when they match.

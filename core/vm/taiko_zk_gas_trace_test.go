@@ -40,6 +40,18 @@ const zkBlockTraceFixture = `{"e":"intrinsic","zk":"0x3b538","ok":true}
 {"e":"tx_end","index":2,"status":"committed","tx_zk":"0x3b538"}
 `
 
+// zkEmptyInitcodeTraceFixture is the trace of create.create.zero_size_exact_gas: three PUSH0,
+// a CREATE of empty initcode that spawns, the STOP step its frame runs at depth 2 (event 4), then
+// the top frame's STOP.
+const zkEmptyInitcodeTraceFixture = `{"e":"step","d":1,"pc":0,"op":95,"gas":"0x7d06","static":false,"sl":0,"stack":[],"mem":"0x0","facts":{},"gas_after":"0x7d04","spawn":false,"zk":"0x1a","ok":true,"charged":true}
+{"e":"step","d":1,"pc":1,"op":95,"gas":"0x7d04","static":false,"sl":1,"stack":[],"mem":"0x0","facts":{},"gas_after":"0x7d02","spawn":false,"zk":"0x1a","ok":true,"charged":true}
+{"e":"step","d":1,"pc":2,"op":95,"gas":"0x7d02","static":false,"sl":2,"stack":[],"mem":"0x0","facts":{},"gas_after":"0x7d00","spawn":false,"zk":"0x1a","ok":true,"charged":true}
+{"e":"step","d":1,"pc":3,"op":240,"gas":"0x7d00","static":false,"sl":3,"stack":["0x0","0x0","0x0"],"mem":"0x0","facts":{},"gas_after":"0x0","spawn":true,"zk":"0x9088","ok":true,"charged":true}
+{"e":"step","d":2,"pc":0,"op":0,"gas":"0x0","static":false,"sl":0,"stack":[],"mem":"0x0","facts":{},"gas_after":"0x0","spawn":false,"zk":"0x0","ok":true,"charged":true}
+{"e":"step","d":1,"pc":4,"op":0,"gas":"0x0","static":false,"sl":1,"stack":[],"mem":"0x0","facts":{},"gas_after":"0x0","spawn":false,"zk":"0x0","ok":true,"charged":true}
+{"e":"frame_end","status":"success","frame_zk":"0x90d6"}
+`
+
 // mustParseZkTrace parses a fixture trace.
 func mustParseZkTrace(t *testing.T, text string) []ZkGasTraceEvent {
 	t.Helper()
@@ -180,6 +192,54 @@ func TestZkGasTraceCompareNormalizesOnlyDiscardedIntrinsicOfSkippedTx(t *testing
 		if err := CompareZkGasTrace(ref, got); err == nil {
 			t.Errorf("%s accepted", name)
 		}
+	}
+}
+
+func TestZkGasTraceCompareSkipsOnlyTheEmptyCodeStop(t *testing.T) {
+	ref := mustParseZkTrace(t, zkEmptyInitcodeTraceFixture)
+	const stop = 4
+	geth := slices.Delete(cloneZkTrace(ref), stop, stop+1) // no step for the empty initcode
+	if err := CompareZkGasTrace(ref, geth); err != nil {
+		t.Fatalf("the empty-code STOP step was compared: %v", err)
+	}
+	// At the end of a trace too: a CREATE that is the frame's last step before frame_end.
+	if err := CompareZkGasTrace(ref[:stop+1], geth[:stop]); err != nil {
+		t.Fatalf("a trailing empty-code STOP step was compared: %v", err)
+	}
+	// Each change to the reference STOP keeps it compared, and so does a geth-only STOP.
+	cases := []struct {
+		name   string
+		mutate func(e *ZkGasTraceEvent)
+	}{
+		{"zk not 0", func(e *ZkGasTraceEvent) { e.Zk = 1 }},
+		{"pc not 0", func(e *ZkGasTraceEvent) { e.PC = 1 }},
+		{"gas_after not gas", func(e *ZkGasTraceEvent) { e.Gas, e.GasAfter = 5, 4 }},
+		{"not STOP", func(e *ZkGasTraceEvent) { e.Op = byte(INVALID) }},
+		{"not one depth below the spawn", func(e *ZkGasTraceEvent) { e.Depth = 3 }},
+	}
+	for _, c := range cases {
+		want := cloneZkTrace(ref)
+		c.mutate(&want[stop])
+		if err := CompareZkGasTrace(want, geth); err == nil || !strings.HasPrefix(err.Error(), "zk gas mismatch at event 4") {
+			t.Errorf("reference STOP with %s: reported as %v", c.name, err)
+		}
+	}
+	// Not right after a spawn step: the CREATE did not spawn.
+	notSpawned := cloneZkTrace(ref)
+	notSpawned[stop-1].Spawn = false
+	gethNotSpawned := slices.Delete(cloneZkTrace(notSpawned), stop, stop+1)
+	if err := CompareZkGasTrace(notSpawned, gethNotSpawned); err == nil {
+		t.Error("a STOP step after a step that did not spawn was skipped")
+	}
+	// geth has a step of that depth at that position: it is compared with the STOP.
+	gethStep := cloneZkTrace(ref)
+	gethStep[stop].Op = byte(INVALID)
+	if err := CompareZkGasTrace(ref, gethStep); err == nil || !strings.HasPrefix(err.Error(), "setup divergence at event 4") {
+		t.Errorf("a geth step in place of the STOP reported as %v", err)
+	}
+	// A STOP step only geth has is never skipped.
+	if err := CompareZkGasTrace(geth, ref); err == nil || !strings.HasPrefix(err.Error(), "zk gas mismatch at event 4") {
+		t.Errorf("a geth-only STOP step reported as %v", err)
 	}
 }
 
