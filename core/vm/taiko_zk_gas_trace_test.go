@@ -466,3 +466,71 @@ func TestZkGasHarnessTraces(t *testing.T) {
 	}
 	t.Logf("%d of %d harness traces (%d events) equal to the reference", matched, len(vectors), events)
 }
+
+func TestZkGasTraceSelfDelegation(t *testing.T) {
+	in := inlineAddInput()
+	to := common.HexToAddress("0xc0de")
+	target := common.HexToAddress("0x42")
+	in.Alloc[to] = zkVectorAccount{Balance: hexutil.U256(*uint256.NewInt(16)),
+		Code: hexutil.MustDecode("0x5f5f5f5f60425ffa00")}
+	in.Alloc[target] = zkVectorAccount{Balance: hexutil.U256(*uint256.NewInt(1)),
+		Code: append([]byte{0xef, 0x01, 0x00}, target.Bytes()...)}
+	in.FrameGas = 3013
+	untraced := runZkHarnessVector(t, in)
+	got, events := runZkHarnessTrace(t, in)
+	if got.Status != untraced.Status || got.FrameZkGas.Cmp(untraced.FrameZkGas) != 0 {
+		t.Fatal("reading alias facts changed execution")
+	}
+	if got.Status != zkHarnessSuccess || got.FrameZkGas.Uint64() != 80657 {
+		t.Fatalf("self-delegate result %s", got)
+	}
+	found := false
+	for _, event := range events {
+		if event.Kind != zkTraceStep || event.Op != byte(STATICCALL) {
+			continue
+		}
+		found = true
+		want := []ZkGasTraceFact{{Key: "account_warm", Value: "false"},
+			{Key: "account_empty", Value: "false"}, {Key: "delegate_warm", Value: "false"},
+			{Key: "delegate_is_target", Value: "true"}}
+		if !slices.Equal(event.Facts, want) {
+			t.Errorf("facts %v, want %v", event.Facts, want)
+		}
+		if !event.Spawn || event.Zk != 80500 {
+			t.Errorf("wrong self-delegate charge: %+v", event)
+		}
+	}
+	if !found {
+		t.Fatal("no STATICCALL event")
+	}
+	text := RenderZkGasTrace(events)
+	parsed, err := ParseZkGasTrace([]byte(text))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := CompareZkGasTrace(parsed, events); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestZkGasTraceParsesAliasFact(t *testing.T) {
+	step := strings.Split(zkTraceFixture, "\n")[2]
+	step = strings.Replace(step, `"account_warm":true,"account_empty":true,"delegate_warm":null`,
+		`"account_warm":false,"account_empty":false,"delegate_warm":false,"delegate_is_target":true`, 1)
+	events, err := ParseZkGasTrace([]byte(step + "\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if RenderZkGasTrace(events) != step+"\n" {
+		t.Fatal("alias fact did not round-trip")
+	}
+	for _, bad := range []string{
+		strings.Replace(step, `"delegate_is_target":true`, `"delegate_is_target":1`, 1),
+		strings.Replace(step, `"delegate_warm":false`, `"delegate_warm":null`, 1),
+		strings.Replace(step, `"delegate_warm":false`, `"delegate_warm":true`, 1),
+	} {
+		if _, err := ParseZkGasTrace([]byte(bad + "\n")); err == nil {
+			t.Errorf("accepted invalid alias fact: %s", bad)
+		}
+	}
+}

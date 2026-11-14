@@ -402,6 +402,11 @@ func (d *zkTraceDecoder) facts(op OpCode, underflow bool) []ZkGasTraceFact {
 	if underflow {
 		want = nil
 	}
+	if !underflow && (op == CALL || op == CALLCODE || op == DELEGATECALL || op == STATICCALL) {
+		if _, present := obj.values["delegate_is_target"]; present {
+			want = append(slices.Clone(want), "delegate_is_target")
+		}
+	}
 	if len(obj.keys) != len(want) || !slices.Equal(obj.keys, want) {
 		d.fail("facts", "keys %v, want %v", obj.keys, want)
 		return nil
@@ -420,6 +425,13 @@ func (d *zkTraceDecoder) facts(op OpCode, underflow bool) []ZkGasTraceFact {
 			d.fail("facts."+key, "not a boolean: %s", raw)
 		}
 		facts = append(facts, ZkGasTraceFact{Key: key, Value: value})
+	}
+	if string(obj.values["delegate_is_target"]) == "true" {
+		if string(obj.values["delegate_warm"]) == "null" {
+			d.fail("facts.delegate_is_target", "requires an EIP-7702 delegation")
+		} else if string(obj.values["delegate_warm"]) != string(obj.values["account_warm"]) {
+			d.fail("facts.delegate_is_target", "self-delegate must have the target's initial warmth")
+		}
 	}
 	return facts
 }
@@ -739,6 +751,7 @@ func zkGasTraceFacts(evm *EVM, contract *Contract, stack *Stack, op OpCode) []Zk
 	db := evm.StateDB
 	keys := zkGasTraceFactKeys[op]
 	var values []string
+	var delegateIsTarget bool
 	account := func(word *uint256.Int) common.Address { return common.Address(word.Bytes20()) }
 	switch op {
 	case JUMP, JUMPI:
@@ -760,6 +773,7 @@ func zkGasTraceFacts(evm *EVM, contract *Contract, stack *Stack, op OpCode) []Zk
 		delegate := "null"
 		if to, ok := types.ParseDelegation(db.GetCode(target)); ok {
 			delegate = zkBool(db.AddressInAccessList(to))
+			delegateIsTarget = to == target
 		}
 		values = []string{zkBool(db.AddressInAccessList(target)), zkBool(db.Empty(target)), delegate}
 	case SELFDESTRUCT:
@@ -767,6 +781,10 @@ func zkGasTraceFacts(evm *EVM, contract *Contract, stack *Stack, op OpCode) []Zk
 		values = []string{zkBool(db.AddressInAccessList(beneficiary)), zkBool(db.Empty(beneficiary)), zkQuote(db.GetBalance(contract.Address()).Hex())}
 	default:
 		return nil
+	}
+	if delegateIsTarget {
+		keys = append(slices.Clone(keys), "delegate_is_target")
+		values = append(values, "true")
 	}
 	facts := make([]ZkGasTraceFact, len(keys))
 	for i, key := range keys {
