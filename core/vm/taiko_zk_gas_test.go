@@ -130,7 +130,7 @@ func TestZkGasMeter_ChargePrecompile(t *testing.T) {
 	m := NewZkGasMeter(testSchedule())
 
 	// ecrecover: gasUsed=3000, multiplier=81, cost=243000
-	if err := m.ChargePrecompile(common.Address{19: 0x01}, 3000); err != nil {
+	if err := m.ChargePrecompile(common.Address{19: 0x01}, 3000, 0, nil); err != nil {
 		t.Fatalf("unexpected error charging ecrecover: %v", err)
 	}
 	if m.TxZkGasUsed() != 243000 {
@@ -138,7 +138,7 @@ func TestZkGasMeter_ChargePrecompile(t *testing.T) {
 	}
 
 	// sha256: gasUsed=100, multiplier=10, cost=1000, total=244000
-	if err := m.ChargePrecompile(common.Address{19: 0x02}, 100); err != nil {
+	if err := m.ChargePrecompile(common.Address{19: 0x02}, 100, 0, nil); err != nil {
 		t.Fatalf("unexpected error charging sha256: %v", err)
 	}
 	if m.TxZkGasUsed() != 244000 {
