@@ -197,6 +197,10 @@ func (evm *EVM) Run(contract *Contract, input []byte, readOnly bool) (ret []byte
 		op = contract.GetOp(pc)
 		operation := jumpTable[op]
 		cost = operation.constantGas // For tracing
+		// CHANGE(taiko): zk gas trace pre-step state (zkgastrace builds only).
+		if zkGasTraceEnabled {
+			zkGasTraceStepPre(evm, contract, stack, mem, pc, op, gasBefore)
+		}
 		// Validate stack
 		if sLen := stack.len(); sLen < operation.minStack {
 			// CHANGE(taiko): REVM deducts the instruction-table static gas in

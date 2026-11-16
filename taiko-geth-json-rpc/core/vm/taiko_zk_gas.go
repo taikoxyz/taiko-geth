@@ -58,11 +58,17 @@ func (m *ZkGasMeter) ChargeOpcode(opcode byte, rawGas uint64) error {
 	return m.charge(rawGas, multiplier)
 }
 
-// ChargePrecompile charges zk gas for a precompile execution: gasUsed * multiplier,
-// where multiplier is keyed by the precompile's full 20-byte address.
-func (m *ZkGasMeter) ChargePrecompile(addr common.Address, gasUsed uint64) error {
+// ChargePrecompile charges zk gas for a precompile execution given supplied gas that
+// returned left gas and runErr: gasUsed * multiplier, where gasUsed is supplied - left,
+// or all of supplied when the precompile halted (any runErr but a revert), and
+// multiplier is keyed by the precompile's full 20-byte address.
+func (m *ZkGasMeter) ChargePrecompile(addr common.Address, supplied, left uint64, runErr error) error {
 	multiplier := uint64(m.schedule.PrecompileMultiplier(addr))
-	return m.charge(gasUsed, multiplier)
+	err := m.charge(precompileZkGasUsed(supplied, left, runErr), multiplier)
+	if zkGasTraceEnabled {
+		zkGasTracePrecompileCharged(m, addr, supplied, left, runErr, err)
+	}
+	return err
 }
 
 // PrecompileMultiplier returns the proving-cost multiplier for addr, or
@@ -81,7 +87,11 @@ func (s *ZkGasSchedule) PrecompileMultiplier(addr common.Address) uint16 {
 // Returns ErrZkGasLimitExceeded if the charge alone would exceed the remaining
 // block budget.
 func (m *ZkGasMeter) ChargeTxIntrinsic() error {
-	return m.charge(m.schedule.TxIntrinsicZkGas, 1)
+	err := m.charge(m.schedule.TxIntrinsicZkGas, 1)
+	if zkGasTraceEnabled {
+		zkGasTraceIntrinsicCharged(m, err)
+	}
+	return err
 }
 
 // CommitTransaction promotes the current tx zk gas into the finalized block total.
@@ -92,12 +102,18 @@ func (m *ZkGasMeter) CommitTransaction() error {
 		return ErrZkGasLimitExceeded
 	}
 	m.blockZkGasUsed = next
+	if zkGasTraceEnabled {
+		zkGasTraceCommitted(m)
+	}
 	m.txZkGasUsed = 0
 	return nil
 }
 
 // ResetTransaction discards in-flight tx zk gas.
 func (m *ZkGasMeter) ResetTransaction() {
+	if zkGasTraceEnabled {
+		zkGasTraceReset(m)
+	}
 	m.txZkGasUsed = 0
 }
 

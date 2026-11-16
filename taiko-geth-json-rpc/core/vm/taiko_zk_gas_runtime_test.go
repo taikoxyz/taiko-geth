@@ -1071,7 +1071,7 @@ func (c *zkGasTraceCollector) CanonicalTxZkGas(schedule *ZkGasSchedule) (uint64,
 		if !frame.precompile {
 			continue
 		}
-		if err := meter.ChargePrecompile(frame.to, frame.startGas-frame.leftOverGas); err != nil {
+		if err := meter.ChargePrecompile(frame.to, frame.startGas, frame.leftOverGas, nil); err != nil {
 			return 0, err
 		}
 	}
