@@ -1,0 +1,133 @@
+name: "ZK Gas Vectors"
+
+on:
+  pull_request:
+    branches: [taiko]
+    paths:
+      - "core/**"
+      - "miner/**"
+      - "params/**"
+      - "consensus/**"
+      - "go.mod"
+      - "go.sum"
+      - "zk-gas-vectors.ref"
+      - ".github/workflows/zk-gas-vectors.yml"
+  push:
+    branches: [taiko]
+    paths:
+      - "core/**"
+      - "miner/**"
+      - "params/**"
+      - "consensus/**"
+      - "go.mod"
+      - "go.sum"
+      - "zk-gas-vectors.ref"
+      - ".github/workflows/zk-gas-vectors.yml"
+
+permissions:
+  contents: read
+
+env:
+  # Without the corpus directory the runners fail instead of skipping.
+  ZK_GAS_VECTORS_REQUIRED: "1"
+
+concurrency:
+  group: zk-gas-vectors-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/taiko' }}
+
+jobs:
+  vectors:
+    name: zk-gas-vectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Prepare environment
+        continue-on-error: true
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # zk-gas-vectors.ref pins the taiko-mono commit whose corpus this repository is checked against.
+      - name: Read the pinned taiko-mono commit
+        id: corpus
+        run: |
+          ref="$(tr -d '[:space:]' < zk-gas-vectors.ref)"
+          if ! [[ "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error file=zk-gas-vectors.ref::expected one 40-hex taiko-mono commit, got '$ref'"
+            exit 1
+          fi
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the taiko-mono zk gas vectors
+        uses: actions/checkout@v4
+        with:
+          repository: taikoxyz/taiko-mono
+          ref: ${{ steps.corpus.outputs.ref }}
+          path: taiko-mono
+          sparse-checkout: testdata/zk_gas_vectors
+          persist-credentials: false
+
+      - name: Point the runners at the corpus
+        run: |
+          dir="$GITHUB_WORKSPACE/taiko-mono/testdata/zk_gas_vectors"
+          test -d "$dir/cases"
+          test -f "$dir/meter-vectors.json"
+          echo "ZK_GAS_VECTORS_DIR=$dir" >> "$GITHUB_ENV"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Run the zk gas runner unit tests
+        run: go test ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas((Harness|Block)(Vectors|Traces)|MeterVectors)$' -count=1
+
+      # Assert mode only. Each step runs exactly the named corpus tests and fails unless each of them
+      # passed, so a filter that matches nothing cannot go green.
+      # CHANGE(taiko): Require Lean-generated meter vectors in both build modes.
+      - name: Run the meter vectors
+        run: |
+          set -o pipefail
+          go test ./core/vm -run '^TestZkGasMeterVectors$' -count=1 -v | tee "$RUNNER_TEMP/meter.log"
+          grep -q '^--- PASS: TestZkGasMeterVectors ' "$RUNNER_TEMP/meter.log"
+
+      - name: Run the harness vectors
+        run: |
+          set -o pipefail
+          go test ./core/vm -run '^TestZkGasHarnessVectors$' -count=1 -v | tee "$RUNNER_TEMP/harness.log"
+          grep -q '^--- PASS: TestZkGasHarnessVectors ' "$RUNNER_TEMP/harness.log"
+
+      - name: Run the block vectors
+        run: |
+          set -o pipefail
+          go test ./miner -run '^TestZkGasBlockVectors$' -count=1 -v | tee "$RUNNER_TEMP/block.log"
+          grep -q '^--- PASS: TestZkGasBlockVectors ' "$RUNNER_TEMP/block.log"
+
+      # The zkgastrace build tag compiles in the zk gas trace exporter. In that build the result
+      # comparison runs again untraced, and the trace tests run every vector traced: the traced run
+      # must reproduce the expected values, and its trace must equal the committed alethia-reth trace
+      # event by event.
+      - name: Run the zk gas runner unit tests with the trace exporter
+        run: go test -tags zkgastrace ./core/vm ./miner -run '^TestZkGas' -skip '^TestZkGas((Harness|Block)(Vectors|Traces)|MeterVectors)$' -count=1
+
+      - name: Run the meter vectors with the trace exporter
+        run: |
+          set -o pipefail
+          go test -tags zkgastrace ./core/vm -run '^TestZkGasMeterVectors$' -count=1 -v | tee "$RUNNER_TEMP/meter-trace.log"
+          grep -q '^--- PASS: TestZkGasMeterVectors ' "$RUNNER_TEMP/meter-trace.log"
+
+      - name: Run the harness vectors and traces with the trace exporter
+        run: |
+          set -o pipefail
+          go test -tags zkgastrace ./core/vm -run '^TestZkGasHarness(Vectors|Traces)$' -count=1 -v | tee "$RUNNER_TEMP/harness-trace.log"
+          grep -q '^--- PASS: TestZkGasHarnessVectors ' "$RUNNER_TEMP/harness-trace.log"
+          grep -q '^--- PASS: TestZkGasHarnessTraces ' "$RUNNER_TEMP/harness-trace.log"
+
+      - name: Run the block vectors and traces with the trace exporter
+        run: |
+          set -o pipefail
+          go test -tags zkgastrace ./miner -run '^TestZkGasBlock(Vectors|Traces)$' -count=1 -v | tee "$RUNNER_TEMP/block-trace.log"
+          grep -q '^--- PASS: TestZkGasBlockVectors ' "$RUNNER_TEMP/block-trace.log"
+          grep -q '^--- PASS: TestZkGasBlockTraces ' "$RUNNER_TEMP/block-trace.log"
