@@ -185,22 +185,6 @@ func zkGasCorpusDir(lookup func(string) (string, bool)) (string, error) {
 	return "", nil
 }
 
-// zkGasKnownDivergent returns the vector ids listed in ZK_GAS_VECTORS_KNOWN_DIVERGENT, read
-// through lookup. The variable is for local investigation only and is an error when CI is set.
-func zkGasKnownDivergent(lookup func(string) (string, bool)) (map[string]bool, error) {
-	list, set := lookup("ZK_GAS_VECTORS_KNOWN_DIVERGENT")
-	if _, ci := lookup("CI"); set && ci {
-		return nil, errors.New("ZK_GAS_VECTORS_KNOWN_DIVERGENT is refused because CI is set: it is for local investigation only")
-	}
-	ids := make(map[string]bool)
-	for _, id := range strings.Split(list, ",") {
-		if id = strings.TrimSpace(id); id != "" {
-			ids[id] = true
-		}
-	}
-	return ids, nil
-}
-
 // newZkHarnessState returns a state holding exactly the alloc accounts, committed and reopened
 // so that every account is pre-existing state rather than created in the tx.
 func newZkHarnessState(t *testing.T, alloc map[common.Address]zkVectorAccount) *state.StateDB {
@@ -503,16 +487,6 @@ func TestZkGasCorpusEnvironment(t *testing.T) {
 	if _, err := zkGasCorpusDir(env(map[string]string{"ZK_GAS_VECTORS_REQUIRED": "1"})); err == nil {
 		t.Error("ZK_GAS_VECTORS_REQUIRED=1 without ZK_GAS_VECTORS_DIR accepted")
 	}
-	ids, err := zkGasKnownDivergent(env(map[string]string{"ZK_GAS_VECTORS_KNOWN_DIVERGENT": " a, b ,"}))
-	if err != nil || len(ids) != 2 || !ids["a"] || !ids["b"] {
-		t.Errorf("known divergent ids %v, error %v", ids, err)
-	}
-	if _, err := zkGasKnownDivergent(env(map[string]string{"CI": "true"})); err != nil {
-		t.Errorf("CI without known divergent ids refused: %v", err)
-	}
-	if _, err := zkGasKnownDivergent(env(map[string]string{"CI": "true", "ZK_GAS_VECTORS_KNOWN_DIVERGENT": "a"})); err == nil {
-		t.Error("ZK_GAS_VECTORS_KNOWN_DIVERGENT accepted with CI set")
-	}
 }
 
 func TestZkGasHarnessVectors(t *testing.T) {
@@ -522,10 +496,6 @@ func TestZkGasHarnessVectors(t *testing.T) {
 	}
 	if dir == "" {
 		t.Skip("ZK_GAS_VECTORS_DIR is not set")
-	}
-	known, err := zkGasKnownDivergent(os.LookupEnv)
-	if err != nil {
-		t.Fatal(err)
 	}
 	vectors, err := loadZkGasVectors[zkHarnessVector](dir, "harness")
 	if err != nil {
@@ -538,15 +508,10 @@ func TestZkGasHarnessVectors(t *testing.T) {
 				t.Fatal("vector has no expected values")
 			}
 			got := runZkHarnessVector(t, v.Input)
-			err := compareZkHarness(*v.Expected, got)
-			switch {
-			case known[v.ID]:
-				t.Logf("known divergent, not asserted: geth %s, expected %s, match %t", got, v.Expected, err == nil)
-			case err != nil:
+			if err := compareZkHarness(*v.Expected, got); err != nil {
 				t.Fatal(err)
-			default:
-				t.Logf("geth %s", got)
 			}
+			t.Logf("geth %s", got)
 		})
 		if !ok {
 			failed = append(failed, v.ID)

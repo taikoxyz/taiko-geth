@@ -261,22 +261,6 @@ func zkGasCorpusDir(lookup func(string) (string, bool)) (string, error) {
 	return "", nil
 }
 
-// zkGasKnownDivergent returns the vector ids listed in ZK_GAS_VECTORS_KNOWN_DIVERGENT, read
-// through lookup. The variable is for local investigation only and is an error when CI is set.
-func zkGasKnownDivergent(lookup func(string) (string, bool)) (map[string]bool, error) {
-	list, set := lookup("ZK_GAS_VECTORS_KNOWN_DIVERGENT")
-	if _, ci := lookup("CI"); set && ci {
-		return nil, errors.New("ZK_GAS_VECTORS_KNOWN_DIVERGENT is refused because CI is set: it is for local investigation only")
-	}
-	ids := make(map[string]bool)
-	for _, id := range strings.Split(list, ",") {
-		if id = strings.TrimSpace(id); id != "" {
-			ids[id] = true
-		}
-	}
-	return ids, nil
-}
-
 // writeZkVectorFile writes one vector file into <dir>/cases.
 func writeZkVectorFile(t *testing.T, dir, id, body string) {
 	t.Helper()
@@ -788,16 +772,6 @@ func TestZkGasCorpusEnvironment(t *testing.T) {
 	if _, err := zkGasCorpusDir(env(map[string]string{"ZK_GAS_VECTORS_REQUIRED": "1"})); err == nil {
 		t.Error("ZK_GAS_VECTORS_REQUIRED=1 without ZK_GAS_VECTORS_DIR accepted")
 	}
-	ids, err := zkGasKnownDivergent(env(map[string]string{"ZK_GAS_VECTORS_KNOWN_DIVERGENT": " a, b ,"}))
-	if err != nil || len(ids) != 2 || !ids["a"] || !ids["b"] {
-		t.Errorf("known divergent ids %v, error %v", ids, err)
-	}
-	if _, err := zkGasKnownDivergent(env(map[string]string{"CI": "true"})); err != nil {
-		t.Errorf("CI without known divergent ids refused: %v", err)
-	}
-	if _, err := zkGasKnownDivergent(env(map[string]string{"CI": "true", "ZK_GAS_VECTORS_KNOWN_DIVERGENT": "a"})); err == nil {
-		t.Error("ZK_GAS_VECTORS_KNOWN_DIVERGENT accepted with CI set")
-	}
 }
 
 func TestZkGasBlockVectors(t *testing.T) {
@@ -808,10 +782,6 @@ func TestZkGasBlockVectors(t *testing.T) {
 	if dir == "" {
 		t.Skip("ZK_GAS_VECTORS_DIR is not set")
 	}
-	known, err := zkGasKnownDivergent(os.LookupEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
 	vectors, err := loadZkGasVectors[zkBlockVector](dir, "block")
 	if err != nil {
 		t.Fatal(err)
@@ -819,9 +789,6 @@ func TestZkGasBlockVectors(t *testing.T) {
 	var failed []string
 	for _, v := range vectors {
 		ok := t.Run(v.ID, func(t *testing.T) {
-			if known[v.ID] {
-				t.Skipf("known divergent, skipped: %s", v.ID)
-			}
 			if v.Expected == nil {
 				t.Fatal("vector has no expected values")
 			}

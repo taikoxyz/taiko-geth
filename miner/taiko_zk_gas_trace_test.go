@@ -110,10 +110,6 @@ func TestZkGasBlockTraces(t *testing.T) {
 	if dir == "" {
 		t.Skip("ZK_GAS_VECTORS_DIR is not set")
 	}
-	known, err := zkGasKnownDivergent(os.LookupEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
 	vectors, err := loadZkGasVectors[zkBlockVector](dir, "block")
 	if err != nil {
 		t.Fatal(err)
@@ -122,9 +118,6 @@ func TestZkGasBlockTraces(t *testing.T) {
 	matched, events := 0, 0
 	for _, v := range vectors {
 		ok := t.Run(v.ID, func(t *testing.T) {
-			if known[v.ID] {
-				t.Skipf("known divergent, skipped: %s", v.ID)
-			}
 			if v.Expected == nil {
 				t.Fatal("vector has no expected values")
 			}

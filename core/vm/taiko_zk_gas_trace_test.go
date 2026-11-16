@@ -417,10 +417,6 @@ func TestZkGasHarnessTraces(t *testing.T) {
 	if dir == "" {
 		t.Skip("ZK_GAS_VECTORS_DIR is not set")
 	}
-	known, err := zkGasKnownDivergent(os.LookupEnv)
-	if err != nil {
-		t.Fatal(err)
-	}
 	vectors, err := loadZkGasVectors[zkHarnessVector](dir, "harness")
 	if err != nil {
 		t.Fatal(err)
@@ -447,15 +443,11 @@ func TestZkGasHarnessTraces(t *testing.T) {
 			if err := CompareZkGasTrace(want, trace); err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", v.ID, err))
 			}
-			switch {
-			case known[v.ID]:
-				t.Logf("known divergent, not asserted: %v", errs)
-			case len(errs) > 0:
+			if len(errs) > 0 {
 				t.Fatal(errs)
-			default:
-				matched++
-				events += len(trace)
 			}
+			matched++
+			events += len(trace)
 		})
 		if !ok {
 			failed = append(failed, v.ID)
