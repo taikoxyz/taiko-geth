@@ -745,6 +745,13 @@ func TaikoTreasuryAddress(chainID *big.Int) common.Address {
 
 // CHANGE(taiko): DecodeShastaBasefeeSharingPctg returns the basefee sharing pctg
 // stored in the first byte of extraData.
+//
+// The Shasta L1 Inbox validates an immutable sharing percentage <= 100.
+// The driver derives this byte from the L1 Proposed event, rather than from
+// proposer-controlled transaction data. Before reusing a preconfirmed block,
+// it compares extraData with the derived value and rebuilds mismatches,
+// replacing the preconfirmed state through forkchoice. This decoder relies
+// on that derivation contract; it does not validate arbitrary payload input.
 func DecodeShastaBasefeeSharingPctg(extra []byte) uint8 {
 	if len(extra) == 0 {
 		return 0

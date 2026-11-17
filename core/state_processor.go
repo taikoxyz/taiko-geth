@@ -111,6 +111,10 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
 		// CHANGE(taiko): mark the first transaction as anchor transaction.
+		// During L1 derivation, the driver constructs and prepends the anchor before
+		// user transactions. Its preconfirmation ingress also validates the anchor.
+		// This flag relies on that ordering contract; it does not authenticate an
+		// arbitrary imported transaction as an anchor.
 		if i == 0 && config.Taiko {
 			if err := tx.MarkAsAnchor(); err != nil {
 				return nil, err
