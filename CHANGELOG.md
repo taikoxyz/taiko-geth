@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.9.0](https://github.com/taikoxyz/taiko-geth/compare/v2.8.0...v2.9.0) (2026-11-17)
+
+
+### Features
+
+* **eth:** return txpool rejections from SendTx and deprecate taikoAuth_txPoolContent ([#618](https://github.com/taikoxyz/taiko-geth/issues/618)) ([6cfe6e0](https://github.com/taikoxyz/taiko-geth/commit/6cfe6e01062a1dfc00650bc6fe51ff3a0e30f6e4))
+
+
+### Documentation
+
+* **core:** explain protocol-derived execution inputs ([#621](https://github.com/taikoxyz/taiko-geth/issues/621)) ([00ae734](https://github.com/taikoxyz/taiko-geth/commit/00ae73487bf54c8724ede5ae0fb61fddc3a714a4))
+
+
+### Tests
+
+* **vm,miner:** check Unzen zk gas conformance against shared vectors ([#620](https://github.com/taikoxyz/taiko-geth/issues/620)) ([bc882af](https://github.com/taikoxyz/taiko-geth/commit/bc882afb8a7218fc7f9d7bd1d863b28c4b807df5))
+
 ## [2.8.0](https://github.com/taikoxyz/taiko-geth/compare/v2.7.0...v2.8.0) (2026-10-22)
 
 
